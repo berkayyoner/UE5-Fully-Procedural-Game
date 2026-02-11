@@ -1,0 +1,21 @@
+{
+	"version": 1,
+	"changelists": [
+		{
+			"guid": "00000000000000000000000000000000",
+			"description": "Default Uncontrolled Changelist",
+			"files": [
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/Characters/Player/BP_PlayerCharacter.uasset",
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/Core/Framework/BP_PlayerController.uasset",
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/Characters/Mannequins/Anims/Unarmed/ABP_Unarmed.uasset",
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/Characters/Mannequins/Rigs/CR_Mannequin_FootIK.uasset",
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/__ExternalActors__/ThirdPerson/Lvl_ThirdPerson/F/4G/TYFCMQ9MC435YW6FZBF5FS.uasset",
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/__ExternalActors__/ThirdPerson/Lvl_ThirdPerson/2/AM/9YGDW7FMEY1CZD31VUYO11.uasset",
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/ThirdPerson/Lvl_ThirdPerson.umap",
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/Core/Framework/BP_GameMode.uasset",
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/Characters/Mannequins/Anims/HumanAnimBP.uasset",
+				"C:/Users/berka/Documents/Unreal Projects/Aedir/Content/Characters/Mannequins/Rigs/CR_Human_FBIK.uasset"
+			]
+		}
+	]
+}

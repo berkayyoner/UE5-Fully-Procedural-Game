@@ -1,0 +1,18 @@
+/*************************************************************************
+* ADOBE CONFIDENTIAL
+* ___________________
+*
+*  Copyright 2015 Adobe Systems Incorporated
+*  All Rights Reserved.
+*
+* NOTICE:  All information contained herein is, and remains
+* the property of Adobe Systems Incorporated and its suppliers,
+* if any.  The intellectual and technical concepts contained
+* herein are proprietary to Adobe Systems Incorporated and its
+* suppliers and are protected by all applicable intellectual property laws,
+* including trade secret and or copyright laws.
+* Dissemination of this information or reproduction of this material
+* is strictly forbidden unless prior written permission is obtained
+* from Adobe Systems Incorporated.
+**************************************************************************/
+class e{constructor(e){switch(this.storage=null,this.storagePromise=null,this.type=e,e){case"local":this.storageApi=chrome.storage.local;break;case"session":this.storageApi=chrome.storage.session;break;default:throw new Error("dcStorage type not supported")}this.ignoreKeys=["Floodgate","Common","Communicate"]}logError(e){try{chrome?.runtime?.sendMessage&&chrome.runtime.sendMessage({main_op:"log-error",log:{...e,storageType:this.type}})}catch(e){}}async shouldLogQuotaError(){try{const e=Date.now(),t=864e5,r="local"===this.type?"qe_l":"qe_s",s=await chrome.storage.session.get(r);return e-(s[r]||0)>t&&(await chrome.storage.session.set({[r]:e}),!0)}catch(e){return!1}}async logQuotaError(e,t){if(await this.shouldLogQuotaError())try{chrome?.runtime?.sendMessage&&chrome.runtime.sendMessage({main_op:"log-quota-error",key:e,storageType:this.type,errorMessage:t})}catch(e){}}async init(){try{this.storagePromise||(this.storagePromise=this.storageApi.get()),this.storage||(this.storage=await this.storagePromise)}catch(e){this.logError({message:`Error initializing ${this.type} storage`,error:e?.toString?.()||"Unknown error"})}}getAllItems(){return this.storage||{}}length(){return Object.keys(this.getAllItems()).length}getItem(e){return this.storage&&void 0!==this.storage[e]?this.storage[e]:""}async setItem(e,t){try{return this.storage[e]=t,await this.storageApi.set({[e]:t})}catch(t){if(this.ignoreKeys.includes(e))return;const r=t?.toString?.()||"Unknown error";return void this.logQuotaError(e,`Error setting item in ${this.type} storage: ${r}`)}}async removeItem(e){try{delete this.storage[e],await this.storageApi.remove(e)}catch(t){this.logError({message:"Error removing item from local storage",key:e,error:t?.toString?.()||"Unknown error"})}}setWithTTL(e,t,r){try{const s=(new Date).getTime()+r;return this.setItem(e,{value:t,expiry:s})}catch(e){}}getWithTTL(e){try{const t=(new Date).getTime(),r=this.getItem(e);if(r){if(t<=r.expiry)return r.value;this.removeItem(e)}}catch(e){}}updateWithTTL(e,t){try{const r=this.storage[e];if(r)return this.setItem(e,{value:t,expiry:r.expiry})}catch(e){}}getItems(e){const t={};return e.forEach((e=>{this.storage&&void 0!==this.storage[e]&&(t[e]=this.storage[e])})),t}}const t=new e("local"),r=new e("session"),s=(...e)=>(...s)=>{Promise.all([t.init(),r.init()]).then((()=>e.forEach((e=>e(...s)))))};chrome.storage.onChanged.addListener((async(e,s)=>{let o;switch(s){case"local":o=t;break;case"session":o=r;break;default:return}await o.init(),Object.entries(e).forEach((([e,{newValue:t}])=>{void 0!==t?o.storage[e]=t:delete o.storage[e]}))}));export{t as dcLocalStorage,r as dcSessionStorage,s as callWithStorage};
