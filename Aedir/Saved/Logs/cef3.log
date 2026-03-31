@@ -1,11 +1,21 @@
-[23784:23196:0228/084910.985:WARNING:chrome_main_delegate.cc(745)] This is Chrome version 128.0.6613.138 (not a warning)
-[23784:19804:0228/084911.016:ERROR:google_update_settings.cc(265)] Failed opening key Software\Chromium to set usagestats; result: 5
-[23784:23196:0228/084911.040:WARNING:account_consistency_mode_manager.cc(77)] Desktop Identity Consistency cannot be enabled as no OAuth client ID and client secret have been configured.
-[21984:36080:0228/084914.298:WARNING:frame_impl.cc(430)] virtual CefFrameImpl::SendProcessMessage sent to detached frame 5-64028A384AFD1A2A14D6C4A19EF927DB will be ignored
-[23784:23196:0228/084918.861:ERROR:extension_registrar.cc(549)] Failed to unregister service worker for extension efaidnbmnnnibpcajpcglclefindmkaj
-[23784:19804:0228/090244.302:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
-[16180:10128:0228/090244.323:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
-[23784:23196:0228/143325.682:ERROR:device_event_log_impl.cc(196)] [14:33:25.643] USB: usb_service_win.cc:105 SetupDiGetDeviceProperty({{A45C254E-DF1C-4EFD-8020-67D146A850E0}, 6}) failed: Element not found. (0x490)
-[23784:21584:0228/145437.894:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
-[16180:10128:0228/145437.916:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
-[23784:23196:0301/034550.884:WARNING:pref_notifier_impl.cc(41)] Pref observer for media_router.cast_allow_all_ips found at shutdown.
+[34108:34088:0329/000119.966:WARNING:chrome_main_delegate.cc(745)] This is Chrome version 128.0.6613.138 (not a warning)
+[34108:4628:0329/000120.051:ERROR:google_update_settings.cc(265)] Failed opening key Software\Chromium to set usagestats; result: 5
+[34108:34088:0329/000120.093:WARNING:account_consistency_mode_manager.cc(77)] Desktop Identity Consistency cannot be enabled as no OAuth client ID and client secret have been configured.
+[11044:22332:0329/000123.890:WARNING:frame_impl.cc(430)] virtual CefFrameImpl::SendProcessMessage sent to detached frame 5-E4AF799407E749EE25925BDA42A1B76E will be ignored
+[34108:34088:0329/000131.630:ERROR:extension_registrar.cc(549)] Failed to unregister service worker for extension efaidnbmnnnibpcajpcglclefindmkaj
+[34108:4736:0329/023718.544:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
+[4064:14580:0329/023718.547:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
+[34108:34088:0329/235557.138:ERROR:device_event_log_impl.cc(196)] [23:55:56.957] USB: usb_service_win.cc:105 SetupDiGetDeviceProperty({{A45C254E-DF1C-4EFD-8020-67D146A850E0}, 6}) failed: Element not found. (0x490)
+[34108:22948:0330/023211.664:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
+[4064:14580:0330/023211.684:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
+[34108:34088:0330/113030.025:ERROR:device_event_log_impl.cc(196)] [11:30:29.972] USB: usb_service_win.cc:105 SetupDiGetDeviceProperty({{A45C254E-DF1C-4EFD-8020-67D146A850E0}, 6}) failed: Element not found. (0x490)
+[34108:34088:0330/143627.937:ERROR:device_event_log_impl.cc(196)] [14:36:27.747] USB: usb_service_win.cc:105 SetupDiGetDeviceProperty({{A45C254E-DF1C-4EFD-8020-67D146A850E0}, 6}) failed: Element not found. (0x490)
+[4064:6500:0330/212240.533:WARNING:net_errors_win.cc(119)] Unknown error 10055 mapped to net::ERR_FAILED
+[34108:4736:0330/215451.885:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
+[4064:14580:0330/215451.895:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
+[34108:34088:0330/224355.163:ERROR:device_event_log_impl.cc(196)] [22:43:55.110] USB: usb_service_win.cc:105 SetupDiGetDeviceProperty({{A45C254E-DF1C-4EFD-8020-67D146A850E0}, 6}) failed: Element not found. (0x490)
+[34108:4736:0331/041439.240:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
+[4064:14580:0331/041439.247:WARNING:dns_config_service_win.cc(605)] Failed to read DnsConfig.
+[34108:34088:0331/121319.932:ERROR:device_event_log_impl.cc(196)] [12:13:19.607] USB: usb_service_win.cc:105 SetupDiGetDeviceProperty({{A45C254E-DF1C-4EFD-8020-67D146A850E0}, 6}) failed: Element not found. (0x490)
+[34108:34088:0331/182018.851:ERROR:device_event_log_impl.cc(196)] [18:20:18.585] USB: usb_service_win.cc:105 SetupDiGetDeviceProperty({{A45C254E-DF1C-4EFD-8020-67D146A850E0}, 6}) failed: Element not found. (0x490)
+[34108:34088:0401/023413.645:WARNING:pref_notifier_impl.cc(41)] Pref observer for media_router.cast_allow_all_ips found at shutdown.
