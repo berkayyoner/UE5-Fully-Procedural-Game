@@ -10,7 +10,9 @@
 #include "Items/AedirInteractionComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Engine/LocalPlayer.h"
 #include "Items/AedirItemActor.h"
+#include "UI/AedirMenuSubsystem.h"
 #include "Weather/AedirWeatherEffectsComponent.h"
 
 AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectInitializer)
@@ -65,13 +67,16 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		return;
 	}
 
-	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	const float ForwardKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::W) ? 1.f : 0.f;
-	const float BackwardKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::S) ? 1.f : 0.f;
-	const float RightKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::D) ? 1.f : 0.f;
-	const float LeftKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::A) ? 1.f : 0.f;
-	const FVector2D MoveInput(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue);
-	MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
+	if (!IsMenuOpen())
+	{
+		const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+		const float ForwardKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::W) ? 1.f : 0.f;
+		const float BackwardKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::S) ? 1.f : 0.f;
+		const float RightKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::D) ? 1.f : 0.f;
+		const float LeftKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::A) ? 1.f : 0.f;
+		const FVector2D MoveInput(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue);
+		MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
+	}
 
 	UpdateHandUseHold(DeltaSeconds);
 	UpdateSwingInput(DeltaSeconds);
@@ -98,6 +103,11 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &AAedirPlayerCharacter::HandleCrouchReleased);
 
 	PlayerInputComponent->BindKey(EKeys::V, IE_Pressed, this, &AAedirPlayerCharacter::HandleViewTogglePressed);
+
+	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AAedirPlayerCharacter::HandleMenuTogglePressed);
+	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AAedirPlayerCharacter::HandleJournalPressed);
+	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AAedirPlayerCharacter::HandleMapPressed);
+	PlayerInputComponent->BindKey(EKeys::K, IE_Pressed, this, &AAedirPlayerCharacter::HandleSkillsPressed);
 
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AAedirPlayerCharacter::HandleJumpPressed);
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Released, this, &AAedirPlayerCharacter::HandleJumpReleased);
@@ -407,5 +417,49 @@ void AAedirPlayerCharacter::ToggleView()
 void AAedirPlayerCharacter::HandleViewTogglePressed()
 {
 	ToggleView();
+}
+
+void AAedirPlayerCharacter::HandleMenuTogglePressed()
+{
+	if (UAedirMenuSubsystem* Menu = GetMenuSubsystem())
+	{
+		Menu->ToggleMenu();
+	}
+}
+
+void AAedirPlayerCharacter::HandleJournalPressed()
+{
+	OpenMenuCategory(4);
+}
+
+void AAedirPlayerCharacter::HandleMapPressed()
+{
+	OpenMenuCategory(3);
+}
+
+void AAedirPlayerCharacter::HandleSkillsPressed()
+{
+	OpenMenuCategory(2);
+}
+
+void AAedirPlayerCharacter::OpenMenuCategory(int32 Category)
+{
+	if (UAedirMenuSubsystem* Menu = GetMenuSubsystem())
+	{
+		Menu->OpenMenu(Category);
+	}
+}
+
+UAedirMenuSubsystem* AAedirPlayerCharacter::GetMenuSubsystem()
+{
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	ULocalPlayer* LocalPlayer = PlayerController ? PlayerController->GetLocalPlayer() : nullptr;
+	return LocalPlayer ? LocalPlayer->GetSubsystem<UAedirMenuSubsystem>() : nullptr;
+}
+
+bool AAedirPlayerCharacter::IsMenuOpen()
+{
+	const UAedirMenuSubsystem* Menu = GetMenuSubsystem();
+	return Menu && Menu->IsMenuOpen();
 }
 

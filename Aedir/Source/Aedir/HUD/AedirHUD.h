@@ -85,7 +85,18 @@ private:
 	void DrawBars(float DeltaSeconds, const UAedirStatsComponent* Stats);
 	void DrawPrompt(const AAedirCreature* Creature);
 	void DrawDeathOverlay();
+	void UpdateSkillNotifications(float DeltaSeconds, const UAedirStatsComponent* Stats);
+	void DrawSkillNotifications();
+
+	struct FAedirHudNotification
+	{
+		FString Text;
+		float Age = 0.f;
+	};
 
 	FAedirHudBarState BarStates[3];
 	float CrosshairCurrentGap = -1.f;
+	TArray<FAedirHudNotification> SkillNotifications;
+	TArray<int32> LastSkillLevels;
+	TWeakObjectPtr<const UAedirStatsComponent> NotificationStats;
 };

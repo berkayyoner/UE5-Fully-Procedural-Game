@@ -13,6 +13,7 @@
 #include "GlobalRenderResources.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemActor.h"
+#include "UI/AedirJournalSubsystem.h"
 
 namespace
 {
@@ -34,6 +35,11 @@ namespace
 	constexpr float HudDeathTextScale = 3.f;
 	const FLinearColor HudMissionColor(1.f, 0.78f, 0.2f, 1.f);
 	const FLinearColor HudNorthColor(1.f, 0.2f, 0.2f, 1.f);
+	constexpr float HudNotificationLifetime = 4.f;
+	constexpr float HudNotificationFadeIn = 0.3f;
+	constexpr float HudNotificationFadeOut = 0.7f;
+	constexpr float HudNotificationBottomOffset = 30.f;
+	constexpr float HudNotificationSpacing = 6.f;
 
 	struct FHudCompassLabel
 	{
@@ -123,6 +129,8 @@ void AAedirHUD::DrawHUD()
 	DrawCrosshair(DeltaSeconds, Creature);
 	DrawCompass(Pawn);
 	DrawBars(DeltaSeconds, Stats);
+	UpdateSkillNotifications(DeltaSeconds, Stats);
+	DrawSkillNotifications();
 	DrawPrompt(Creature);
 
 	if (Stats && Stats->IsDead())
@@ -365,6 +373,85 @@ void AAedirHUD::DrawBars(float DeltaSeconds, const UAedirStatsComponent* Stats)
 		const FLinearColor TextColor(1.f, 1.f, 1.f, 0.9f * A);
 		DrawText(FString(HudBarLabels[Index]), TextColor, BarLeft, TextY, SmallFont);
 		DrawText(NumericText, TextColor, BarLeft + BarWidth - NumericWidth, TextY, SmallFont);
+	}
+}
+
+void AAedirHUD::UpdateSkillNotifications(float DeltaSeconds, const UAedirStatsComponent* Stats)
+{
+	if (!Stats)
+	{
+		NotificationStats.Reset();
+		LastSkillLevels.Reset();
+		SkillNotifications.Reset();
+		return;
+	}
+
+	if (NotificationStats.Get() != Stats)
+	{
+		NotificationStats = Stats;
+		LastSkillLevels.Reset();
+		SkillNotifications.Reset();
+	}
+
+	const int32 SkillCount = static_cast<int32>(EAedirSkill::Count);
+	const bool bInitialized = LastSkillLevels.Num() == SkillCount;
+	if (!bInitialized)
+	{
+		LastSkillLevels.SetNumZeroed(SkillCount);
+	}
+
+	for (int32 Index = 0; Index < SkillCount; ++Index)
+	{
+		const EAedirSkill Skill = static_cast<EAedirSkill>(Index);
+		const int32 Level = FMath::FloorToInt(Stats->GetSkill(Skill));
+		if (bInitialized && Level > LastSkillLevels[Index])
+		{
+			FAedirHudNotification Notification;
+			Notification.Text = FString::Printf(TEXT("%s increased to %d"), *UAedirJournalSubsystem::GetSkillDisplayName(Skill), Level);
+			SkillNotifications.Add(Notification);
+		}
+		LastSkillLevels[Index] = Level;
+	}
+
+	for (FAedirHudNotification& Notification : SkillNotifications)
+	{
+		Notification.Age += DeltaSeconds;
+	}
+	SkillNotifications.RemoveAll([](const FAedirHudNotification& Notification)
+	{
+		return Notification.Age >= HudNotificationLifetime;
+	});
+}
+
+void AAedirHUD::DrawSkillNotifications()
+{
+	if (!Canvas || SkillNotifications.IsEmpty())
+	{
+		return;
+	}
+
+	UFont* SmallFont = UEngine::GetSmallFont();
+	const float ScreenHeight = static_cast<float>(Canvas->SizeY);
+	const float BarTop = ScreenHeight - BarBottomMargin - BarHeight;
+	const float X = static_cast<float>(Canvas->SizeX) * HudBarCenterFractions[0] - BarWidth * 0.5f;
+	float Y = BarTop - HudNotificationBottomOffset;
+
+	// Newest notification sits lowest, older ones stack upward.
+	for (int32 Index = SkillNotifications.Num() - 1; Index >= 0; --Index)
+	{
+		const FAedirHudNotification& Notification = SkillNotifications[Index];
+		const float FadeIn = FMath::Clamp(Notification.Age / HudNotificationFadeIn, 0.f, 1.f);
+		const float FadeOut = FMath::Clamp((HudNotificationLifetime - Notification.Age) / HudNotificationFadeOut, 0.f, 1.f);
+		const float Alpha = FMath::Min(FadeIn, FadeOut);
+
+		float TextWidth = 0.f;
+		float TextHeight = 0.f;
+		GetTextSize(Notification.Text, TextWidth, TextHeight, SmallFont);
+
+		DrawText(Notification.Text, FLinearColor(1.f, 1.f, 1.f, 0.95f * Alpha), X, Y - TextHeight, SmallFont);
+		DrawRect(FLinearColor(1.f, 1.f, 1.f, 0.4f * Alpha), X, Y + 1.f, TextWidth, 1.f);
+
+		Y -= TextHeight + HudNotificationSpacing;
 	}
 }
 

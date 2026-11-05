@@ -18,7 +18,9 @@ public class Aedir : ModuleRules
 			"PhysicsCore",
 			"Niagara",
 			"DeveloperSettings",
-			"NetCore"
+			"NetCore",
+			"Slate",
+			"SlateCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[]

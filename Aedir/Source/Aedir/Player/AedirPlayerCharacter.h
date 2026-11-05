@@ -8,6 +8,7 @@
 class UAedirWeatherEffectsComponent;
 class UCameraComponent;
 class USpringArmComponent;
+class UAedirMenuSubsystem;
 
 UCLASS(Blueprintable)
 class AEDIR_API AAedirPlayerCharacter : public AAedirCreature
@@ -64,6 +65,14 @@ public:
 private:
 	void ApplyViewPitchLimits();
 	void HandleViewTogglePressed();
+
+	void HandleMenuTogglePressed();
+	void HandleJournalPressed();
+	void HandleMapPressed();
+	void HandleSkillsPressed();
+	void OpenMenuCategory(int32 Category);
+	UAedirMenuSubsystem* GetMenuSubsystem();
+	bool IsMenuOpen();
 
 	bool bFirstPerson = false;
 
