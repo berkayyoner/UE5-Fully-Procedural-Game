@@ -2,6 +2,14 @@
 
 ***Creatures means NPCs and players.***
 
+## Mechanics
+* Third-person view. Also supports first-person view secondary.
+* Physics based fully procedural medival fantasy RPG game.
+
+## Design References
+* **Gameplay and mechanics: Half Sword style.** Fully physics-driven characters and melee (no canned animations). The player moves the weapon/arm with the mouse; weapons have weight and momentum; damage comes from real impact (speed, mass, contact point), not from a fixed number. Hit location matters (head, torso, arms, legs), armor covers body parts, limbs can be injured, stamina limits arm strength, and blocking/parrying happens through physical weapon contact. Character movement should be even more realistic than Half Sword: weight shift, momentum, foot placement, balance from the center of mass, stumbling, protective reactions when falling.
+* **UI and game content: The Elder Scrolls style (Skyrim/Oblivion).** Minimal HUD (compass on top, three bars at the bottom), list-based menus (inventory, magic, skills, map, journal), skill-based progression, races, factions and guilds, books and lore items, quests with compass markers. World lore is in `Game Lore.docx` (the planet Aedir, the Anga gods, Elves, Dark Elves, Dwarves and so on) and content must stay consistent with it.
+
 ## Expectations
 * Player character will be a humanouid type. So body physics will be enabled except Pelvis bone. Pelvis hold the body up and will be simulated depending on the balance. When character losts balance, pelvis should rotate to opposite way to show the player like it's loosing balance visually and when character can't get it's balance back for a while character should fall. Falling from a high place or hitting a wall or get hit by an item/object should effect balance and health.
 * Humanoids should be able to walk (W,A,S,D for player), run (L-Shift for player), crouch (L-Ctrl for player), jump (Space for player), breath and sway if alive. They should look around with head-neck-spine in an angle if they are standing, if they need to exceed the angle for willing to look an angle, their lower body should turn there and they should take 2 steps in the same place to turn. If they are moving, body should turn to the looking angle but there should still be a visible head-neck turn.
@@ -34,3 +42,4 @@
 * Use my Unreal Engine library.
 * It will be a realistic game but should be as optimized as possible. So try to compress textures which are above 4K down to 4K by using Unreal Engine's feature.
 * This will be a game which can be played single player or Co-op.
+* Make sure blueprints are clean for easy to read.

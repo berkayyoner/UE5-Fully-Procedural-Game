@@ -159,8 +159,39 @@ Project start date: November 5, 2026 (see `DONE.md`).
 
 ---
 
+## Phase 12 – Half Sword-style Physical Combat (added after RULES "Design References")
+**Goal:** Melee that is controlled by the mouse and decided by physics, not by canned swings.
+- 12.1 Mouse-driven arm/weapon control: the hand target follows the mouse around the shoulder with a spring-damper, so weapons have inertia; speed is limited by strength, stamina and weapon weight.
+- 12.2 Impact damage model: damage from kinetic energy (mass and speed of the weapon or fist at contact), hit zones from the struck bone (head, torso, arms, legs), damage types (blunt, slash, pierce), balance impact from the same impulse.
+- 12.3 Physical blocking and parrying: weapon-versus-weapon contact absorbs momentum, drains stamina and staggers both fighters.
+- 12.4 Armor coverage per body part and limb injury (injured arm = weaker grip and slower swings, injured leg = limp and worse balance).
+- 12.5 Two-handed grip, shoving, kicks, grabbing.
+- 12.6 Weapon catalog with mass, length, center of mass and damage profile (sword, axe, mace, spear, dagger).
+**Exit criteria:** A fight between two creatures is decided by timing, positioning, weight and stamina; swing damage differs with real speed and hit location.
+
+---
+
+## Phase 13 – Realistic Locomotion Upgrade
+**Goal:** Movement more realistic than Half Sword.
+- Balance from the center of mass over the support polygon, weight shift between feet, turning and acceleration inertia.
+- Resting arm pose, breathing and idle sway (fixes the A-pose arms), crouch and turn-in-place polish.
+- Drive the simulated limbs with physical motors toward the procedural pose (PhysicalAnimation or PhysicsControl) so collisions push limbs.
+- Stumble and recovery reactions, protective arm reflex when falling, get-up sequence.
+**Exit criteria:** Walking, running, stopping and falling look physically plausible from the third-person camera.
+
+---
+
+## Phase 14 – Elder Scrolls-style UI
+- List-based menus (inventory, magic, skills, map, journal), Skyrim-like layout, typography and sounds, built in code (UUserWidget trees) so no editor assets are needed.
+- Skill level-up feedback, dialogue UI, quest journal and compass quest markers, character creation (race, appearance, starting skills).
+
+## Phase 15 – Elder Scrolls-style Content (follows Game Lore.docx)
+- Races (Elves, Dark Elves, Dwarves, Humans), factions and guilds, skill progression tied to the existing skill stats, books and lore items, quests, locations, NPC routines.
+
+---
+
 ## Dependency Overview
-Phase 0 → 1 → 2 → 3 → (4, 5) ; 6 → 7 ; 1 → 8 ; 3/6 → 9 ; all → 10 → 11.
+Phase 0 → 1 → 2 → 3 → (4, 5) ; 6 → 7 ; 1 → 8 ; 3/6 → 9 ; all → 10 → 11. After the RULES update: 5 → 12 ; 3 → 13 ; 8 → 14 → 15.
 
 ## Key Risks
 - Pelvis-only simulated ragdoll stability (tuning, solver iterations).
