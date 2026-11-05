@@ -2,13 +2,25 @@
 
 #include "AedirGroupSubsystem.h"
 #include "AedirStatsComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Math/RotationMatrix.h"
+#include "Movement/AedirCharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Physics/AedirBalanceComponent.h"
 
-AAedirCreature::AAedirCreature()
+AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UAedirCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
+
+	bUseControllerRotationYaw = false;
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->bOrientRotationToMovement = false;
+		Movement->bUseControllerDesiredRotation = false;
+	}
 
 	Stats = CreateDefaultSubobject<UAedirStatsComponent>(TEXT("Stats"));
 	Balance = CreateDefaultSubobject<UAedirBalanceComponent>(TEXT("Balance"));
@@ -30,6 +42,7 @@ void AAedirCreature::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(AAedirCreature, GroupId);
+	DOREPLIFETIME(AAedirCreature, CarriedWeight);
 }
 
 void AAedirCreature::SetGroupId_Implementation(FName NewGroupId)
@@ -63,6 +76,91 @@ float AAedirCreature::ReceiveCreatureDamage(float Amount)
 	}
 
 	return Stats->ApplyDamage(Amount);
+}
+
+float AAedirCreature::GetCarriedWeight() const
+{
+	return CarriedWeight;
+}
+
+void AAedirCreature::SetCarriedWeight(float NewCarriedWeight)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+
+	CarriedWeight = FMath::Max(0.f, NewCarriedWeight);
+}
+
+float AAedirCreature::GetCarryCapacity() const
+{
+	return Stats ? Stats->GetCarryCapacity() : 0.f;
+}
+
+void AAedirCreature::MoveLocal(FVector2D Input)
+{
+	const FRotator BaseRotation = Controller ? GetControlRotation() : GetActorRotation();
+	const FRotationMatrix YawMatrix(FRotator(0.f, BaseRotation.Yaw, 0.f));
+
+	AddMovementInput(YawMatrix.GetUnitAxis(EAxis::X), static_cast<float>(Input.Y));
+	AddMovementInput(YawMatrix.GetUnitAxis(EAxis::Y), static_cast<float>(Input.X));
+}
+
+void AAedirCreature::SetWantsToRun(bool bWantsToRun)
+{
+	if (UAedirCharacterMovementComponent* Movement = Cast<UAedirCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		Movement->SetWantsToRun(bWantsToRun);
+	}
+}
+
+void AAedirCreature::SetWantsToCrouch(bool bWantsToCrouch)
+{
+	if (bWantsToCrouch)
+	{
+		Crouch();
+	}
+	else
+	{
+		UnCrouch();
+	}
+}
+
+void AAedirCreature::StartJump()
+{
+	if (bIsCrouched)
+	{
+		UnCrouch();
+		return;
+	}
+
+	Jump();
+}
+
+void AAedirCreature::StopJump()
+{
+	StopJumping();
+}
+
+void AAedirCreature::SetWantsFightStance(bool bWantsFightStance)
+{
+	if (UAedirCharacterMovementComponent* Movement = Cast<UAedirCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		Movement->SetWantsFightStance(bWantsFightStance);
+	}
+}
+
+bool AAedirCreature::IsRunning() const
+{
+	const UAedirCharacterMovementComponent* Movement = Cast<UAedirCharacterMovementComponent>(GetCharacterMovement());
+	return Movement && Movement->IsRunningNow();
+}
+
+bool AAedirCreature::IsInFightStance() const
+{
+	const UAedirCharacterMovementComponent* Movement = Cast<UAedirCharacterMovementComponent>(GetCharacterMovement());
+	return Movement && Movement->bWantsFightStance;
 }
 
 void AAedirCreature::ApplySizeScale(float NewSizeScale)

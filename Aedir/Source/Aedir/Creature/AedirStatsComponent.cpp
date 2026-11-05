@@ -211,6 +211,11 @@ float UAedirStatsComponent::GetManaFraction() const
 	return SafeFraction(Mana, MaxMana);
 }
 
+float UAedirStatsComponent::GetStamina() const
+{
+	return Stamina;
+}
+
 float UAedirStatsComponent::GetStaminaFraction() const
 {
 	return SafeFraction(Stamina, MaxStamina);

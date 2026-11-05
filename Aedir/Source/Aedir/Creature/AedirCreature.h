@@ -16,7 +16,7 @@ class AEDIR_API AAedirCreature : public ACharacter
 	GENERATED_BODY()
 
 public:
-	AAedirCreature();
+	AAedirCreature(const FObjectInitializer& ObjectInitializer);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
 	TObjectPtr<UAedirStatsComponent> Stats;
@@ -29,6 +29,9 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Aedir|Groups")
 	FAedirGroupIdChanged OnGroupIdChanged;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Creature")
+	float CarriedWeight = 0.f;
 
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -44,6 +47,39 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Creature")
 	float ReceiveCreatureDamage(float Amount);
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Creature")
+	float GetCarriedWeight() const;
+
+	UFUNCTION(BlueprintCallable, Category="Aedir|Creature")
+	void SetCarriedWeight(float NewCarriedWeight);
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Creature")
+	float GetCarryCapacity() const;
+
+	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
+	void MoveLocal(FVector2D Input);
+
+	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
+	void SetWantsToRun(bool bWantsToRun);
+
+	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
+	void SetWantsToCrouch(bool bWantsToCrouch);
+
+	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
+	void StartJump();
+
+	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
+	void StopJump();
+
+	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
+	void SetWantsFightStance(bool bWantsFightStance);
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Movement")
+	bool IsRunning() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Movement")
+	bool IsInFightStance() const;
 
 	UFUNCTION()
 	void ApplySizeScale(float NewSizeScale);

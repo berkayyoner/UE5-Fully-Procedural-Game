@@ -118,6 +118,9 @@ public:
 	float GetManaFraction() const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
+	float GetStamina() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetStaminaFraction() const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
