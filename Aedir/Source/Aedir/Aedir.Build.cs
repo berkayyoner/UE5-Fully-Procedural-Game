@@ -21,6 +21,11 @@ public class Aedir : ModuleRules
 			"NetCore"
 		});
 
-		PrivateDependencyModuleNames.Add("Sockets");
+		PrivateDependencyModuleNames.AddRange(new string[]
+		{
+			"Sockets",
+			"CoreOnline",
+			"RenderCore"
+		});
 	}
 }

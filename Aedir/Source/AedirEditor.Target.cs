@@ -8,6 +8,6 @@ public class AedirEditorTarget : TargetRules
 		Type = TargetType.Editor;
 		DefaultBuildSettings = BuildSettingsVersion.V6;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Latest;
-		ExtraModuleNames.Add("Aedir");
+		ExtraModuleNames.AddRange(new string[] { "Aedir", "AedirEditor" });
 	}
 }
