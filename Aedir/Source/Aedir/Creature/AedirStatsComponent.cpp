@@ -279,6 +279,37 @@ bool UAedirStatsComponent::IsDead() const
 	return bIsDead;
 }
 
+void UAedirStatsComponent::ApplySavedState(float InHealth, float InMaxHealth, float InMana, float InMaxMana, float InStamina, float InMaxStamina, float InStrength, float InAthletism, const TArray<float>& InSkills)
+{
+	if (!IsAuthoritative())
+	{
+		return;
+	}
+
+	MaxHealth = FMath::Max(0.f, InMaxHealth);
+	Health = FMath::Clamp(InHealth, 0.f, MaxHealth);
+	bIsDead = Health <= 0.f;
+
+	MaxMana = FMath::Max(0.f, InMaxMana);
+	Mana = FMath::Clamp(InMana, 0.f, MaxMana);
+
+	MaxStamina = FMath::Clamp(InMaxStamina, 0.f, MaxStaminaCap);
+	Stamina = FMath::Clamp(InStamina, 0.f, MaxStamina);
+
+	Strength = FMath::Clamp(InStrength, AedirStatMin, AedirStatMax);
+	Athletism = FMath::Clamp(InAthletism, AedirStatMin, AedirStatMax);
+
+	const int32 SkillCount = static_cast<int32>(EAedirSkill::Count);
+	Skills.SetNumZeroed(SkillCount);
+	for (int32 Index = 0; Index < SkillCount && Index < InSkills.Num(); ++Index)
+	{
+		Skills[Index] = FMath::Clamp(InSkills[Index], AedirSkillMin, AedirSkillMax);
+	}
+
+	OnStatChanged.Broadcast();
+	OnStrengthChanged.Broadcast(GetSizeScale());
+}
+
 bool UAedirStatsComponent::IsAuthoritative() const
 {
 	return GetOwner() != nullptr && GetOwner()->HasAuthority();

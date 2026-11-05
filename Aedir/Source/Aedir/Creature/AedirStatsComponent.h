@@ -156,6 +156,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	bool IsDead() const;
 
+	// Server only. Restores persisted values, clamping them to the valid ranges, and rebroadcasts the change delegates.
+	void ApplySavedState(float InHealth, float InMaxHealth, float InMana, float InMaxMana, float InStamina, float InMaxStamina, float InStrength, float InAthletism, const TArray<float>& InSkills);
+
 private:
 	bool IsAuthoritative() const;
 

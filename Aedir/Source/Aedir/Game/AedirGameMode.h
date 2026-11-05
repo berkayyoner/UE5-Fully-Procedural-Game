@@ -11,4 +11,11 @@ class AEDIR_API AAedirGameMode : public AGameModeBase
 
 public:
 	AAedirGameMode();
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Net")
+	int32 MaxCoopPlayers = 4;
+
+	virtual void PreLogin(const FString& Options, const FString& Address, const FUniqueNetIdRepl& UniqueId, FString& ErrorMessage) override;
+	virtual void HandleStartingNewPlayer_Implementation(APlayerController* NewPlayer) override;
+	virtual void Logout(AController* Exiting) override;
 };

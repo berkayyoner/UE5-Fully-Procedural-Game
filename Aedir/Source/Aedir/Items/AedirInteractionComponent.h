@@ -129,6 +129,17 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Interaction")
 	float GetPelvisLowerZ() const;
 
+	// Server only. Equips a freshly spawned item into a hand without a reach phase.
+	bool EquipImmediate(EAedirHand Hand, AAedirItemActor* Item);
+
+	// Server only. Stores a freshly spawned item in waist slot 0-5 without a reach phase.
+	bool HolsterImmediate(int32 SlotIndex, AAedirItemActor* Item);
+
+	// Server only. Clears both hands and every waist slot. The items themselves are left untouched.
+	void ReleaseAllItems();
+
+	TArray<AAedirItemActor*> GetWaistItemsCopy() const;
+
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	FAedirHandSlot LeftSlot;
 

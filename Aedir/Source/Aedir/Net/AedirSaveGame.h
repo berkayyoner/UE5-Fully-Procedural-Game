@@ -1,0 +1,104 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/SaveGame.h"
+#include "Items/AedirItemActor.h"
+#include "UObject/SoftObjectPtr.h"
+#include "Weather/AedirWeatherTypes.h"
+#include "AedirSaveGame.generated.h"
+
+USTRUCT(BlueprintType)
+struct AEDIR_API FAedirCreatureSave
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FString PlayerKey;
+
+	UPROPERTY()
+	FTransform Transform = FTransform::Identity;
+
+	UPROPERTY()
+	float Health = 100.f;
+
+	UPROPERTY()
+	float MaxHealth = 100.f;
+
+	UPROPERTY()
+	float Mana = 100.f;
+
+	UPROPERTY()
+	float MaxMana = 100.f;
+
+	UPROPERTY()
+	float Stamina = 100.f;
+
+	UPROPERTY()
+	float MaxStamina = 100.f;
+
+	UPROPERTY()
+	float Strength = 10.f;
+
+	UPROPERTY()
+	float Athletism = 10.f;
+
+	UPROPERTY()
+	TArray<float> Skills;
+
+	UPROPERTY()
+	FName GroupId;
+
+	UPROPERTY()
+	TSoftClassPtr<AAedirItemActor> LeftHandItem;
+
+	UPROPERTY()
+	TSoftClassPtr<AAedirItemActor> RightHandItem;
+
+	// Six waist slots: indices 0-2 left side, 3-5 right side. Null entries are empty slots.
+	UPROPERTY()
+	TArray<TSoftClassPtr<AAedirItemActor>> WaistItems;
+};
+
+USTRUCT(BlueprintType)
+struct AEDIR_API FAedirItemSave
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	TSoftClassPtr<AAedirItemActor> ItemClass;
+
+	UPROPERTY()
+	FTransform Transform = FTransform::Identity;
+};
+
+UCLASS(BlueprintType)
+class AEDIR_API UAedirSaveGame : public USaveGame
+{
+	GENERATED_BODY()
+
+public:
+	UAedirSaveGame();
+
+	static constexpr int32 CurrentSaveVersion = 1;
+
+	UPROPERTY()
+	int32 SaveVersion = CurrentSaveVersion;
+
+	UPROPERTY()
+	FDateTime Timestamp;
+
+	UPROPERTY()
+	FString MapName;
+
+	UPROPERTY()
+	EAedirWeather Weather = EAedirWeather::Sunny;
+
+	UPROPERTY()
+	double WorldSeconds = 0.0;
+
+	UPROPERTY()
+	TArray<FAedirCreatureSave> Players;
+
+	UPROPERTY()
+	TArray<FAedirItemSave> LooseItems;
+};

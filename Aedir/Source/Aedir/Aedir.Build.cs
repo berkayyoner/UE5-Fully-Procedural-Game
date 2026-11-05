@@ -20,5 +20,7 @@ public class Aedir : ModuleRules
 			"DeveloperSettings",
 			"NetCore"
 		});
+
+		PrivateDependencyModuleNames.Add("Sockets");
 	}
 }

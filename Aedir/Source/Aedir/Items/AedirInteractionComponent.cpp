@@ -673,3 +673,88 @@ void UAedirInteractionComponent::ServerHolsterToWaist_Implementation(EAedirHand 
 {
 	HolsterToWaist(Hand);
 }
+
+bool UAedirInteractionComponent::EquipImmediate(EAedirHand Hand, AAedirItemActor* Item)
+{
+	AAedirCreature* Creature = GetCreature();
+	if (!IsAuthoritative() || !Creature || !Item || Item->IsHeld())
+	{
+		return false;
+	}
+
+	FAedirHandSlot& Slot = GetSlot(Hand);
+	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
+	const bool bBothHands = RequiresBothHands(Item);
+	if (Slot.State != EAedirHandState::Idle || (bBothHands && Other.State != EAedirHandState::Idle))
+	{
+		return false;
+	}
+
+	Item->AttachToCreatureHand(Creature, Hand);
+
+	Slot.State = EAedirHandState::Holding;
+	Slot.Item = Item;
+	Slot.ReachElapsed = 0.f;
+
+	if (bBothHands)
+	{
+		Other.State = EAedirHandState::Holding;
+		Other.Item = Item;
+		Other.ReachElapsed = 0.f;
+	}
+
+	UpdateCarriedWeight();
+	return true;
+}
+
+bool UAedirInteractionComponent::HolsterImmediate(int32 SlotIndex, AAedirItemActor* Item)
+{
+	AAedirCreature* Creature = GetCreature();
+	if (!IsAuthoritative() || !Creature || !Item || Item->IsHeld() || !WaistItems.IsValidIndex(SlotIndex) || WaistItems[SlotIndex] != nullptr)
+	{
+		return false;
+	}
+
+	const EAedirHand Hand = SlotIndex < WaistSlotsPerSide ? EAedirHand::Left : EAedirHand::Right;
+	const TArray<FTransform>& Slots = Hand == EAedirHand::Left ? LeftWaistSlots : RightWaistSlots;
+	const int32 SlotLocalIndex = SlotIndex - GetWaistSideBegin(Hand);
+	const FTransform SlotTransform = Slots.IsValidIndex(SlotLocalIndex) ? Slots[SlotLocalIndex] : FTransform::Identity;
+
+	WaistItems[SlotIndex] = Item;
+	LastStoredWaistIndex[GetWaistSideIndex(Hand)] = SlotIndex;
+
+	Item->AttachToWaist(Creature, WaistBone, SlotTransform);
+	UpdateCarriedWeight();
+	return true;
+}
+
+void UAedirInteractionComponent::ReleaseAllItems()
+{
+	if (!IsAuthoritative())
+	{
+		return;
+	}
+
+	ResetSlot(LeftSlot);
+	ResetSlot(RightSlot);
+
+	for (TObjectPtr<AAedirItemActor>& WaistItem : WaistItems)
+	{
+		WaistItem = nullptr;
+	}
+
+	LastStoredWaistIndex[0] = INDEX_NONE;
+	LastStoredWaistIndex[1] = INDEX_NONE;
+	UpdateCarriedWeight();
+}
+
+TArray<AAedirItemActor*> UAedirInteractionComponent::GetWaistItemsCopy() const
+{
+	TArray<AAedirItemActor*> Copy;
+	Copy.Reserve(WaistItems.Num());
+	for (const TObjectPtr<AAedirItemActor>& WaistItem : WaistItems)
+	{
+		Copy.Add(WaistItem.Get());
+	}
+	return Copy;
+}
