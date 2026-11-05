@@ -13,6 +13,9 @@ namespace
 	constexpr float AedirKneePoleDistance = 100.f;
 	constexpr float AedirWristFollowShare = 0.25f;
 	constexpr float AedirClavicleFollowShare = 0.25f;
+	constexpr float AedirReachAlphaThreshold = 0.001f;
+	constexpr float AedirElbowOutwardDistance = 60.f;
+	constexpr float AedirElbowDropDistance = 40.f;
 
 	FCompactPoseBoneIndex ResolveCompactBone(const FBoneContainer& Bones, const FName& BoneName)
 	{
@@ -47,6 +50,14 @@ namespace
 		FTransform BoneTransform = CSPose.GetComponentSpaceTransform(Bone);
 		BoneTransform.SetRotation(MeshSpaceDelta * BoneTransform.GetRotation());
 		CSPose.SetComponentSpaceTransform(Bone, BoneTransform);
+	}
+
+	FTransform BlendBoneTransform(const FTransform& From, const FTransform& To, float Alpha)
+	{
+		FTransform Result = From;
+		Result.SetTranslation(FMath::Lerp(From.GetLocation(), To.GetLocation(), Alpha));
+		Result.SetRotation(FQuat::Slerp(From.GetRotation(), To.GetRotation(), Alpha));
+		return Result;
 	}
 }
 
@@ -99,6 +110,13 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyNeckAndHead(CSPose, Bones);
 	ApplyArm(CSPose, Bones, BoneNameSet.LeftClavicle, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.ArmSwingLeft, GaitData.ElbowBend);
 	ApplyArm(CSPose, Bones, BoneNameSet.RightClavicle, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.ArmSwingRight, GaitData.ElbowBend);
+
+	// Left is the actor's -Y side (matches the gait foot placement), right is +Y.
+	const FVector LeftOutwardMesh = ActorToMesh.RotateVector(-FVector::RightVector);
+	const FVector RightOutwardMesh = ActorToMesh.RotateVector(FVector::RightVector);
+	const FVector DownMesh = ActorToMesh.RotateVector(-FVector::UpVector);
+	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh);
+	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh);
 
 	const FVector ForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
 	ApplyLeg(CSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, GaitData.LeftFootWorld, GaitData.LeftFootRot, ForwardMesh);
@@ -204,6 +222,57 @@ void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FB
 	{
 		RotateBone(CSPose, Hand, ActorRotationToMesh(FRotator(ElbowDegrees * AedirWristFollowShare, 0.f, 0.f).Quaternion()));
 	}
+}
+
+void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh) const
+{
+	if (ReachAlpha <= AedirReachAlphaThreshold)
+	{
+		return;
+	}
+
+	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
+	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
+	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);
+	if (!Humerus.IsValid() || !Radius.IsValid() || !Hand.IsValid())
+	{
+		return;
+	}
+
+	const FTransform HumerusTransform = CSPose.GetComponentSpaceTransform(Humerus);
+	const FTransform RadiusTransform = CSPose.GetComponentSpaceTransform(Radius);
+	const FTransform HandTransform = CSPose.GetComponentSpaceTransform(Hand);
+
+	const FVector RootPosition = HumerusTransform.GetLocation();
+	const FVector JointPosition = RadiusTransform.GetLocation();
+	const FVector EndPosition = HandTransform.GetLocation();
+
+	const FVector Effector = MeshToWorld.InverseTransformPosition(HandWorld);
+	// Elbow pole outward from the body and slightly down so the elbow stays out of the torso.
+	const FVector JointTarget = Effector + OutwardMesh * AedirElbowOutwardDistance + DownMesh * AedirElbowDropDistance;
+
+	FVector SolvedJointPosition;
+	FVector SolvedEndPosition;
+	AnimationCore::SolveTwoBoneIK(RootPosition, JointPosition, EndPosition, JointTarget, Effector, SolvedJointPosition, SolvedEndPosition, false, 1.0, 1.0);
+
+	const FQuat HumerusDelta = SafeDeltaRotation(JointPosition - RootPosition, SolvedJointPosition - RootPosition);
+	const FQuat RadiusDelta = SafeDeltaRotation(HumerusDelta.RotateVector(EndPosition - JointPosition), SolvedEndPosition - SolvedJointPosition);
+
+	FTransform SolvedHumerus = HumerusTransform;
+	SolvedHumerus.SetRotation(HumerusDelta * HumerusTransform.GetRotation());
+
+	FTransform SolvedRadius = RadiusTransform;
+	SolvedRadius.SetTranslation(SolvedJointPosition);
+	SolvedRadius.SetRotation(RadiusDelta * HumerusDelta * RadiusTransform.GetRotation());
+
+	FTransform SolvedHand = HandTransform;
+	SolvedHand.SetTranslation(SolvedEndPosition);
+	SolvedHand.SetRotation(RadiusDelta * HumerusDelta * HandTransform.GetRotation());
+
+	const float Alpha = FMath::Clamp(ReachAlpha, 0.f, 1.f);
+	CSPose.SetComponentSpaceTransform(Humerus, BlendBoneTransform(HumerusTransform, SolvedHumerus, Alpha));
+	CSPose.SetComponentSpaceTransform(Radius, BlendBoneTransform(RadiusTransform, SolvedRadius, Alpha));
+	CSPose.SetComponentSpaceTransform(Hand, BlendBoneTransform(HandTransform, SolvedHand, Alpha));
 }
 
 void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh) const

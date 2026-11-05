@@ -62,6 +62,20 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float ElbowBend = 0.f;
 
+	// Reach blend per arm, 0 = free swinging, 1 = fully reaching for the target.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float LeftArmReachAlpha = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float RightArmReachAlpha = 0.f;
+
+	// Hand reach targets in world space, valid while the matching reach alpha is above zero.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	FVector LeftReachTargetWorld = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	FVector RightReachTargetWorld = FVector::ZeroVector;
+
 	// Total forward (negative) or backward (positive) torso pitch in degrees, FRotator convention.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float SpineLeanPitch = 0.f;
@@ -261,6 +275,14 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HipOffsetInterpSpeed = 10.f;
+
+	// Pelvis drop in cm that counts as a full reach-down; scales the knee bend and torso lean.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float ReachLowerMaxCm = 40.f;
+
+	// Forward torso lean in degrees at a full reach-down.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float ReachTorsoLeanMaxDegrees = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MaxArmSwingWalkDegrees = 35.f;

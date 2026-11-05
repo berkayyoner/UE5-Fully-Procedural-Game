@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Creature/AedirCreature.h"
+#include "Items/AedirItemTypes.h"
 #include "AedirPlayerCharacter.generated.h"
 
 class UCameraComponent;
@@ -48,9 +49,24 @@ private:
 	void HandleFightButtonPressed();
 	void HandleFightButtonReleased();
 
+	void HandleLeftHandPressed();
+	void HandleLeftHandReleased();
+	void HandleRightHandPressed();
+	void HandleRightHandReleased();
+	void HandleLeftHolsterPressed();
+	void HandleRightHolsterPressed();
+
+	void HandleHandPressed(EAedirHand Hand);
+	void HandleHandReleased(EAedirHand Hand);
+	void UpdateHandUseHold(float DeltaSeconds);
+
 	float ForwardKeyValue = 0.f;
 	float BackwardKeyValue = 0.f;
 	float RightKeyValue = 0.f;
 	float LeftKeyValue = 0.f;
 	int32 HeldFightButtons = 0;
+
+	bool bHandKeyTracked[2] = { false, false };
+	bool bHandUseTriggered[2] = { false, false };
+	float HandKeyHeldSeconds[2] = { 0.f, 0.f };
 };

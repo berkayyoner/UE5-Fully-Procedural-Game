@@ -4,8 +4,10 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
+#include "Items/AedirInteractionComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Items/AedirItemActor.h"
 
 AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -43,6 +45,8 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 
 	const FVector2D MoveInput(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue);
 	MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
+
+	UpdateHandUseHold(DeltaSeconds);
 }
 
 void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -75,6 +79,14 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleFightButtonReleased);
 	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AAedirPlayerCharacter::HandleFightButtonPressed);
 	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleFightButtonReleased);
+
+	PlayerInputComponent->BindKey(EKeys::Q, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHandPressed);
+	PlayerInputComponent->BindKey(EKeys::Q, IE_Released, this, &AAedirPlayerCharacter::HandleLeftHandReleased);
+	PlayerInputComponent->BindKey(EKeys::E, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightHandPressed);
+	PlayerInputComponent->BindKey(EKeys::E, IE_Released, this, &AAedirPlayerCharacter::HandleRightHandReleased);
+
+	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHolsterPressed);
+	PlayerInputComponent->BindKey(EKeys::Y, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightHolsterPressed);
 }
 
 void AAedirPlayerCharacter::ApplyViewPitchLimits()
@@ -164,4 +176,129 @@ void AAedirPlayerCharacter::HandleFightButtonReleased()
 {
 	HeldFightButtons = FMath::Max(0, HeldFightButtons - 1);
 	SetWantsFightStance(HeldFightButtons > 0);
+}
+
+void AAedirPlayerCharacter::HandleLeftHandPressed()
+{
+	HandleHandPressed(EAedirHand::Left);
+}
+
+void AAedirPlayerCharacter::HandleLeftHandReleased()
+{
+	HandleHandReleased(EAedirHand::Left);
+}
+
+void AAedirPlayerCharacter::HandleRightHandPressed()
+{
+	HandleHandPressed(EAedirHand::Right);
+}
+
+void AAedirPlayerCharacter::HandleRightHandReleased()
+{
+	HandleHandReleased(EAedirHand::Right);
+}
+
+void AAedirPlayerCharacter::HandleLeftHolsterPressed()
+{
+	if (Interaction)
+	{
+		Interaction->HolsterToWaist(EAedirHand::Left);
+	}
+}
+
+void AAedirPlayerCharacter::HandleRightHolsterPressed()
+{
+	if (Interaction)
+	{
+		Interaction->HolsterToWaist(EAedirHand::Right);
+	}
+}
+
+void AAedirPlayerCharacter::HandleHandPressed(EAedirHand Hand)
+{
+	if (!Interaction)
+	{
+		return;
+	}
+
+	const int32 Index = static_cast<int32>(Hand);
+	switch (Interaction->GetHandState(Hand))
+	{
+	case EAedirHandState::Idle:
+		Interaction->StartReach(Hand);
+		break;
+	case EAedirHandState::Holding:
+		bHandKeyTracked[Index] = true;
+		bHandUseTriggered[Index] = false;
+		HandKeyHeldSeconds[Index] = 0.f;
+		break;
+	default:
+		break;
+	}
+}
+
+void AAedirPlayerCharacter::HandleHandReleased(EAedirHand Hand)
+{
+	const int32 Index = static_cast<int32>(Hand);
+	if (!bHandKeyTracked[Index])
+	{
+		return;
+	}
+
+	const bool bUseTriggered = bHandUseTriggered[Index];
+	const bool bLongPress = Interaction && HandKeyHeldSeconds[Index] >= Interaction->UseHoldTime;
+
+	bHandKeyTracked[Index] = false;
+	bHandUseTriggered[Index] = false;
+	HandKeyHeldSeconds[Index] = 0.f;
+
+	if (!Interaction || bUseTriggered || Interaction->GetHandState(Hand) != EAedirHandState::Holding)
+	{
+		return;
+	}
+
+	const AAedirItemActor* HeldItem = Interaction->GetHeldItem(Hand);
+	if (bLongPress && HeldItem && HeldItem->IsUsable())
+	{
+		Interaction->UseHeld(Hand);
+	}
+	else
+	{
+		Interaction->DropHeld(Hand);
+	}
+}
+
+void AAedirPlayerCharacter::UpdateHandUseHold(float DeltaSeconds)
+{
+	if (!Interaction)
+	{
+		return;
+	}
+
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		if (!bHandKeyTracked[Index])
+		{
+			continue;
+		}
+
+		HandKeyHeldSeconds[Index] += DeltaSeconds;
+		if (bHandUseTriggered[Index] || HandKeyHeldSeconds[Index] < Interaction->UseHoldTime)
+		{
+			continue;
+		}
+
+		const EAedirHand Hand = static_cast<EAedirHand>(Index);
+		if (Interaction->GetHandState(Hand) != EAedirHandState::Holding)
+		{
+			continue;
+		}
+
+		const AAedirItemActor* HeldItem = Interaction->GetHeldItem(Hand);
+		if (HeldItem && HeldItem->IsUsable())
+		{
+			Interaction->UseHeld(Hand);
+			bHandUseTriggered[Index] = true;
+		}
+	}
 }

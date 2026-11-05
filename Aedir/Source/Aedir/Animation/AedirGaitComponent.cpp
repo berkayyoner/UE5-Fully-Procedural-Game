@@ -5,6 +5,8 @@
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
+#include "Items/AedirInteractionComponent.h"
+#include "Items/AedirItemTypes.h"
 #include "Movement/AedirCharacterMovementComponent.h"
 #include "Physics/AedirBalanceComponent.h"
 
@@ -21,6 +23,16 @@ namespace
 	float WrapUnit(float Value)
 	{
 		return Value - FMath::Floor(Value);
+	}
+
+	void QueryReachPose(const UAedirInteractionComponent* Interaction, EAedirHand Hand, FVector& OutTargetWorld, float& OutAlpha)
+	{
+		FVector TargetWorld = FVector::ZeroVector;
+		float Alpha = 0.f;
+		const bool bReaching = Interaction && Interaction->GetReachPose(Hand, TargetWorld, Alpha);
+
+		OutTargetWorld = bReaching ? TargetWorld : FVector::ZeroVector;
+		OutAlpha = bReaching ? FMath::Clamp(Alpha, 0.f, 1.f) : 0.f;
 	}
 }
 
@@ -214,6 +226,19 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float Bounce = HipBounceCm * FMath::Sin(2.f * UE_PI * Phase * AedirMovingBounceFrequency) * SpeedAlpha;
 	GaitState.HipOffsetZ = DynamicHipOffset + RunLowering + Bounce;
 
+	// The interaction component smooths its outputs itself, so the reach values are applied directly each frame.
+	const UAedirInteractionComponent* Interaction = CreatureOwner->Interaction.Get();
+	const float ReachLowerCm = Interaction ? FMath::Max(Interaction->GetPelvisLowerZ(), 0.f) : 0.f;
+	const float ReachLowerAlpha = FMath::Clamp(ReachLowerCm / FMath::Max(ReachLowerMaxCm, KINDA_SMALL_NUMBER), 0.f, 1.f);
+	GaitState.HipOffsetZ -= ReachLowerCm;
+
+	FVector LeftReachTarget = FVector::ZeroVector;
+	FVector RightReachTarget = FVector::ZeroVector;
+	float LeftReachAlpha = 0.f;
+	float RightReachAlpha = 0.f;
+	QueryReachPose(Interaction, EAedirHand::Left, LeftReachTarget, LeftReachAlpha);
+	QueryReachPose(Interaction, EAedirHand::Right, RightReachTarget, RightReachAlpha);
+
 	const FRotator BalanceLean = BalanceComponent ? BalanceComponent->GetPelvisLean() : FRotator::ZeroRotator;
 	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * SpeedAlpha;
 	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch, PelvisYaw, BalanceLean.Roll);
@@ -222,6 +247,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float LookPitch = FMath::Clamp(FRotator::NormalizeAxis(CreatureOwner->GetControlRotation().Pitch), -MaxLookPitchDegrees, MaxLookPitchDegrees);
 
 	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha + BalanceLean.Pitch + LookPitch * SpinePitchShare;
+	GaitState.SpineLeanPitch -= ReachTorsoLeanMaxDegrees * ReachLowerAlpha;
 	const float TwistTarget = FMath::Clamp(LookYaw * SpineTwistScale, -SpineTwistLimitDegrees, SpineTwistLimitDegrees);
 	SmoothedSpineTwist = FMath::FInterpTo(SmoothedSpineTwist, TwistTarget, DeltaTime, LookInterpSpeed);
 	GaitState.SpineTwistYaw = SmoothedSpineTwist;
@@ -242,8 +268,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float ArmAmplitude = FMath::Lerp(MaxArmSwingWalkDegrees, MaxArmSwingRunDegrees, SpeedAlpha) * DirectionalArmScale * ArmBlend;
 	GaitState.ArmSwingLeft = FMath::Sin(2.f * UE_PI * (Phase + 0.5f)) * ArmAmplitude;
 	GaitState.ArmSwingRight = FMath::Sin(2.f * UE_PI * Phase) * ArmAmplitude;
+	GaitState.ArmSwingLeft *= 1.f - LeftReachAlpha;
+	GaitState.ArmSwingRight *= 1.f - RightReachAlpha;
+	GaitState.LeftArmReachAlpha = LeftReachAlpha;
+	GaitState.RightArmReachAlpha = RightReachAlpha;
+	GaitState.LeftReachTargetWorld = LeftReachTarget;
+	GaitState.RightReachTargetWorld = RightReachTarget;
 	GaitState.ElbowBend = FMath::Lerp(ElbowBendWalkDegrees, ElbowBendRunDegrees, SpeedAlpha);
-	GaitState.KneeBend = FMath::Max(Lift[0], Lift[1]) * KneeBendMaxDegrees;
+	GaitState.KneeBend = FMath::Max(Lift[0], Lift[1]) * KneeBendMaxDegrees + ReachLowerAlpha * KneeBendMaxDegrees;
 
 	GaitState.Phase = Phase;
 	GaitState.bStepping = bStepping;

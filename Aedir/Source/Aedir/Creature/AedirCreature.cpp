@@ -1,6 +1,7 @@
 #include "AedirCreature.h"
 
 #include "AedirGroupSubsystem.h"
+#include "Items/AedirInteractionComponent.h"
 #include "AedirStatsComponent.h"
 #include "Animation/AedirGaitComponent.h"
 #include "Animation/AedirProceduralAnimInstance.h"
@@ -28,6 +29,7 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	Stats = CreateDefaultSubobject<UAedirStatsComponent>(TEXT("Stats"));
 	Balance = CreateDefaultSubobject<UAedirBalanceComponent>(TEXT("Balance"));
 	Gait = CreateDefaultSubobject<UAedirGaitComponent>(TEXT("Gait"));
+	Interaction = CreateDefaultSubobject<UAedirInteractionComponent>(TEXT("Interaction"));
 
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())
 	{
