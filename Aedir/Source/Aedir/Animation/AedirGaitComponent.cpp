@@ -164,7 +164,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const bool bLeadFoot = (Foot == 1) == bRightLead;
 		const float StanceForwardCm = StanceLeadForwardCm * (bLeadFoot ? 1.f : -0.5f);
 		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * ActorScale) + ActorForward2D * StanceForwardCm;
-		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * (StrideLength * 0.5f) : FVector::ZeroVector);
+		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * (StrideLength * 0.3f) : FVector::ZeroVector);
 
 		SampleGround(LandingXY, BottomZ, LandingLocation[Foot], LandingNormal[Foot]);
 

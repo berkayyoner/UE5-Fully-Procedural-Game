@@ -61,6 +61,8 @@ namespace
 	constexpr float AedirArmProxyInterpSpeed = 12.f;
 	constexpr float AedirArmNetSendInterval = 1.f / 30.f;
 	constexpr float AedirArmAimYawLimit = 110.f;
+	constexpr float AedirArmOutwardYawLimit = 90.f;
+	constexpr float AedirArmAcrossYawLimit = 25.f;
 	constexpr float AedirArmAimPitchMin = -70.f;
 	constexpr float AedirArmAimPitchMax = 85.f;
 	constexpr float AedirArmGuardRestYaw = 12.f;
@@ -280,7 +282,10 @@ void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaT
 	}
 
 	// Raw MouseY is positive when the mouse moves down, so moving the mouse up raises the arm.
-	Arm.AimOffsetDeg.X = FMath::Clamp(Arm.AimOffsetDeg.X + MouseDeltaThisFrame.X * AimSensitivity, -AedirArmAimYawLimit, AedirArmAimYawLimit);
+	// Outwards the arm sweeps a 90 degree arc, across the body it only reaches a little past the centre line.
+	const float OutwardSign = Hand == EAedirHand::Right ? 1.f : -1.f;
+	const float OutwardYaw = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign + MouseDeltaThisFrame.X * OutwardSign * AimSensitivity, -AedirArmAcrossYawLimit, AedirArmOutwardYawLimit);
+	Arm.AimOffsetDeg.X = OutwardYaw * OutwardSign;
 	Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y - MouseDeltaThisFrame.Y * AimSensitivity, AedirArmAimPitchMin, AedirArmAimPitchMax);
 }
 
@@ -835,7 +840,11 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 	const FVector AimDirection = FRotator(Arm.AimOffsetDeg.Y, Yaw, 0.0).Vector();
 	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
 	const float Extension = FMath::Clamp(Arm.Extension, 0.f, 1.f);
-	const float Reach = FMath::Lerp(AedirArmReachMinScale, 1.f, Extension) * (SwingReach + GetEffectiveWeaponLength(Hand)) * Scale;
+	// Pulled outwards the elbow breaks and the hand travels an arc beside the body; centred the arm reaches straight ahead.
+	const float OutwardSign = Hand == EAedirHand::Right ? 1.f : -1.f;
+	const float OutwardAlpha = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign / 90.f, 0.f, 1.f);
+	const float ElbowBendScale = FMath::Lerp(1.f, 0.5f, OutwardAlpha);
+	const float Reach = ElbowBendScale * FMath::Lerp(AedirArmReachMinScale, 1.f, Extension) * (SwingReach + GetEffectiveWeaponLength(Hand)) * Scale;
 
 	return Arm.ShoulderWorld + AimDirection * Reach;
 }

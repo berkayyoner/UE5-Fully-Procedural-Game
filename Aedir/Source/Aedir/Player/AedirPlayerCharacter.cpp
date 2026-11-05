@@ -350,6 +350,21 @@ void AAedirPlayerCharacter::HandleRightGuardReleased()
 
 void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 {
+	if (FollowCamera)
+	{
+		// The fight camera is locked in aim but never dead still: breathing drift plus a lean into the mouse movement.
+		const bool bFighting = Combat && Combat->IsInFightStance();
+		FightCameraAlpha = FMath::FInterpTo(FightCameraAlpha, bFighting ? 1.f : 0.f, DeltaSeconds, 4.f);
+		const float Time = GetWorld()->GetTimeSeconds();
+		const FVector2D MouseLean = FVector2D(PendingMouseDelta.X, PendingMouseDelta.Y).GetClampedToMaxSize(30.f) * 0.03f;
+		const FRotator Sway(
+			(FMath::Sin(Time * 1.3f) * 0.35f - MouseLean.Y) * FightCameraAlpha,
+			(FMath::Sin(Time * 0.9f + 1.f) * 0.45f + MouseLean.X * 0.5f) * FightCameraAlpha,
+			(FMath::Sin(Time * 1.1f + 2.f) * 0.5f + MouseLean.X) * FightCameraAlpha);
+		FightCameraSway = FMath::RInterpTo(FightCameraSway, Sway, DeltaSeconds, 6.f);
+		FollowCamera->SetRelativeRotation(FightCameraSway);
+	}
+
 	if (Combat)
 	{
 		for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })

@@ -31,6 +31,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float ThirdPersonArmLength = 280.f;
 
+	// Blend of the subtle fight-stance camera drift, 0 outside the stance.
+	float FightCameraAlpha = 0.f;
+	FRotator FightCameraSway = FRotator::ZeroRotator;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	FVector ThirdPersonShoulderOffset = FVector(0.f, 45.f, 25.f);
 

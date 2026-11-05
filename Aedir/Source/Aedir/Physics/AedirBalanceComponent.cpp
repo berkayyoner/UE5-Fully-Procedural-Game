@@ -54,7 +54,9 @@ namespace
 	constexpr float ComBalanceFootHalfWidthCm = 4.5f;
 	constexpr float ComBalanceFullLossMarginCm = 12.f;
 	constexpr float ComBalanceMaxLossPerSecond = 0.9f;
-	constexpr float ComBalanceRecoveryMarginCm = -2.f;
+	constexpr float ComBalanceRecoveryMarginCm = -8.f;
+	constexpr float ComBalanceMovingSpeedRef = 300.f;
+	constexpr float ComBalanceMovingAllowanceCm = 30.f;
 	constexpr float ComBalanceReflexRangeCm = 220.f;
 	constexpr float ComBalanceReflexFallSpeed = 350.f;
 	constexpr float ComBalanceReflexRagdollSeconds = 0.4f;
@@ -571,6 +573,9 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 
 	const FVector2D ComXY(CenterOfMassWorld.X, CenterOfMassWorld.Y);
 	SupportMargin = ComputeSupportMargin(Hull, ComXY);
+	// Walking is a controlled fall: the swing foot leaves the polygon every step, so moving bodies get a margin allowance.
+	const float MoveSpeed = CharacterOwner->GetVelocity().Size2D();
+	SupportMargin += FMath::Clamp(MoveSpeed / ComBalanceMovingSpeedRef, 0.f, 1.f) * ComBalanceMovingAllowanceCm;
 	bSupportGrounded = true;
 
 	FVector2D Centroid = FVector2D::ZeroVector;
