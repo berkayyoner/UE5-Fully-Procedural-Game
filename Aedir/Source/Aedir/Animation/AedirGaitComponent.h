@@ -434,10 +434,10 @@ public:
 
 	// Sign of the adduction roll on each side. Flip a sign if that arm moves away from the body.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
-	float ArmRestSignLeft = 1.f;
+	float ArmRestSignLeft = -1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
-	float ArmRestSignRight = -1.f;
+	float ArmRestSignRight = 1.f;
 
 	// Forward rotation of the upper arm in degrees at a full rest pose.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
