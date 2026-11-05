@@ -1,0 +1,22 @@
+# Unreal Engine generated / local files
+Aedir/Binaries/
+Aedir/Intermediate/
+Aedir/Saved/
+Aedir/DerivedDataCache/
+Aedir/.vs/
+Aedir/.idea/
+Aedir/Build/
+*.sln
+*.suo
+*.opensdf
+*.sdf
+*.VC.db
+*.VC.opendb
+*.vsconfig
+*.xcodeproj
+*.xcworkspace
+.vscode/
+
+# Temporary
+*.tmp
+*.log
