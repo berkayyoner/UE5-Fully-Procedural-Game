@@ -15,6 +15,7 @@
 #include "Net/UnrealNetwork.h"
 #include "Physics/AedirBalanceComponent.h"
 #include "Surface/AedirFootstepComponent.h"
+#include "Wounds/AedirWoundComponent.h"
 
 AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UAedirCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -37,6 +38,7 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	Interaction = CreateDefaultSubobject<UAedirInteractionComponent>(TEXT("Interaction"));
 	Combat = CreateDefaultSubobject<UAedirCombatComponent>(TEXT("Combat"));
 	Footsteps = CreateDefaultSubobject<UAedirFootstepComponent>(TEXT("Footsteps"));
+	Wounds = CreateDefaultSubobject<UAedirWoundComponent>(TEXT("Wounds"));
 
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> DefaultBodyMesh(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
 

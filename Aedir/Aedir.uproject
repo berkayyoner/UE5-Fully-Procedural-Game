@@ -12,7 +12,7 @@
 		{
 			"Name": "AedirEditor",
 			"Type": "Editor",
-			"LoadingPhase": "PostEngineInit"
+			"LoadingPhase": "Default"
 		}
 	],
 	"Plugins": [

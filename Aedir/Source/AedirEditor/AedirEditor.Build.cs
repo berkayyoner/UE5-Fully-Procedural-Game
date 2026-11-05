@@ -13,6 +13,8 @@ public class AedirEditor : ModuleRules
 			"CoreUObject",
 			"Engine",
 			"UnrealEd",
+			"MaterialEditor",
+			"RHI",
 			"AssetRegistry",
 			"EditorSubsystem",
 			"Aedir"

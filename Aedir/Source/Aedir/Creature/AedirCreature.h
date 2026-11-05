@@ -11,6 +11,7 @@ class UAedirFootstepComponent;
 class UAedirGaitComponent;
 class UAedirInteractionComponent;
 class UAedirStatsComponent;
+class UAedirWoundComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirGroupIdChanged, FName, NewGroupId);
 
@@ -39,6 +40,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
 	TObjectPtr<UAedirFootstepComponent> Footsteps;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
+	TObjectPtr<UAedirWoundComponent> Wounds;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_GroupId, Category="Aedir|Groups")
 	FName GroupId;

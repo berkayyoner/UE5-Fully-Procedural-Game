@@ -12,6 +12,7 @@
 #include "Items/AedirItemActor.h"
 #include "Net/UnrealNetwork.h"
 #include "Physics/AedirBalanceComponent.h"
+#include "Wounds/AedirWoundComponent.h"
 
 namespace
 {
@@ -1158,7 +1159,8 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	const EAedirDamageType DamageType = HeldItem ? HeldItem->GetDamageType() : EAedirDamageType::Blunt;
 	const float FlatDamage = HeldItem ? HeldItem->GetDamage() : FistDamage;
 	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
-	const float ArmorFactor = 1.f - (Victim->Combat ? Victim->Combat->GetArmorProtection(Zone) : 0.f);
+	const float VictimZoneProtection = Victim->Combat ? Victim->Combat->GetArmorProtection(Zone) : 0.f;
+	const float ArmorFactor = 1.f - VictimZoneProtection;
 
 	const float Damage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(DamageType, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor + FlatDamage;
 	const float AppliedDamage = Victim->ReceiveCreatureDamage(Damage);
@@ -1172,6 +1174,12 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	if (Victim->Balance)
 	{
 		Victim->Balance->ApplyImpulseImpact(-Hit.ImpactNormal * (MassEff * RelativeSpeed * BalanceImpactScale));
+	}
+
+	if (Victim->Wounds)
+	{
+		const FVector TipMotion = ComputeArmTip(Hand, Arm) - Arm.PrevTipWorld;
+		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, DamageType, Energy, VictimZoneProtection, TipMotion);
 	}
 
 	Arm.HandVelocity *= AedirImpactRecoilScale;
