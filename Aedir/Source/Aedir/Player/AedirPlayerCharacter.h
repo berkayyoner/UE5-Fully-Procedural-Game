@@ -36,10 +36,6 @@ public:
 private:
 	void ApplyViewPitchLimits();
 
-	void HandleForwardKey(float Value);
-	void HandleBackwardKey(float Value);
-	void HandleRightKey(float Value);
-	void HandleLeftKey(float Value);
 
 	void HandleMouseX(float Value);
 	void HandleMouseY(float Value);
@@ -67,10 +63,6 @@ private:
 	void UpdateHandUseHold(float DeltaSeconds);
 	void UpdateSwingInput(float DeltaSeconds);
 
-	float ForwardKeyValue = 0.f;
-	float BackwardKeyValue = 0.f;
-	float RightKeyValue = 0.f;
-	float LeftKeyValue = 0.f;
 	FVector2D PendingMouseDelta = FVector2D::ZeroVector;
 
 	bool bHandKeyTracked[2] = { false, false };

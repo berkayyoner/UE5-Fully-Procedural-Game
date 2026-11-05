@@ -47,6 +47,11 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		return;
 	}
 
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	const float ForwardKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::W) ? 1.f : 0.f;
+	const float BackwardKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::S) ? 1.f : 0.f;
+	const float RightKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::D) ? 1.f : 0.f;
+	const float LeftKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::A) ? 1.f : 0.f;
 	const FVector2D MoveInput(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue);
 	MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
 
@@ -63,10 +68,6 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 		return;
 	}
 
-	PlayerInputComponent->BindAxisKey(EKeys::W, this, &AAedirPlayerCharacter::HandleForwardKey);
-	PlayerInputComponent->BindAxisKey(EKeys::S, this, &AAedirPlayerCharacter::HandleBackwardKey);
-	PlayerInputComponent->BindAxisKey(EKeys::D, this, &AAedirPlayerCharacter::HandleRightKey);
-	PlayerInputComponent->BindAxisKey(EKeys::A, this, &AAedirPlayerCharacter::HandleLeftKey);
 
 	PlayerInputComponent->BindAxisKey(EKeys::MouseX, this, &AAedirPlayerCharacter::HandleMouseX);
 	PlayerInputComponent->BindAxisKey(EKeys::MouseY, this, &AAedirPlayerCharacter::HandleMouseY);
@@ -109,26 +110,6 @@ void AAedirPlayerCharacter::ApplyViewPitchLimits()
 
 	PlayerController->PlayerCameraManager->ViewPitchMin = MinViewPitch;
 	PlayerController->PlayerCameraManager->ViewPitchMax = MaxViewPitch;
-}
-
-void AAedirPlayerCharacter::HandleForwardKey(float Value)
-{
-	ForwardKeyValue = Value;
-}
-
-void AAedirPlayerCharacter::HandleBackwardKey(float Value)
-{
-	BackwardKeyValue = Value;
-}
-
-void AAedirPlayerCharacter::HandleRightKey(float Value)
-{
-	RightKeyValue = Value;
-}
-
-void AAedirPlayerCharacter::HandleLeftKey(float Value)
-{
-	LeftKeyValue = Value;
 }
 
 void AAedirPlayerCharacter::HandleMouseX(float Value)
