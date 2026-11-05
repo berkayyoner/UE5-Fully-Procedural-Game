@@ -50,6 +50,7 @@ void AAedirItemActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(AAedirItemActor, Holder);
 	DOREPLIFETIME(AAedirItemActor, HeldHand);
 	DOREPLIFETIME(AAedirItemActor, bHolstered);
+	DOREPLIFETIME(AAedirItemActor, bWorn);
 }
 
 void AAedirItemActor::Use_Implementation(AAedirCreature* User)
@@ -146,7 +147,7 @@ bool AAedirItemActor::IsHeld() const
 
 bool AAedirItemActor::IsUsable() const
 {
-	return ItemClass == EAedirItemClass::Poison || ItemClass == EAedirItemClass::Book;
+	return ItemClass == EAedirItemClass::Poison || ItemClass == EAedirItemClass::Book || ItemClass == EAedirItemClass::Armor;
 }
 
 float AAedirItemActor::GetDamage() const
@@ -166,7 +167,7 @@ EAedirDamageType AAedirItemActor::GetDamageType() const
 
 bool AAedirItemActor::IsPickable(const AAedirItemActor* Item)
 {
-	return Item && !Item->IsHeld();
+	return Item && !Item->IsHeld() && !Item->bWorn;
 }
 
 void AAedirItemActor::OnRep_Holder()
@@ -180,6 +181,20 @@ void AAedirItemActor::AttachToBone(AAedirCreature* Creature, FName BoneName, con
 
 	AttachToComponent(Creature->GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, BoneName);
 	SetActorRelativeTransform(ComputeHoldTransform(HoldOffset));
+}
+
+void AAedirItemActor::AttachToWornBone(AAedirCreature* Creature)
+{
+	if (!HasAuthority() || !Creature || ArmorAttachBone.IsNone())
+	{
+		return;
+	}
+
+	AttachToBone(Creature, ArmorAttachBone, FTransform::Identity);
+
+	Holder = Creature;
+	bHolstered = false;
+	bWorn = true;
 }
 
 void AAedirItemActor::SetFreePhysics(bool bFree)
@@ -205,7 +220,7 @@ FTransform AAedirItemActor::ComputeHoldTransform(const FTransform& HoldOffset) c
 {
 	// The root transform maps mesh-local space to the parent, so the bounds center lands on the hold offset translation.
 	const FVector CenterOffset = GetStaticBoundsCenter();
-	return FTransform(HoldOffset.GetRotation(), HoldOffset.TransformPosition(-CenterOffset), HoldOffset.GetScale3D());
+	return FTransform(HoldOffset.GetRotation(), HoldOffset.TransformPosition(-CenterOffset), HoldOffset.GetScale3D() * BodyScale);
 }
 
 FVector AAedirItemActor::GetStaticBoundsCenter() const

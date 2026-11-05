@@ -6,8 +6,11 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "DrawDebugHelpers.h"
+#include "Dev/AedirDevTools.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Items/AedirInteractionComponent.h"
+#include "Physics/AedirBalanceComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Engine/LocalPlayer.h"
@@ -47,6 +50,12 @@ void AAedirPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (HasAuthority() && GroupId.IsNone())
+	{
+		GroupId = FName(TEXT("Heroes"));
+		OnGroupIdChanged.Broadcast(GroupId);
+	}
+
 	ApplyViewPitchLimits();
 	SetFirstPerson(false);
 }
@@ -80,6 +89,11 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 
 	UpdateHandUseHold(DeltaSeconds);
 	UpdateSwingInput(DeltaSeconds);
+
+	if (bDebugBody)
+	{
+		DrawDebugBody();
+	}
 }
 
 void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -462,4 +476,123 @@ bool AAedirPlayerCharacter::IsMenuOpen()
 	const UAedirMenuSubsystem* Menu = GetMenuSubsystem();
 	return Menu && Menu->IsMenuOpen();
 }
+
+
+void AAedirPlayerCharacter::SpawnItem(const FString& ItemId, const FString& Mode)
+{
+	RunDevCommand(TEXT("SpawnItem"), FString::Printf(TEXT("%s %s"), *ItemId, *Mode), true);
+}
+
+void AAedirPlayerCharacter::ListItems()
+{
+	RunDevCommand(TEXT("ListItems"), FString(), false);
+}
+
+void AAedirPlayerCharacter::SpawnEnemy(int32 Count, int32 Armed)
+{
+	RunDevCommand(TEXT("SpawnEnemy"), FString::Printf(TEXT("%d %d"), Count, Armed), true);
+}
+
+void AAedirPlayerCharacter::KillAll()
+{
+	RunDevCommand(TEXT("KillAll"), FString(), true);
+}
+
+void AAedirPlayerCharacter::SetWeatherType(const FString& WeatherName)
+{
+	RunDevCommand(TEXT("SetWeatherType"), WeatherName, true);
+}
+
+void AAedirPlayerCharacter::Heal()
+{
+	RunDevCommand(TEXT("Heal"), FString(), true);
+}
+
+void AAedirPlayerCharacter::Hurt(float Amount)
+{
+	RunDevCommand(TEXT("Hurt"), FString::Printf(TEXT("%f"), Amount), true);
+}
+
+void AAedirPlayerCharacter::God()
+{
+	RunDevCommand(TEXT("God"), FString(), true);
+}
+
+void AAedirPlayerCharacter::GiveSkill(const FString& SkillName, float Amount)
+{
+	const FString Args = SkillName.IsEmpty() ? FString() : FString::Printf(TEXT("%s %f"), *SkillName, Amount);
+	RunDevCommand(TEXT("GiveSkill"), Args, true);
+}
+
+void AAedirPlayerCharacter::Wound(const FString& WoundType, const FString& Bone)
+{
+	RunDevCommand(TEXT("Wound"), FString::Printf(TEXT("%s %s"), *WoundType, *Bone), true);
+}
+
+void AAedirPlayerCharacter::BloodTest()
+{
+	RunDevCommand(TEXT("BloodTest"), FString(), false);
+}
+
+void AAedirPlayerCharacter::DebugBody()
+{
+	RunDevCommand(TEXT("DebugBody"), FString(), false);
+}
+
+void AAedirPlayerCharacter::DevHelp()
+{
+	RunDevCommand(TEXT("DevHelp"), FString(), false);
+}
+
+void AAedirPlayerCharacter::RunDevCommand(const FString& Command, const FString& Args, bool bRunOnServer)
+{
+	if (bRunOnServer && !HasAuthority())
+	{
+		ServerDevCommand(Command, Args);
+		return;
+	}
+
+	UAedirDevTools::Execute(this, Command, Args);
+}
+
+void AAedirPlayerCharacter::ServerDevCommand_Implementation(const FString& Command, const FString& Args)
+{
+	UAedirDevTools::Execute(this, Command, Args);
+}
+
+void AAedirPlayerCharacter::DrawDebugBody()
+{
+	const UWorld* World = GetWorld();
+	const USkeletalMeshComponent* BodyMesh = GetMesh();
+	if (!World || !BodyMesh || !Balance || !Combat || !Interaction)
+	{
+		return;
+	}
+
+	const FVector CenterOfMass = Balance->GetCenterOfMassWorld();
+	DrawDebugSphere(World, CenterOfMass, 7.f, 12, FColor::Yellow, false, 0.f);
+
+	const FVector HeadLocation = GetActorLocation() + FVector(0.f, 0.f, 110.f);
+	DrawDebugString(World, HeadLocation, FString::Printf(TEXT("Margin %.1f cm  Balance %.2f"), Balance->GetSupportMargin(), Balance->GetBalance()), nullptr, FColor::White, 0.f, true);
+
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		const FColor HandColor = Hand == EAedirHand::Left ? FColor::Cyan : FColor::Green;
+		const FName HandBone = Hand == EAedirHand::Left ? Interaction->LeftHandBone : Interaction->RightHandBone;
+		const FVector HandLocation = BodyMesh->GetBoneLocation(HandBone);
+		DrawDebugSphere(World, HandLocation, 4.f, 8, HandColor, false, 0.f);
+
+		FVector SwingTarget = FVector::ZeroVector;
+		float SwingAlpha = 0.f;
+		if (Combat->GetSwingPose(Hand, SwingTarget, SwingAlpha))
+		{
+			DrawDebugSphere(World, SwingTarget, 4.f, 8, FColor::Magenta, false, 0.f);
+		}
+
+		const FVector Tip = Combat->GetTipWorld(Hand);
+		DrawDebugLine(World, HandLocation, Tip, HandColor, false, 0.f, 0, 1.f);
+		DrawDebugSphere(World, Tip, 3.f, 8, FColor::Red, false, 0.f);
+	}
+}
+
 

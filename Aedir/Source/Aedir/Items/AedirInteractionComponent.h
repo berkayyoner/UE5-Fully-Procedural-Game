@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Combat/AedirCombatTypes.h"
 #include "Components/ActorComponent.h"
 #include "Items/AedirItemTypes.h"
 #include "AedirInteractionComponent.generated.h"
@@ -140,6 +141,14 @@ public:
 
 	TArray<AAedirItemActor*> GetWaistItemsCopy() const;
 
+	// Server only. Takes an armor item off the hand or waist, attaches it to its bone and adds it to the worn list.
+	// FromHand is the hand the item is taken from. Returns false when the item cannot be worn.
+	bool WearItem(AAedirItemActor* Item, EAedirHand FromHand);
+
+	// Highest protection of the worn items covering the zone, range 0..0.9.
+	UFUNCTION(BlueprintPure, Category="Aedir|Interaction")
+	float GetWornArmorProtection(EAedirBodyZone Zone) const;
+
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	FAedirHandSlot LeftSlot;
 
@@ -149,6 +158,9 @@ public:
 	// Left side entries are indices 0-2, right side entries are indices 3-5.
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	TArray<TObjectPtr<AAedirItemActor>> WaistItems;
+
+	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
+	TArray<TObjectPtr<AAedirItemActor>> WornItems;
 
 private:
 	void BeginReach(EAedirHand Hand, AAedirItemActor* Item);

@@ -95,6 +95,7 @@ void UAedirInteractionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	DOREPLIFETIME(UAedirInteractionComponent, LeftSlot);
 	DOREPLIFETIME(UAedirInteractionComponent, RightSlot);
 	DOREPLIFETIME(UAedirInteractionComponent, WaistItems);
+	DOREPLIFETIME(UAedirInteractionComponent, WornItems);
 }
 
 void UAedirInteractionComponent::StartReach(EAedirHand Hand)
@@ -246,7 +247,29 @@ float UAedirInteractionComponent::GetCarriedWeight() const
 		}
 	}
 
+	for (const TObjectPtr<AAedirItemActor>& WornItem : WornItems)
+	{
+		if (WornItem)
+		{
+			Total += WornItem->Weight;
+		}
+	}
+
 	return Total;
+}
+
+float UAedirInteractionComponent::GetWornArmorProtection(EAedirBodyZone Zone) const
+{
+	float Best = 0.f;
+	for (const TObjectPtr<AAedirItemActor>& WornItem : WornItems)
+	{
+		if (WornItem && WornItem->ArmorZone == Zone)
+		{
+			Best = FMath::Max(Best, WornItem->ArmorProtection);
+		}
+	}
+
+	return Best;
 }
 
 AAedirItemActor* UAedirInteractionComponent::GetHighlightedItem() const
@@ -746,6 +769,31 @@ void UAedirInteractionComponent::ReleaseAllItems()
 	LastStoredWaistIndex[0] = INDEX_NONE;
 	LastStoredWaistIndex[1] = INDEX_NONE;
 	UpdateCarriedWeight();
+}
+
+bool UAedirInteractionComponent::WearItem(AAedirItemActor* Item, EAedirHand FromHand)
+{
+	AAedirCreature* Creature = GetCreature();
+	if (!IsAuthoritative() || !Creature || !Item || Item->bWorn || Item->ArmorAttachBone.IsNone() || WornItems.Contains(Item))
+	{
+		return false;
+	}
+
+	ClearSlotIfHolding(GetSlot(FromHand), Item);
+	ClearSlotIfHolding(GetSlot(GetOtherHand(FromHand)), Item);
+
+	for (TObjectPtr<AAedirItemActor>& WaistItem : WaistItems)
+	{
+		if (WaistItem == Item)
+		{
+			WaistItem = nullptr;
+		}
+	}
+
+	Item->AttachToWornBone(Creature);
+	WornItems.Add(Item);
+	UpdateCarriedWeight();
+	return true;
 }
 
 TArray<AAedirItemActor*> UAedirInteractionComponent::GetWaistItemsCopy() const

@@ -62,6 +62,49 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
+	// Console commands. Commands that change the world are sent to the server in co-op; ListItems, DebugBody, BloodTest and DevHelp run locally.
+	UFUNCTION(Exec)
+	void SpawnItem(const FString& ItemId, const FString& Mode);
+
+	UFUNCTION(Exec)
+	void ListItems();
+
+	UFUNCTION(Exec)
+	void SpawnEnemy(int32 Count, int32 Armed);
+
+	UFUNCTION(Exec)
+	void KillAll();
+
+	UFUNCTION(Exec)
+	void SetWeatherType(const FString& WeatherName);
+
+	UFUNCTION(Exec)
+	void Heal();
+
+	UFUNCTION(Exec)
+	void Hurt(float Amount);
+
+	UFUNCTION(Exec)
+	void God();
+
+	UFUNCTION(Exec)
+	void GiveSkill(const FString& SkillName, float Amount);
+
+	UFUNCTION(Exec)
+	void Wound(const FString& WoundType, const FString& Bone);
+
+	UFUNCTION(Exec)
+	void BloodTest();
+
+	UFUNCTION(Exec)
+	void DebugBody();
+
+	UFUNCTION(Exec)
+	void DevHelp();
+
+	bool IsDebugBodyEnabled() const { return bDebugBody; }
+	void SetDebugBodyEnabled(bool bEnabled) { bDebugBody = bEnabled; }
+
 private:
 	void ApplyViewPitchLimits();
 	void HandleViewTogglePressed();
@@ -109,4 +152,12 @@ private:
 	bool bHandKeyTracked[2] = { false, false };
 	bool bHandUseTriggered[2] = { false, false };
 	float HandKeyHeldSeconds[2] = { 0.f, 0.f };
+
+	void RunDevCommand(const FString& Command, const FString& Args, bool bRunOnServer);
+	void DrawDebugBody();
+
+	UFUNCTION(Server, Reliable)
+	void ServerDevCommand(const FString& Command, const FString& Args);
+
+	bool bDebugBody = false;
 };

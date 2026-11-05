@@ -86,6 +86,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
 	float MaxSizeScale = 1.2f;
 
+	// While set, ApplyDamage ignores every hit, including bleeding.
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats")
+	bool bInvulnerable = false;
+
 	virtual void InitializeComponent() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -101,6 +105,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
 	void Heal(float Amount);
+
+	// Server only. Refills health, mana and stamina and clears the dead flag.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
+	void RestoreAll();
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
 	void AddSkillExperience(EAedirSkill Skill, float Amount);

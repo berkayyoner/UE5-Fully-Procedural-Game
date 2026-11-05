@@ -97,6 +97,8 @@ void UAedirStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME_CONDITION(UAedirStatsComponent, StrengthMax, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(UAedirStatsComponent, MinSizeScale, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(UAedirStatsComponent, MaxSizeScale, COND_InitialOnly);
+
+	DOREPLIFETIME(UAedirStatsComponent, bInvulnerable);
 }
 
 bool UAedirStatsComponent::ConsumeStamina(float Amount)
@@ -136,7 +138,7 @@ bool UAedirStatsComponent::ConsumeMana(float Amount)
 
 float UAedirStatsComponent::ApplyDamage(float Amount)
 {
-	if (!IsAuthoritative() || bIsDead || Amount <= 0.f)
+	if (!IsAuthoritative() || bIsDead || bInvulnerable || Amount <= 0.f)
 	{
 		return 0.f;
 	}
@@ -163,6 +165,21 @@ void UAedirStatsComponent::Heal(float Amount)
 	}
 
 	Health = FMath::Min(MaxHealth, Health + Amount);
+	OnStatChanged.Broadcast();
+}
+
+void UAedirStatsComponent::RestoreAll()
+{
+	if (!IsAuthoritative())
+	{
+		return;
+	}
+
+	Health = MaxHealth;
+	Mana = MaxMana;
+	Stamina = MaxStamina;
+	bIsDead = false;
+
 	OnStatChanged.Broadcast();
 }
 

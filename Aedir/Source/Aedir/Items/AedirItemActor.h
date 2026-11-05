@@ -57,6 +57,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	EAedirDamageType DamageType = EAedirDamageType::Blunt;
 
+	// Intrinsic scale of the root mesh. It is kept when the item is attached to a hand, a waist slot or a body bone.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Hold")
+	FVector BodyScale = FVector::OneVector;
+
+	// Armor only. Body zone that the worn armor protects.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Armor")
+	EAedirBodyZone ArmorZone = EAedirBodyZone::Torso;
+
+	// Armor only. Damage reduction for ArmorZone while worn, range 0..0.9.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Armor")
+	float ArmorProtection = 0.f;
+
+	// Armor only. Manny bone that the armor is attached to while worn.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Armor")
+	FName ArmorAttachBone = NAME_None;
+
+	// Set on the server while the item is worn. Worn items are not pickable.
+	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Item")
+	bool bWorn = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	TObjectPtr<UMaterialInterface> HighlightOverlayMaterial;
 
@@ -89,6 +109,9 @@ public:
 
 	// Server only.
 	void Detach(const FVector& ThrowVelocity);
+
+	// Server only. Attaches the item to ArmorAttachBone and marks it worn.
+	void AttachToWornBone(AAedirCreature* Creature);
 
 	// Client-local visual only.
 	void SetHighlighted(bool bNewHighlighted);
