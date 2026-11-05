@@ -13,7 +13,9 @@ public class Aedir : ModuleRules
 			"Engine",
 			"InputCore",
 			"EnhancedInput",
-			"PhysicsCore"
+			"PhysicsCore",
+			"DeveloperSettings",
+			"NetCore"
 		});
 	}
 }
