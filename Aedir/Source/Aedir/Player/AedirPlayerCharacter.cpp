@@ -13,6 +13,8 @@
 #include "Physics/AedirBalanceComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
+#include "Misc/CommandLine.h"
+#include "Misc/Parse.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Game/AedirGameMode.h"
@@ -115,6 +117,29 @@ void AAedirPlayerCharacter::BeginPlay()
 	{
 		GetWorldTimerManager().SetTimer(CharacterCreationTimer, this, &AAedirPlayerCharacter::MaybeOpenCharacterCreation, PlayerCharacterCreationDelaySeconds, false);
 	}
+
+#if !UE_BUILD_SHIPPING
+	// Test helper: "-AedirStartup=\"SpawnEnemy 1 1;SpawnItem Longsword hold\"" runs console commands once after the local player spawned.
+	static bool bStartupCommandsRan = false;
+	FString StartupCommands;
+	if (!bStartupCommandsRan && IsLocallyControlled() && FParse::Value(FCommandLine::Get(), TEXT("AedirStartup="), StartupCommands))
+	{
+		bStartupCommandsRan = true;
+		FTimerHandle StartupTimer;
+		GetWorldTimerManager().SetTimer(StartupTimer, FTimerDelegate::CreateWeakLambda(this, [this, StartupCommands]()
+		{
+			TArray<FString> Commands;
+			StartupCommands.ParseIntoArray(Commands, TEXT(";"), true);
+			if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+			{
+				for (const FString& Command : Commands)
+				{
+					PlayerController->ConsoleCommand(Command.TrimStartAndEnd());
+				}
+			}
+		}), 2.0f, false);
+	}
+#endif
 }
 
 void AAedirPlayerCharacter::PossessedBy(AController* NewController)
