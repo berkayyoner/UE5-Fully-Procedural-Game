@@ -60,13 +60,13 @@ public:
 	float ThrowSpeed = 150.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	FName LeftHandBone = FName(TEXT("lHand"));
+	FName LeftHandBone = FName(TEXT("hand_l"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	FName RightHandBone = FName(TEXT("rHand"));
+	FName RightHandBone = FName(TEXT("hand_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	FName WaistBone = FName(TEXT("hip"));
+	FName WaistBone = FName(TEXT("pelvis"));
 
 	// Three slots per side, relative to the waist bone. Rotation points the item down.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")

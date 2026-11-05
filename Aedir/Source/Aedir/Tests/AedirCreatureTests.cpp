@@ -3,7 +3,9 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Animation/AedirProceduralAnimInstance.h"
+#include "Camera/CameraComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Game/AedirGameMode.h"
 #include "HUD/AedirHUD.h"
@@ -29,6 +31,10 @@ bool FAedirPlayerDefaultsTest::RunTest(const FString& Parameters)
 		TestNotNull(TEXT("Male skeletal mesh is assigned by default"), Body->GetSkeletalMeshAsset());
 		TestTrue(TEXT("Procedural anim instance is used"), Body->GetAnimClass() == UAedirProceduralAnimInstance::StaticClass());
 	}
+
+	TestNotNull(TEXT("Third-person camera boom exists"), Player->CameraBoom.Get());
+	TestNotNull(TEXT("First-person camera exists"), Player->FirstPersonCamera.Get());
+	TestTrue(TEXT("Third-person view is the default"), !Player->IsFirstPerson());
 
 	TestTrue(TEXT("Aedir movement component is used"), Cast<UAedirCharacterMovementComponent>(Player->GetCharacterMovement()) != nullptr);
 

@@ -5,6 +5,8 @@
 #include "Combat/AedirCombatComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "Items/AedirInteractionComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
@@ -16,10 +18,25 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 {
 	PrimaryActorTick.bCanEverTick = true;
 
+	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom->SetupAttachment(GetCapsuleComponent());
+	CameraBoom->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
+	CameraBoom->TargetArmLength = ThirdPersonArmLength;
+	CameraBoom->SocketOffset = ThirdPersonShoulderOffset;
+	CameraBoom->bUsePawnControlRotation = true;
+	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->bEnableCameraLag = true;
+	CameraBoom->CameraLagSpeed = 18.f;
+
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
-	FollowCamera->SetupAttachment(GetCapsuleComponent());
-	FollowCamera->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
-	FollowCamera->bUsePawnControlRotation = true;
+	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
+	FollowCamera->bUsePawnControlRotation = false;
+
+	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
+	FirstPersonCamera->SetupAttachment(GetCapsuleComponent());
+	FirstPersonCamera->SetRelativeLocation(FirstPersonEyeOffset);
+	FirstPersonCamera->bUsePawnControlRotation = true;
+	FirstPersonCamera->SetAutoActivate(false);
 
 	WeatherEffects = CreateDefaultSubobject<UAedirWeatherEffectsComponent>(TEXT("WeatherEffects"));
 }
@@ -29,6 +46,7 @@ void AAedirPlayerCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	ApplyViewPitchLimits();
+	SetFirstPerson(false);
 }
 
 void AAedirPlayerCharacter::PossessedBy(AController* NewController)
@@ -77,6 +95,8 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 
 	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Pressed, this, &AAedirPlayerCharacter::HandleCrouchPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &AAedirPlayerCharacter::HandleCrouchReleased);
+
+	PlayerInputComponent->BindKey(EKeys::V, IE_Pressed, this, &AAedirPlayerCharacter::HandleViewTogglePressed);
 
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AAedirPlayerCharacter::HandleJumpPressed);
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Released, this, &AAedirPlayerCharacter::HandleJumpReleased);
@@ -326,3 +346,40 @@ void AAedirPlayerCharacter::UpdateHandUseHold(float DeltaSeconds)
 		}
 	}
 }
+
+void AAedirPlayerCharacter::SetFirstPerson(bool bNewFirstPerson)
+{
+	bFirstPerson = bNewFirstPerson;
+
+	if (FollowCamera)
+	{
+		FollowCamera->SetActive(!bFirstPerson);
+	}
+	if (FirstPersonCamera)
+	{
+		FirstPersonCamera->SetActive(bFirstPerson);
+	}
+
+	if (USkeletalMeshComponent* BodyMesh = GetMesh())
+	{
+		if (bFirstPerson)
+		{
+			BodyMesh->HideBoneByName(HeadBoneToHideInFirstPerson, PBO_None);
+		}
+		else
+		{
+			BodyMesh->UnHideBoneByName(HeadBoneToHideInFirstPerson);
+		}
+	}
+}
+
+void AAedirPlayerCharacter::ToggleView()
+{
+	SetFirstPerson(!bFirstPerson);
+}
+
+void AAedirPlayerCharacter::HandleViewTogglePressed()
+{
+	ToggleView();
+}
+

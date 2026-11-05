@@ -32,7 +32,7 @@ public:
 	FAedirBalanceEvent OnGotUp;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	FName PelvisBoneName = FName(TEXT("hip"));
+	FName PelvisBoneName = FName(TEXT("pelvis"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float MaxLeanDegrees = 25.f;

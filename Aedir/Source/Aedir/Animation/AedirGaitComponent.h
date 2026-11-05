@@ -156,58 +156,58 @@ public:
 	FAedirGaitState GetGaitStateBP() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName PelvisBoneName = FName(TEXT("hip"));
+	FName PelvisBoneName = FName(TEXT("pelvis"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	TArray<FName> SpineBoneNames = { FName(TEXT("l3")), FName(TEXT("t12")), FName(TEXT("t8")), FName(TEXT("t4")), FName(TEXT("t1")) };
+	TArray<FName> SpineBoneNames = { FName(TEXT("spine_01")), FName(TEXT("spine_02")), FName(TEXT("spine_03")), FName(TEXT("spine_04")), FName(TEXT("spine_05")) };
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName NeckBoneName = FName(TEXT("neck"));
+	FName NeckBoneName = FName(TEXT("neck_01"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
 	FName HeadBoneName = FName(TEXT("head"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName LeftClavicleBoneName = FName(TEXT("lClavicle"));
+	FName LeftClavicleBoneName = FName(TEXT("clavicle_l"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName LeftHumerusBoneName = FName(TEXT("lHumerus"));
+	FName LeftHumerusBoneName = FName(TEXT("upperarm_l"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName LeftRadiusBoneName = FName(TEXT("lRadius"));
+	FName LeftRadiusBoneName = FName(TEXT("lowerarm_l"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName LeftHandBoneName = FName(TEXT("lHand"));
+	FName LeftHandBoneName = FName(TEXT("hand_l"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName LeftFemurBoneName = FName(TEXT("lFemur"));
+	FName LeftFemurBoneName = FName(TEXT("thigh_l"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName LeftTibiaBoneName = FName(TEXT("lTibia"));
+	FName LeftTibiaBoneName = FName(TEXT("calf_l"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName LeftFootBoneName = FName(TEXT("lFoot"));
+	FName LeftFootBoneName = FName(TEXT("foot_l"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName RightClavicleBoneName = FName(TEXT("rClavicle"));
+	FName RightClavicleBoneName = FName(TEXT("clavicle_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName RightHumerusBoneName = FName(TEXT("rHumerus"));
+	FName RightHumerusBoneName = FName(TEXT("upperarm_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName RightRadiusBoneName = FName(TEXT("rRadius"));
+	FName RightRadiusBoneName = FName(TEXT("lowerarm_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName RightHandBoneName = FName(TEXT("rHand"));
+	FName RightHandBoneName = FName(TEXT("hand_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName RightFemurBoneName = FName(TEXT("rFemur"));
+	FName RightFemurBoneName = FName(TEXT("thigh_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName RightTibiaBoneName = FName(TEXT("rTibia"));
+	FName RightTibiaBoneName = FName(TEXT("calf_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
-	FName RightFootBoneName = FName(TEXT("rFoot"));
+	FName RightFootBoneName = FName(TEXT("foot_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float StrideWalkCm = 140.f;

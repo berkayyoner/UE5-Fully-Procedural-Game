@@ -7,6 +7,7 @@
 
 class UAedirWeatherEffectsComponent;
 class UCameraComponent;
+class USpringArmComponent;
 
 UCLASS(Blueprintable)
 class AEDIR_API AAedirPlayerCharacter : public AAedirCreature
@@ -16,8 +17,35 @@ class AEDIR_API AAedirPlayerCharacter : public AAedirCreature
 public:
 	AAedirPlayerCharacter(const FObjectInitializer& ObjectInitializer);
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Player")
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Camera")
+	TObjectPtr<USpringArmComponent> CameraBoom;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Camera")
+	TObjectPtr<UCameraComponent> FirstPersonCamera;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float ThirdPersonArmLength = 280.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	FVector ThirdPersonShoulderOffset = FVector(0.f, 45.f, 25.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	FVector FirstPersonEyeOffset = FVector(14.f, 0.f, 62.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	FName HeadBoneToHideInFirstPerson = FName(TEXT("head"));
+
+	UFUNCTION(BlueprintCallable, Category="Aedir|Camera")
+	void SetFirstPerson(bool bNewFirstPerson);
+
+	UFUNCTION(BlueprintCallable, Category="Aedir|Camera")
+	void ToggleView();
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Camera")
+	bool IsFirstPerson() const { return bFirstPerson; }
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Weather")
 	TObjectPtr<UAedirWeatherEffectsComponent> WeatherEffects;
@@ -35,6 +63,9 @@ public:
 
 private:
 	void ApplyViewPitchLimits();
+	void HandleViewTogglePressed();
+
+	bool bFirstPerson = false;
 
 
 	void HandleMouseX(float Value);

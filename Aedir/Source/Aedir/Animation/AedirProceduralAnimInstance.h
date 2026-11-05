@@ -53,20 +53,20 @@ public:
 	// Finger bones per hand, ordered thumb, index, middle, ring, pinky with three joints each from the base.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Fist")
 	TArray<FName> LeftFingerBoneNames = {
-		FName(TEXT("lThumb1")), FName(TEXT("lThumb2")), FName(TEXT("lThumb3")),
-		FName(TEXT("lIndex1")), FName(TEXT("lIndex2")), FName(TEXT("lIndex3")),
-		FName(TEXT("lMid1")), FName(TEXT("lMid2")), FName(TEXT("lMid3")),
-		FName(TEXT("lRing1")), FName(TEXT("lRing2")), FName(TEXT("lRing3")),
-		FName(TEXT("lPinky1")), FName(TEXT("lPinky2")), FName(TEXT("lPinky3"))
+		FName(TEXT("thumb_01_l")), FName(TEXT("thumb_02_l")), FName(TEXT("thumb_03_l")),
+		FName(TEXT("index_01_l")), FName(TEXT("index_02_l")), FName(TEXT("index_03_l")),
+		FName(TEXT("middle_01_l")), FName(TEXT("middle_02_l")), FName(TEXT("middle_03_l")),
+		FName(TEXT("ring_01_l")), FName(TEXT("ring_02_l")), FName(TEXT("ring_03_l")),
+		FName(TEXT("pinky_01_l")), FName(TEXT("pinky_02_l")), FName(TEXT("pinky_03_l"))
 	};
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Fist")
 	TArray<FName> RightFingerBoneNames = {
-		FName(TEXT("rThumb1")), FName(TEXT("rThumb2")), FName(TEXT("rThumb3")),
-		FName(TEXT("rIndex1")), FName(TEXT("rIndex2")), FName(TEXT("rIndex3")),
-		FName(TEXT("rMid1")), FName(TEXT("rMid2")), FName(TEXT("rMid3")),
-		FName(TEXT("rRing1")), FName(TEXT("rRing2")), FName(TEXT("rRing3")),
-		FName(TEXT("rPinky1")), FName(TEXT("rPinky2")), FName(TEXT("rPinky3"))
+		FName(TEXT("thumb_01_r")), FName(TEXT("thumb_02_r")), FName(TEXT("thumb_03_r")),
+		FName(TEXT("index_01_r")), FName(TEXT("index_02_r")), FName(TEXT("index_03_r")),
+		FName(TEXT("middle_01_r")), FName(TEXT("middle_02_r")), FName(TEXT("middle_03_r")),
+		FName(TEXT("ring_01_r")), FName(TEXT("ring_02_r")), FName(TEXT("ring_03_r")),
+		FName(TEXT("pinky_01_r")), FName(TEXT("pinky_02_r")), FName(TEXT("pinky_03_r"))
 	};
 
 	// Local axis the finger joints curl around, in the bone's own space.

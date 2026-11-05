@@ -38,7 +38,7 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	Combat = CreateDefaultSubobject<UAedirCombatComponent>(TEXT("Combat"));
 	Footsteps = CreateDefaultSubobject<UAedirFootstepComponent>(TEXT("Footsteps"));
 
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh> DefaultBodyMesh(TEXT("/Game/Characters/MaleSkeleton/male.male"));
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> DefaultBodyMesh(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
 
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())
 	{
