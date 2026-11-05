@@ -190,6 +190,11 @@ Project start date: November 5, 2026 (see `DONE.md`).
 
 ---
 
+## Status (updated 2026-11-06)
+Phases 0-11 are coded and compile; Phase 12 core, Phase 13 partial (rest pose, breathing, sway, inertia lean, physical motors, center-of-mass balance, recovery steps, protective reflex), Phase 14 core (Slate menus, journal, skill notifications) and Phase 15 core (races, character creation, starter quest, item catalog) are done. 58+ headless automation tests pass. Gameplay visuals (gait stepping, combat, wounds, weather) are only partly verified in the editor; see DONE.md for what was seen in PIE.
+
+Remaining: gait polish verified in-game, grab/two-hand grip/shove/kicks (12.5), faction and guild content, NPC routines, more quests and books, wound persistence in saves, Nanite height-map terrain and texture policy run, XeSS plugin, Niagara weather assets, packaging run.
+
 ## Dependency Overview
 Phase 0 → 1 → 2 → 3 → (4, 5) ; 6 → 7 ; 1 → 8 ; 3/6 → 9 ; all → 10 → 11. After the RULES update: 5 → 12 ; 3 → 13 ; 8 → 14 → 15.
 

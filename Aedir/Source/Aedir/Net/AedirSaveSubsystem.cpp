@@ -25,6 +25,7 @@ namespace
 		Result.PlayerKey = PlayerKey;
 		Result.Transform = Creature->GetActorTransform();
 		Result.GroupId = Creature->GroupId;
+		Result.RaceId = Creature->RaceId;
 
 		if (const UAedirStatsComponent* Stats = Creature->Stats.Get())
 		{
@@ -304,6 +305,11 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 
 		Creature->TeleportTo(CreatureSave.Transform.GetLocation(), CreatureSave.Transform.Rotator(), false, true);
 		Creature->SetGroupId(CreatureSave.GroupId);
+		if (!CreatureSave.RaceId.IsNone())
+		{
+			// The race sets the base stats first; the saved stats are applied on top of it below.
+			Creature->SetRace(CreatureSave.RaceId);
+		}
 
 		if (UAedirStatsComponent* Stats = Creature->Stats.Get())
 		{

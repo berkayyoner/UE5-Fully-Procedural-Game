@@ -49,6 +49,9 @@ struct AEDIR_API FAedirCreatureSave
 	FName GroupId;
 
 	UPROPERTY()
+	FName RaceId;
+
+	UPROPERTY()
 	TSoftClassPtr<AAedirItemActor> LeftHandItem;
 
 	UPROPERTY()
