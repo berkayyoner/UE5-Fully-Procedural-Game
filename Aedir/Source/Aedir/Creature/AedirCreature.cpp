@@ -3,6 +3,7 @@
 #include "AedirGroupSubsystem.h"
 #include "AedirStatsComponent.h"
 #include "Net/UnrealNetwork.h"
+#include "Physics/AedirBalanceComponent.h"
 
 AAedirCreature::AAedirCreature()
 {
@@ -10,6 +11,7 @@ AAedirCreature::AAedirCreature()
 	bReplicates = true;
 
 	Stats = CreateDefaultSubobject<UAedirStatsComponent>(TEXT("Stats"));
+	Balance = CreateDefaultSubobject<UAedirBalanceComponent>(TEXT("Balance"));
 }
 
 void AAedirCreature::BeginPlay()

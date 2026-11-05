@@ -3,3 +3,4 @@ Phase 0 (partial): added .gitignore and removed generated Intermediate/Saved/Der
 Phase 0 (done): hybrid C++/Blueprint chosen; added Aedir C++ primary game module (targets, Build.cs, LogAedir), builds on UE 5.7.
 Phase 0 (done): upgraded FSR3 to AMD FSR 4.1.1 (UE 5.7) and moved FSR/DLSS plugins into Aedir/Plugins so C++ builds work.
 Phase 1 (done): creature framework - AAedirCreature base, replicated UAedirStatsComponent (health/mana/stamina, strength size scale, athletism, 13 skills, dynamic max stamina), UAedirGroupSubsystem + Aedir Groups settings (enemy/neutral/ally).
+Phase 2 (done): UAedirBalanceComponent - pelvis-held ragdoll body, replicated balance with opposite-direction pelvis lean, fall/get-up logic, fall/wall/object impact damage.
