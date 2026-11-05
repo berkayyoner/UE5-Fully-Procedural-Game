@@ -6,7 +6,9 @@
 #include "AedirStatsComponent.h"
 #include "Animation/AedirGaitComponent.h"
 #include "Animation/AedirProceduralAnimInstance.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "UObject/ConstructorHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Math/RotationMatrix.h"
 #include "Movement/AedirCharacterMovementComponent.h"
@@ -36,8 +38,16 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	Combat = CreateDefaultSubobject<UAedirCombatComponent>(TEXT("Combat"));
 	Footsteps = CreateDefaultSubobject<UAedirFootstepComponent>(TEXT("Footsteps"));
 
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> DefaultBodyMesh(TEXT("/Game/Characters/MaleSkeleton/male.male"));
+
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())
 	{
+		if (DefaultBodyMesh.Succeeded())
+		{
+			MeshComponent->SetSkeletalMeshAsset(DefaultBodyMesh.Object);
+		}
+		MeshComponent->SetRelativeLocation(FVector(0.f, 0.f, -GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
+		MeshComponent->SetRelativeRotation(FRotator(0.f, -90.f, 0.f));
 		MeshComponent->SetAnimationMode(EAnimationMode::AnimationBlueprint);
 		MeshComponent->SetAnimInstanceClass(UAedirProceduralAnimInstance::StaticClass());
 		MeshComponent->bEnableUpdateRateOptimizations = false;
