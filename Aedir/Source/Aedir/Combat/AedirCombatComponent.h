@@ -314,7 +314,7 @@ private:
 	bool IsImpactOnCooldown(EAedirHand Hand, const AActor* Victim, double Now) const;
 	void RegisterImpact(EAedirHand Hand, AActor* Victim, double Now);
 	void ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& From, const FVector& To, const FVector& TipVelocity, float MassEff, float AxialAlignment, double Now);
-	void ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, float RelativeSpeed, float MassEff, float AxialAlignment);
+	void ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, const FVector& TipVelocity, float RelativeSpeed, float MassEff, float AxialAlignment);
 	void ApplyPhysicsImpact(FAedirArmDynamics& Arm, const FHitResult& Hit, UPrimitiveComponent* HitComponent, float RelativeSpeed, float MassEff);
 	void ApplyLimbInjury(EAedirLimb Limb, float Amount);
 	void HealLimbInjuries(float DeltaTime);

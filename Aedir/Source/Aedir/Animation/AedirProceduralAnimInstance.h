@@ -26,7 +26,9 @@ private:
 	void ApplyPelvis(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
 	void ApplySpine(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
 	void ApplyNeckAndHead(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
-	void ApplyArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& ClavicleName, const FName& HumerusName, const FName& RadiusName, const FName& HandName, float ArmSwingDegrees, float ElbowDegrees) const;
+	void ApplyArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& ClavicleName, const FName& HumerusName, const FName& RadiusName, const FName& HandName, float ArmSwingDegrees, float ElbowDegrees, float ReachAlpha, float RestRollDegrees, float ClavicleRollDegrees) const;
+	// Breathing wave in [-1, 1], zero while dead.
+	float GetBreathWave() const;
 	void ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh) const;
 	void ApplyFingers(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const TArray<FName>& FingerBoneNames, float FistAlpha, float CurlSign) const;
 	void ApplyLeg(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh) const;
@@ -40,6 +42,15 @@ private:
 	FVector FistCurlAxis = FVector::UpVector;
 	float FistCurlSignLeft = 1.f;
 	float FistCurlSignRight = -1.f;
+
+	// Copied from the gait component in PreUpdate.
+	float ArmRestAdductionLeft = 0.f;
+	float ArmRestAdductionRight = 0.f;
+	float ArmRestForwardDegrees = 0.f;
+	float ElbowRestBendDegrees = 0.f;
+	float BreathChestDegrees = 0.f;
+	float BreathClavicleDegrees = 0.f;
+	float BreathNeckCounterDegrees = 0.f;
 };
 
 UCLASS()

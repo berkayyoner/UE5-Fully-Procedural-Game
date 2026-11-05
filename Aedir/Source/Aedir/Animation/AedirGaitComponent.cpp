@@ -321,6 +321,69 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.KneeBend = FMath::Max(Lift[0], Lift[1]) * KneeBendMaxDegrees + ReachLowerAlpha * KneeBendMaxDegrees;
 	GaitState.KneeBend += StanceKneeBendDegrees * StanceAlpha;
 
+	// Breathing, idle sway, weight shift and inertia. Every term is zero while dead.
+	const bool bDead = CreatureOwner->Stats && CreatureOwner->Stats->IsDead();
+	const float Alive = bDead ? 0.f : 1.f;
+	GaitState.MotionAlpha = Alive;
+	MotionClock += DeltaTime;
+
+	const float StaminaFraction = CreatureOwner->Stats ? FMath::Clamp(CreatureOwner->Stats->GetStaminaFraction(), 0.f, 1.f) : 1.f;
+	// Exertion is the stamina deficit, plus walking and running effort on top.
+	const float Exertion = FMath::Clamp((1.f - StaminaFraction) + SpeedAlpha * FMath::Lerp(0.25f, 1.f, RunBlend), 0.f, 1.f);
+	GaitState.BreathExertion = Exertion;
+	GaitState.BreathPhase = WrapUnit(GaitState.BreathPhase + FMath::Lerp(BreathRateMinHz, BreathRateMaxHz, Exertion) * DeltaTime);
+
+	// Inertia: planar acceleration of the body in the actor frame, and the turn rate of the actor.
+	const FVector PlanarVelocity(Velocity.X, Velocity.Y, 0.f);
+	const float ActorYaw = CreatureOwner->GetActorRotation().Yaw;
+	if (!bMotionInitialized)
+	{
+		PreviousPlanarVelocity = PlanarVelocity;
+		PreviousActorYaw = ActorYaw;
+		bMotionInitialized = true;
+	}
+
+	const FVector Acceleration = (PlanarVelocity - PreviousPlanarVelocity) / DeltaTime;
+	PreviousPlanarVelocity = PlanarVelocity;
+	SmoothedAcceleration = FMath::VInterpTo(SmoothedAcceleration, Acceleration, DeltaTime, InertiaSmoothingSpeed);
+	const FVector LocalAcceleration = ActorTransform.InverseTransformVectorNoScale(SmoothedAcceleration);
+
+	const float YawRate = FRotator::NormalizeAxis(ActorYaw - PreviousActorYaw) / DeltaTime;
+	PreviousActorYaw = ActorYaw;
+	SmoothedYawRate = FMath::FInterpTo(SmoothedYawRate, YawRate, DeltaTime, InertiaSmoothingSpeed);
+
+	const float ForwardLoad = FMath::Clamp(LocalAcceleration.X / InertiaAccelerationScaleCm, -1.f, 1.f);
+	const float RightLoad = FMath::Clamp(LocalAcceleration.Y / InertiaAccelerationScaleCm, -1.f, 1.f);
+	const float TurnLoad = FMath::Clamp(SmoothedYawRate / YawRateScaleDegreesPerSecond, -1.f, 1.f);
+	const float InertiaPitch = FMath::Clamp(-ForwardLoad * InertiaLeanPitchDegrees, -InertiaLeanLimitDegrees, InertiaLeanLimitDegrees) * Alive;
+	const float InertiaRoll = FMath::Clamp(RightLoad * InertiaLeanRollDegrees + TurnLoad * YawRateLeanDegrees, -InertiaLeanLimitDegrees, InertiaLeanLimitDegrees) * Alive;
+	GaitState.SpineLeanPitch += InertiaPitch;
+	GaitState.SpineLeanRoll = InertiaRoll;
+
+	// Idle sway and weight shift only while standing still and out of the fighting stance.
+	const float IdleTarget = bStepping ? 0.f : 1.f - StanceAlpha;
+	IdleBlend = FMath::FInterpTo(IdleBlend, IdleTarget, DeltaTime, IdleBlendInterpSpeed);
+	const float IdleGate = IdleBlend * Alive;
+
+	const float SwayA = FMath::Sin(2.f * UE_PI * IdleSwayFrequencyA * MotionClock);
+	const float SwayB = FMath::Sin(2.f * UE_PI * IdleSwayFrequencyB * MotionClock + 1.7f);
+	const float SwayC = FMath::Sin(2.f * UE_PI * IdleSwayFrequencyB * MotionClock);
+	const float SwayD = FMath::Sin(2.f * UE_PI * IdleSwayFrequencyA * MotionClock + 2.3f);
+	// Cosine eased load shift: -1 is the left leg loaded, +1 the right leg, switching every WeightShiftIntervalSeconds.
+	const float LoadSide = -FMath::Cos(UE_PI * MotionClock / FMath::Max(WeightShiftIntervalSeconds, KINDA_SMALL_NUMBER));
+	const float IdleLateral = (IdleSwayLateralCm * 0.5f * (SwayA + SwayB) + WeightShiftLateralCm * LoadSide) * IdleGate;
+	const float IdleRoll = IdleSwayRollDegrees * 0.5f * (SwayC + SwayD) * IdleGate;
+
+	// While walking the stance foot takes the weight and the pelvis rolls towards it. Phase is positive while the right foot is in stance.
+	const float StanceSide = FMath::Sin(2.f * UE_PI * Phase);
+	const float GaitLateral = StanceSide * WalkWeightShiftLateralCm * SpeedAlpha * Alive;
+	const float GaitRoll = -StanceSide * WalkWeightShiftRollDegrees * SpeedAlpha * Alive;
+
+	GaitState.HipLateralOffset = IdleLateral + GaitLateral;
+	GaitState.PelvisRollDegrees = IdleRoll + GaitRoll;
+	GaitState.SpineCounterRollDegrees = -SpineCounterRollShare * GaitState.PelvisRollDegrees;
+	GaitState.HeadStabilizeRollDegrees = -HeadStabilizeRollShare * GaitState.PelvisRollDegrees;
+
 	GaitState.Phase = Phase;
 	GaitState.bStepping = bStepping;
 	GaitState.bTurningInPlace = bTurning;
@@ -390,6 +453,12 @@ void UAedirGaitComponent::ResetForRagdoll()
 	ArmBlend = 0.f;
 	DynamicHipOffset = 0.f;
 	SmoothedSpineTwist = 0.f;
+	IdleBlend = 0.f;
+	SmoothedYawRate = 0.f;
+	PreviousActorYaw = 0.f;
+	PreviousPlanarVelocity = FVector::ZeroVector;
+	SmoothedAcceleration = FVector::ZeroVector;
+	bMotionInitialized = false;
 }
 
 void UAedirGaitComponent::AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength)

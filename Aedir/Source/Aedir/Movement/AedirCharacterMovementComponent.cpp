@@ -4,11 +4,14 @@
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "GameFramework/Character.h"
+#include "Physics/AedirBalanceComponent.h"
 #include "Surface/AedirFootstepComponent.h"
 
 namespace
 {
 	constexpr float AedirLegInjurySpeedPenalty = 0.45f;
+	constexpr float AedirDazeSpeedPenalty = 0.3f;
+	constexpr float AedirStaggerSpeedMultiplier = 0.8f;
 	constexpr float AedirForwardArcDegrees = 45.f;
 	constexpr float AedirSideArcDegrees = 90.f;
 	constexpr float AedirBackArcDegrees = 135.f;
@@ -236,6 +239,16 @@ float UAedirCharacterMovementComponent::GetMaxSpeed() const
 			Creature->Combat->GetLimbInjury(EAedirLimb::LeftLeg),
 			Creature->Combat->GetLimbInjury(EAedirLimb::RightLeg));
 		Speed *= 1.f - AedirLegInjurySpeedPenalty * LegInjury;
+	}
+
+	if (const AAedirCreature* Creature = Cast<AAedirCreature>(GetCharacterOwner()); Creature && Creature->Balance)
+	{
+		Speed *= 1.f - AedirDazeSpeedPenalty * Creature->Balance->GetDazeFactor();
+
+		if (Creature->Balance->IsStaggering())
+		{
+			Speed *= AedirStaggerSpeedMultiplier;
+		}
 	}
 
 	if (const UAedirFootstepComponent* Footsteps = GetOwnerFootsteps())

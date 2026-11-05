@@ -48,6 +48,7 @@ namespace
 	constexpr float AedirArmStrengthBase = 0.6f;
 	constexpr float AedirArmStaminaFloor = 0.35f;
 	constexpr float AedirArmInjuryStiffnessLoss = 0.7f;
+	constexpr float AedirArmDazeStiffnessLoss = 0.6f;
 	constexpr float AedirArmMassStrengthScale = 0.6f;
 	constexpr float AedirArmSubstepSeconds = 1.f / 120.f;
 	constexpr float AedirArmReachMinScale = 0.45f;
@@ -770,8 +771,10 @@ void UAedirCombatComponent::IntegrateArm(EAedirHand Hand, FAedirArmDynamics& Arm
 	const float StrengthFactor = AedirArmStrengthBase + Strength / AedirCombatStatMax;
 	const float StaminaFactor = FMath::Lerp(AedirArmStaminaFloor, 1.f, FMath::Clamp(StaminaFraction, 0.f, 1.f));
 	const float InjuryFactor = 1.f - AedirArmInjuryStiffnessLoss * ArmInjury;
+	const float DazeFactor = Creature->Balance ? Creature->Balance->GetDazeFactor() : 0.f;
+	const float DazeFactorStiffness = 1.f - AedirArmDazeStiffnessLoss * DazeFactor;
 	const float MassRatio = TotalMass / FMath::Max(Strength * AedirArmMassStrengthScale, 1.f);
-	const float Stiffness = ArmStiffnessBase * StrengthFactor * StaminaFactor * InjuryFactor / (1.f + MassRatio);
+	const float Stiffness = ArmStiffnessBase * StrengthFactor * StaminaFactor * InjuryFactor * DazeFactorStiffness / (1.f + MassRatio);
 	const float Damping = 2.f * FMath::Sqrt(Stiffness) * AedirArmDampingRatio;
 	const float MaxAcceleration = MaxArmAcceleration * StrengthFactor * StaminaFactor * InjuryFactor;
 	const float MaxRadius = AedirArmReachHardLimit * (SwingReach + GetEffectiveWeaponLength(Hand)) * Scale;
@@ -1130,7 +1133,7 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 			}
 
 			RegisterImpact(Hand, Victim, Now);
-			ApplyCreatureImpact(Hand, Arm, Victim, Hit, RelativeSpeed, MassEff, AxialAlignment);
+			ApplyCreatureImpact(Hand, Arm, Victim, Hit, TipVelocity, RelativeSpeed, MassEff, AxialAlignment);
 			continue;
 		}
 
@@ -1151,7 +1154,7 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 	}
 }
 
-void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, float RelativeSpeed, float MassEff, float AxialAlignment)
+void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, const FVector& TipVelocity, float RelativeSpeed, float MassEff, float AxialAlignment)
 {
 	AAedirItemActor* HeldItem = GetHeldItem(Hand);
 	const FName Bone = Hit.BoneName;
@@ -1173,7 +1176,15 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 
 	if (Victim->Balance)
 	{
-		Victim->Balance->ApplyImpulseImpact(-Hit.ImpactNormal * (MassEff * RelativeSpeed * BalanceImpactScale));
+		FAedirImpactInfo Impact;
+		Impact.Bone = Bone;
+		Impact.Zone = Zone;
+		Impact.EnergyJoules = Energy;
+		Impact.Direction = TipVelocity.GetSafeNormal();
+		Impact.Location = Hit.ImpactPoint;
+		Impact.MassKg = MassEff;
+		Impact.RelativeSpeed = RelativeSpeed;
+		Victim->Balance->ApplyHitReaction(Impact);
 	}
 
 	if (Victim->Wounds)

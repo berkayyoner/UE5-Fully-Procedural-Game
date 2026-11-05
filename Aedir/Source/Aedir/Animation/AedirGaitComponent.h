@@ -113,6 +113,38 @@ struct AEDIR_API FAedirGaitState
 
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	bool bTurningInPlace = false;
+
+	// Breathing cycle in [0, 1). Advances faster while exerted.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float BreathPhase = 0.f;
+
+	// Breathing exertion in [0, 1], from low stamina and running.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float BreathExertion = 0.f;
+
+	// 1 while alive, 0 while dead. Scales the idle, breathing, rest and inertia terms.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float MotionAlpha = 1.f;
+
+	// Lateral pelvis offset in cm along the character right axis, from idle weight shift and gait sway.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HipLateralOffset = 0.f;
+
+	// Pelvis roll in degrees from idle sway and the gait weight shift. Added to PelvisRotation.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float PelvisRollDegrees = 0.f;
+
+	// Upper spine roll in degrees that counters the pelvis roll.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float SpineCounterRollDegrees = 0.f;
+
+	// Head roll in degrees that keeps the look direction against the pelvis roll.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HeadStabilizeRollDegrees = 0.f;
+
+	// Torso roll in degrees from acceleration and turn rate, distributed over the spine chain. Positive leans right.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float SpineLeanRoll = 0.f;
 };
 
 // Plain bone name copy consumed by the animation proxy on the worker thread.
@@ -396,6 +428,112 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float LookInterpSpeed = 12.f;
 
+	// Arm rest pose: the arms fall from the A-pose towards the body while no reach, swing or guard target drives them.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
+	float ArmRestAdductionDegrees = 30.f;
+
+	// Sign of the adduction roll on each side. Flip a sign if that arm moves away from the body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
+	float ArmRestSignLeft = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
+	float ArmRestSignRight = -1.f;
+
+	// Forward rotation of the upper arm in degrees at a full rest pose.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
+	float ArmRestForwardDegrees = 6.f;
+
+	// Natural elbow flexion in degrees at a full rest pose.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
+	float ElbowRestBendDegrees = 12.f;
+
+	// Breathing rate in cycles per second at rest and at full exertion.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Breathing")
+	float BreathRateMinHz = 0.22f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Breathing")
+	float BreathRateMaxHz = 0.65f;
+
+	// Chest pitch in degrees per upper spine bone at a full breath, before the exertion scale.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Breathing")
+	float BreathChestDegrees = 0.9f;
+
+	// Clavicle lift in degrees at a full breath.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Breathing")
+	float BreathClavicleDegrees = 0.8f;
+
+	// Neck pitch in degrees that counters the chest at a full breath.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Breathing")
+	float BreathNeckCounterDegrees = 0.5f;
+
+	// Idle sway of the pelvis while standing still. Two incommensurate sines per axis.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float IdleSwayLateralCm = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float IdleSwayRollDegrees = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float IdleSwayFrequencyA = 0.11f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float IdleSwayFrequencyB = 0.07f;
+
+	// Seconds between weight shifts from one leg to the other.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float WeightShiftIntervalSeconds = 5.f;
+
+	// Lateral pelvis shift in cm towards the loaded leg while standing.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float WeightShiftLateralCm = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float IdleBlendInterpSpeed = 4.f;
+
+	// Lateral pelvis shift in cm towards the stance foot while walking or running, at full speed.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float WalkWeightShiftLateralCm = 2.5f;
+
+	// Pelvis roll in degrees towards the stance foot while walking or running, at full speed.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float WalkWeightShiftRollDegrees = 2.5f;
+
+	// Share of the pelvis roll that the upper spine counter-rotates.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float SpineCounterRollShare = 0.4f;
+
+	// Share of the pelvis roll that the head counter-rotates to keep its look direction.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
+	float HeadStabilizeRollShare = 0.6f;
+
+	// Inertia: smoothing of the planar acceleration and turn rate.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
+	float InertiaSmoothingSpeed = 12.f;
+
+	// Planar acceleration in cm/s^2 that counts as a full lean.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
+	float InertiaAccelerationScaleCm = 600.f;
+
+	// Forward lean in degrees under full forward acceleration, and backward lean under full braking.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
+	float InertiaLeanPitchDegrees = 6.f;
+
+	// Roll lean in degrees under full lateral acceleration.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
+	float InertiaLeanRollDegrees = 5.f;
+
+	// Extra roll lean in degrees at a full turn rate.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
+	float YawRateLeanDegrees = 4.f;
+
+	// Turn rate in degrees per second that counts as a full turn lean.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
+	float YawRateScaleDegreesPerSecond = 180.f;
+
+	// Limit in degrees on each inertia lean component.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
+	float InertiaLeanLimitDegrees = 18.f;
+
 private:
 	bool SampleGround(const FVector& WorldXY, float BottomZ, FVector& OutLocation, FVector& OutNormal) const;
 	void ResetForRagdoll();
@@ -430,4 +568,14 @@ private:
 	float DynamicHipOffset = 0.f;
 	float SmoothedSpineTwist = 0.f;
 	bool bFeetInitialized = false;
+
+	// Seconds of motion time that drive the idle sway and the weight shift.
+	float MotionClock = 0.f;
+	// 0 while walking, turning or in stance, 1 while standing relaxed.
+	float IdleBlend = 0.f;
+	float SmoothedYawRate = 0.f;
+	float PreviousActorYaw = 0.f;
+	FVector PreviousPlanarVelocity = FVector::ZeroVector;
+	FVector SmoothedAcceleration = FVector::ZeroVector;
+	bool bMotionInitialized = false;
 };

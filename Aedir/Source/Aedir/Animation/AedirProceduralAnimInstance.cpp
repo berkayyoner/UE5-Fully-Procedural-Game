@@ -19,6 +19,10 @@ namespace
 	constexpr float AedirFistAlphaThreshold = 0.001f;
 	constexpr int32 AedirFingerCount = 5;
 	constexpr int32 AedirFingerJointCount = 3;
+	// The chest pitch grows by this factor times the exertion, so a fully exerted breath is three times as deep.
+	constexpr float AedirBreathExertionScale = 2.f;
+	// The upper spine, spine_03 to spine_05 in the default rig, carries the chest breath and the counter roll.
+	constexpr int32 AedirUpperSpineCount = 3;
 	// Curl in degrees at a full fist, per finger (thumb first) and joint from the base.
 	constexpr float AedirFistCurlDegrees[AedirFingerCount][AedirFingerJointCount] = {
 		{ 35.f, 45.f, 30.f },
@@ -101,6 +105,14 @@ void FAedirProceduralAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float D
 	FistCurlSignLeft = Instance->FistCurlSignLeft;
 	FistCurlSignRight = Instance->FistCurlSignRight;
 
+	ArmRestAdductionLeft = Gait->ArmRestAdductionDegrees * Gait->ArmRestSignLeft;
+	ArmRestAdductionRight = Gait->ArmRestAdductionDegrees * Gait->ArmRestSignRight;
+	ArmRestForwardDegrees = Gait->ArmRestForwardDegrees;
+	ElbowRestBendDegrees = Gait->ElbowRestBendDegrees;
+	BreathChestDegrees = Gait->BreathChestDegrees;
+	BreathClavicleDegrees = Gait->BreathClavicleDegrees;
+	BreathNeckCounterDegrees = Gait->BreathNeckCounterDegrees;
+
 	MeshToWorld = Mesh->GetComponentTransform();
 	const FQuat ActorToWorld = Owner->GetActorQuat();
 	// Maps actor-local directions into mesh space: MeshToWorld^-1 * ActorToWorld.
@@ -125,8 +137,10 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyPelvis(CSPose, Bones);
 	ApplySpine(CSPose, Bones);
 	ApplyNeckAndHead(CSPose, Bones);
-	ApplyArm(CSPose, Bones, BoneNameSet.LeftClavicle, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.ArmSwingLeft, GaitData.ElbowBend);
-	ApplyArm(CSPose, Bones, BoneNameSet.RightClavicle, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.ArmSwingRight, GaitData.ElbowBend);
+	// Positive roll lowers the right side, so the left clavicle lifts with a positive roll and the right with a negative one.
+	const float ClavicleLift = BreathClavicleDegrees * GetBreathWave();
+	ApplyArm(CSPose, Bones, BoneNameSet.LeftClavicle, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.ArmSwingLeft, GaitData.ElbowBend, GaitData.LeftArmReachAlpha, ArmRestAdductionLeft, ClavicleLift);
+	ApplyArm(CSPose, Bones, BoneNameSet.RightClavicle, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.ArmSwingRight, GaitData.ElbowBend, GaitData.RightArmReachAlpha, ArmRestAdductionRight, -ClavicleLift);
 
 	// Left is the actor's -Y side (matches the gait foot placement), right is +Y.
 	const FVector LeftOutwardMesh = ActorToMesh.RotateVector(-FVector::RightVector);
@@ -169,9 +183,13 @@ void FAedirProceduralAnimProxy::ApplyPelvis(FCSPose<FCompactPose>& CSPose, const
 	}
 
 	const FVector UpMesh = ActorToMesh.RotateVector(FVector::UpVector);
+	const FVector RightMesh = ActorToMesh.RotateVector(FVector::RightVector);
 	FTransform PelvisTransform = CSPose.GetComponentSpaceTransform(Pelvis);
-	PelvisTransform.AddToTranslation(UpMesh * GaitData.HipOffsetZ);
-	PelvisTransform.SetRotation(ActorRotationToMesh(GaitData.PelvisRotation.Quaternion()) * PelvisTransform.GetRotation());
+	PelvisTransform.AddToTranslation(UpMesh * GaitData.HipOffsetZ + RightMesh * GaitData.HipLateralOffset);
+
+	FRotator PelvisRotation = GaitData.PelvisRotation;
+	PelvisRotation.Roll += GaitData.PelvisRollDegrees;
+	PelvisTransform.SetRotation(ActorRotationToMesh(PelvisRotation.Quaternion()) * PelvisTransform.GetRotation());
 	CSPose.SetComponentSpaceTransform(Pelvis, PelvisTransform);
 }
 
@@ -193,12 +211,28 @@ void FAedirProceduralAnimProxy::ApplySpine(FCSPose<FCompactPose>& CSPose, const 
 		return;
 	}
 
-	// Lean and twist are shared evenly over the chain, low to high, so each bone inherits the accumulated rotation of its parents.
-	const float BoneCount = static_cast<float>(SpineBones.Num());
-	const FQuat PerBoneDelta = ActorRotationToMesh(FRotator(GaitData.SpineLeanPitch / BoneCount, GaitData.SpineTwistYaw / BoneCount, 0.f).Quaternion());
-	for (const FCompactPoseBoneIndex& Bone : SpineBones)
+	// Lean, twist and inertia roll are shared evenly over the chain, low to high, so each bone inherits the accumulated rotation of its parents.
+	const int32 BoneTotal = SpineBones.Num();
+	const float BoneCount = static_cast<float>(BoneTotal);
+	const int32 UpperFirst = FMath::Max(BoneTotal - AedirUpperSpineCount, 0);
+	const float UpperCount = static_cast<float>(BoneTotal - UpperFirst);
+
+	// The chest breath and the counter roll act on the upper spine only.
+	const float Breath = GetBreathWave();
+	const float ChestPitch = Breath * BreathChestDegrees * (1.f + AedirBreathExertionScale * GaitData.BreathExertion);
+
+	for (int32 BoneIndex = 0; BoneIndex < BoneTotal; ++BoneIndex)
 	{
-		RotateBone(CSPose, Bone, PerBoneDelta);
+		float PitchDegrees = GaitData.SpineLeanPitch / BoneCount;
+		float RollDegrees = GaitData.SpineLeanRoll / BoneCount;
+		const float YawDegrees = GaitData.SpineTwistYaw / BoneCount;
+		if (BoneIndex >= UpperFirst)
+		{
+			PitchDegrees += ChestPitch;
+			RollDegrees += GaitData.SpineCounterRollDegrees / UpperCount;
+		}
+
+		RotateBone(CSPose, SpineBones[BoneIndex], ActorRotationToMesh(FRotator(PitchDegrees, YawDegrees, RollDegrees).Quaternion()));
 	}
 }
 
@@ -207,41 +241,55 @@ void FAedirProceduralAnimProxy::ApplyNeckAndHead(FCSPose<FCompactPose>& CSPose, 
 	const FCompactPoseBoneIndex Neck = ResolveCompactBone(Bones, BoneNameSet.Neck);
 	if (Neck.IsValid())
 	{
-		RotateBone(CSPose, Neck, ActorRotationToMesh(GaitData.NeckLookRotation.Quaternion()));
+		// The neck leans against the chest breath so the head stays steady.
+		FRotator NeckRotation = GaitData.NeckLookRotation;
+		NeckRotation.Pitch -= BreathNeckCounterDegrees * GetBreathWave();
+		RotateBone(CSPose, Neck, ActorRotationToMesh(NeckRotation.Quaternion()));
 	}
 
 	const FCompactPoseBoneIndex Head = ResolveCompactBone(Bones, BoneNameSet.Head);
 	if (Head.IsValid())
 	{
-		RotateBone(CSPose, Head, ActorRotationToMesh(GaitData.HeadLookRotation.Quaternion()));
+		FRotator HeadRotation = GaitData.HeadLookRotation;
+		HeadRotation.Roll += GaitData.HeadStabilizeRollDegrees;
+		RotateBone(CSPose, Head, ActorRotationToMesh(HeadRotation.Quaternion()));
 	}
 }
 
-void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& ClavicleName, const FName& HumerusName, const FName& RadiusName, const FName& HandName, float ArmSwingDegrees, float ElbowDegrees) const
+float FAedirProceduralAnimProxy::GetBreathWave() const
 {
+	return FMath::Sin(2.f * UE_PI * GaitData.BreathPhase) * GaitData.MotionAlpha;
+}
+
+void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& ClavicleName, const FName& HumerusName, const FName& RadiusName, const FName& HandName, float ArmSwingDegrees, float ElbowDegrees, float ReachAlpha, float RestRollDegrees, float ClavicleRollDegrees) const
+{
+	// The rest pose fades out as reach, swing or guard targets take the arm, and is off while dead.
+	const float RestAlpha = FMath::Clamp(1.f - ReachAlpha, 0.f, 1.f) * GaitData.MotionAlpha;
+	const float RestElbowDegrees = ElbowDegrees + ElbowRestBendDegrees * RestAlpha;
+
 	// Positive pitch swings the hanging arm forward, so the same sign drives shoulder, elbow and wrist.
 	const FCompactPoseBoneIndex Clavicle = ResolveCompactBone(Bones, ClavicleName);
 	if (Clavicle.IsValid())
 	{
-		RotateBone(CSPose, Clavicle, ActorRotationToMesh(FRotator(ArmSwingDegrees * AedirClavicleFollowShare, 0.f, 0.f).Quaternion()));
+		RotateBone(CSPose, Clavicle, ActorRotationToMesh(FRotator(ArmSwingDegrees * AedirClavicleFollowShare, 0.f, ClavicleRollDegrees).Quaternion()));
 	}
 
 	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
 	if (Humerus.IsValid())
 	{
-		RotateBone(CSPose, Humerus, ActorRotationToMesh(FRotator(ArmSwingDegrees, 0.f, 0.f).Quaternion()));
+		RotateBone(CSPose, Humerus, ActorRotationToMesh(FRotator(ArmSwingDegrees + ArmRestForwardDegrees * RestAlpha, 0.f, RestRollDegrees * RestAlpha).Quaternion()));
 	}
 
 	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
 	if (Radius.IsValid())
 	{
-		RotateBone(CSPose, Radius, ActorRotationToMesh(FRotator(ElbowDegrees, 0.f, 0.f).Quaternion()));
+		RotateBone(CSPose, Radius, ActorRotationToMesh(FRotator(RestElbowDegrees, 0.f, 0.f).Quaternion()));
 	}
 
 	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);
 	if (Hand.IsValid())
 	{
-		RotateBone(CSPose, Hand, ActorRotationToMesh(FRotator(ElbowDegrees * AedirWristFollowShare, 0.f, 0.f).Quaternion()));
+		RotateBone(CSPose, Hand, ActorRotationToMesh(FRotator(RestElbowDegrees * AedirWristFollowShare, 0.f, 0.f).Quaternion()));
 	}
 }
 

@@ -21,6 +21,35 @@ namespace
 	constexpr float AedirObjectImpactBalanceMultiplier = 10.f;
 	constexpr float AedirObjectImpactDamagePerScore = 0.002f;
 	constexpr float AedirWallImpactDamagePerSpeed = 0.01f;
+
+	constexpr float HitReactionAthleticsCap = 100.f;
+	constexpr float HitReactionAthleticsLossScale = 0.5f;
+	constexpr float HitReactionStaminaLossScale = 0.5f;
+	constexpr float HitReactionDefaultAthletism = 10.f;
+	constexpr float HitReactionStaggerThreshold = 0.25f;
+	constexpr float HitReactionStaggerMinSeconds = 0.4f;
+	constexpr float HitReactionStaggerMaxSeconds = 1.f;
+	constexpr float HitReactionStaggerSpeedPerJoule = 2.f;
+	constexpr float HitReactionStaggerSpeedMax = 350.f;
+	constexpr float HitReactionStaggerRecoveryScale = 0.7f;
+	constexpr float HitReactionDazeEnergyRef = 60.f;
+	constexpr float HitReactionDazeMaxSeconds = 2.5f;
+	constexpr float HitReactionDazeRecoveryScale = 0.5f;
+	constexpr float HitReactionKnockdownExtraSeconds = 0.8f;
+	constexpr float HitReactionBoneImpulseScale = 0.35f;
+	constexpr float HitReactionBoneImpulseMax = 25000.f;
+
+	float HitReactionZoneEnergyRef(EAedirBodyZone Zone)
+	{
+		switch (Zone)
+		{
+		case EAedirBodyZone::Head: return 25.f;
+		case EAedirBodyZone::Torso: return 60.f;
+		case EAedirBodyZone::Arm: return 120.f;
+		case EAedirBodyZone::Leg: return 40.f;
+		default: checkNoEntry(); return 60.f;
+		}
+	}
 }
 
 UAedirBalanceComponent::UAedirBalanceComponent()
@@ -92,6 +121,8 @@ void UAedirBalanceComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	DOREPLIFETIME(UAedirBalanceComponent, Balance);
 	DOREPLIFETIME(UAedirBalanceComponent, LeanDirection);
 	DOREPLIFETIME(UAedirBalanceComponent, bIsRagdoll);
+	DOREPLIFETIME(UAedirBalanceComponent, StaggerSeconds);
+	DOREPLIFETIME(UAedirBalanceComponent, DazeSeconds);
 }
 
 void UAedirBalanceComponent::ApplyBalanceImpact(FVector WorldDirection, float Magnitude)
@@ -136,6 +167,101 @@ void UAedirBalanceComponent::HandleLanded(float LandingSpeed)
 	}
 }
 
+void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
+{
+	if (!IsAuthoritative() || !CharacterOwner)
+	{
+		return;
+	}
+
+	const UAedirStatsComponent* StatsComponent = FindStats();
+	const float Athletism = StatsComponent ? StatsComponent->Athletism : HitReactionDefaultAthletism;
+	const float StaminaFraction = StatsComponent ? StatsComponent->GetStaminaFraction() : 1.f;
+
+	const float Loss = ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction);
+	ApplyBalanceImpact(Impact.Direction, Loss);
+
+	if (Impact.Bone != NAME_None && BodyMesh && BodyMesh->IsAnySimulatingPhysics())
+	{
+		const float ImpulseSize = FMath::Min(Impact.MassKg * Impact.RelativeSpeed * HitReactionBoneImpulseScale, HitReactionBoneImpulseMax);
+		MulticastBoneImpulse(Impact.Bone, Impact.Direction * ImpulseSize, Impact.Location);
+	}
+
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone) || Balance < FallBalanceThreshold;
+	bool bStaggered = false;
+
+	if (bKnockedDown)
+	{
+		if (!bIsRagdoll)
+		{
+			EnterRagdoll(MinRagdollSeconds + HitReactionKnockdownExtraSeconds);
+		}
+		else
+		{
+			const float ElapsedRagdoll = static_cast<float>(Now - RagdollStartTime);
+			CurrentRagdollMinSeconds = FMath::Max(CurrentRagdollMinSeconds, ElapsedRagdoll + HitReactionKnockdownExtraSeconds);
+		}
+	}
+	else if (!bIsRagdoll && ShouldStagger(Loss))
+	{
+		bStaggered = true;
+		StaggerSeconds = FMath::Lerp(HitReactionStaggerMinSeconds, HitReactionStaggerMaxSeconds, Loss);
+
+		const FVector PlanarDirection = FVector(Impact.Direction.X, Impact.Direction.Y, 0.f).GetSafeNormal();
+		if (!PlanarDirection.IsNearlyZero())
+		{
+			CharacterOwner->LaunchCharacter(PlanarDirection * ComputeStaggerSpeed(Impact.EnergyJoules), true, false);
+		}
+	}
+
+	DazeSeconds = FMath::Max(DazeSeconds, ComputeDazeSeconds(Impact.Zone, Impact.EnergyJoules));
+
+	OnHitReaction.Broadcast(Impact.Zone, Impact.EnergyJoules, bStaggered, bKnockedDown);
+}
+
+float UAedirBalanceComponent::ComputeBalanceLoss(EAedirBodyZone Zone, float EnergyJoules, float Athletism, float StaminaFraction)
+{
+	const float EnergyShare = FMath::Clamp(EnergyJoules / HitReactionZoneEnergyRef(Zone), 0.f, 1.f);
+	const float AthleticsFactor = 1.f - HitReactionAthleticsLossScale * FMath::Clamp(Athletism / HitReactionAthleticsCap, 0.f, 1.f);
+	const float StaminaFactor = 1.f + HitReactionStaminaLossScale * (1.f - FMath::Clamp(StaminaFraction, 0.f, 1.f));
+
+	return FMath::Clamp(EnergyShare * AthleticsFactor * StaminaFactor, 0.f, 1.f);
+}
+
+bool UAedirBalanceComponent::ShouldStagger(float BalanceLoss)
+{
+	return BalanceLoss >= HitReactionStaggerThreshold;
+}
+
+float UAedirBalanceComponent::GetKnockdownEnergy(EAedirBodyZone Zone)
+{
+	switch (Zone)
+	{
+	case EAedirBodyZone::Head: return 90.f;
+	case EAedirBodyZone::Torso: return 220.f;
+	case EAedirBodyZone::Arm: return 400.f;
+	case EAedirBodyZone::Leg: return 70.f;
+	default: checkNoEntry(); return 220.f;
+	}
+}
+
+float UAedirBalanceComponent::ComputeDazeSeconds(EAedirBodyZone Zone, float EnergyJoules)
+{
+	if (Zone != EAedirBodyZone::Head)
+	{
+		return 0.f;
+	}
+
+	return FMath::Clamp(EnergyJoules / HitReactionDazeEnergyRef, 0.f, 1.f) * HitReactionDazeMaxSeconds;
+}
+
+float UAedirBalanceComponent::ComputeStaggerSpeed(float EnergyJoules)
+{
+	return FMath::Clamp(EnergyJoules * HitReactionStaggerSpeedPerJoule, 0.f, HitReactionStaggerSpeedMax);
+}
+
 float UAedirBalanceComponent::GetBalance() const
 {
 	return Balance;
@@ -144,6 +270,26 @@ float UAedirBalanceComponent::GetBalance() const
 bool UAedirBalanceComponent::IsRagdoll() const
 {
 	return bIsRagdoll;
+}
+
+bool UAedirBalanceComponent::IsStaggering() const
+{
+	return StaggerSeconds > 0.f;
+}
+
+bool UAedirBalanceComponent::IsDazed() const
+{
+	return DazeSeconds > 0.f;
+}
+
+float UAedirBalanceComponent::GetDazeSeconds() const
+{
+	return DazeSeconds;
+}
+
+float UAedirBalanceComponent::GetDazeFactor() const
+{
+	return FMath::Clamp(DazeSeconds / HitReactionDazeMaxSeconds, 0.f, 1.f);
 }
 
 FRotator UAedirBalanceComponent::GetPelvisLean() const
@@ -210,9 +356,14 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 		? FMath::Max(Creature->Combat->GetLimbInjury(EAedirLimb::LeftLeg), Creature->Combat->GetLimbInjury(EAedirLimb::RightLeg))
 		: 0.f;
 
-	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DeltaTime;
+	const float DazeRecoveryScale = IsDazed() ? HitReactionDazeRecoveryScale : 1.f;
+	const float StaggerRecoveryScale = IsStaggering() ? HitReactionStaggerRecoveryScale : 1.f;
+	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * DeltaTime;
 	SetBalance(Balance + Recovery);
 	DecayLeanDirection(Recovery);
+
+	StaggerSeconds = FMath::Max(0.f, StaggerSeconds - DeltaTime);
+	DazeSeconds = FMath::Max(0.f, DazeSeconds - DeltaTime);
 
 	UpdateFallState();
 
@@ -230,15 +381,30 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 
 	if (!bIsRagdoll && (bDead || TimeBelowThreshold >= FallDelaySeconds))
 	{
-		bIsRagdoll = true;
-		RagdollStartTime = Now;
-		SetRagdollPresentation(true);
+		EnterRagdoll(MinRagdollSeconds);
 	}
-	else if (bIsRagdoll && !bDead && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= MinRagdollSeconds)
+	else if (bIsRagdoll && !bDead && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds)
 	{
 		bIsRagdoll = false;
 		SetBalance(GetUpBalanceThreshold);
 		SetRagdollPresentation(false);
+	}
+}
+
+void UAedirBalanceComponent::EnterRagdoll(float MinimumSeconds)
+{
+	const UWorld* World = GetWorld();
+	bIsRagdoll = true;
+	RagdollStartTime = World ? World->GetTimeSeconds() : 0.0;
+	CurrentRagdollMinSeconds = MinimumSeconds;
+	SetRagdollPresentation(true);
+}
+
+void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVector Impulse, FVector Location)
+{
+	if (BodyMesh && BodyMesh->IsAnySimulatingPhysics())
+	{
+		BodyMesh->AddImpulseAtLocation(Impulse, Location, Bone);
 	}
 }
 
