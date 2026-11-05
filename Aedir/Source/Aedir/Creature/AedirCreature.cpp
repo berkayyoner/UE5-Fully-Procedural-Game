@@ -1,6 +1,7 @@
 #include "AedirCreature.h"
 
 #include "AedirGroupSubsystem.h"
+#include "Combat/AedirCombatComponent.h"
 #include "Items/AedirInteractionComponent.h"
 #include "AedirStatsComponent.h"
 #include "Animation/AedirGaitComponent.h"
@@ -17,6 +18,7 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = false;
 	bReplicates = true;
+	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
 	bUseControllerRotationYaw = false;
 
@@ -30,6 +32,7 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	Balance = CreateDefaultSubobject<UAedirBalanceComponent>(TEXT("Balance"));
 	Gait = CreateDefaultSubobject<UAedirGaitComponent>(TEXT("Gait"));
 	Interaction = CreateDefaultSubobject<UAedirInteractionComponent>(TEXT("Interaction"));
+	Combat = CreateDefaultSubobject<UAedirCombatComponent>(TEXT("Combat"));
 
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())
 	{

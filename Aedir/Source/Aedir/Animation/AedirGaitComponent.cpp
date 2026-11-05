@@ -1,6 +1,7 @@
 #include "Animation/AedirGaitComponent.h"
 
 #include "Components/CapsuleComponent.h"
+#include "Combat/AedirCombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
@@ -34,6 +35,25 @@ namespace
 		OutTargetWorld = bReaching ? TargetWorld : FVector::ZeroVector;
 		OutAlpha = bReaching ? FMath::Clamp(Alpha, 0.f, 1.f) : 0.f;
 	}
+
+	// Accumulates arm targets from the lowest priority up. Each higher priority target blends over the result so far.
+	struct FAedirArmTargetBlend
+	{
+		FVector Target = FVector::ZeroVector;
+		float Alpha = 0.f;
+
+		void Apply(const FVector& HigherTarget, float HigherAlpha)
+		{
+			if (HigherAlpha <= KINDA_SMALL_NUMBER)
+			{
+				return;
+			}
+
+			const float Weight = FMath::Clamp(HigherAlpha, 0.f, 1.f);
+			Target = Alpha > KINDA_SMALL_NUMBER ? FMath::Lerp(Target, HigherTarget, Weight) : HigherTarget;
+			Alpha = FMath::Max(Alpha, Weight);
+		}
+	};
 }
 
 UAedirGaitComponent::UAedirGaitComponent()
@@ -96,6 +116,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const bool bTurning = MovementComponent->IsTurningInPlace();
 	const bool bStepping = bMoving || bTurning;
 
+	const UAedirCombatComponent* Combat = CreatureOwner->Combat.Get();
+	GaitState.StanceAlpha = FMath::FInterpTo(GaitState.StanceAlpha, (Combat && Combat->IsInFightStance()) ? 1.f : 0.f, DeltaTime, StanceInterpSpeed);
+	const float StanceAlpha = GaitState.StanceAlpha;
+	const bool bRightLead = Combat && Combat->IsLeadFootRight();
+
 	const FVector LocalDirection = ActorTransform.InverseTransformVectorNoScale(Velocity).GetSafeNormal2D();
 	const float BackAlpha = FMath::Clamp(-LocalDirection.X, 0.f, 1.f);
 	const float SideAlpha = FMath::Clamp(FMath::Abs(LocalDirection.Y), 0.f, 1.f);
@@ -103,8 +128,10 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	const float Athletism = CreatureOwner->Stats ? CreatureOwner->Stats->Athletism : 0.f;
 	const float AthleticsScale = 1.f + Athletism / FMath::Max(AthleticsStrideDivisor, KINDA_SMALL_NUMBER);
+	// The stance shortens walking strides only, running keeps its full stride.
+	const float StanceStrideScale = FMath::Lerp(1.f, StanceWalkStrideMultiplier, StanceAlpha * (1.f - RunBlend));
 	const float StrideLength = FMath::Max(
-		FMath::Lerp(StrideWalkCm, StrideRunCm, SpeedAlpha) * ActorScale * DirectionalStrideScale * AthleticsScale * StairFactor,
+		FMath::Lerp(StrideWalkCm, StrideRunCm, SpeedAlpha) * ActorScale * DirectionalStrideScale * AthleticsScale * StairFactor * StanceStrideScale,
 		AedirMinStrideLength);
 	const float SwingFraction = FMath::Lerp(SwingFractionWalk, SwingFractionRun, SpeedAlpha);
 	const FVector MoveDirection = bMoving ? Velocity.GetSafeNormal2D() : ActorForward2D;
@@ -117,10 +144,15 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	FVector LandingNormal[2];
 	FVector AheadLocation[2];
 
+	const float StanceWidthScale = FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha);
+	const float StanceLeadForwardCm = StanceLeadFootForwardCm * StanceAlpha * ActorScale;
 	for (int32 Foot = 0; Foot < 2; ++Foot)
 	{
 		const float Side = Foot == 0 ? -1.f : 1.f;
-		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * ActorScale);
+		// Foot 1 is the right foot. The lead foot moves forward, the rear foot back by half as much.
+		const bool bLeadFoot = (Foot == 1) == bRightLead;
+		const float StanceForwardCm = StanceLeadForwardCm * (bLeadFoot ? 1.f : -0.5f);
+		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * ActorScale) + ActorForward2D * StanceForwardCm;
 		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * (StrideLength * 0.5f) : FVector::ZeroVector);
 
 		SampleGround(LandingXY, BottomZ, LandingLocation[Foot], LandingNormal[Foot]);
@@ -170,6 +202,13 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const bool bWrapped = Fraction < PreviousFootFraction[Foot];
 		PreviousFootFraction[Foot] = Fraction;
 		const bool bInSwingWindow = Fraction < SwingFraction;
+
+		if (!bSwinging[Foot] && !bStepping)
+		{
+			// Standing still the planted contact follows the home location, so the stance offsets reach the feet.
+			PlantedContact[Foot] = LandingLocation[Foot];
+			PlantedNormal[Foot] = LandingNormal[Foot];
+		}
 
 		if (!bSwinging[Foot])
 		{
@@ -231,13 +270,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float ReachLowerCm = Interaction ? FMath::Max(Interaction->GetPelvisLowerZ(), 0.f) : 0.f;
 	const float ReachLowerAlpha = FMath::Clamp(ReachLowerCm / FMath::Max(ReachLowerMaxCm, KINDA_SMALL_NUMBER), 0.f, 1.f);
 	GaitState.HipOffsetZ -= ReachLowerCm;
+	GaitState.HipOffsetZ -= StanceHipLowerCm * StanceAlpha;
 
 	FVector LeftReachTarget = FVector::ZeroVector;
 	FVector RightReachTarget = FVector::ZeroVector;
 	float LeftReachAlpha = 0.f;
 	float RightReachAlpha = 0.f;
-	QueryReachPose(Interaction, EAedirHand::Left, LeftReachTarget, LeftReachAlpha);
-	QueryReachPose(Interaction, EAedirHand::Right, RightReachTarget, RightReachAlpha);
+	ResolveArmReach(EAedirHand::Left, Combat, Interaction, ActorTransform, LeftReachTarget, LeftReachAlpha);
+	ResolveArmReach(EAedirHand::Right, Combat, Interaction, ActorTransform, RightReachTarget, RightReachAlpha);
 
 	const FRotator BalanceLean = BalanceComponent ? BalanceComponent->GetPelvisLean() : FRotator::ZeroRotator;
 	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * SpeedAlpha;
@@ -248,6 +288,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha + BalanceLean.Pitch + LookPitch * SpinePitchShare;
 	GaitState.SpineLeanPitch -= ReachTorsoLeanMaxDegrees * ReachLowerAlpha;
+	GaitState.SpineLeanPitch -= StanceSpineLeanDegrees * StanceAlpha;
 	const float TwistTarget = FMath::Clamp(LookYaw * SpineTwistScale, -SpineTwistLimitDegrees, SpineTwistLimitDegrees);
 	SmoothedSpineTwist = FMath::FInterpTo(SmoothedSpineTwist, TwistTarget, DeltaTime, LookInterpSpeed);
 	GaitState.SpineTwistYaw = SmoothedSpineTwist;
@@ -274,8 +315,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.RightArmReachAlpha = RightReachAlpha;
 	GaitState.LeftReachTargetWorld = LeftReachTarget;
 	GaitState.RightReachTargetWorld = RightReachTarget;
+	GaitState.FistAlphaLeft = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Left), 0.f, 1.f) : 0.f;
+	GaitState.FistAlphaRight = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Right), 0.f, 1.f) : 0.f;
 	GaitState.ElbowBend = FMath::Lerp(ElbowBendWalkDegrees, ElbowBendRunDegrees, SpeedAlpha);
 	GaitState.KneeBend = FMath::Max(Lift[0], Lift[1]) * KneeBendMaxDegrees + ReachLowerAlpha * KneeBendMaxDegrees;
+	GaitState.KneeBend += StanceKneeBendDegrees * StanceAlpha;
 
 	GaitState.Phase = Phase;
 	GaitState.bStepping = bStepping;
@@ -378,4 +422,33 @@ FRotator UAedirGaitComponent::ComputeFootTilt(const FVector& GroundNormal, const
 	}
 
 	return FMath::RInterpTo(CurrentTilt, Tilt.Rotator(), DeltaTime, FootAlignInterpSpeed);
+}
+
+void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, FVector& OutTargetWorld, float& OutAlpha) const
+{
+	FAedirArmTargetBlend Blend;
+
+	// Guard is the lowest priority: the hand rests at the guard offset relative to the actor.
+	float GuardAlpha = 0.f;
+	if (Combat && Combat->GetGuardPose(Hand, GuardAlpha))
+	{
+		const FVector& GuardOffset = Hand == EAedirHand::Left ? GuardHandOffsetLeft : GuardHandOffsetRight;
+		Blend.Apply(ActorTransform.TransformPosition(GuardOffset), GuardAlpha);
+	}
+
+	FVector ReachTarget = FVector::ZeroVector;
+	float ReachAlpha = 0.f;
+	QueryReachPose(Interaction, Hand, ReachTarget, ReachAlpha);
+	Blend.Apply(ReachTarget, ReachAlpha);
+
+	// The swing is the highest priority and overrides both the guard and the interaction reach.
+	FVector SwingTarget = FVector::ZeroVector;
+	float SwingAlpha = 0.f;
+	if (Combat && Combat->GetSwingPose(Hand, SwingTarget, SwingAlpha))
+	{
+		Blend.Apply(SwingTarget, SwingAlpha);
+	}
+
+	OutTargetWorld = Blend.Target;
+	OutAlpha = Blend.Alpha;
 }

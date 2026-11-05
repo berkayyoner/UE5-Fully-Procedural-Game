@@ -16,6 +16,17 @@ namespace
 	constexpr float AedirReachAlphaThreshold = 0.001f;
 	constexpr float AedirElbowOutwardDistance = 60.f;
 	constexpr float AedirElbowDropDistance = 40.f;
+	constexpr float AedirFistAlphaThreshold = 0.001f;
+	constexpr int32 AedirFingerCount = 5;
+	constexpr int32 AedirFingerJointCount = 3;
+	// Curl in degrees at a full fist, per finger (thumb first) and joint from the base.
+	constexpr float AedirFistCurlDegrees[AedirFingerCount][AedirFingerJointCount] = {
+		{ 35.f, 45.f, 30.f },
+		{ 70.f, 90.f, 60.f },
+		{ 70.f, 90.f, 60.f },
+		{ 70.f, 90.f, 60.f },
+		{ 70.f, 90.f, 60.f }
+	};
 
 	FCompactPoseBoneIndex ResolveCompactBone(const FBoneContainer& Bones, const FName& BoneName)
 	{
@@ -84,6 +95,12 @@ void FAedirProceduralAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float D
 	GaitData = Gait->GetGaitState();
 	Gait->FillBoneNames(BoneNameSet);
 
+	LeftFingerBoneNames = Instance->LeftFingerBoneNames;
+	RightFingerBoneNames = Instance->RightFingerBoneNames;
+	FistCurlAxis = Instance->FistCurlAxis;
+	FistCurlSignLeft = Instance->FistCurlSignLeft;
+	FistCurlSignRight = Instance->FistCurlSignRight;
+
 	MeshToWorld = Mesh->GetComponentTransform();
 	const FQuat ActorToWorld = Owner->GetActorQuat();
 	// Maps actor-local directions into mesh space: MeshToWorld^-1 * ActorToWorld.
@@ -117,6 +134,10 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	const FVector DownMesh = ActorToMesh.RotateVector(-FVector::UpVector);
 	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh);
 	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh);
+
+	// Fingers are children of the final hand pose, so they are curled after the arm IK.
+	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
+	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
 
 	const FVector ForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
 	ApplyLeg(CSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, GaitData.LeftFootWorld, GaitData.LeftFootRot, ForwardMesh);
@@ -273,6 +294,35 @@ void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, con
 	CSPose.SetComponentSpaceTransform(Humerus, BlendBoneTransform(HumerusTransform, SolvedHumerus, Alpha));
 	CSPose.SetComponentSpaceTransform(Radius, BlendBoneTransform(RadiusTransform, SolvedRadius, Alpha));
 	CSPose.SetComponentSpaceTransform(Hand, BlendBoneTransform(HandTransform, SolvedHand, Alpha));
+}
+
+void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const TArray<FName>& FingerBoneNames, float FistAlpha, float CurlSign) const
+{
+	const float Alpha = FMath::Clamp(FistAlpha, 0.f, 1.f);
+	if (Alpha <= AedirFistAlphaThreshold || FingerBoneNames.IsEmpty() || FistCurlAxis.IsNearlyZero())
+	{
+		return;
+	}
+
+	const FVector CurlAxis = FistCurlAxis.GetSafeNormal();
+	// Bones are listed base to tip per finger, so each joint is curled after its parent joint.
+	for (int32 BoneIndex = 0; BoneIndex < FingerBoneNames.Num(); ++BoneIndex)
+	{
+		const FCompactPoseBoneIndex Bone = ResolveCompactBone(Bones, FingerBoneNames[BoneIndex]);
+		if (!Bone.IsValid())
+		{
+			continue;
+		}
+
+		const int32 Finger = FMath::Min(BoneIndex / AedirFingerJointCount, AedirFingerCount - 1);
+		const int32 Joint = BoneIndex % AedirFingerJointCount;
+		const FQuat LocalCurl(CurlAxis, FMath::DegreesToRadians(AedirFistCurlDegrees[Finger][Joint] * Alpha * CurlSign));
+
+		// Post-multiplying applies the curl in the bone's own frame on top of its component space rotation.
+		FTransform BoneTransform = CSPose.GetComponentSpaceTransform(Bone);
+		BoneTransform.SetRotation(BoneTransform.GetRotation() * LocalCurl);
+		CSPose.SetComponentSpaceTransform(Bone, BoneTransform);
+	}
 }
 
 void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh) const

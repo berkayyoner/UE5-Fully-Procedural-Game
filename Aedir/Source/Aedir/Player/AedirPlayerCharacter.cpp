@@ -2,6 +2,7 @@
 
 #include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Combat/AedirCombatComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Items/AedirInteractionComponent.h"
@@ -47,6 +48,7 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 	MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
 
 	UpdateHandUseHold(DeltaSeconds);
+	UpdateSwingInput(DeltaSeconds);
 }
 
 void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -75,10 +77,10 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AAedirPlayerCharacter::HandleJumpPressed);
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Released, this, &AAedirPlayerCharacter::HandleJumpReleased);
 
-	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AAedirPlayerCharacter::HandleFightButtonPressed);
-	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleFightButtonReleased);
-	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AAedirPlayerCharacter::HandleFightButtonPressed);
-	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleFightButtonReleased);
+	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftGuardPressed);
+	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleLeftGuardReleased);
+	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightGuardPressed);
+	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleRightGuardReleased);
 
 	PlayerInputComponent->BindKey(EKeys::Q, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHandPressed);
 	PlayerInputComponent->BindKey(EKeys::Q, IE_Released, this, &AAedirPlayerCharacter::HandleLeftHandReleased);
@@ -129,11 +131,13 @@ void AAedirPlayerCharacter::HandleLeftKey(float Value)
 void AAedirPlayerCharacter::HandleMouseX(float Value)
 {
 	AddControllerYawInput(Value);
+	PendingMouseDelta.X += Value;
 }
 
 void AAedirPlayerCharacter::HandleMouseY(float Value)
 {
 	AddControllerPitchInput(-Value);
+	PendingMouseDelta.Y += Value;
 }
 
 void AAedirPlayerCharacter::HandleRunPressed()
@@ -166,16 +170,52 @@ void AAedirPlayerCharacter::HandleJumpReleased()
 	StopJump();
 }
 
-void AAedirPlayerCharacter::HandleFightButtonPressed()
+void AAedirPlayerCharacter::HandleLeftGuardPressed()
 {
-	++HeldFightButtons;
-	SetWantsFightStance(true);
+	if (Combat)
+	{
+		Combat->SetGuard(EAedirHand::Left, true);
+	}
 }
 
-void AAedirPlayerCharacter::HandleFightButtonReleased()
+void AAedirPlayerCharacter::HandleLeftGuardReleased()
 {
-	HeldFightButtons = FMath::Max(0, HeldFightButtons - 1);
-	SetWantsFightStance(HeldFightButtons > 0);
+	if (Combat)
+	{
+		Combat->SetGuard(EAedirHand::Left, false);
+	}
+}
+
+void AAedirPlayerCharacter::HandleRightGuardPressed()
+{
+	if (Combat)
+	{
+		Combat->SetGuard(EAedirHand::Right, true);
+	}
+}
+
+void AAedirPlayerCharacter::HandleRightGuardReleased()
+{
+	if (Combat)
+	{
+		Combat->SetGuard(EAedirHand::Right, false);
+	}
+}
+
+void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
+{
+	if (Combat)
+	{
+		for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+		{
+			if (Combat->IsGuardActive(Hand))
+			{
+				Combat->AddSwingInput(Hand, PendingMouseDelta, DeltaSeconds);
+			}
+		}
+	}
+
+	PendingMouseDelta = FVector2D::ZeroVector;
 }
 
 void AAedirPlayerCharacter::HandleLeftHandPressed()

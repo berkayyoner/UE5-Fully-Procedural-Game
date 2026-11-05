@@ -46,8 +46,10 @@ private:
 	void HandleCrouchReleased();
 	void HandleJumpPressed();
 	void HandleJumpReleased();
-	void HandleFightButtonPressed();
-	void HandleFightButtonReleased();
+	void HandleLeftGuardPressed();
+	void HandleLeftGuardReleased();
+	void HandleRightGuardPressed();
+	void HandleRightGuardReleased();
 
 	void HandleLeftHandPressed();
 	void HandleLeftHandReleased();
@@ -59,12 +61,13 @@ private:
 	void HandleHandPressed(EAedirHand Hand);
 	void HandleHandReleased(EAedirHand Hand);
 	void UpdateHandUseHold(float DeltaSeconds);
+	void UpdateSwingInput(float DeltaSeconds);
 
 	float ForwardKeyValue = 0.f;
 	float BackwardKeyValue = 0.f;
 	float RightKeyValue = 0.f;
 	float LeftKeyValue = 0.f;
-	int32 HeldFightButtons = 0;
+	FVector2D PendingMouseDelta = FVector2D::ZeroVector;
 
 	bool bHandKeyTracked[2] = { false, false };
 	bool bHandUseTriggered[2] = { false, false };

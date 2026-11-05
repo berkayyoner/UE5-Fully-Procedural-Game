@@ -7,7 +7,10 @@
 class AAedirCreature;
 class UAedirBalanceComponent;
 class UAedirCharacterMovementComponent;
+class UAedirCombatComponent;
+class UAedirInteractionComponent;
 class USkeletalMeshComponent;
+enum class EAedirHand : uint8;
 
 USTRUCT(BlueprintType)
 struct AEDIR_API FAedirGaitState
@@ -75,6 +78,17 @@ struct AEDIR_API FAedirGaitState
 
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	FVector RightReachTargetWorld = FVector::ZeroVector;
+
+	// Fist blend per hand, 0 = open, 1 = fully curled. Only rises while the hand is empty and guarding.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float FistAlphaLeft = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float FistAlphaRight = 0.f;
+
+	// Fighting stance blend, 0 = relaxed, 1 = fully in stance.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float StanceAlpha = 0.f;
 
 	// Total forward (negative) or backward (positive) torso pitch in degrees, FRotator convention.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
@@ -284,6 +298,41 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ReachTorsoLeanMaxDegrees = 20.f;
 
+	// Speed of the fighting stance blend in and out.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	float StanceInterpSpeed = 8.f;
+
+	// Pelvis drop in cm at a full fighting stance.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	float StanceHipLowerCm = 12.f;
+
+	// Extra knee flexion in degrees at a full fighting stance.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	float StanceKneeBendDegrees = 20.f;
+
+	// Multiplier on the foot home half-width at a full fighting stance.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	float StanceFootWidthMultiplier = 1.7f;
+
+	// Forward shift in cm of the lead foot's home location at a full fighting stance. The rear foot moves back by half of it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	float StanceLeadFootForwardCm = 22.f;
+
+	// Walking stride multiplier at a full fighting stance. Running is not affected.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	float StanceWalkStrideMultiplier = 0.7f;
+
+	// Forward torso lean in degrees at a full fighting stance.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	float StanceSpineLeanDegrees = 6.f;
+
+	// Guard hand position in cm relative to the actor: forward, right, up. Scaled by the actor transform.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	FVector GuardHandOffsetLeft = FVector(30.f, -16.f, 50.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	FVector GuardHandOffsetRight = FVector(30.f, 16.f, 50.f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MaxArmSwingWalkDegrees = 35.f;
 
@@ -352,6 +401,7 @@ private:
 	void ResetForRagdoll();
 	void AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength);
 	FRotator ComputeFootTilt(const FVector& GroundNormal, const FVector& ActorUp, const FRotator& CurrentTilt, float DeltaTime) const;
+	void ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, FVector& OutTargetWorld, float& OutAlpha) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirCreature> CreatureOwner;

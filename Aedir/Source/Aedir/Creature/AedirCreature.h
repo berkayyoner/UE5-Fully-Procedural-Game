@@ -6,6 +6,7 @@
 #include "AedirCreature.generated.h"
 
 class UAedirBalanceComponent;
+class UAedirCombatComponent;
 class UAedirGaitComponent;
 class UAedirInteractionComponent;
 class UAedirStatsComponent;
@@ -31,6 +32,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
 	TObjectPtr<UAedirInteractionComponent> Interaction;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
+	TObjectPtr<UAedirCombatComponent> Combat;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_GroupId, Category="Aedir|Groups")
 	FName GroupId;

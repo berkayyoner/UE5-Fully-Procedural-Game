@@ -44,6 +44,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	float PoisonDamage = 10.f;
 
+	// Damage dealt per swing while this item is held.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
+	float Damage = 0.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	TObjectPtr<UMaterialInterface> HighlightOverlayMaterial;
 
@@ -87,6 +91,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Item")
 	bool IsUsable() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Item")
+	float GetDamage() const;
 
 	static bool IsPickable(const AAedirItemActor* Item);
 

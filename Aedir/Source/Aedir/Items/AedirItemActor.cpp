@@ -149,6 +149,11 @@ bool AAedirItemActor::IsUsable() const
 	return ItemClass == EAedirItemClass::Poison || ItemClass == EAedirItemClass::Book;
 }
 
+float AAedirItemActor::GetDamage() const
+{
+	return Damage;
+}
+
 bool AAedirItemActor::IsPickable(const AAedirItemActor* Item)
 {
 	return Item && !Item->IsHeld();
