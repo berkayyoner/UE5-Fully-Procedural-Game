@@ -57,7 +57,26 @@ public:
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Aedir|Movement")
 	bool bWantsFightStance = false;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float RotationRateMoving = 360.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float BodyLagYawMoving = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float MaxBodyHeadYawWhileMoving = 35.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float StandingLookYawLimit = 70.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float TurnInPlaceRate = 130.f;
+
+	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Aedir|Movement")
+	bool bTurningInPlace = false;
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
+	virtual void PhysicsRotation(float DeltaTime) override;
 	virtual float GetMaxSpeed() const override;
 	virtual bool DoJump(bool bReplayingMoves, float DeltaTime) override;
 	virtual void UpdateFromCompressedFlags(uint8 Flags) override;
@@ -75,8 +94,15 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Movement")
 	bool IsRunningNow() const;
 
+	UFUNCTION(BlueprintPure, Category="Aedir|Movement")
+	bool IsTurningInPlace() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Movement")
+	float GetYawDeltaToControl() const;
+
 private:
 	UAedirStatsComponent* GetOwnerStats() const;
 	float GetCarryRatio() const;
 	float GetDirectionalSpeedMultiplier() const;
+	void SetBodyYaw(float NewYaw);
 };

@@ -6,6 +6,7 @@
 #include "AedirCreature.generated.h"
 
 class UAedirBalanceComponent;
+class UAedirGaitComponent;
 class UAedirStatsComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirGroupIdChanged, FName, NewGroupId);
@@ -23,6 +24,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
 	TObjectPtr<UAedirBalanceComponent> Balance;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
+	TObjectPtr<UAedirGaitComponent> Gait;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_GroupId, Category="Aedir|Groups")
 	FName GroupId;

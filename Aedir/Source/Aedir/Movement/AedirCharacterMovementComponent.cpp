@@ -10,6 +10,8 @@ namespace
 	constexpr float AedirSideArcDegrees = 90.f;
 	constexpr float AedirBackArcDegrees = 135.f;
 	constexpr double AedirRunMinSpeedSquared = 100.0;
+	constexpr float AedirBodyMovingSpeed = 20.f;
+	constexpr float AedirTurnInPlaceFinishYaw = 5.f;
 
 	float SmoothStep01(float Alpha)
 	{
@@ -133,6 +135,60 @@ void UAedirCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick
 	}
 }
 
+void UAedirCharacterMovementComponent::PhysicsRotation(float DeltaTime)
+{
+	const ACharacter* Character = GetCharacterOwner();
+	if (!Character || !Character->GetController() || !UpdatedComponent || !HasValidData())
+	{
+		return;
+	}
+
+	const float CurrentYaw = UpdatedComponent->GetComponentRotation().Yaw;
+	const float DesiredYaw = Character->GetControlRotation().Yaw;
+	const float YawDelta = FMath::FindDeltaAngleDegrees(CurrentYaw, DesiredYaw);
+
+	const bool bMovingBody = (IsMovingOnGround() && Velocity.Size2D() > AedirBodyMovingSpeed) || IsFalling();
+
+	if (bMovingBody)
+	{
+		bTurningInPlace = false;
+
+		const float Sign = YawDelta < 0.f ? -1.f : 1.f;
+		float Step = 0.f;
+		if (FMath::Abs(YawDelta) > BodyLagYawMoving)
+		{
+			const float Excess = YawDelta - Sign * BodyLagYawMoving;
+			Step = FMath::FixedTurn(0.f, Excess, RotationRateMoving * DeltaTime);
+		}
+
+		if (FMath::Abs(YawDelta - Step) > MaxBodyHeadYawWhileMoving)
+		{
+			Step = YawDelta - Sign * MaxBodyHeadYawWhileMoving;
+		}
+
+		SetBodyYaw(CurrentYaw + Step);
+		return;
+	}
+
+	if (!bTurningInPlace && FMath::Abs(YawDelta) > StandingLookYawLimit)
+	{
+		bTurningInPlace = true;
+	}
+
+	if (!bTurningInPlace)
+	{
+		return;
+	}
+
+	const float Step = FMath::FixedTurn(0.f, YawDelta, TurnInPlaceRate * DeltaTime);
+	SetBodyYaw(CurrentYaw + Step);
+
+	if (FMath::Abs(FMath::FindDeltaAngleDegrees(CurrentYaw + Step, DesiredYaw)) < AedirTurnInPlaceFinishYaw)
+	{
+		bTurningInPlace = false;
+	}
+}
+
 float UAedirCharacterMovementComponent::GetMaxSpeed() const
 {
 	if (MovementMode != MOVE_Walking && MovementMode != MOVE_NavWalking && MovementMode != MOVE_Falling)
@@ -231,6 +287,29 @@ bool UAedirCharacterMovementComponent::CanRunNow() const
 bool UAedirCharacterMovementComponent::IsRunningNow() const
 {
 	return bWantsToRun && !bWantsFightStance && !IsCrouching() && CanRunNow();
+}
+
+bool UAedirCharacterMovementComponent::IsTurningInPlace() const
+{
+	return bTurningInPlace;
+}
+
+float UAedirCharacterMovementComponent::GetYawDeltaToControl() const
+{
+	const ACharacter* Character = GetCharacterOwner();
+	if (!Character || !Character->GetController() || !UpdatedComponent)
+	{
+		return 0.f;
+	}
+
+	return FMath::FindDeltaAngleDegrees(UpdatedComponent->GetComponentRotation().Yaw, Character->GetControlRotation().Yaw);
+}
+
+void UAedirCharacterMovementComponent::SetBodyYaw(float NewYaw)
+{
+	FRotator NewRotation = UpdatedComponent->GetComponentRotation();
+	NewRotation.Yaw = NewYaw;
+	MoveUpdatedComponent(FVector::ZeroVector, NewRotation, false);
 }
 
 UAedirStatsComponent* UAedirCharacterMovementComponent::GetOwnerStats() const

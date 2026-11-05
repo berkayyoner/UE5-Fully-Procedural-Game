@@ -12,6 +12,7 @@ public class Aedir : ModuleRules
 			"Core",
 			"CoreUObject",
 			"Engine",
+			"AnimationCore",
 			"InputCore",
 			"EnhancedInput",
 			"PhysicsCore",

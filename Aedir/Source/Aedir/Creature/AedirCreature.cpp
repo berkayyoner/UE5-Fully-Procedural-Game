@@ -2,6 +2,9 @@
 
 #include "AedirGroupSubsystem.h"
 #include "AedirStatsComponent.h"
+#include "Animation/AedirGaitComponent.h"
+#include "Animation/AedirProceduralAnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Math/RotationMatrix.h"
 #include "Movement/AedirCharacterMovementComponent.h"
@@ -24,6 +27,15 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 
 	Stats = CreateDefaultSubobject<UAedirStatsComponent>(TEXT("Stats"));
 	Balance = CreateDefaultSubobject<UAedirBalanceComponent>(TEXT("Balance"));
+	Gait = CreateDefaultSubobject<UAedirGaitComponent>(TEXT("Gait"));
+
+	if (USkeletalMeshComponent* MeshComponent = GetMesh())
+	{
+		MeshComponent->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+		MeshComponent->SetAnimInstanceClass(UAedirProceduralAnimInstance::StaticClass());
+		MeshComponent->bEnableUpdateRateOptimizations = false;
+		MeshComponent->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	}
 }
 
 void AAedirCreature::BeginPlay()
