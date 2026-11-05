@@ -124,6 +124,21 @@ public:
 	float GetStaminaFraction() const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
+	float GetMaxStamina() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
+	float GetHealth() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
+	float GetMaxHealth() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
+	float GetMana() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
+	float GetMaxMana() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetSkill(EAedirSkill Skill) const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")

@@ -221,6 +221,31 @@ float UAedirStatsComponent::GetStaminaFraction() const
 	return SafeFraction(Stamina, MaxStamina);
 }
 
+float UAedirStatsComponent::GetMaxStamina() const
+{
+	return MaxStamina;
+}
+
+float UAedirStatsComponent::GetHealth() const
+{
+	return Health;
+}
+
+float UAedirStatsComponent::GetMaxHealth() const
+{
+	return MaxHealth;
+}
+
+float UAedirStatsComponent::GetMana() const
+{
+	return Mana;
+}
+
+float UAedirStatsComponent::GetMaxMana() const
+{
+	return MaxMana;
+}
+
 float UAedirStatsComponent::GetSkill(EAedirSkill Skill) const
 {
 	const int32 Index = static_cast<int32>(Skill);
