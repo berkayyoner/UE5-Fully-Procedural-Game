@@ -161,7 +161,7 @@ FReply SAedirCharacterCreation::OnKeyDown(const FGeometry& MyGeometry, const FKe
 		CancelDelegate.ExecuteIfBound();
 		return FReply::Handled();
 	}
-	if (Key == EKeys::Enter || Key == EKeys::Virtual_Accept)
+	if (Key == EKeys::Enter || Key == EKeys::Gamepad_FaceButton_Bottom)
 	{
 		const TArray<FAedirRaceDef>& Races = UAedirRaceCatalog::GetAll();
 		if (Races.IsValidIndex(SelectedIndex))

@@ -164,6 +164,8 @@ private:
 	void HandleRightHandReleased();
 	void HandleLeftHolsterPressed();
 	void HandleRightHolsterPressed();
+	void HandleShovePressed();
+	void HandleKickPressed();
 
 	void HandleHandPressed(EAedirHand Hand);
 	void HandleHandReleased(EAedirHand Hand);

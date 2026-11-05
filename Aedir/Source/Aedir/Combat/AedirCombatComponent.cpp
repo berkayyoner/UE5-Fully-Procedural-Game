@@ -1,11 +1,13 @@
 #include "Combat/AedirCombatComponent.h"
 
 #include "Components/PrimitiveComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirGroupSubsystem.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
 #include "Engine/HitResult.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Engine/OverlapResult.h"
 #include "GameFramework/Controller.h"
 #include "Items/AedirInteractionComponent.h"
@@ -80,6 +82,45 @@ namespace
 	constexpr float AedirClashBalanceScale = 0.1f;
 	constexpr float AedirClashEnergyShare = 0.5f;
 
+	constexpr float AedirShoveStrikeSeconds = 0.12f;
+	constexpr float AedirShoveDuration = 0.35f;
+	constexpr float AedirShoveReachCm = 70.f;
+	constexpr float AedirShoveConeCos = 0.5f;
+	constexpr float AedirShoveRecoilBalance = 0.06f;
+	constexpr float AedirShoveStiffnessScale = 2.f;
+	constexpr float AedirShoveHeavyItemKg = 6.f;
+	constexpr float AedirShoveArmInjuryLimit = 0.6f;
+	constexpr float AedirShoveBaseJoules = 20.f;
+	constexpr float AedirShoveStrengthJoules = 1.8f;
+	constexpr float AedirShoveMinStaminaScale = 0.5f;
+
+	constexpr float AedirKickDuration = 0.5f;
+	constexpr float AedirKickStrikeStart = 0.18f;
+	constexpr float AedirKickStrikeEnd = 0.32f;
+	constexpr float AedirKickHitRadius = 14.f;
+	constexpr float AedirKickMassKg = 8.f;
+	constexpr float AedirKickEnergyScale = 0.8f;
+	constexpr float AedirKickMaxFootSpeed = 500.f;
+	constexpr float AedirKickRecoilBalance = 0.12f;
+	constexpr float AedirKickMinBalance = 0.4f;
+	constexpr float AedirKickPoseRiseSeconds = 0.08f;
+	constexpr float AedirKickPoseFallSeconds = 0.15f;
+	constexpr float AedirKickChamberTime = 0.25f;
+	constexpr float AedirKickExtendTime = 0.5f;
+	constexpr float AedirKickChamberBehindCm = 35.f;
+	constexpr float AedirKickChamberRightCm = 20.f;
+	constexpr float AedirKickExtendCm = 85.f;
+	constexpr float AedirKickGroundBelowHipCm = 90.f;
+	constexpr float AedirKickExtendHeightCm = 55.f;
+
+	constexpr float AedirAIContactRange = 110.f;
+	constexpr float AedirAIShoveChance = 0.12f;
+	constexpr float AedirAIKickChance = 0.08f;
+
+	const FName AedirKickFootLeftBone(TEXT("foot_l"));
+	const FName AedirKickFootRightBone(TEXT("foot_r"));
+	const FName AedirKickPelvisBone(TEXT("pelvis"));
+
 	float CombatSmoothStep01(float Alpha)
 	{
 		const float Clamped = FMath::Clamp(Alpha, 0.f, 1.f);
@@ -141,7 +182,18 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		SwingCooldownRemaining[Index] = FMath::Max(0.f, SwingCooldownRemaining[Index] - DeltaTime);
 	}
 
+	ShoveCooldownRemaining = FMath::Max(0.f, ShoveCooldownRemaining - DeltaTime);
+	KickCooldownRemaining = FMath::Max(0.f, KickCooldownRemaining - DeltaTime);
+
 	UpdateSwings(DeltaTime);
+
+	if (bAuthority || IsAutonomousProxy())
+	{
+		UpdateTwoHandGrip();
+		UpdateShove(DeltaTime);
+	}
+
+	UpdateKick(DeltaTime);
 
 	if (bAuthority && !Creature->IsPlayerControlled())
 	{
@@ -189,6 +241,8 @@ void UAedirCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	DOREPLIFETIME(UAedirCombatComponent, RightSwing);
 	DOREPLIFETIME(UAedirCombatComponent, LeftArmNet);
 	DOREPLIFETIME(UAedirCombatComponent, RightArmNet);
+	DOREPLIFETIME(UAedirCombatComponent, bTwoHandGrip);
+	DOREPLIFETIME(UAedirCombatComponent, KickNet);
 	DOREPLIFETIME(UAedirCombatComponent, ArmorProtection);
 	DOREPLIFETIME(UAedirCombatComponent, LimbInjury);
 }
@@ -213,7 +267,8 @@ void UAedirCombatComponent::SetGuard(EAedirHand Hand, bool bActive)
 
 void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaThisFrame, float DeltaTime)
 {
-	if (!Creature || !Creature->IsLocallyControlled() || DeltaTime <= 0.f || !IsGuardActive(Hand))
+	// The second hand of a two-hand grip is placed by the grip, so only the primary hand takes mouse input.
+	if (!Creature || !Creature->IsLocallyControlled() || DeltaTime <= 0.f || !IsGuardActive(Hand) || IsSecondaryGripHand(Hand))
 	{
 		return;
 	}
@@ -297,6 +352,13 @@ bool UAedirCombatComponent::GetGuardPose(EAedirHand Hand, float& OutAlpha) const
 bool UAedirCombatComponent::GetSwingPose(EAedirHand Hand, FVector& OutHandTargetWorld, float& OutAlpha) const
 {
 	const FAedirArmDynamics& Arm = GetArm(Hand);
+	if (IsSecondaryGripHand(Hand))
+	{
+		OutAlpha = 1.f;
+		OutHandTargetWorld = Arm.HandWorld;
+		return true;
+	}
+
 	OutAlpha = Arm.ActiveAlpha;
 	if (OutAlpha <= 0.001f)
 	{
@@ -502,12 +564,24 @@ bool UAedirCombatComponent::CanStartSwing(EAedirHand Hand) const
 {
 	return IsGuardActive(Hand)
 		&& !GetSwingState(Hand).bActive
-		&& SwingCooldownRemaining[HandIndex(Hand)] <= 0.f;
+		&& SwingCooldownRemaining[HandIndex(Hand)] <= 0.f
+		&& !bShoving
+		&& !IsSecondaryGripHand(Hand);
 }
 
 bool UAedirCombatComponent::IsArmActive(EAedirHand Hand) const
 {
 	return IsGuardActive(Hand) || GetSwingState(Hand).bActive;
+}
+
+bool UAedirCombatComponent::IsArmPosed(EAedirHand Hand) const
+{
+	return IsArmActive(Hand) || bShoving || IsSecondaryGripHand(Hand);
+}
+
+bool UAedirCombatComponent::IsSecondaryGripHand(EAedirHand Hand) const
+{
+	return bTwoHandGrip && Hand != GetGripHand();
 }
 
 float UAedirCombatComponent::ComputeWeightFactor(EAedirHand Hand) const
@@ -547,9 +621,21 @@ bool UAedirCombatComponent::TryStartSwing(EAedirHand Hand, EAedirSwingType Type,
 		return false;
 	}
 
-	if (!Creature->Stats || !Creature->Stats->ConsumeStamina(SwingStaminaCost * ComputeWeightFactor(Hand)))
+	const float Cost = SwingStaminaCost * ComputeWeightFactor(Hand);
+	if (!Creature->Stats || Creature->Stats->GetStamina() < Cost)
 	{
 		return false;
+	}
+
+	// A two-handed grip splits the swing cost, each arm pays half.
+	if (bTwoHandGrip)
+	{
+		Creature->Stats->ConsumeStamina(Cost * 0.5f);
+		Creature->Stats->ConsumeStamina(Cost * 0.5f);
+	}
+	else
+	{
+		Creature->Stats->ConsumeStamina(Cost);
 	}
 
 	StartSwingInternal(Hand, Type, Direction);
@@ -583,7 +669,7 @@ void UAedirCombatComponent::CancelSwing(EAedirHand Hand)
 	State.bActive = false;
 	State.Elapsed = State.Duration;
 	SwingCooldownRemaining[HandIndex(Hand)] = SwingCooldown;
-	GetArm(Hand).bScriptedControl = false;
+	GetArm(Hand).bScriptedControl = bShoving;
 }
 
 void UAedirCombatComponent::UpdateSwings(float DeltaTime)
@@ -601,7 +687,8 @@ void UAedirCombatComponent::UpdateSwings(float DeltaTime)
 
 		if (!State.bActive)
 		{
-			Arm.bScriptedControl = false;
+			// A running shove owns the scripted control of both arms.
+			Arm.bScriptedControl = bShoving;
 			continue;
 		}
 
@@ -739,6 +826,11 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 		return Arm.ScriptedTargetWorld;
 	}
 
+	if (IsSecondaryGripHand(Hand))
+	{
+		return GetGripPointWorld();
+	}
+
 	const double Yaw = Creature->GetActorRotation().Yaw + Arm.AimOffsetDeg.X;
 	const FVector AimDirection = FRotator(Arm.AimOffsetDeg.Y, Yaw, 0.0).Vector();
 	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
@@ -765,7 +857,10 @@ void UAedirCombatComponent::IntegrateArm(EAedirHand Hand, FAedirArmDynamics& Arm
 	const float Strength = Creature->Stats ? Creature->Stats->Strength : AedirDefaultStat;
 	const float StaminaFraction = Creature->Stats ? Creature->Stats->GetStaminaFraction() : 1.f;
 	const float ArmInjury = GetLimbInjury(GetArmLimb(Hand));
-	const float TotalMass = GetArmTotalMass(Hand);
+	// A two-handed grip shares the weapon load between both arms, so the stiffness sees only part of the weapon mass.
+	const AAedirItemActor* HeldItem = GetHeldItem(Hand);
+	const float WeaponWeight = HeldItem ? HeldItem->Weight : 0.f;
+	const float StiffnessMass = WeaponWeight * (bTwoHandGrip ? 1.f - GripWeaponMassShare : 1.f) + ForearmMass;
 	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
 
 	const float StrengthFactor = AedirArmStrengthBase + Strength / AedirCombatStatMax;
@@ -773,8 +868,10 @@ void UAedirCombatComponent::IntegrateArm(EAedirHand Hand, FAedirArmDynamics& Arm
 	const float InjuryFactor = 1.f - AedirArmInjuryStiffnessLoss * ArmInjury;
 	const float DazeFactor = Creature->Balance ? Creature->Balance->GetDazeFactor() : 0.f;
 	const float DazeFactorStiffness = 1.f - AedirArmDazeStiffnessLoss * DazeFactor;
-	const float MassRatio = TotalMass / FMath::Max(Strength * AedirArmMassStrengthScale, 1.f);
-	const float Stiffness = ArmStiffnessBase * StrengthFactor * StaminaFactor * InjuryFactor * DazeFactorStiffness / (1.f + MassRatio);
+	const float MassRatio = StiffnessMass / FMath::Max(Strength * AedirArmMassStrengthScale, 1.f);
+	const float GripScale = (bTwoHandGrip && !IsSecondaryGripHand(Hand)) ? GripPrimaryStiffnessScale : 1.f;
+	const float ShoveScale = bShoving ? AedirShoveStiffnessScale : 1.f;
+	const float Stiffness = ArmStiffnessBase * StrengthFactor * StaminaFactor * InjuryFactor * DazeFactorStiffness * GripScale * ShoveScale / (1.f + MassRatio);
 	const float Damping = 2.f * FMath::Sqrt(Stiffness) * AedirArmDampingRatio;
 	const float MaxAcceleration = MaxArmAcceleration * StrengthFactor * StaminaFactor * InjuryFactor;
 	const float MaxRadius = AedirArmReachHardLimit * (SwingReach + GetEffectiveWeaponLength(Hand)) * Scale;
@@ -829,7 +926,7 @@ void UAedirCombatComponent::PublishArmState(EAedirHand Hand, const FAedirArmDyna
 	FAedirArmNetState& NetState = GetArmNet(Hand);
 	NetState.HandWorld = Arm.HandWorld;
 	NetState.HandVelocity = Arm.HandVelocity;
-	NetState.Active = IsArmActive(Hand) ? 1 : 0;
+	NetState.Active = IsArmPosed(Hand) ? 1 : 0;
 }
 
 void UAedirCombatComponent::SendArmAimToServer(float DeltaTime)
@@ -857,7 +954,7 @@ void UAedirCombatComponent::SendArmAimToServer(float DeltaTime)
 
 void UAedirCombatComponent::UpdateArmActivity(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime)
 {
-	const bool bActive = IsSimulatedProxy() ? GetArmNet(Hand).Active != 0 : IsArmActive(Hand);
+	const bool bActive = IsSimulatedProxy() ? GetArmNet(Hand).Active != 0 : IsArmPosed(Hand);
 	Arm.ActiveAlpha = FMath::FInterpConstantTo(Arm.ActiveAlpha, bActive ? 1.f : 0.f, DeltaTime, bActive ? 1.f / AedirArmRampInSeconds : 1.f / AedirArmRampOutSeconds);
 }
 
@@ -1331,6 +1428,19 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 
 	AIAttackTimer = 0.f;
 
+	if (Distance <= AedirAIContactRange && !GetSwingState(EAedirHand::Left).bActive && !GetSwingState(EAedirHand::Right).bActive)
+	{
+		if (FMath::FRand() < AedirAIShoveChance)
+		{
+			StartShove();
+		}
+
+		if (FMath::FRand() < AedirAIKickChance)
+		{
+			StartKick();
+		}
+	}
+
 	const EAedirSwingType Type = Distance < AedirAICloseRange
 		? (FMath::RandBool() ? EAedirSwingType::Hook : EAedirSwingType::Uppercut)
 		: EAedirSwingType::Jab;
@@ -1431,6 +1541,547 @@ bool UAedirCombatComponent::CanSeeTarget(const AAedirCreature* Target) const
 	return !World->LineTraceSingleByChannel(Hit, EyeLocation, TargetLocation, ECC_Visibility, Params);
 }
 
+bool UAedirCombatComponent::IsTwoHandGrip() const
+{
+	return bTwoHandGrip;
+}
+
+EAedirHand UAedirCombatComponent::GetGripHand() const
+{
+	const bool bLeftHeld = GetHeldItem(EAedirHand::Left) != nullptr;
+	const bool bRightHeld = GetHeldItem(EAedirHand::Right) != nullptr;
+	if (bLeftHeld && bRightHeld)
+	{
+		// A two-handed item occupies both hands. Its own held hand is the primary one.
+		const AAedirItemActor* SharedItem = GetHeldItem(EAedirHand::Left);
+		return SharedItem ? SharedItem->HeldHand : EAedirHand::Left;
+	}
+
+	return bLeftHeld ? EAedirHand::Left : EAedirHand::Right;
+}
+
+bool UAedirCombatComponent::EvaluateTwoHandGrip() const
+{
+	const AAedirItemActor* LeftItem = GetHeldItem(EAedirHand::Left);
+	const AAedirItemActor* RightItem = GetHeldItem(EAedirHand::Right);
+	if (!LeftItem && !RightItem)
+	{
+		return false;
+	}
+
+	// A two-handed item is held by both hands as the same item, which does not count as holding a second item.
+	if (LeftItem && RightItem && LeftItem != RightItem)
+	{
+		return false;
+	}
+
+	const AAedirItemActor* Weapon = LeftItem ? LeftItem : RightItem;
+	return Weapon->bTwoHanded || (bLeftGuard && bRightGuard);
+}
+
+void UAedirCombatComponent::UpdateTwoHandGrip()
+{
+	bTwoHandGrip = EvaluateTwoHandGrip();
+}
+
+FVector UAedirCombatComponent::GetGripPointWorld() const
+{
+	const FAedirArmDynamics& PrimaryArm = GetArm(GetGripHand());
+	FVector WeaponDirection = (PrimaryArm.HandWorld - PrimaryArm.ShoulderWorld).GetSafeNormal();
+	if (WeaponDirection.IsNearlyZero())
+	{
+		WeaponDirection = Creature ? Creature->GetActorForwardVector() : FVector::ForwardVector;
+	}
+
+	return PrimaryArm.HandWorld + WeaponDirection * GripSpacingCm;
+}
+
+float UAedirCombatComponent::ComputeShoveEnergy(float Strength, float StaminaFraction)
+{
+	const float StaminaScale = FMath::Lerp(AedirShoveMinStaminaScale, 1.f, FMath::Clamp(StaminaFraction, 0.f, 1.f));
+	return (AedirShoveBaseJoules + FMath::Max(Strength, 0.f) * AedirShoveStrengthJoules) * StaminaScale;
+}
+
+FVector UAedirCombatComponent::EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01)
+{
+	FVector Ahead = Forward.GetSafeNormal2D();
+	if (Ahead.IsNearlyZero())
+	{
+		Ahead = FVector::ForwardVector;
+	}
+
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Ahead);
+	const FVector Chamber = Hip - Ahead * AedirKickChamberBehindCm + Right * AedirKickChamberRightCm;
+	const FVector Extension = Hip + Ahead * AedirKickExtendCm + FVector(0.f, 0.f, AedirKickExtendHeightCm - AedirKickGroundBelowHipCm);
+	const float T = FMath::Clamp(T01, 0.f, 1.f);
+
+	if (T < AedirKickChamberTime)
+	{
+		return FMath::Lerp(Start, Chamber, CombatSmoothStep01(T / AedirKickChamberTime));
+	}
+
+	if (T < AedirKickExtendTime)
+	{
+		return FMath::Lerp(Chamber, Extension, CombatSmoothStep01((T - AedirKickChamberTime) / (AedirKickExtendTime - AedirKickChamberTime)));
+	}
+
+	return FMath::Lerp(Extension, Start, CombatSmoothStep01((T - AedirKickExtendTime) / (1.f - AedirKickExtendTime)));
+}
+
+bool UAedirCombatComponent::IsKicking() const
+{
+	return KickNet.bActive;
+}
+
+bool UAedirCombatComponent::GetKickPose(bool& bOutLeftLeg, FVector& OutFootTargetWorld, float& OutAlpha) const
+{
+	bOutLeftLeg = KickNet.bLeftLeg;
+	OutAlpha = FMath::Clamp(KickPoseAlpha, 0.f, 1.f);
+	OutFootTargetWorld = FVector::ZeroVector;
+	if (!Creature || OutAlpha <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const float T01 = FMath::Clamp(KickNet.Elapsed / AedirKickDuration, 0.f, 1.f);
+	OutFootTargetWorld = EvaluateKickArc(KickNet.StartWorld, GetPelvisWorld(), Creature->GetActorForwardVector(), T01);
+	return true;
+}
+
+bool UAedirCombatComponent::StartShove()
+{
+	if (!Creature)
+	{
+		return false;
+	}
+
+	if (IsAuthoritative())
+	{
+		return TryStartShove();
+	}
+
+	if (!Creature->IsLocallyControlled() || !CanStartShove())
+	{
+		return false;
+	}
+
+	BeginShove();
+	ServerStartShove();
+	return true;
+}
+
+bool UAedirCombatComponent::StartKick()
+{
+	if (!Creature)
+	{
+		return false;
+	}
+
+	if (IsAuthoritative())
+	{
+		return TryStartKick();
+	}
+
+	if (!Creature->IsLocallyControlled() || !CanStartKick())
+	{
+		return false;
+	}
+
+	BeginKick();
+	ServerStartKick();
+	return true;
+}
+
+bool UAedirCombatComponent::CanStartShove() const
+{
+	if (!Creature || !Creature->Stats || bShoving || ShoveCooldownRemaining > 0.f)
+	{
+		return false;
+	}
+
+	// A shove needs both arms free: a running swing on either hand blocks it.
+	if (Creature->Stats->GetStamina() < ShoveStaminaCost || GetSwingState(EAedirHand::Left).bActive || GetSwingState(EAedirHand::Right).bActive)
+	{
+		return false;
+	}
+
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		const AAedirItemActor* HeldItem = GetHeldItem(Hand);
+		if ((HeldItem && HeldItem->Weight > AedirShoveHeavyItemKg) || GetLimbInjury(GetArmLimb(Hand)) > AedirShoveArmInjuryLimit)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool UAedirCombatComponent::TryStartShove()
+{
+	if (!IsAuthoritative() || !CanStartShove() || !Creature->Stats->ConsumeStamina(ShoveStaminaCost))
+	{
+		return false;
+	}
+
+	BeginShove();
+	return true;
+}
+
+void UAedirCombatComponent::BeginShove()
+{
+	bShoving = true;
+	ShoveElapsed = 0.f;
+	bShoveStruck = false;
+	ShoveCooldownRemaining = ShoveCooldown;
+
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		FAedirArmDynamics& Arm = GetArm(Hand);
+		Arm.bScriptedControl = true;
+		Arm.ScriptedTargetWorld = GetShoveWorldTarget(Hand, 0.f);
+	}
+}
+
+void UAedirCombatComponent::EndShove()
+{
+	bShoving = false;
+	ShoveElapsed = 0.f;
+
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		if (!GetSwingState(Hand).bActive)
+		{
+			GetArm(Hand).bScriptedControl = false;
+		}
+	}
+}
+
+void UAedirCombatComponent::UpdateShove(float DeltaTime)
+{
+	if (!bShoving || !Creature)
+	{
+		return;
+	}
+
+	ShoveElapsed += DeltaTime;
+
+	if (!bShoveStruck && ShoveElapsed >= AedirShoveStrikeSeconds)
+	{
+		bShoveStruck = true;
+		if (IsAuthoritative())
+		{
+			ResolveShoveStrike();
+		}
+	}
+
+	if (ShoveElapsed >= AedirShoveDuration)
+	{
+		EndShove();
+		return;
+	}
+
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		GetArm(Hand).ScriptedTargetWorld = GetShoveWorldTarget(Hand, ShoveElapsed);
+	}
+}
+
+FVector UAedirCombatComponent::GetShoveWorldTarget(EAedirHand Hand, float Elapsed) const
+{
+	if (!Creature)
+	{
+		return FVector::ZeroVector;
+	}
+
+	// Both hands thrust to the same point in front of the chest, then draw back to the guard.
+	const FVector Guard = GetSwingLocalTarget(Hand, EAedirSwingType::Jab, 0.f);
+	const FVector Thrust(AedirShoveReachCm, 0.f, AedirChestHeight);
+
+	float Alpha = 0.f;
+	if (Elapsed < AedirShoveStrikeSeconds)
+	{
+		Alpha = CombatSmoothStep01(Elapsed / AedirShoveStrikeSeconds);
+	}
+	else
+	{
+		Alpha = 1.f - CombatSmoothStep01((Elapsed - AedirShoveStrikeSeconds) / (AedirShoveDuration - AedirShoveStrikeSeconds));
+	}
+
+	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
+	return Creature->GetActorTransform().TransformPositionNoScale(FMath::Lerp(Guard, Thrust, Alpha) * Scale);
+}
+
+void UAedirCombatComponent::ResolveShoveStrike()
+{
+	UWorld* World = GetWorld();
+	if (!World || !Creature)
+	{
+		return;
+	}
+
+	const FVector OwnerLocation = Creature->GetActorLocation();
+	const FVector Forward = Creature->GetActorForwardVector().GetSafeNormal2D();
+
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirCombatShove), false);
+	Params.AddIgnoredActor(Creature);
+
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByObjectType(Overlaps, OwnerLocation, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(ShoveRange), Params);
+
+	AAedirCreature* Victim = nullptr;
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AAedirCreature* Candidate = Cast<AAedirCreature>(Overlap.GetActor());
+		if (!Candidate || Candidate == Creature || (Candidate->Stats && Candidate->Stats->IsDead()))
+		{
+			continue;
+		}
+
+		const FVector ToCandidate = Candidate->GetActorLocation() - OwnerLocation;
+		if (ToCandidate.Size() > ShoveRange || FVector::DotProduct(Forward, ToCandidate.GetSafeNormal2D()) <= AedirShoveConeCos)
+		{
+			continue;
+		}
+
+		Victim = Candidate;
+		break;
+	}
+
+	if (!Victim)
+	{
+		return;
+	}
+
+	const float Strength = Creature->Stats ? Creature->Stats->Strength : AedirDefaultStat;
+	const float StaminaFraction = Creature->Stats ? Creature->Stats->GetStaminaFraction() : 1.f;
+
+	if (Victim->Balance)
+	{
+		FAedirImpactInfo Impact;
+		Impact.Zone = EAedirBodyZone::Torso;
+		Impact.EnergyJoules = ComputeShoveEnergy(Strength, StaminaFraction);
+		Impact.Direction = Forward;
+		Impact.Location = Victim->GetActorLocation();
+		Victim->Balance->ApplyHitReaction(Impact);
+	}
+
+	// The shove pushes back on the attacker. A shove does not wound.
+	if (Creature->Balance)
+	{
+		Creature->Balance->ApplyBalanceImpact(-Forward, AedirShoveRecoilBalance);
+	}
+
+	OnShove.Broadcast(Victim);
+}
+
+bool UAedirCombatComponent::CanStartKick() const
+{
+	if (!Creature || !Creature->Stats || KickNet.bActive || KickCooldownRemaining > 0.f)
+	{
+		return false;
+	}
+
+	if (Creature->Stats->GetStamina() < KickStaminaCost)
+	{
+		return false;
+	}
+
+	const UCharacterMovementComponent* Movement = Creature->GetCharacterMovement();
+	if (!Movement || !Movement->IsMovingOnGround())
+	{
+		return false;
+	}
+
+	if (Creature->Balance && (Creature->Balance->IsRagdoll() || Creature->Balance->GetBalance() < AedirKickMinBalance))
+	{
+		return false;
+	}
+
+	return true;
+}
+
+bool UAedirCombatComponent::TryStartKick()
+{
+	if (!IsAuthoritative() || !CanStartKick() || !Creature->Stats->ConsumeStamina(KickStaminaCost))
+	{
+		return false;
+	}
+
+	BeginKick();
+
+	// Standing on one leg costs balance.
+	if (Creature->Balance)
+	{
+		Creature->Balance->ApplyBalanceImpact(-Creature->GetActorForwardVector(), AedirKickRecoilBalance);
+	}
+
+	return true;
+}
+
+void UAedirCombatComponent::BeginKick()
+{
+	const bool bLeftLeg = IsLeadFootRight();
+	KickNet.bActive = true;
+	KickNet.bLeftLeg = bLeftLeg;
+	KickNet.Elapsed = 0.f;
+	KickNet.StartWorld = GetFootBoneWorld(bLeftLeg);
+	KickPrevFootWorld = KickNet.StartWorld;
+	bKickStruck = false;
+	KickCooldownRemaining = KickCooldown;
+}
+
+void UAedirCombatComponent::UpdateKick(float DeltaTime)
+{
+	KickPoseAlpha = FMath::FInterpConstantTo(KickPoseAlpha, KickNet.bActive ? 1.f : 0.f, DeltaTime,
+		KickNet.bActive ? 1.f / AedirKickPoseRiseSeconds : 1.f / AedirKickPoseFallSeconds);
+
+	// A knockdown ends the kick at once.
+	if (IsAuthoritative() && KickNet.bActive && Creature->Balance && Creature->Balance->IsRagdoll())
+	{
+		KickNet.bActive = false;
+	}
+
+	if (!KickNet.bActive || !Creature)
+	{
+		return;
+	}
+
+	KickNet.Elapsed = FMath::Min(KickNet.Elapsed + DeltaTime, AedirKickDuration);
+
+	if (IsAuthoritative())
+	{
+		const FVector FootWorld = GetFootBoneWorld(KickNet.bLeftLeg);
+		if (!bKickStruck && KickNet.Elapsed >= AedirKickStrikeStart && KickNet.Elapsed <= AedirKickStrikeEnd)
+		{
+			ResolveKickSweep(KickPrevFootWorld, FootWorld, DeltaTime);
+		}
+
+		KickPrevFootWorld = FootWorld;
+
+		if (KickNet.Elapsed >= AedirKickDuration)
+		{
+			KickNet.bActive = false;
+		}
+	}
+}
+
+void UAedirCombatComponent::ResolveKickSweep(const FVector& From, const FVector& To, float DeltaTime)
+{
+	UWorld* World = GetWorld();
+	if (!World || !Creature || DeltaTime <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
+	ObjectParams.AddObjectTypesToQuery(ECC_PhysicsBody);
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirCombatKick), false);
+	Params.AddIgnoredActor(Creature);
+
+	TArray<FHitResult> Hits;
+	World->SweepMultiByObjectType(Hits, From, To, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(AedirKickHitRadius), Params);
+
+	const FVector FootMotion = To - From;
+	const float FootSpeed = FMath::Min(static_cast<float>(FootMotion.Size() / DeltaTime), AedirKickMaxFootSpeed);
+
+	for (const FHitResult& Hit : Hits)
+	{
+		AAedirCreature* Victim = Cast<AAedirCreature>(Hit.GetActor());
+		if (!Victim || Victim == Creature)
+		{
+			continue;
+		}
+
+		ApplyKickImpact(Victim, Hit, FootMotion, FootSpeed);
+		bKickStruck = true;
+		return;
+	}
+}
+
+void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitResult& Hit, const FVector& FootMotion, float FootSpeed)
+{
+	const FName Bone = Hit.BoneName;
+	EAedirBodyZone Zone = ClassifyBodyZone(Bone);
+	if (Zone != EAedirBodyZone::Leg)
+	{
+		Zone = EAedirBodyZone::Torso;
+	}
+
+	const float Energy = ComputeImpactEnergy(AedirKickMassKg, FootSpeed) * AedirKickEnergyScale;
+	const float VictimZoneProtection = Victim->Combat ? Victim->Combat->GetArmorProtection(Zone) : 0.f;
+	const float Damage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(EAedirDamageType::Blunt, 0.f) * GetZoneDamageMultiplier(Zone) * (1.f - VictimZoneProtection);
+	Victim->ReceiveCreatureDamage(Damage);
+
+	EAedirLimb Limb = EAedirLimb::LeftArm;
+	if (Victim->Combat && GetBoneLimb(Bone, Limb))
+	{
+		Victim->Combat->ApplyLimbInjury(Limb, Damage * AedirImpactInjuryPerDamage);
+	}
+
+	if (Victim->Balance)
+	{
+		FAedirImpactInfo Impact;
+		Impact.Bone = Bone;
+		Impact.Zone = Zone;
+		Impact.EnergyJoules = Energy;
+		Impact.Direction = FootMotion.GetSafeNormal();
+		Impact.Location = Hit.ImpactPoint;
+		Impact.MassKg = AedirKickMassKg;
+		Impact.RelativeSpeed = FootSpeed;
+		Victim->Balance->ApplyHitReaction(Impact);
+	}
+
+	if (Victim->Wounds)
+	{
+		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, EAedirDamageType::Blunt, Energy, VictimZoneProtection, FootMotion);
+	}
+
+	OnKick.Broadcast(Victim);
+}
+
+FVector UAedirCombatComponent::GetFootBoneWorld(bool bLeftLeg) const
+{
+	if (!Creature)
+	{
+		return FVector::ZeroVector;
+	}
+
+	const USkeletalMeshComponent* Mesh = Creature->GetMesh();
+	if (!Mesh)
+	{
+		return Creature->GetActorLocation();
+	}
+
+	return Mesh->GetBoneLocation(bLeftLeg ? AedirKickFootLeftBone : AedirKickFootRightBone);
+}
+
+FVector UAedirCombatComponent::GetPelvisWorld() const
+{
+	if (!Creature)
+	{
+		return FVector::ZeroVector;
+	}
+
+	const USkeletalMeshComponent* Mesh = Creature->GetMesh();
+	return Mesh ? Mesh->GetBoneLocation(AedirKickPelvisBone) : Creature->GetActorLocation();
+}
+
+void UAedirCombatComponent::ServerStartShove_Implementation()
+{
+	TryStartShove();
+}
+
+void UAedirCombatComponent::ServerStartKick_Implementation()
+{
+	TryStartKick();
+}
+
 void UAedirCombatComponent::ServerSetGuard_Implementation(EAedirHand Hand, bool bActive)
 {
 	SetGuardInternal(Hand, bActive);
@@ -1438,7 +2089,7 @@ void UAedirCombatComponent::ServerSetGuard_Implementation(EAedirHand Hand, bool 
 
 void UAedirCombatComponent::ServerUpdateArmAim_Implementation(EAedirHand Hand, FVector2D Aim, float Extension)
 {
-	if (!IsGuardActive(Hand))
+	if (!IsGuardActive(Hand) || IsSecondaryGripHand(Hand))
 	{
 		return;
 	}

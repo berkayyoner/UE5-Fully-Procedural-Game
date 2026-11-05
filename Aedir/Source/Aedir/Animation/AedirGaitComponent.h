@@ -554,6 +554,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Reflex")
 	float ProtectiveSpineLeanDegrees = 10.f;
 
+	// Backward torso lean in degrees at a full kick pose.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
+	float KickSpineLeanDegrees = 6.f;
+
 private:
 	bool SampleGround(const FVector& WorldXY, float BottomZ, FVector& OutLocation, FVector& OutNormal) const;
 	void ResetForRagdoll();

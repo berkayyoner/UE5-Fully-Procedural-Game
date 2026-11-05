@@ -202,6 +202,9 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 
 	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHolsterPressed);
 	PlayerInputComponent->BindKey(EKeys::Y, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightHolsterPressed);
+
+	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
+	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);
 }
 
 void AAedirPlayerCharacter::ApplyViewPitchLimits()
@@ -370,6 +373,26 @@ void AAedirPlayerCharacter::HandleRightHolsterPressed()
 	{
 		Interaction->HolsterToWaist(EAedirHand::Right);
 	}
+}
+
+void AAedirPlayerCharacter::HandleShovePressed()
+{
+	if (!Combat || IsMenuOpen() || IsCharacterCreationOpen())
+	{
+		return;
+	}
+
+	Combat->StartShove();
+}
+
+void AAedirPlayerCharacter::HandleKickPressed()
+{
+	if (!Combat || IsMenuOpen() || IsCharacterCreationOpen())
+	{
+		return;
+	}
+
+	Combat->StartKick();
 }
 
 void AAedirPlayerCharacter::HandleHandPressed(EAedirHand Hand)

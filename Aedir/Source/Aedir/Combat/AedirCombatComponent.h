@@ -16,6 +16,8 @@ struct FHitResult;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAedirHitDealt, AAedirCreature*, Victim, float, Damage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FAedirImpact, AActor*, Victim, FName, Bone, float, Energy, float, Damage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirClash, AAedirCreature*, Other);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirShove, AAedirCreature*, Victim);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirKick, AAedirCreature*, Victim);
 
 USTRUCT(BlueprintType)
 struct AEDIR_API FAedirSwingState
@@ -53,6 +55,26 @@ struct AEDIR_API FAedirArmNetState
 
 	UPROPERTY()
 	uint8 Active = 0;
+};
+
+// Compact kick state replicated from the server. Remote machines need the leg and the start point to draw the kick.
+USTRUCT()
+struct AEDIR_API FAedirKickNetState
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	bool bActive = false;
+
+	UPROPERTY()
+	bool bLeftLeg = false;
+
+	UPROPERTY()
+	float Elapsed = 0.f;
+
+	// Foot world location at the start of the kick. The foot returns here at the end of the arc.
+	UPROPERTY()
+	FVector_NetQuantize StartWorld = FVector::ZeroVector;
 };
 
 // Local simulation state of one arm. Not replicated; the server copy is published through FAedirArmNetState.
@@ -97,6 +119,14 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Aedir|Combat")
 	FAedirClash OnClash;
+
+	// Broadcast on the server when a shove reaches a creature.
+	UPROPERTY(BlueprintAssignable, Category="Aedir|Combat")
+	FAedirShove OnShove;
+
+	// Broadcast on the server when a kick reaches a creature.
+	UPROPERTY(BlueprintAssignable, Category="Aedir|Combat")
+	FAedirKick OnKick;
 
 	// Flat bonus for a bare-handed hit. Held items add their own Damage instead.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
@@ -157,6 +187,36 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")
 	float AimSensitivity = 0.18f;
 
+	// Distance in cm from the primary hand to the grip point of the secondary hand on the weapon.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
+	float GripSpacingCm = 28.f;
+
+	// Share of the weapon mass that the two arms carry together while two-hand gripped. Only the remainder loads the stiffness.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
+	float GripWeaponMassShare = 0.35f;
+
+	// Stiffness multiplier of the primary arm while two-hand gripped.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
+	float GripPrimaryStiffnessScale = 1.35f;
+
+	// Stamina paid for a shove.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Shove")
+	float ShoveStaminaCost = 12.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Shove")
+	float ShoveCooldown = 0.9f;
+
+	// Reach in cm from the owner to the first creature a shove can hit.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Shove")
+	float ShoveRange = 130.f;
+
+	// Stamina paid for a kick.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickStaminaCost = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickCooldown = 1.2f;
+
 	// Minimum tip speed in cm/s for a contact to count as a hit rather than a touch.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
 	float MinImpactSpeed = 150.f;
@@ -196,6 +256,13 @@ public:
 	UPROPERTY(Replicated, VisibleAnywhere, Category="Aedir|Combat|Arm")
 	FAedirArmNetState RightArmNet;
 
+	// True while the weapon is held in one hand and either it is two-handed or both guards are held.
+	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
+	bool bTwoHandGrip = false;
+
+	UPROPERTY(Replicated, VisibleAnywhere, Category="Aedir|Combat|Kick")
+	FAedirKickNetState KickNet;
+
 	// Damage reduction per body zone, indexed by EAedirBodyZone. Range 0..0.9.
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Armor")
 	TArray<float> ArmorProtection;
@@ -223,6 +290,14 @@ public:
 	// Server or NPC entry point. Validates guard, cooldown and stamina before starting the swing.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat")
 	bool StartSwing(EAedirHand Hand, EAedirSwingType Type);
+
+	// Owning client predicts the shove and asks the server to apply it. The server and NPCs apply it directly.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Combat|Shove")
+	bool StartShove();
+
+	// Owning client predicts the kick and asks the server to apply it. The server and NPCs apply it directly.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Combat|Kick")
+	bool StartKick();
 
 	// Server only.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat|Armor")
@@ -259,12 +334,33 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Combat")
 	bool IsLeadFootRight() const;
 
+	// True while the weapon is held in one hand and the second hand is on its grip.
+	UFUNCTION(BlueprintPure, Category="Aedir|Combat|Grip")
+	bool IsTwoHandGrip() const;
+
+	// The hand that holds the weapon. While two-hand gripped the other hand is the secondary hand.
+	UFUNCTION(BlueprintPure, Category="Aedir|Combat|Grip")
+	EAedirHand GetGripHand() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Combat|Kick")
+	bool IsKicking() const;
+
+	// Foot target of the kicking leg while a kick is in progress or still blending out. Returns false when the kick pose is not active.
+	UFUNCTION(BlueprintPure, Category="Aedir|Combat|Kick")
+	bool GetKickPose(bool& bOutLeftLeg, FVector& OutFootTargetWorld, float& OutAlpha) const;
+
 	// Pure helpers used by the impact model and by tests.
 	static float ComputeImpactEnergy(float MassKg, float SpeedCmPerSec);
 	static EAedirBodyZone ClassifyBodyZone(FName BoneName);
 	static float GetZoneDamageMultiplier(EAedirBodyZone Zone);
 	static float ComputeDamageTypeFactor(EAedirDamageType Type, float AxialAlignment);
 	static bool GetBoneLimb(FName BoneName, EAedirLimb& OutLimb);
+
+	// Energy in joules of a shove. Scales with strength and with the stamina fraction, between half and full.
+	static float ComputeShoveEnergy(float Strength, float StaminaFraction);
+
+	// Foot target of the kick arc. T01 is 0 at the start, 0.25 at the chamber, 0.5 at the full extension and 1 back at the start.
+	static FVector EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01);
 
 private:
 	bool IsAuthoritative() const;
@@ -283,6 +379,8 @@ private:
 	void SetGuardInternal(EAedirHand Hand, bool bActive);
 	bool CanStartSwing(EAedirHand Hand) const;
 	bool IsArmActive(EAedirHand Hand) const;
+	bool IsArmPosed(EAedirHand Hand) const;
+	bool IsSecondaryGripHand(EAedirHand Hand) const;
 	float ComputeWeightFactor(EAedirHand Hand) const;
 	float ComputeSwingDuration(EAedirHand Hand) const;
 	float GetEffectiveWeaponLength(EAedirHand Hand) const;
@@ -294,6 +392,27 @@ private:
 	FVector GetSwingWorldTarget(EAedirHand Hand, EAedirSwingType Type, float Alpha) const;
 	FVector GetSwingLocalTarget(EAedirHand Hand, EAedirSwingType Type, float Alpha) const;
 	void SetGuardRestAim(EAedirHand Hand);
+
+	bool EvaluateTwoHandGrip() const;
+	void UpdateTwoHandGrip();
+	FVector GetGripPointWorld() const;
+
+	bool CanStartShove() const;
+	bool TryStartShove();
+	void BeginShove();
+	void EndShove();
+	void UpdateShove(float DeltaTime);
+	FVector GetShoveWorldTarget(EAedirHand Hand, float Elapsed) const;
+	void ResolveShoveStrike();
+
+	bool CanStartKick() const;
+	bool TryStartKick();
+	void BeginKick();
+	void UpdateKick(float DeltaTime);
+	void ResolveKickSweep(const FVector& From, const FVector& To, float DeltaTime);
+	void ApplyKickImpact(AAedirCreature* Victim, const FHitResult& Hit, const FVector& FootMotion, float FootSpeed);
+	FVector GetFootBoneWorld(bool bLeftLeg) const;
+	FVector GetPelvisWorld() const;
 
 	void UpdateArms(float DeltaTime);
 	FVector ComputeArmShoulder(EAedirHand Hand) const;
@@ -329,6 +448,12 @@ private:
 	UFUNCTION(Server, Unreliable)
 	void ServerUpdateArmAim(EAedirHand Hand, FVector2D Aim, float Extension);
 
+	UFUNCTION(Server, Reliable)
+	void ServerStartShove();
+
+	UFUNCTION(Server, Reliable)
+	void ServerStartKick();
+
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirCreature> Creature;
 
@@ -344,6 +469,18 @@ private:
 	TArray<TWeakObjectPtr<AActor>> ClashedThisTick;
 	float ClashCandidateTimer = 0.f;
 	float ArmAimSendTimer = 0.f;
+
+	// Shove timeline. Runs on the server and on the owning client; only the server applies the strike.
+	bool bShoving = false;
+	float ShoveElapsed = 0.f;
+	bool bShoveStruck = false;
+	float ShoveCooldownRemaining = 0.f;
+
+	// Kick timeline. Runs on every machine; only the server sweeps for the strike.
+	float KickCooldownRemaining = 0.f;
+	float KickPoseAlpha = 0.f;
+	bool bKickStruck = false;
+	FVector KickPrevFootWorld = FVector::ZeroVector;
 
 	float AIRetargetTimer = 0.f;
 	float AIAttackTimer = 0.f;

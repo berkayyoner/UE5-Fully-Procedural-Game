@@ -125,6 +125,13 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float StanceAlpha = GaitState.StanceAlpha;
 	const bool bRightLead = Combat && Combat->IsLeadFootRight();
 
+	// Kick: the rear leg throws the kick while the lead leg holds the body up.
+	bool bKickLeftLeg = false;
+	FVector KickFootTargetWorld = FVector::ZeroVector;
+	float KickAlpha = 0.f;
+	const bool bKicking = Combat && Combat->GetKickPose(bKickLeftLeg, KickFootTargetWorld, KickAlpha);
+	const int32 KickFoot = bKickLeftLeg ? 0 : 1;
+
 	const FVector LocalDirection = ActorTransform.InverseTransformVectorNoScale(Velocity).GetSafeNormal2D();
 	const float BackAlpha = FMath::Clamp(-LocalDirection.X, 0.f, 1.f);
 	const float SideAlpha = FMath::Clamp(FMath::Abs(LocalDirection.Y), 0.f, 1.f);
@@ -234,6 +241,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		PreviousFootFraction[Foot] = Fraction;
 		const bool bInSwingWindow = Fraction < SwingFraction;
 
+		// The support leg of a kick is planted, so a swing that is still running is landed where the leg stands.
+		if (bKicking && Foot != KickFoot && bSwinging[Foot])
+		{
+			bSwinging[Foot] = false;
+			PlantedContact[Foot] = LandingLocation[Foot];
+			PlantedNormal[Foot] = LandingNormal[Foot];
+		}
+
 		if (!bSwinging[Foot] && !bRecoverySwinging[Foot] && !bStepping)
 		{
 			// Standing still the planted contact follows the home location, so the stance offsets reach the feet.
@@ -243,7 +258,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 		if (!bSwinging[Foot])
 		{
-			if (!bRecoverySwinging[Foot] && bStepping && bWrapped && bInSwingWindow)
+			if (!bRecoverySwinging[Foot] && !bKicking && bStepping && bWrapped && bInSwingWindow)
 			{
 				bSwinging[Foot] = true;
 				SwingStartContact[Foot] = PlantedContact[Foot];
@@ -301,6 +316,13 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		AnkleWorld[Foot] = FootPosition + FVector::UpVector * (AnkleHeightCm * ActorScale);
 	}
 
+	// The kicking leg follows the kick arc, blended in by the kick pose alpha.
+	if (bKicking)
+	{
+		AnkleWorld[KickFoot] = FMath::Lerp(AnkleWorld[KickFoot], KickFootTargetWorld, KickAlpha);
+		Lift[KickFoot] = FMath::Lerp(Lift[KickFoot], 1.f, KickAlpha);
+	}
+
 	GaitState.LeftFootWorld = AnkleWorld[0];
 	GaitState.RightFootWorld = AnkleWorld[1];
 	GaitState.LeftFootLift = Lift[0];
@@ -353,6 +375,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineLeanPitch -= ReachTorsoLeanMaxDegrees * ReachLowerAlpha;
 	GaitState.SpineLeanPitch -= StanceSpineLeanDegrees * StanceAlpha;
 	GaitState.SpineLeanPitch -= ProtectiveSpineLeanDegrees * ProtectiveAlpha;
+	// Backward positive: the torso leans back to bring the kicking leg up.
+	GaitState.SpineLeanPitch += KickSpineLeanDegrees * KickAlpha;
 	const float TwistTarget = FMath::Clamp(LookYaw * SpineTwistScale, -SpineTwistLimitDegrees, SpineTwistLimitDegrees);
 	SmoothedSpineTwist = FMath::FInterpTo(SmoothedSpineTwist, TwistTarget, DeltaTime, LookInterpSpeed);
 	GaitState.SpineTwistYaw = SmoothedSpineTwist;
