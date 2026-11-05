@@ -8,6 +8,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Aedir.h"
+#include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/PhysicalAnimationComponent.h"
@@ -43,6 +44,44 @@ namespace
 	constexpr float HitReactionKnockdownExtraSeconds = 0.8f;
 	constexpr float HitReactionBoneImpulseScale = 0.35f;
 	constexpr float HitReactionBoneImpulseMax = 25000.f;
+
+	constexpr float ComBalanceSampleIntervalSeconds = 0.1f;
+	constexpr float ComBalanceGroundToleranceCm = 12.f;
+	constexpr float ComBalanceTraceUpCm = 20.f;
+	constexpr float ComBalanceTraceDownCm = 40.f;
+	constexpr float ComBalanceHeelOffsetCm = 6.f;
+	constexpr float ComBalanceToeOffsetCm = 6.f;
+	constexpr float ComBalanceFootHalfWidthCm = 4.5f;
+	constexpr float ComBalanceFullLossMarginCm = 12.f;
+	constexpr float ComBalanceMaxLossPerSecond = 0.9f;
+	constexpr float ComBalanceRecoveryMarginCm = -2.f;
+	constexpr float ComBalanceReflexRangeCm = 220.f;
+	constexpr float ComBalanceReflexFallSpeed = 350.f;
+	constexpr float ComBalanceReflexRagdollSeconds = 0.4f;
+	constexpr float ComBalanceReflexForwardCm = 25.f;
+	constexpr float ComBalanceReflexInterpSpeed = 10.f;
+	constexpr float ComBalanceReflexFallDamageReduction = 0.25f;
+
+	// Cross product of (A - Origin) and (B - Origin). Positive when B is counter-clockwise from A around Origin.
+	double ComBalanceCross(const FVector2D& Origin, const FVector2D& A, const FVector2D& B)
+	{
+		const FVector2D OriginToA = A - Origin;
+		const FVector2D OriginToB = B - Origin;
+		return OriginToA.X * OriginToB.Y - OriginToA.Y * OriginToB.X;
+	}
+
+	double ComBalanceDistanceToSegment(const FVector2D& Point, const FVector2D& A, const FVector2D& B)
+	{
+		const FVector2D Edge = B - A;
+		const double LengthSquared = Edge.SizeSquared();
+		if (LengthSquared <= UE_SMALL_NUMBER)
+		{
+			return (Point - A).Size();
+		}
+
+		const double T = FMath::Clamp(FVector2D::DotProduct(Point - A, Edge) / LengthSquared, 0.0, 1.0);
+		return (Point - (A + Edge * T)).Size();
+	}
 
 	float HitReactionZoneEnergyRef(EAedirBodyZone Zone)
 	{
@@ -128,6 +167,15 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		return;
 	}
 
+	ComSampleTimer -= DeltaTime;
+	if (ComSampleTimer <= 0.f)
+	{
+		ComSampleTimer = ComBalanceSampleIntervalSeconds;
+		SampleCenterOfMass();
+		SampleProtectiveReflex();
+	}
+	SmoothProtectiveReflex(DeltaTime);
+
 	if (IsAuthoritative())
 	{
 		UpdateServerState(DeltaTime);
@@ -160,9 +208,7 @@ void UAedirBalanceComponent::ApplyBalanceImpact(FVector WorldDirection, float Ma
 		return;
 	}
 
-	const FVector LocalDirection = GetOwner()->GetActorTransform().InverseTransformVectorNoScale(WorldDirection);
-	const FVector2D PlanarDirection = FVector2D(LocalDirection.X, LocalDirection.Y).GetSafeNormal();
-	LeanDirection = (LeanDirection + PlanarDirection * Magnitude).GetClampedToMaxSize(1.f);
+	AddLeanDirection(WorldDirection, Magnitude);
 
 	SetBalance(Balance - Magnitude);
 }
@@ -179,6 +225,10 @@ void UAedirBalanceComponent::HandleLanded(float LandingSpeed)
 		return;
 	}
 
+	// The protective reflex softens the landing. The alpha is read once and cleared for the next fall.
+	const float ReflexAlpha = FMath::Clamp(LastProtectiveReflexAlpha, 0.f, 1.f);
+	LastProtectiveReflexAlpha = 0.f;
+
 	if (LandingSpeed > FallSpeedBalanceThreshold)
 	{
 		const float Loss = FMath::Clamp((LandingSpeed - FallSpeedBalanceThreshold) / FallSpeedBalanceThreshold, 0.f, 1.f);
@@ -190,7 +240,8 @@ void UAedirBalanceComponent::HandleLanded(float LandingSpeed)
 		if (UAedirStatsComponent* StatsComponent = FindStats())
 		{
 			const float Athletism = StatsComponent->Athletism;
-			StatsComponent->ApplyDamage((LandingSpeed - AedirSafeLandingSpeed) * FallDamagePerSpeed * (1.f - Athletism / AedirAthletismDamageScale));
+			const float ReflexScale = 1.f - ComBalanceReflexFallDamageReduction * ReflexAlpha;
+			StatsComponent->ApplyDamage((LandingSpeed - AedirSafeLandingSpeed) * FallDamagePerSpeed * (1.f - Athletism / AedirAthletismDamageScale) * ReflexScale);
 		}
 	}
 }
@@ -325,6 +376,356 @@ FRotator UAedirBalanceComponent::GetPelvisLean() const
 	return CurrentLean;
 }
 
+FVector UAedirBalanceComponent::GetCenterOfMassWorld() const
+{
+	return CenterOfMassWorld;
+}
+
+float UAedirBalanceComponent::GetSupportMargin() const
+{
+	return SupportMargin;
+}
+
+bool UAedirBalanceComponent::IsCenterOfMassOutsideSupport() const
+{
+	return bSupportGrounded && SupportMargin < 0.f;
+}
+
+bool UAedirBalanceComponent::GetRecoveryStepRequest(FVector& OutDirectionWorld, float& OutUrgency) const
+{
+	if (bIsRagdoll || !bSupportGrounded || SupportMargin >= ComBalanceRecoveryMarginCm || ComOffsetDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	OutDirectionWorld = ComOffsetDirection;
+	OutUrgency = FMath::Clamp(-SupportMargin / ComBalanceFullLossMarginCm, 0.f, 1.f);
+	return true;
+}
+
+bool UAedirBalanceComponent::GetProtectiveReflex(float& OutAlpha, FVector& OutGroundTargetWorld) const
+{
+	const bool bActive = ProtectiveAlpha > KINDA_SMALL_NUMBER;
+	OutAlpha = bActive ? ProtectiveAlpha : 0.f;
+	OutGroundTargetWorld = bActive ? ProtectiveGroundWorld : FVector::ZeroVector;
+	return bActive;
+}
+
+void UAedirBalanceComponent::ComputeConvexHull2D(const TArray<FVector2D>& Points, TArray<FVector2D>& OutHull)
+{
+	OutHull.Reset();
+
+	TArray<FVector2D> Sorted = Points;
+	Sorted.Sort([](const FVector2D& A, const FVector2D& B)
+	{
+		return A.X < B.X || (A.X == B.X && A.Y < B.Y);
+	});
+
+	int32 UniqueCount = 0;
+	for (int32 Index = 0; Index < Sorted.Num(); ++Index)
+	{
+		if (UniqueCount == 0 || !Sorted[Index].Equals(Sorted[UniqueCount - 1]))
+		{
+			Sorted[UniqueCount++] = Sorted[Index];
+		}
+	}
+	Sorted.SetNum(UniqueCount);
+
+	if (Sorted.Num() < 3)
+	{
+		OutHull = Sorted;
+		return;
+	}
+
+	// Andrew's monotone chain: lower hull left to right, then upper hull right to left.
+	TArray<FVector2D> Chain;
+	Chain.Reserve(Sorted.Num() * 2);
+	for (const FVector2D& Point : Sorted)
+	{
+		while (Chain.Num() >= 2 && ComBalanceCross(Chain[Chain.Num() - 2], Chain.Last(), Point) <= 0.0)
+		{
+			Chain.Pop();
+		}
+		Chain.Add(Point);
+	}
+
+	const int32 LowerCount = Chain.Num() + 1;
+	for (int32 Index = Sorted.Num() - 2; Index >= 0; --Index)
+	{
+		const FVector2D& Point = Sorted[Index];
+		while (Chain.Num() >= LowerCount && ComBalanceCross(Chain[Chain.Num() - 2], Chain.Last(), Point) <= 0.0)
+		{
+			Chain.Pop();
+		}
+		Chain.Add(Point);
+	}
+
+	// The last point repeats the first one.
+	Chain.Pop();
+	OutHull = Chain;
+}
+
+float UAedirBalanceComponent::ComputeSupportMargin(const TArray<FVector2D>& Hull, const FVector2D& Point)
+{
+	const int32 Count = Hull.Num();
+	if (Count == 0)
+	{
+		return -TNumericLimits<float>::Max();
+	}
+
+	if (Count == 1)
+	{
+		return -static_cast<float>((Point - Hull[0]).Size());
+	}
+
+	if (Count == 2)
+	{
+		return -static_cast<float>(ComBalanceDistanceToSegment(Point, Hull[0], Hull[1]));
+	}
+
+	// The hull is counter-clockwise, so a point is inside when it lies left of every edge.
+	bool bInside = true;
+	double MinEdgeDistance = TNumericLimits<double>::Max();
+	double NearestBoundary = TNumericLimits<double>::Max();
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const FVector2D& A = Hull[Index];
+		const FVector2D& B = Hull[(Index + 1) % Count];
+		const double EdgeLength = (B - A).Size();
+		if (EdgeLength <= UE_SMALL_NUMBER)
+		{
+			continue;
+		}
+
+		const double Side = ComBalanceCross(A, B, Point) / EdgeLength;
+		if (Side < 0.0)
+		{
+			bInside = false;
+		}
+		MinEdgeDistance = FMath::Min(MinEdgeDistance, Side);
+		NearestBoundary = FMath::Min(NearestBoundary, ComBalanceDistanceToSegment(Point, A, B));
+	}
+
+	return bInside ? static_cast<float>(MinEdgeDistance) : -static_cast<float>(NearestBoundary);
+}
+
+float UAedirBalanceComponent::ComputeComBalanceLoss(float MarginCm, float DeltaSeconds)
+{
+	if (MarginCm >= 0.f)
+	{
+		return 0.f;
+	}
+
+	return FMath::Clamp(-MarginCm / ComBalanceFullLossMarginCm, 0.f, 1.f) * ComBalanceMaxLossPerSecond * DeltaSeconds;
+}
+
+void UAedirBalanceComponent::AddLeanDirection(const FVector& WorldDirection, float Magnitude)
+{
+	const FVector LocalDirection = GetOwner()->GetActorTransform().InverseTransformVectorNoScale(WorldDirection);
+	const FVector2D PlanarDirection = FVector2D(LocalDirection.X, LocalDirection.Y).GetSafeNormal();
+	LeanDirection = (LeanDirection + PlanarDirection * Magnitude).GetClampedToMaxSize(1.f);
+}
+
+void UAedirBalanceComponent::SampleCenterOfMass()
+{
+	bSupportGrounded = false;
+	SupportMargin = 0.f;
+	ComOffsetDirection = FVector::ZeroVector;
+
+	if (bIsRagdoll || !BodyMesh || !CharacterOwner)
+	{
+		return;
+	}
+
+	// Mass-weighted mean over every body, the pelvis included.
+	FVector WeightedSum = FVector::ZeroVector;
+	double TotalMass = 0.0;
+	for (const FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		const float Mass = Body ? Body->GetBodyMass() : 0.f;
+		if (Mass <= 0.f)
+		{
+			continue;
+		}
+
+		WeightedSum += Body->GetCOMPosition() * Mass;
+		TotalMass += Mass;
+	}
+
+	if (TotalMass <= UE_SMALL_NUMBER)
+	{
+		return;
+	}
+	CenterOfMassWorld = WeightedSum / TotalMass;
+
+	TArray<FVector2D> SupportPoints;
+	AddFootSupportPoints(FootLeftBone, BallLeftBone, SupportPoints);
+	AddFootSupportPoints(FootRightBone, BallRightBone, SupportPoints);
+	if (SupportPoints.Num() == 0)
+	{
+		return;
+	}
+
+	TArray<FVector2D> Hull;
+	ComputeConvexHull2D(SupportPoints, Hull);
+
+	const FVector2D ComXY(CenterOfMassWorld.X, CenterOfMassWorld.Y);
+	SupportMargin = ComputeSupportMargin(Hull, ComXY);
+	bSupportGrounded = true;
+
+	FVector2D Centroid = FVector2D::ZeroVector;
+	for (const FVector2D& Vertex : Hull)
+	{
+		Centroid += Vertex;
+	}
+	Centroid /= static_cast<double>(FMath::Max(Hull.Num(), 1));
+
+	const FVector2D Offset = (ComXY - Centroid).GetSafeNormal();
+	ComOffsetDirection = FVector(Offset.X, Offset.Y, 0.0);
+}
+
+void UAedirBalanceComponent::AddFootSupportPoints(FName FootBone, FName BallBone, TArray<FVector2D>& OutPoints) const
+{
+	if (BodyMesh->GetBoneIndex(FootBone) == INDEX_NONE || BodyMesh->GetBoneIndex(BallBone) == INDEX_NONE)
+	{
+		return;
+	}
+
+	const FVector Foot = BodyMesh->GetBoneLocation(FootBone, EBoneSpaces::WorldSpace);
+	const FVector Ball = BodyMesh->GetBoneLocation(BallBone, EBoneSpaces::WorldSpace);
+
+	FVector GroundPoint;
+	if (!TraceGround(Foot + FVector::UpVector * ComBalanceTraceUpCm, Foot - FVector::UpVector * ComBalanceTraceDownCm, GroundPoint))
+	{
+		return;
+	}
+
+	if (FMath::Abs(Foot.Z - GroundPoint.Z) > ComBalanceGroundToleranceCm)
+	{
+		return;
+	}
+
+	// Forward runs from the heel to the ball, flattened onto the ground plane.
+	FVector Forward = FVector(Ball.X - Foot.X, Ball.Y - Foot.Y, 0.0).GetSafeNormal();
+	if (Forward.IsNearlyZero())
+	{
+		Forward = GetOwner()->GetActorForwardVector().GetSafeNormal2D();
+	}
+
+	const FVector2D Forward2D(Forward.X, Forward.Y);
+	const FVector2D Side2D(-Forward.Y, Forward.X);
+	const FVector2D FootXY(Foot.X, Foot.Y);
+	const FVector2D BallXY(Ball.X, Ball.Y);
+	const FVector2D Heel = FootXY - Forward2D * ComBalanceHeelOffsetCm;
+	const FVector2D Toe = BallXY + Forward2D * ComBalanceToeOffsetCm;
+	const FVector2D HalfWidth = Side2D * ComBalanceFootHalfWidthCm;
+
+	OutPoints.Add(Heel + HalfWidth);
+	OutPoints.Add(Heel - HalfWidth);
+	OutPoints.Add(Toe + HalfWidth);
+	OutPoints.Add(Toe - HalfWidth);
+}
+
+void UAedirBalanceComponent::ApplyCenterOfMassLoss(float DeltaTime)
+{
+	if (!bSupportGrounded || bIsRagdoll)
+	{
+		return;
+	}
+
+	const float Loss = ComputeComBalanceLoss(SupportMargin, DeltaTime);
+	if (Loss <= 0.f)
+	{
+		return;
+	}
+
+	// The body falls towards the side the centre of mass has left the support polygon on.
+	AddLeanDirection(ComOffsetDirection, Loss);
+	SetBalance(Balance - Loss);
+}
+
+void UAedirBalanceComponent::SampleProtectiveReflex()
+{
+	TargetProtectiveAlpha = 0.f;
+
+	if (!CharacterOwner || !BodyMesh)
+	{
+		return;
+	}
+
+	const UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
+	const FVector Velocity = GetFallVelocity();
+	const bool bFastFall = -Velocity.Z > ComBalanceReflexFallSpeed;
+	const bool bFallingNow = Movement && Movement->MovementMode == MOVE_Falling && bFastFall;
+
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	const bool bRagdollImpact = bIsRagdoll && bFastFall && (Now - RagdollStartTime) < ComBalanceReflexRagdollSeconds;
+	if (!bFallingNow && !bRagdollImpact)
+	{
+		return;
+	}
+
+	const FVector Pelvis = BodyMesh->GetBoneLocation(PelvisBoneName, EBoneSpaces::WorldSpace);
+	FVector GroundPoint;
+	if (!TraceGround(Pelvis, Pelvis - FVector::UpVector * ComBalanceReflexRangeCm, GroundPoint))
+	{
+		return;
+	}
+
+	FVector Heading = Velocity.GetSafeNormal2D();
+	if (Heading.IsNearlyZero())
+	{
+		Heading = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+	}
+
+	const float Distance = static_cast<float>(Pelvis.Z - GroundPoint.Z);
+	TargetProtectiveAlpha = FMath::Clamp(1.f - Distance / ComBalanceReflexRangeCm, 0.f, 1.f);
+	ProtectiveGroundWorld = GroundPoint + Heading * ComBalanceReflexForwardCm;
+}
+
+void UAedirBalanceComponent::SmoothProtectiveReflex(float DeltaTime)
+{
+	ProtectiveAlpha = FMath::FInterpTo(ProtectiveAlpha, TargetProtectiveAlpha, DeltaTime, ComBalanceReflexInterpSpeed);
+	if (TargetProtectiveAlpha > KINDA_SMALL_NUMBER)
+	{
+		LastProtectiveReflexAlpha = ProtectiveAlpha;
+	}
+}
+
+FVector UAedirBalanceComponent::GetFallVelocity()
+{
+	if (bIsRagdoll && BodyMesh)
+	{
+		if (FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName))
+		{
+			return Pelvis->GetUnrealWorldVelocity();
+		}
+	}
+
+	const UCharacterMovementComponent* Movement = CharacterOwner ? CharacterOwner->GetCharacterMovement() : nullptr;
+	return Movement ? Movement->Velocity : FVector::ZeroVector;
+}
+
+bool UAedirBalanceComponent::TraceGround(const FVector& Start, const FVector& End, FVector& OutHitPoint) const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+
+	FHitResult Hit;
+	const FCollisionQueryParams Params(FName(TEXT("AedirBalanceGround")), false, GetOwner());
+	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	{
+		return false;
+	}
+
+	OutHitPoint = Hit.ImpactPoint;
+	return true;
+}
+
 bool UAedirBalanceComponent::IsAuthoritative() const
 {
 	return GetOwner() != nullptr && GetOwner()->HasAuthority();
@@ -389,6 +790,7 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * DeltaTime;
 	SetBalance(Balance + Recovery);
 	DecayLeanDirection(Recovery);
+	ApplyCenterOfMassLoss(DeltaTime);
 
 	StaggerSeconds = FMath::Max(0.f, StaggerSeconds - DeltaTime);
 	DazeSeconds = FMath::Max(0.f, DazeSeconds - DeltaTime);

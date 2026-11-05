@@ -114,7 +114,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float SpeedAlpha = MaxGroundSpeed > KINDA_SMALL_NUMBER ? FMath::Clamp(Speed2D / MaxGroundSpeed, 0.f, 1.f) : 0.f;
 	const bool bMoving = Speed2D > MovingSpeedThreshold;
 	const bool bTurning = MovementComponent->IsTurningInPlace();
-	const bool bStepping = bMoving || bTurning;
+	// A falling centre of mass requests a stumble step, which also starts a step from standing.
+	FVector RecoveryDirection = FVector::ZeroVector;
+	float RecoveryUrgency = 0.f;
+	const bool bRecovering = BalanceComponent && BalanceComponent->GetRecoveryStepRequest(RecoveryDirection, RecoveryUrgency);
+	const bool bStepping = bMoving || bTurning || bRecovering;
 
 	const UAedirCombatComponent* Combat = CreatureOwner->Combat.Get();
 	GaitState.StanceAlpha = FMath::FInterpTo(GaitState.StanceAlpha, (Combat && Combat->IsInFightStance()) ? 1.f : 0.f, DeltaTime, StanceInterpSpeed);
@@ -177,6 +181,33 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		bFeetInitialized = true;
 	}
 
+	if (bRecovering && !bRecoverySwinging[0] && !bRecoverySwinging[1])
+	{
+		// The free foot furthest towards the fall direction takes the catching step.
+		int32 RecoveryFoot = INDEX_NONE;
+		double BestReach = 0.0;
+		for (int32 Foot = 0; Foot < 2; ++Foot)
+		{
+			if (bSwinging[Foot])
+			{
+				continue;
+			}
+
+			const double Reach = FVector::DotProduct(PlantedContact[Foot] - ActorLocation, RecoveryDirection);
+			if (RecoveryFoot == INDEX_NONE || Reach > BestReach)
+			{
+				RecoveryFoot = Foot;
+				BestReach = Reach;
+			}
+		}
+
+		if (RecoveryFoot != INDEX_NONE)
+		{
+			const FVector CatchWorld = BalanceComponent->GetCenterOfMassWorld() + RecoveryDirection * RecoveryStepLandingCm;
+			BeginRecoverySwing(RecoveryFoot, CatchWorld, StrideLength * 0.5f * RecoveryStepMaxStrideMultiplier, RecoveryUrgency, BottomZ);
+		}
+	}
+
 	float RiseCm[2] = { 0.f, 0.f };
 	float MaxRise = 0.f;
 	for (int32 Foot = 0; Foot < 2; ++Foot)
@@ -203,7 +234,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		PreviousFootFraction[Foot] = Fraction;
 		const bool bInSwingWindow = Fraction < SwingFraction;
 
-		if (!bSwinging[Foot] && !bStepping)
+		if (!bSwinging[Foot] && !bRecoverySwinging[Foot] && !bStepping)
 		{
 			// Standing still the planted contact follows the home location, so the stance offsets reach the feet.
 			PlantedContact[Foot] = LandingLocation[Foot];
@@ -212,7 +243,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 		if (!bSwinging[Foot])
 		{
-			if (bStepping && bWrapped && bInSwingWindow)
+			if (!bRecoverySwinging[Foot] && bStepping && bWrapped && bInSwingWindow)
 			{
 				bSwinging[Foot] = true;
 				SwingStartContact[Foot] = PlantedContact[Foot];
@@ -243,6 +274,28 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			Contact[Foot] = PlantedContact[Foot];
 			FootPosition = Contact[Foot];
 			TargetNormal[Foot] = PlantedNormal[Foot];
+		}
+
+		if (bRecoverySwinging[Foot])
+		{
+			RecoverySwingElapsed[Foot] += DeltaTime;
+			const float T = FMath::Clamp(RecoverySwingElapsed[Foot] / RecoverySwingDuration[Foot], 0.f, 1.f);
+			const float Smooth = T * T * (3.f - 2.f * T);
+			const float Arc = FMath::Sin(UE_PI * T);
+			const float RecoveryRiseCm = FMath::Abs(RecoveryLandingWorld[Foot].Z - SwingStartContact[Foot].Z);
+			const float RecoveryStepHeight = FMath::Clamp(FMath::Max(SpeedStepHeight, RecoveryRiseCm + AedirStepHeightClearance), 0.f, MaxStepHeightCm);
+
+			Contact[Foot] = FMath::Lerp(SwingStartContact[Foot], RecoveryLandingWorld[Foot], Smooth);
+			FootPosition = Contact[Foot] + FVector::UpVector * (RecoveryStepHeight * Arc);
+			Lift[Foot] = Arc;
+			TargetNormal[Foot] = RecoveryLandingNormal[Foot];
+
+			if (T >= 1.f)
+			{
+				bRecoverySwinging[Foot] = false;
+				PlantedContact[Foot] = RecoveryLandingWorld[Foot];
+				PlantedNormal[Foot] = RecoveryLandingNormal[Foot];
+			}
 		}
 
 		AnkleWorld[Foot] = FootPosition + FVector::UpVector * (AnkleHeightCm * ActorScale);
@@ -276,8 +329,18 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	FVector RightReachTarget = FVector::ZeroVector;
 	float LeftReachAlpha = 0.f;
 	float RightReachAlpha = 0.f;
-	ResolveArmReach(EAedirHand::Left, Combat, Interaction, ActorTransform, LeftReachTarget, LeftReachAlpha);
-	ResolveArmReach(EAedirHand::Right, Combat, Interaction, ActorTransform, RightReachTarget, RightReachAlpha);
+	// Protective reflex: both hands reach for the ground ahead of a fall, spread along the character right axis.
+	FVector ProtectiveGround = FVector::ZeroVector;
+	float ProtectiveAlpha = 0.f;
+	if (BalanceComponent)
+	{
+		BalanceComponent->GetProtectiveReflex(ProtectiveAlpha, ProtectiveGround);
+	}
+	const FVector ProtectiveLeftTarget = ProtectiveGround - ActorRight2D * (ProtectiveArmSpreadCm * ActorScale);
+	const FVector ProtectiveRightTarget = ProtectiveGround + ActorRight2D * (ProtectiveArmSpreadCm * ActorScale);
+
+	ResolveArmReach(EAedirHand::Left, Combat, Interaction, ActorTransform, ProtectiveLeftTarget, ProtectiveAlpha, LeftReachTarget, LeftReachAlpha);
+	ResolveArmReach(EAedirHand::Right, Combat, Interaction, ActorTransform, ProtectiveRightTarget, ProtectiveAlpha, RightReachTarget, RightReachAlpha);
 
 	const FRotator BalanceLean = BalanceComponent ? BalanceComponent->GetPelvisLean() : FRotator::ZeroRotator;
 	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * SpeedAlpha;
@@ -289,6 +352,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha + BalanceLean.Pitch + LookPitch * SpinePitchShare;
 	GaitState.SpineLeanPitch -= ReachTorsoLeanMaxDegrees * ReachLowerAlpha;
 	GaitState.SpineLeanPitch -= StanceSpineLeanDegrees * StanceAlpha;
+	GaitState.SpineLeanPitch -= ProtectiveSpineLeanDegrees * ProtectiveAlpha;
 	const float TwistTarget = FMath::Clamp(LookYaw * SpineTwistScale, -SpineTwistLimitDegrees, SpineTwistLimitDegrees);
 	SmoothedSpineTwist = FMath::FInterpTo(SmoothedSpineTwist, TwistTarget, DeltaTime, LookInterpSpeed);
 	GaitState.SpineTwistYaw = SmoothedSpineTwist;
@@ -448,6 +512,8 @@ void UAedirGaitComponent::ResetForRagdoll()
 	bFeetInitialized = false;
 	bSwinging[0] = false;
 	bSwinging[1] = false;
+	bRecoverySwinging[0] = false;
+	bRecoverySwinging[1] = false;
 	StairFactor = 1.f;
 	RunBlend = 0.f;
 	ArmBlend = 0.f;
@@ -459,6 +525,26 @@ void UAedirGaitComponent::ResetForRagdoll()
 	PreviousPlanarVelocity = FVector::ZeroVector;
 	SmoothedAcceleration = FVector::ZeroVector;
 	bMotionInitialized = false;
+}
+
+void UAedirGaitComponent::BeginRecoverySwing(int32 Foot, const FVector& CatchWorld, float MaxStepCm, float Urgency, float BottomZ)
+{
+	const FVector Start = PlantedContact[Foot];
+	FVector Offset = CatchWorld - Start;
+	Offset.Z = 0.f;
+	if (Offset.Size() > MaxStepCm)
+	{
+		Offset = Offset.GetSafeNormal() * MaxStepCm;
+	}
+
+	SampleGround(Start + Offset, BottomZ, RecoveryLandingWorld[Foot], RecoveryLandingNormal[Foot]);
+
+	bSwinging[Foot] = false;
+	bRecoverySwinging[Foot] = true;
+	SwingStartContact[Foot] = Start;
+	RecoverySwingElapsed[Foot] = 0.f;
+	// A higher urgency shortens the swing, so the catching foot arrives sooner.
+	RecoverySwingDuration[Foot] = FMath::Max(RecoveryStepSeconds * (1.f - 0.5f * Urgency), KINDA_SMALL_NUMBER);
 }
 
 void UAedirGaitComponent::AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength)
@@ -493,7 +579,7 @@ FRotator UAedirGaitComponent::ComputeFootTilt(const FVector& GroundNormal, const
 	return FMath::RInterpTo(CurrentTilt, Tilt.Rotator(), DeltaTime, FootAlignInterpSpeed);
 }
 
-void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, FVector& OutTargetWorld, float& OutAlpha) const
+void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, const FVector& ProtectiveTargetWorld, float ProtectiveAlpha, FVector& OutTargetWorld, float& OutAlpha) const
 {
 	FAedirArmTargetBlend Blend;
 
@@ -517,6 +603,9 @@ void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatCom
 	{
 		Blend.Apply(SwingTarget, SwingAlpha);
 	}
+
+	// The protective reflex is the highest priority while falling and overrides the swing.
+	Blend.Apply(ProtectiveTargetWorld, ProtectiveAlpha);
 
 	OutTargetWorld = Blend.Target;
 	OutAlpha = Blend.Alpha;

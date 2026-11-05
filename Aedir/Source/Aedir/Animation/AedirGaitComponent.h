@@ -534,12 +534,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
 	float InertiaLeanLimitDegrees = 18.f;
 
+	// Stumble step: the foot on the side of a falling centre of mass swings faster and may reach further.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Recovery")
+	float RecoveryStepSeconds = 0.4f;
+
+	// Distance in cm beyond the centre of mass projection, along the fall direction, where the recovery step lands.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Recovery")
+	float RecoveryStepLandingCm = 12.f;
+
+	// Longest recovery step in multiples of the normal stride half length.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Recovery")
+	float RecoveryStepMaxStrideMultiplier = 1.6f;
+
+	// Lateral distance in cm of each hand from the protective ground target.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Reflex")
+	float ProtectiveArmSpreadCm = 18.f;
+
+	// Forward torso pitch in degrees at a full protective reflex.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Reflex")
+	float ProtectiveSpineLeanDegrees = 10.f;
+
 private:
 	bool SampleGround(const FVector& WorldXY, float BottomZ, FVector& OutLocation, FVector& OutNormal) const;
 	void ResetForRagdoll();
 	void AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength);
 	FRotator ComputeFootTilt(const FVector& GroundNormal, const FVector& ActorUp, const FRotator& CurrentTilt, float DeltaTime) const;
-	void ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, FVector& OutTargetWorld, float& OutAlpha) const;
+	void BeginRecoverySwing(int32 Foot, const FVector& CatchWorld, float MaxStepCm, float Urgency, float BottomZ);
+	void ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, const FVector& ProtectiveTargetWorld, float ProtectiveAlpha, FVector& OutTargetWorld, float& OutAlpha) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirCreature> CreatureOwner;
@@ -560,6 +581,13 @@ private:
 	FVector SwingStartContact[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	bool bSwinging[2] = { false, false };
 	float PreviousFootFraction[2] = { 0.f, 0.5f };
+
+	// Stumble step state per foot. A recovery swing lands on RecoveryLandingWorld instead of the phase-driven landing.
+	bool bRecoverySwinging[2] = { false, false };
+	float RecoverySwingElapsed[2] = { 0.f, 0.f };
+	float RecoverySwingDuration[2] = { 0.f, 0.f };
+	FVector RecoveryLandingWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector RecoveryLandingNormal[2] = { FVector::UpVector, FVector::UpVector };
 
 	float Phase = 0.45f;
 	float StairFactor = 1.f;

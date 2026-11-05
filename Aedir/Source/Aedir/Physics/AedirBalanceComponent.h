@@ -74,6 +74,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float ImpactBalanceScale = 0.0005f;
 
+	// Support foot bones. The support polygon is built from the heel and toe points of every grounded foot.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Support")
+	FName FootLeftBone = FName(TEXT("foot_l"));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Support")
+	FName FootRightBone = FName(TEXT("foot_r"));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Support")
+	FName BallLeftBone = FName(TEXT("ball_l"));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Support")
+	FName BallRightBone = FName(TEXT("ball_r"));
+
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Balance")
 	float Balance = 1.f;
 
@@ -114,6 +127,17 @@ public:
 	static float ComputeDazeSeconds(EAedirBodyZone Zone, float EnergyJoules);
 	static float ComputeStaggerSpeed(float EnergyJoules);
 
+	// Pure centre of mass model helpers, shared by the balance update and by tests.
+	// OutHull receives the convex hull in counter-clockwise order (monotone chain).
+	static void ComputeConvexHull2D(const TArray<FVector2D>& Points, TArray<FVector2D>& OutHull);
+
+	// Signed distance in cm from Point to the hull boundary: positive inside, negative outside.
+	// Hulls with fewer than three points return the negative distance to the nearest point or segment.
+	static float ComputeSupportMargin(const TArray<FVector2D>& Hull, const FVector2D& Point);
+
+	// Balance drained this tick while the centre of mass projection is outside the support polygon.
+	static float ComputeComBalanceLoss(float MarginCm, float DeltaSeconds);
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	float GetBalance() const;
 
@@ -136,13 +160,35 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	FRotator GetPelvisLean() const;
 
+	// Mass-weighted centre of mass of the body, sampled every 0.1 s. Zero until the first sample.
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
+	FVector GetCenterOfMassWorld() const;
+
+	// Signed support margin in cm, positive while the centre of mass projection is inside the support polygon.
+	// Zero while airborne or ragdolled.
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
+	float GetSupportMargin() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
+	bool IsCenterOfMassOutsideSupport() const;
+
+	// True while the support margin is below -2 cm and the creature is not ragdolled. OutDirectionWorld is the horizontal
+	// unit direction from the support centroid towards the centre of mass, OutUrgency is clamp(-margin / 12, 0, 1).
+	bool GetRecoveryStepRequest(FVector& OutDirectionWorld, float& OutUrgency) const;
+
+	// Protective arm reflex. OutAlpha is the smoothed blend in [0, 1], OutGroundTargetWorld the ground point ahead of the fall.
+	// Returns false when the reflex is not active.
+	bool GetProtectiveReflex(float& OutAlpha, FVector& OutGroundTargetWorld) const;
+
 private:
 	bool IsAuthoritative() const;
 	UAedirStatsComponent* FindStats() const;
 	void SetBalance(float NewBalance);
+	void AddLeanDirection(const FVector& WorldDirection, float Magnitude);
 	void DecayLeanDirection(float Amount);
 	void UpdateFallState();
 	void UpdateServerState(float DeltaTime);
+	void ApplyCenterOfMassLoss(float DeltaTime);
 	void EnterRagdoll(float MinimumSeconds);
 	void UpdatePelvisLean(float DeltaTime);
 	void DrivePelvis();
@@ -152,6 +198,12 @@ private:
 	void SetupMotors();
 	void UpdateMotors(float DeltaTime, bool bForce);
 	void ApplyMotorGroup(int32 GroupIndex, float Strength);
+	void SampleCenterOfMass();
+	void AddFootSupportPoints(FName FootBone, FName BallBone, TArray<FVector2D>& OutPoints) const;
+	void SampleProtectiveReflex();
+	void SmoothProtectiveReflex(float DeltaTime);
+	FVector GetFallVelocity();
+	bool TraceGround(const FVector& Start, const FVector& End, FVector& OutHitPoint) const;
 
 	UFUNCTION()
 	void OnRep_Ragdoll();
@@ -181,6 +233,21 @@ private:
 	TArray<FName> MotorGroupBones[5];
 	float AppliedMotorStrength[5] = { -1.f, -1.f, -1.f, -1.f, -1.f };
 	float MotorUpdateTimer = 0.f;
+
+	// Centre of mass model, refreshed every 0.1 s on every machine.
+	float ComSampleTimer = 0.f;
+	FVector CenterOfMassWorld = FVector::ZeroVector;
+	// Horizontal unit direction from the support centroid to the centre of mass projection.
+	FVector ComOffsetDirection = FVector::ZeroVector;
+	float SupportMargin = 0.f;
+	bool bSupportGrounded = false;
+
+	// Protective reflex. The target is sampled every 0.1 s, the blend is smoothed every tick.
+	float TargetProtectiveAlpha = 0.f;
+	float ProtectiveAlpha = 0.f;
+	FVector ProtectiveGroundWorld = FVector::ZeroVector;
+	// Alpha at the last tick the reflex was active, used to soften the fall damage on landing.
+	float LastProtectiveReflexAlpha = 0.f;
 
 	FRotator CurrentLean = FRotator::ZeroRotator;
 	float TimeBelowThreshold = 0.f;
