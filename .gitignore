@@ -20,3 +20,5 @@ Aedir/Build/
 # Temporary
 *.tmp
 *.log
+# Third-party upscaler plugins (large binaries, install locally under Aedir/Plugins)
+Aedir/Plugins/

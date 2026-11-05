@@ -3,6 +3,13 @@
 	"EngineAssociation": "5.7",
 	"Category": "",
 	"Description": "",
+	"Modules": [
+		{
+			"Name": "Aedir",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	],
 	"Plugins": [
 		{
 			"Name": "ModelingToolsEditorMode",
@@ -20,14 +27,14 @@
 			"Enabled": true
 		},
 		{
-			"Name": "FSR3",
+			"Name": "FSR",
 			"Enabled": true,
 			"SupportedTargetPlatforms": [
 				"Win64"
 			]
 		},
 		{
-			"Name": "FSR3MovieRenderPipeline",
+			"Name": "FSRMovieRenderPipeline",
 			"Enabled": true,
 			"SupportedTargetPlatforms": [
 				"Win64"
@@ -80,6 +87,10 @@
 		},
 		{
 			"Name": "PhysicsControl",
+			"Enabled": true
+		},
+		{
+			"Name": "RemoteControl",
 			"Enabled": true
 		}
 	]
