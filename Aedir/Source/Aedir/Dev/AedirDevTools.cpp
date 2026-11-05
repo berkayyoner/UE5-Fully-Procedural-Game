@@ -1,4 +1,5 @@
 #include "Dev/AedirDevTools.h"
+#include "UI/AedirJournalSubsystem.h"
 
 #if !UE_BUILD_SHIPPING
 
@@ -363,6 +364,24 @@ void UAedirDevTools::GiveSkill(AAedirPlayerCharacter* Player, const FString& Arg
 	else
 	{
 		SkillIndex = static_cast<int32>(SkillEnum->GetValueByNameString(Tokens[0]));
+		if (SkillIndex < 0)
+		{
+			// Also accept the menu names ("One-Handed", "Archery", "Smithing" ...), ignoring case, spaces and hyphens.
+			const auto Normalize = [](FString Text)
+			{
+				Text = Text.Replace(TEXT(" "), TEXT("")).Replace(TEXT("-"), TEXT(""));
+				return Text.ToLower();
+			};
+			const FString Wanted = Normalize(Tokens[0]);
+			for (int32 Index = 0; Index < SkillCount; ++Index)
+			{
+				if (Normalize(UAedirJournalSubsystem::GetSkillDisplayName(static_cast<EAedirSkill>(Index))) == Wanted)
+				{
+					SkillIndex = Index;
+					break;
+				}
+			}
+		}
 	}
 
 	if (SkillIndex < 0 || SkillIndex >= SkillCount)
