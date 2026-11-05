@@ -1,5 +1,6 @@
 #include "AedirCharacterMovementComponent.h"
 
+#include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "GameFramework/Character.h"
@@ -7,6 +8,7 @@
 
 namespace
 {
+	constexpr float AedirLegInjurySpeedPenalty = 0.45f;
 	constexpr float AedirForwardArcDegrees = 45.f;
 	constexpr float AedirSideArcDegrees = 90.f;
 	constexpr float AedirBackArcDegrees = 135.f;
@@ -227,6 +229,14 @@ float UAedirCharacterMovementComponent::GetMaxSpeed() const
 	}
 
 	Speed *= 1.f - MaxCarrySlowdown * GetCarryRatio();
+
+	if (const AAedirCreature* Creature = Cast<AAedirCreature>(GetCharacterOwner()); Creature && Creature->Combat)
+	{
+		const float LegInjury = FMath::Max(
+			Creature->Combat->GetLimbInjury(EAedirLimb::LeftLeg),
+			Creature->Combat->GetLimbInjury(EAedirLimb::RightLeg));
+		Speed *= 1.f - AedirLegInjurySpeedPenalty * LegInjury;
+	}
 
 	if (const UAedirFootstepComponent* Footsteps = GetOwnerFootsteps())
 	{

@@ -17,16 +17,12 @@ namespace
 {
 	constexpr float AedirCombatStatMax = 100.f;
 	constexpr float AedirDefaultStat = 10.f;
-	constexpr float AedirMouseVelocityWindow = 0.1f;
 	constexpr float AedirGuardBlendSpeed = 6.f;
-	constexpr float AedirSwingRampInSeconds = 0.08f;
-	constexpr float AedirSwingRampOutSeconds = 0.15f;
+	constexpr float AedirArmRampInSeconds = 0.1f;
+	constexpr float AedirArmRampOutSeconds = 0.2f;
 	constexpr float AedirMinSwingDuration = 0.05f;
 	constexpr float AedirWeightSlowdownPerRatio = 0.35f;
-	constexpr float AedirMinSpeedFactor = 0.2f;
-	constexpr float AedirMaxSpeedFactor = 1.5f;
 	constexpr float AedirArmedSkillExperience = 0.05f;
-	constexpr float AedirPhysicsPropImpulse = 800.f;
 
 	constexpr float AedirSwingWindupEnd = 0.3f;
 	constexpr float AedirSwingStrikeEnd = 0.65f;
@@ -47,6 +43,41 @@ namespace
 	constexpr float AedirAITurnSpeed = 220.f;
 	constexpr float AedirAICloseRange = 90.f;
 
+	constexpr float AedirArmDampingRatio = 0.7f;
+	constexpr float AedirArmStrengthBase = 0.6f;
+	constexpr float AedirArmStaminaFloor = 0.35f;
+	constexpr float AedirArmInjuryStiffnessLoss = 0.7f;
+	constexpr float AedirArmMassStrengthScale = 0.6f;
+	constexpr float AedirArmSubstepSeconds = 1.f / 120.f;
+	constexpr float AedirArmReachMinScale = 0.45f;
+	constexpr float AedirArmReachHardLimit = 1.15f;
+	constexpr float AedirArmFallbackLength = 12.f;
+	constexpr float AedirArmMinSpeed = 50.f;
+	constexpr float AedirArmReconcileDistance = 40.f;
+	constexpr float AedirArmProxyInterpSpeed = 12.f;
+	constexpr float AedirArmNetSendInterval = 1.f / 30.f;
+	constexpr float AedirArmAimYawLimit = 110.f;
+	constexpr float AedirArmAimPitchMin = -70.f;
+	constexpr float AedirArmAimPitchMax = 85.f;
+	constexpr float AedirArmGuardRestYaw = 12.f;
+	constexpr float AedirArmGuardRestPitch = 15.f;
+	constexpr float AedirArmExtensionStep = 0.08f;
+	constexpr int32 AedirArmorZoneCount = 4;
+	constexpr int32 AedirLimbCount = 4;
+	constexpr float AedirArmorMaxProtection = 0.9f;
+
+	constexpr float AedirImpactInjuryPerDamage = 0.012f;
+	constexpr float AedirImpactLimbHealPerSecond = 0.002f;
+	constexpr float AedirImpactRecoilScale = 0.35f;
+	constexpr float AedirImpactStaminaPerEnergy = 0.12f;
+	constexpr float AedirImpactPropImpulseScale = 0.6f;
+
+	constexpr float AedirClashCacheInterval = 0.1f;
+	constexpr float AedirClashSelfReflection = -0.3f;
+	constexpr float AedirClashOtherReflection = 0.1f;
+	constexpr float AedirClashBalanceScale = 0.1f;
+	constexpr float AedirClashEnergyShare = 0.5f;
+
 	float CombatSmoothStep01(float Alpha)
 	{
 		const float Clamped = FMath::Clamp(Alpha, 0.f, 1.f);
@@ -59,16 +90,17 @@ namespace
 		return A * (Inverse * Inverse) + Control * (2.f * Inverse * T) + B * (T * T);
 	}
 
-	// Direction is in view space: X is mouse right, Y is mouse up.
-	EAedirSwingType DetermineSwingType(EAedirHand Hand, const FVector2D& Direction)
+	bool CombatBoneNameContainsAny(const FString& BoneName, const TCHAR* const* Tokens, int32 TokenCount)
 	{
-		if (FMath::Abs(Direction.Y) >= FMath::Abs(Direction.X))
+		for (int32 Index = 0; Index < TokenCount; ++Index)
 		{
-			return Direction.Y > 0.f ? EAedirSwingType::Uppercut : EAedirSwingType::Overhand;
+			if (BoneName.Contains(Tokens[Index], ESearchCase::IgnoreCase))
+			{
+				return true;
+			}
 		}
 
-		const float Inward = Hand == EAedirHand::Left ? Direction.X : -Direction.X;
-		return Inward > 0.f ? EAedirSwingType::Hook : EAedirSwingType::Jab;
+		return false;
 	}
 }
 
@@ -77,6 +109,9 @@ UAedirCombatComponent::UAedirCombatComponent()
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 	SetIsReplicatedByDefault(true);
+
+	ArmorProtection.Init(0.f, AedirArmorZoneCount);
+	LimbInjury.Init(0.f, AedirLimbCount);
 }
 
 void UAedirCombatComponent::BeginPlay()
@@ -95,24 +130,50 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		return;
 	}
 
+	const bool bAuthority = IsAuthoritative();
+
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
 		const EAedirHand Hand = static_cast<EAedirHand>(Index);
-		const bool bSwinging = GetSwingState(Hand).bActive;
-
 		GuardAlpha[Index] = FMath::FInterpConstantTo(GuardAlpha[Index], IsGuardActive(Hand) ? 1.f : 0.f, DeltaTime, AedirGuardBlendSpeed);
-		SwingAlpha[Index] = FMath::FInterpConstantTo(
-			SwingAlpha[Index],
-			bSwinging ? 1.f : 0.f,
-			DeltaTime,
-			bSwinging ? 1.f / AedirSwingRampInSeconds : 1.f / AedirSwingRampOutSeconds);
+		SwingCooldownRemaining[Index] = FMath::Max(0.f, SwingCooldownRemaining[Index] - DeltaTime);
 	}
 
 	UpdateSwings(DeltaTime);
 
-	if (IsAuthoritative() && !Creature->IsPlayerControlled())
+	if (bAuthority && !Creature->IsPlayerControlled())
 	{
 		UpdateAI(DeltaTime);
+	}
+
+	UpdateArms(DeltaTime);
+
+	if (bAuthority)
+	{
+		ClashedThisTick.Reset();
+		UpdateClashes(DeltaTime);
+		HealLimbInjuries(DeltaTime);
+
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			UpdateImpacts(static_cast<EAedirHand>(Index), Arms[Index], DeltaTime);
+		}
+
+		for (int32 Index = 0; Index < 2; ++Index)
+		{
+			PublishArmState(static_cast<EAedirHand>(Index), Arms[Index]);
+		}
+	}
+	else if (IsAutonomousProxy())
+	{
+		SendArmAimToServer(DeltaTime);
+	}
+
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		FAedirArmDynamics& Arm = Arms[Index];
+		Arm.PrevHandWorld = Arm.HandWorld;
+		Arm.PrevTipWorld = ComputeArmTip(static_cast<EAedirHand>(Index), Arm);
 	}
 }
 
@@ -124,6 +185,10 @@ void UAedirCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	DOREPLIFETIME(UAedirCombatComponent, bRightGuard);
 	DOREPLIFETIME(UAedirCombatComponent, LeftSwing);
 	DOREPLIFETIME(UAedirCombatComponent, RightSwing);
+	DOREPLIFETIME(UAedirCombatComponent, LeftArmNet);
+	DOREPLIFETIME(UAedirCombatComponent, RightArmNet);
+	DOREPLIFETIME(UAedirCombatComponent, ArmorProtection);
+	DOREPLIFETIME(UAedirCombatComponent, LimbInjury);
 }
 
 void UAedirCombatComponent::SetGuard(EAedirHand Hand, bool bActive)
@@ -146,40 +211,69 @@ void UAedirCombatComponent::SetGuard(EAedirHand Hand, bool bActive)
 
 void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaThisFrame, float DeltaTime)
 {
-	if (!Creature || !Creature->IsLocallyControlled() || DeltaTime <= 0.f)
+	if (!Creature || !Creature->IsLocallyControlled() || DeltaTime <= 0.f || !IsGuardActive(Hand))
 	{
 		return;
 	}
 
-	const int32 Index = HandIndex(Hand);
-
-	// Raw MouseY is positive when the mouse moves down, so it is flipped into a Y-up swing space.
-	const FVector2D ScreenDelta(MouseDeltaThisFrame.X, -MouseDeltaThisFrame.Y);
-	const float Decay = FMath::Exp(-DeltaTime / AedirMouseVelocityWindow);
-	MouseVelocity[Index] = MouseVelocity[Index] * Decay + (ScreenDelta / DeltaTime) * (1.f - Decay);
-
-	if (!CanStartSwing(Hand) || MouseVelocity[Index].Size() < MinSwingMouseSpeed)
+	FAedirArmDynamics& Arm = GetArm(Hand);
+	if (Arm.bScriptedControl)
 	{
 		return;
 	}
 
-	const FVector2D Direction = MouseVelocity[Index].GetSafeNormal();
-	const EAedirSwingType Type = DetermineSwingType(Hand, Direction);
-	MouseVelocity[Index] = FVector2D::ZeroVector;
+	// Raw MouseY is positive when the mouse moves down, so moving the mouse up raises the arm.
+	Arm.AimOffsetDeg.X = FMath::Clamp(Arm.AimOffsetDeg.X + MouseDeltaThisFrame.X * AimSensitivity, -AedirArmAimYawLimit, AedirArmAimYawLimit);
+	Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y - MouseDeltaThisFrame.Y * AimSensitivity, AedirArmAimPitchMin, AedirArmAimPitchMax);
+}
 
-	if (IsAuthoritative())
-	{
-		TryStartSwing(Hand, Type, Direction);
-		return;
-	}
-
-	StartSwingInternal(Hand, Type, Direction);
-	ServerStartSwing(Hand, Type, Direction);
+void UAedirCombatComponent::AddExtensionInput(EAedirHand Hand, float WheelDelta)
+{
+	FAedirArmDynamics& Arm = GetArm(Hand);
+	Arm.Extension = FMath::Clamp(Arm.Extension + WheelDelta * AedirArmExtensionStep, 0.f, 1.f);
 }
 
 bool UAedirCombatComponent::StartSwing(EAedirHand Hand, EAedirSwingType Type)
 {
 	return TryStartSwing(Hand, Type, FVector2D::ZeroVector);
+}
+
+void UAedirCombatComponent::SetArmorProtection(EAedirBodyZone Zone, float Protection)
+{
+	const int32 Index = static_cast<int32>(Zone);
+	if (!IsAuthoritative() || !ArmorProtection.IsValidIndex(Index))
+	{
+		return;
+	}
+
+	ArmorProtection[Index] = FMath::Clamp(Protection, 0.f, AedirArmorMaxProtection);
+}
+
+float UAedirCombatComponent::GetArmorProtection(EAedirBodyZone Zone) const
+{
+	const int32 Index = static_cast<int32>(Zone);
+	return ArmorProtection.IsValidIndex(Index) ? ArmorProtection[Index] : 0.f;
+}
+
+float UAedirCombatComponent::GetLimbInjury(EAedirLimb Limb) const
+{
+	const int32 Index = static_cast<int32>(Limb);
+	return LimbInjury.IsValidIndex(Index) ? LimbInjury[Index] : 0.f;
+}
+
+FVector UAedirCombatComponent::GetHandVelocity(EAedirHand Hand) const
+{
+	return GetArm(Hand).HandVelocity;
+}
+
+FVector UAedirCombatComponent::GetTipWorld(EAedirHand Hand) const
+{
+	if (!Creature)
+	{
+		return FVector::ZeroVector;
+	}
+
+	return ComputeArmTip(Hand, GetArm(Hand));
 }
 
 bool UAedirCombatComponent::IsGuardActive(EAedirHand Hand) const
@@ -200,15 +294,14 @@ bool UAedirCombatComponent::GetGuardPose(EAedirHand Hand, float& OutAlpha) const
 
 bool UAedirCombatComponent::GetSwingPose(EAedirHand Hand, FVector& OutHandTargetWorld, float& OutAlpha) const
 {
-	OutAlpha = SwingAlpha[HandIndex(Hand)];
+	const FAedirArmDynamics& Arm = GetArm(Hand);
+	OutAlpha = Arm.ActiveAlpha;
 	if (OutAlpha <= 0.001f)
 	{
 		return false;
 	}
 
-	const FAedirSwingState& State = GetSwingState(Hand);
-	const float Alpha = State.bActive && State.Duration > 0.f ? FMath::Clamp(State.Elapsed / State.Duration, 0.f, 1.f) : 1.f;
-	OutHandTargetWorld = GetSwingWorldTarget(Hand, State.Type, Alpha);
+	OutHandTargetWorld = Arm.HandWorld;
 	return true;
 }
 
@@ -222,9 +315,114 @@ bool UAedirCombatComponent::IsLeadFootRight() const
 	return bLeadFootRight;
 }
 
+float UAedirCombatComponent::ComputeImpactEnergy(float MassKg, float SpeedCmPerSec)
+{
+	const float SpeedMetersPerSecond = FMath::Max(SpeedCmPerSec, 0.f) / 100.f;
+	return 0.5f * FMath::Max(MassKg, 0.f) * SpeedMetersPerSecond * SpeedMetersPerSecond;
+}
+
+EAedirBodyZone UAedirCombatComponent::ClassifyBodyZone(FName BoneName)
+{
+	static const TCHAR* const HeadTokens[] = { TEXT("head"), TEXT("neck") };
+	static const TCHAR* const TorsoTokens[] = { TEXT("spine"), TEXT("pelvis"), TEXT("clavicle") };
+	static const TCHAR* const ArmTokens[] = { TEXT("upperarm"), TEXT("lowerarm"), TEXT("hand"), TEXT("thumb"), TEXT("index"), TEXT("middle"), TEXT("ring"), TEXT("pinky") };
+	static const TCHAR* const LegTokens[] = { TEXT("thigh"), TEXT("calf"), TEXT("foot"), TEXT("ball") };
+
+	const FString Bone = BoneName.ToString();
+	if (CombatBoneNameContainsAny(Bone, HeadTokens, UE_ARRAY_COUNT(HeadTokens)))
+	{
+		return EAedirBodyZone::Head;
+	}
+
+	if (CombatBoneNameContainsAny(Bone, TorsoTokens, UE_ARRAY_COUNT(TorsoTokens)))
+	{
+		return EAedirBodyZone::Torso;
+	}
+
+	if (CombatBoneNameContainsAny(Bone, ArmTokens, UE_ARRAY_COUNT(ArmTokens)))
+	{
+		return EAedirBodyZone::Arm;
+	}
+
+	if (CombatBoneNameContainsAny(Bone, LegTokens, UE_ARRAY_COUNT(LegTokens)))
+	{
+		return EAedirBodyZone::Leg;
+	}
+
+	return EAedirBodyZone::Torso;
+}
+
+float UAedirCombatComponent::GetZoneDamageMultiplier(EAedirBodyZone Zone)
+{
+	switch (Zone)
+	{
+	case EAedirBodyZone::Head:
+		return 2.f;
+	case EAedirBodyZone::Arm:
+		return 0.6f;
+	case EAedirBodyZone::Leg:
+		return 0.7f;
+	case EAedirBodyZone::Torso:
+	default:
+		return 1.f;
+	}
+}
+
+float UAedirCombatComponent::ComputeDamageTypeFactor(EAedirDamageType Type, float AxialAlignment)
+{
+	switch (Type)
+	{
+	case EAedirDamageType::Slash:
+		return 1.2f;
+	case EAedirDamageType::Pierce:
+		return AxialAlignment >= 0.7f ? 1.5f : 0.25f;
+	case EAedirDamageType::Blunt:
+	default:
+		return 0.9f;
+	}
+}
+
+bool UAedirCombatComponent::GetBoneLimb(FName BoneName, EAedirLimb& OutLimb)
+{
+	const EAedirBodyZone Zone = ClassifyBodyZone(BoneName);
+	if (Zone != EAedirBodyZone::Arm && Zone != EAedirBodyZone::Leg)
+	{
+		return false;
+	}
+
+	const FString Bone = BoneName.ToString();
+	const bool bLeft = Bone.EndsWith(TEXT("_l"), ESearchCase::IgnoreCase);
+	const bool bRight = Bone.EndsWith(TEXT("_r"), ESearchCase::IgnoreCase);
+	if (!bLeft && !bRight)
+	{
+		return false;
+	}
+
+	if (Zone == EAedirBodyZone::Arm)
+	{
+		OutLimb = bLeft ? EAedirLimb::LeftArm : EAedirLimb::RightArm;
+	}
+	else
+	{
+		OutLimb = bLeft ? EAedirLimb::LeftLeg : EAedirLimb::RightLeg;
+	}
+
+	return true;
+}
+
 bool UAedirCombatComponent::IsAuthoritative() const
 {
 	return Creature && Creature->HasAuthority();
+}
+
+bool UAedirCombatComponent::IsAutonomousProxy() const
+{
+	return Creature && !Creature->HasAuthority() && Creature->IsLocallyControlled();
+}
+
+bool UAedirCombatComponent::IsSimulatedProxy() const
+{
+	return Creature && !Creature->HasAuthority() && !Creature->IsLocallyControlled();
 }
 
 int32 UAedirCombatComponent::HandIndex(EAedirHand Hand)
@@ -242,9 +440,34 @@ const FAedirSwingState& UAedirCombatComponent::GetSwingState(EAedirHand Hand) co
 	return Hand == EAedirHand::Left ? LeftSwing : RightSwing;
 }
 
+FAedirArmDynamics& UAedirCombatComponent::GetArm(EAedirHand Hand)
+{
+	return Arms[HandIndex(Hand)];
+}
+
+const FAedirArmDynamics& UAedirCombatComponent::GetArm(EAedirHand Hand) const
+{
+	return Arms[HandIndex(Hand)];
+}
+
+FAedirArmNetState& UAedirCombatComponent::GetArmNet(EAedirHand Hand)
+{
+	return Hand == EAedirHand::Left ? LeftArmNet : RightArmNet;
+}
+
+const FAedirArmNetState& UAedirCombatComponent::GetArmNet(EAedirHand Hand) const
+{
+	return Hand == EAedirHand::Left ? LeftArmNet : RightArmNet;
+}
+
 AAedirItemActor* UAedirCombatComponent::GetHeldItem(EAedirHand Hand) const
 {
 	return Creature && Creature->Interaction ? Creature->Interaction->GetHeldItem(Hand) : nullptr;
+}
+
+EAedirLimb UAedirCombatComponent::GetArmLimb(EAedirHand Hand) const
+{
+	return Hand == EAedirHand::Left ? EAedirLimb::LeftArm : EAedirLimb::RightArm;
 }
 
 void UAedirCombatComponent::SetGuardInternal(EAedirHand Hand, bool bActive)
@@ -255,11 +478,22 @@ void UAedirCombatComponent::SetGuardInternal(EAedirHand Hand, bool bActive)
 	}
 
 	bool& GuardFlag = Hand == EAedirHand::Left ? bLeftGuard : bRightGuard;
+	const bool bWasActive = GuardFlag;
 	GuardFlag = bActive;
-	MouseVelocity[HandIndex(Hand)] = FVector2D::ZeroVector;
+
+	if (bActive && !bWasActive)
+	{
+		SetGuardRestAim(Hand);
+	}
 
 	// Keeps the movement fight stance flag in step on the server and on the owning client for prediction.
 	Creature->SetWantsFightStance(IsInFightStance());
+}
+
+void UAedirCombatComponent::SetGuardRestAim(EAedirHand Hand)
+{
+	const float InwardYaw = Hand == EAedirHand::Left ? AedirArmGuardRestYaw : -AedirArmGuardRestYaw;
+	GetArm(Hand).AimOffsetDeg = FVector2D(InwardYaw, AedirArmGuardRestPitch);
 }
 
 bool UAedirCombatComponent::CanStartSwing(EAedirHand Hand) const
@@ -267,6 +501,11 @@ bool UAedirCombatComponent::CanStartSwing(EAedirHand Hand) const
 	return IsGuardActive(Hand)
 		&& !GetSwingState(Hand).bActive
 		&& SwingCooldownRemaining[HandIndex(Hand)] <= 0.f;
+}
+
+bool UAedirCombatComponent::IsArmActive(EAedirHand Hand) const
+{
+	return IsGuardActive(Hand) || GetSwingState(Hand).bActive;
 }
 
 float UAedirCombatComponent::ComputeWeightFactor(EAedirHand Hand) const
@@ -284,6 +523,19 @@ float UAedirCombatComponent::ComputeSwingDuration(EAedirHand Hand) const
 	const float AthletismAlpha = FMath::Clamp(Athletism / AedirCombatStatMax, 0.f, 1.f);
 
 	return SwingDurationBase * ComputeWeightFactor(Hand) * FMath::Lerp(1.15f, 0.85f, AthletismAlpha);
+}
+
+float UAedirCombatComponent::GetEffectiveWeaponLength(EAedirHand Hand) const
+{
+	const AAedirItemActor* HeldItem = GetHeldItem(Hand);
+	const float Length = HeldItem ? HeldItem->GetWeaponLength() : 0.f;
+	return Length > 0.f ? Length : AedirArmFallbackLength;
+}
+
+float UAedirCombatComponent::GetArmTotalMass(EAedirHand Hand) const
+{
+	const AAedirItemActor* HeldItem = GetHeldItem(Hand);
+	return (HeldItem ? HeldItem->Weight : 0.f) + ForearmMass;
 }
 
 bool UAedirCombatComponent::TryStartSwing(EAedirHand Hand, EAedirSwingType Type, const FVector2D& Direction)
@@ -304,7 +556,6 @@ bool UAedirCombatComponent::TryStartSwing(EAedirHand Hand, EAedirSwingType Type,
 
 void UAedirCombatComponent::StartSwingInternal(EAedirHand Hand, EAedirSwingType Type, const FVector2D& Direction)
 {
-	const int32 Index = HandIndex(Hand);
 	FAedirSwingState& State = GetSwingState(Hand);
 
 	State.bActive = true;
@@ -313,130 +564,58 @@ void UAedirCombatComponent::StartSwingInternal(EAedirHand Hand, EAedirSwingType 
 	State.Duration = FMath::Max(ComputeSwingDuration(Hand), AedirMinSwingDuration);
 	State.Direction = Direction;
 
-	bSwingHitRegistered[Index] = false;
-	PreviousHandTarget[Index] = GetSwingWorldTarget(Hand, Type, 0.f);
+	// The scripted trajectory drives the arm target; the arm dynamics then follow it with weapon inertia.
+	FAedirArmDynamics& Arm = GetArm(Hand);
+	Arm.bScriptedControl = true;
+	Arm.ScriptedTargetWorld = GetSwingWorldTarget(Hand, Type, 0.f);
+}
+
+void UAedirCombatComponent::CancelSwing(EAedirHand Hand)
+{
+	FAedirSwingState& State = GetSwingState(Hand);
+	if (!State.bActive)
+	{
+		return;
+	}
+
+	State.bActive = false;
+	State.Elapsed = State.Duration;
+	SwingCooldownRemaining[HandIndex(Hand)] = SwingCooldown;
+	GetArm(Hand).bScriptedControl = false;
 }
 
 void UAedirCombatComponent::UpdateSwings(float DeltaTime)
 {
-	const bool bAuthority = IsAuthoritative();
+	if (!IsAuthoritative())
+	{
+		return;
+	}
 
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
 		const EAedirHand Hand = static_cast<EAedirHand>(Index);
 		FAedirSwingState& State = GetSwingState(Hand);
-
-		SwingCooldownRemaining[Index] = FMath::Max(0.f, SwingCooldownRemaining[Index] - DeltaTime);
+		FAedirArmDynamics& Arm = Arms[Index];
 
 		if (!State.bActive)
 		{
-			PreviousHandTarget[Index] = GetSwingWorldTarget(Hand, State.Type, 1.f);
+			Arm.bScriptedControl = false;
 			continue;
 		}
 
 		State.Elapsed += DeltaTime;
 		const float Alpha = FMath::Clamp(State.Elapsed / State.Duration, 0.f, 1.f);
-		const FVector CurrentTarget = GetSwingWorldTarget(Hand, State.Type, Alpha);
-
-		if (bAuthority && Alpha >= AedirSwingWindupEnd && Alpha <= AedirSwingStrikeEnd)
-		{
-			ProcessStrikeHit(Hand, State, PreviousHandTarget[Index], CurrentTarget);
-		}
-
-		PreviousHandTarget[Index] = CurrentTarget;
+		Arm.bScriptedControl = true;
+		Arm.ScriptedTargetWorld = GetSwingWorldTarget(Hand, State.Type, Alpha);
 
 		if (State.Elapsed >= State.Duration)
 		{
 			State.bActive = false;
 			State.Elapsed = State.Duration;
 			SwingCooldownRemaining[Index] = SwingCooldown;
+			Arm.bScriptedControl = false;
 		}
 	}
-}
-
-void UAedirCombatComponent::ProcessStrikeHit(EAedirHand Hand, const FAedirSwingState& State, const FVector& From, const FVector& To)
-{
-	const int32 Index = HandIndex(Hand);
-	if (bSwingHitRegistered[Index])
-	{
-		return;
-	}
-
-	UWorld* World = GetWorld();
-	if (!World)
-	{
-		return;
-	}
-
-	AAedirItemActor* HeldItem = GetHeldItem(Hand);
-
-	FCollisionObjectQueryParams ObjectParams;
-	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
-	ObjectParams.AddObjectTypesToQuery(ECC_PhysicsBody);
-	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
-
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirCombatStrike), false);
-	Params.AddIgnoredActor(Creature);
-	if (HeldItem)
-	{
-		Params.AddIgnoredActor(HeldItem);
-	}
-
-	TArray<FHitResult> Hits;
-	World->SweepMultiByObjectType(Hits, From, To, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(HitRadius), Params);
-
-	FVector Direction = (To - From).GetSafeNormal();
-	if (Direction.IsNearlyZero())
-	{
-		Direction = Creature->GetActorForwardVector();
-	}
-
-	for (const FHitResult& Hit : Hits)
-	{
-		if (AAedirCreature* Victim = Cast<AAedirCreature>(Hit.GetActor()))
-		{
-			if (Victim == Creature)
-			{
-				continue;
-			}
-
-			bSwingHitRegistered[Index] = true;
-			ApplyCreatureHit(Hand, State, Victim, Direction);
-			return;
-		}
-
-		UPrimitiveComponent* HitComponent = Hit.GetComponent();
-		if (HitComponent && HitComponent->IsSimulatingPhysics())
-		{
-			const float Strength = Creature->Stats ? Creature->Stats->Strength : AedirDefaultStat;
-			bSwingHitRegistered[Index] = true;
-			HitComponent->AddImpulseAtLocation(Direction * (AedirPhysicsPropImpulse * Strength / AedirDefaultStat), Hit.ImpactPoint);
-			return;
-		}
-	}
-}
-
-void UAedirCombatComponent::ApplyCreatureHit(EAedirHand Hand, const FAedirSwingState& State, AAedirCreature* Victim, const FVector& Direction)
-{
-	AAedirItemActor* HeldItem = GetHeldItem(Hand);
-	const float BaseDamage = HeldItem ? HeldItem->GetDamage() : FistDamage;
-	const float Strength = Creature->Stats ? Creature->Stats->Strength : 0.f;
-	const float SpeedFactor = FMath::Clamp(SwingDurationBase / State.Duration, AedirMinSpeedFactor, AedirMaxSpeedFactor);
-	const float Damage = (BaseDamage + Strength * StrengthDamageScale) * SpeedFactor;
-	const float AppliedDamage = Victim->ReceiveCreatureDamage(Damage);
-
-	if (Victim->Balance)
-	{
-		const float DamageRatio = Damage / FMath::Max(FistDamage, KINDA_SMALL_NUMBER);
-		Victim->Balance->ApplyImpulseImpact(Direction * (BalanceImpactScale * DamageRatio));
-	}
-
-	if (HeldItem && Creature->Stats)
-	{
-		Creature->Stats->AddSkillExperience(EAedirSkill::SingleHandWeapon, AedirArmedSkillExperience);
-	}
-
-	OnHitDealt.Broadcast(Victim, AppliedDamage);
 }
 
 FVector UAedirCombatComponent::GetSwingWorldTarget(EAedirHand Hand, EAedirSwingType Type, float Alpha) const
@@ -502,6 +681,548 @@ FVector UAedirCombatComponent::GetSwingLocalTarget(EAedirHand Hand, EAedirSwingT
 	return FMath::Lerp(ArcEnd, Guard, Eased);
 }
 
+void UAedirCombatComponent::UpdateArms(float DeltaTime)
+{
+	const bool bProxy = IsSimulatedProxy();
+
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		const EAedirHand Hand = static_cast<EAedirHand>(Index);
+		FAedirArmDynamics& Arm = Arms[Index];
+
+		Arm.ShoulderWorld = ComputeArmShoulder(Hand);
+
+		if (!Arm.bInitialized)
+		{
+			Arm.HandWorld = ComputeArmTarget(Hand, Arm);
+			Arm.PrevHandWorld = Arm.HandWorld;
+			Arm.PrevTipWorld = ComputeArmTip(Hand, Arm);
+			Arm.bInitialized = true;
+		}
+
+		UpdateArmActivity(Hand, Arm, DeltaTime);
+
+		if (bProxy)
+		{
+			ApplyRemoteArmState(Hand, Arm, DeltaTime);
+			continue;
+		}
+
+		IntegrateArm(Hand, Arm, DeltaTime);
+
+		if (IsAutonomousProxy())
+		{
+			const FVector ServerHand = GetArmNet(Hand).HandWorld;
+			if (!ServerHand.IsNearlyZero() && FVector::Dist(ServerHand, Arm.HandWorld) > AedirArmReconcileDistance)
+			{
+				Arm.HandWorld = ServerHand;
+				Arm.HandVelocity = GetArmNet(Hand).HandVelocity;
+			}
+		}
+	}
+}
+
+FVector UAedirCombatComponent::ComputeArmShoulder(EAedirHand Hand) const
+{
+	const float Side = Hand == EAedirHand::Left ? -1.f : 1.f;
+	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
+	const FVector Local(0.f, AedirShoulderLateral * Side * Scale, AedirShoulderHeight * Scale);
+	return Creature->GetActorTransform().TransformPositionNoScale(Local);
+}
+
+FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArmDynamics& Arm) const
+{
+	if (Arm.bScriptedControl)
+	{
+		return Arm.ScriptedTargetWorld;
+	}
+
+	const double Yaw = Creature->GetActorRotation().Yaw + Arm.AimOffsetDeg.X;
+	const FVector AimDirection = FRotator(Arm.AimOffsetDeg.Y, Yaw, 0.0).Vector();
+	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
+	const float Extension = FMath::Clamp(Arm.Extension, 0.f, 1.f);
+	const float Reach = FMath::Lerp(AedirArmReachMinScale, 1.f, Extension) * (SwingReach + GetEffectiveWeaponLength(Hand)) * Scale;
+
+	return Arm.ShoulderWorld + AimDirection * Reach;
+}
+
+FVector UAedirCombatComponent::ComputeArmTip(EAedirHand Hand, const FAedirArmDynamics& Arm) const
+{
+	FVector Direction = (Arm.HandWorld - Arm.ShoulderWorld).GetSafeNormal();
+	if (Direction.IsNearlyZero())
+	{
+		Direction = Creature ? Creature->GetActorForwardVector() : FVector::ForwardVector;
+	}
+
+	const float Scale = Creature ? static_cast<float>(Creature->GetActorScale3D().X) : 1.f;
+	return Arm.HandWorld + Direction * (GetEffectiveWeaponLength(Hand) * Scale);
+}
+
+void UAedirCombatComponent::IntegrateArm(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime)
+{
+	const float Strength = Creature->Stats ? Creature->Stats->Strength : AedirDefaultStat;
+	const float StaminaFraction = Creature->Stats ? Creature->Stats->GetStaminaFraction() : 1.f;
+	const float ArmInjury = GetLimbInjury(GetArmLimb(Hand));
+	const float TotalMass = GetArmTotalMass(Hand);
+	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
+
+	const float StrengthFactor = AedirArmStrengthBase + Strength / AedirCombatStatMax;
+	const float StaminaFactor = FMath::Lerp(AedirArmStaminaFloor, 1.f, FMath::Clamp(StaminaFraction, 0.f, 1.f));
+	const float InjuryFactor = 1.f - AedirArmInjuryStiffnessLoss * ArmInjury;
+	const float MassRatio = TotalMass / FMath::Max(Strength * AedirArmMassStrengthScale, 1.f);
+	const float Stiffness = ArmStiffnessBase * StrengthFactor * StaminaFactor * InjuryFactor / (1.f + MassRatio);
+	const float Damping = 2.f * FMath::Sqrt(Stiffness) * AedirArmDampingRatio;
+	const float MaxAcceleration = MaxArmAcceleration * StrengthFactor * StaminaFactor * InjuryFactor;
+	const float MaxRadius = AedirArmReachHardLimit * (SwingReach + GetEffectiveWeaponLength(Hand)) * Scale;
+
+	const FVector Target = ComputeArmTarget(Hand, Arm);
+	const int32 Steps = FMath::Max(1, FMath::CeilToInt(DeltaTime / AedirArmSubstepSeconds));
+	const float StepSeconds = DeltaTime / Steps;
+
+	for (int32 Step = 0; Step < Steps; ++Step)
+	{
+		FVector Acceleration = Stiffness * (Target - Arm.HandWorld) - Damping * Arm.HandVelocity;
+		const float AccelerationSize = static_cast<float>(Acceleration.Size());
+		if (AccelerationSize > MaxAcceleration)
+		{
+			Acceleration *= MaxAcceleration / AccelerationSize;
+		}
+
+		Arm.HandVelocity += Acceleration * StepSeconds;
+		Arm.HandWorld += Arm.HandVelocity * StepSeconds;
+
+		const FVector FromShoulder = Arm.HandWorld - Arm.ShoulderWorld;
+		const float Distance = static_cast<float>(FromShoulder.Size());
+		if (Distance > MaxRadius && Distance > KINDA_SMALL_NUMBER)
+		{
+			const FVector Outward = FromShoulder / Distance;
+			Arm.HandWorld = Arm.ShoulderWorld + Outward * MaxRadius;
+
+			const float OutwardSpeed = static_cast<float>(FVector::DotProduct(Arm.HandVelocity, Outward));
+			if (OutwardSpeed > 0.f)
+			{
+				Arm.HandVelocity -= Outward * OutwardSpeed;
+			}
+		}
+	}
+}
+
+void UAedirCombatComponent::ApplyRemoteArmState(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime)
+{
+	const FAedirArmNetState& NetState = GetArmNet(Hand);
+	const FVector ServerHand = NetState.HandWorld;
+	if (ServerHand.IsNearlyZero())
+	{
+		return;
+	}
+
+	Arm.HandWorld = FMath::VInterpTo(Arm.HandWorld, ServerHand, DeltaTime, AedirArmProxyInterpSpeed);
+	Arm.HandVelocity = NetState.HandVelocity;
+}
+
+void UAedirCombatComponent::PublishArmState(EAedirHand Hand, const FAedirArmDynamics& Arm)
+{
+	FAedirArmNetState& NetState = GetArmNet(Hand);
+	NetState.HandWorld = Arm.HandWorld;
+	NetState.HandVelocity = Arm.HandVelocity;
+	NetState.Active = IsArmActive(Hand) ? 1 : 0;
+}
+
+void UAedirCombatComponent::SendArmAimToServer(float DeltaTime)
+{
+	ArmAimSendTimer -= DeltaTime;
+	if (ArmAimSendTimer > 0.f)
+	{
+		return;
+	}
+
+	ArmAimSendTimer = AedirArmNetSendInterval;
+
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		const EAedirHand Hand = static_cast<EAedirHand>(Index);
+		if (!IsGuardActive(Hand))
+		{
+			continue;
+		}
+
+		const FAedirArmDynamics& Arm = Arms[Index];
+		ServerUpdateArmAim(Hand, Arm.AimOffsetDeg, Arm.Extension);
+	}
+}
+
+void UAedirCombatComponent::UpdateArmActivity(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime)
+{
+	const bool bActive = IsSimulatedProxy() ? GetArmNet(Hand).Active != 0 : IsArmActive(Hand);
+	Arm.ActiveAlpha = FMath::FInterpConstantTo(Arm.ActiveAlpha, bActive ? 1.f : 0.f, DeltaTime, bActive ? 1.f / AedirArmRampInSeconds : 1.f / AedirArmRampOutSeconds);
+}
+
+void UAedirCombatComponent::UpdateClashes(float DeltaTime)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	ClashCandidateTimer -= DeltaTime;
+	if (ClashCandidateTimer <= 0.f)
+	{
+		ClashCandidateTimer = AedirClashCacheInterval;
+		RefreshClashCandidates();
+	}
+
+	const double Now = World->GetTimeSeconds();
+
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		const EAedirHand Hand = static_cast<EAedirHand>(Index);
+		if (!IsArmActive(Hand))
+		{
+			continue;
+		}
+
+		FAedirArmDynamics& Arm = Arms[Index];
+		const FVector Start = Arm.HandWorld;
+		const FVector End = ComputeArmTip(Hand, Arm);
+
+		for (const TWeakObjectPtr<AAedirCreature>& Candidate : ClashCandidates)
+		{
+			AAedirCreature* Other = Candidate.Get();
+			if (!Other || !Other->Combat || (Other->Stats && Other->Stats->IsDead()))
+			{
+				continue;
+			}
+
+			UAedirCombatComponent* OtherCombat = Other->Combat;
+			for (int32 OtherIndex = 0; OtherIndex < 2; ++OtherIndex)
+			{
+				const EAedirHand OtherHand = static_cast<EAedirHand>(OtherIndex);
+				if (!OtherCombat->IsArmActive(OtherHand))
+				{
+					continue;
+				}
+
+				const FAedirArmDynamics& OtherArm = OtherCombat->Arms[OtherIndex];
+
+				FVector ClosestSelf = FVector::ZeroVector;
+				FVector ClosestOther = FVector::ZeroVector;
+				FMath::SegmentDistToSegment(Start, End, OtherArm.HandWorld, OtherCombat->ComputeArmTip(OtherHand, OtherArm), ClosestSelf, ClosestOther);
+
+				const FVector Offset = ClosestSelf - ClosestOther;
+				const float CombinedSpeed = static_cast<float>(Arm.HandVelocity.Size() + OtherArm.HandVelocity.Size());
+				if (Offset.Size() >= ClashRadius || CombinedSpeed <= ClashMinCombinedSpeed)
+				{
+					continue;
+				}
+
+				ClashedThisTick.AddUnique(TWeakObjectPtr<AActor>(Other));
+
+				if (IsClashCooldownElapsed(Other, Now))
+				{
+					FVector Normal = Offset.GetSafeNormal();
+					if (Normal.IsNearlyZero())
+					{
+						Normal = FVector::UpVector;
+					}
+
+					ResolveClash(Hand, Arm, Other, OtherArm.HandVelocity, Normal, CombinedSpeed, Now);
+				}
+			}
+		}
+	}
+}
+
+void UAedirCombatComponent::RefreshClashCandidates()
+{
+	ClashCandidates.Reset();
+
+	UWorld* World = GetWorld();
+	if (!World || !Creature)
+	{
+		return;
+	}
+
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirCombatClash), false);
+	Params.AddIgnoredActor(Creature);
+
+	TArray<FOverlapResult> Overlaps;
+	World->OverlapMultiByObjectType(Overlaps, Creature->GetActorLocation(), FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(ClashSearchRadius), Params);
+
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		AAedirCreature* Candidate = Cast<AAedirCreature>(Overlap.GetActor());
+		if (Candidate && Candidate != Creature)
+		{
+			ClashCandidates.Add(Candidate);
+		}
+	}
+}
+
+bool UAedirCombatComponent::IsClashCooldownElapsed(const AAedirCreature* Other, double Now) const
+{
+	for (const FAedirTimedContact& Record : ClashRecords)
+	{
+		if (Record.Target.Get() == Other && Now - Record.Time < ClashCooldown)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+void UAedirCombatComponent::ResolveClash(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Other, const FVector& OtherVelocity, const FVector& Normal, float CombinedSpeed, double Now)
+{
+	const float MassEff = GetArmTotalMass(Hand);
+
+	Arm.HandVelocity = Arm.HandVelocity * AedirClashSelfReflection + OtherVelocity * AedirClashOtherReflection;
+
+	const float ReducedEnergy = ComputeImpactEnergy(MassEff, CombinedSpeed);
+	if (Creature->Stats)
+	{
+		Creature->Stats->ConsumeStamina(AedirClashEnergyShare * ReducedEnergy * AedirImpactStaminaPerEnergy);
+	}
+
+	if (Creature->Balance)
+	{
+		Creature->Balance->ApplyImpulseImpact(Normal * (MassEff * CombinedSpeed * AedirClashBalanceScale));
+	}
+
+	ClashRecords.RemoveAll([this, Now](const FAedirTimedContact& Record)
+	{
+		return !Record.Target.IsValid() || Now - Record.Time >= ClashCooldown;
+	});
+
+	FAedirTimedContact* Record = ClashRecords.FindByPredicate([Other](const FAedirTimedContact& Existing)
+	{
+		return Existing.Target.Get() == Other;
+	});
+
+	if (Record)
+	{
+		Record->Time = Now;
+	}
+	else
+	{
+		FAedirTimedContact NewRecord;
+		NewRecord.Target = Other;
+		NewRecord.Time = Now;
+		ClashRecords.Add(NewRecord);
+	}
+
+	OnClash.Broadcast(Other);
+}
+
+void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime)
+{
+	UWorld* World = GetWorld();
+	if (!World || DeltaTime <= KINDA_SMALL_NUMBER || !IsArmActive(Hand))
+	{
+		return;
+	}
+
+	const FVector Tip = ComputeArmTip(Hand, Arm);
+	const FVector TipVelocity = (Tip - Arm.PrevTipWorld) / DeltaTime;
+	const float Speed = static_cast<float>(FMath::Max(Arm.HandVelocity.Size(), TipVelocity.Size()));
+	if (Speed <= AedirArmMinSpeed)
+	{
+		return;
+	}
+
+	const FVector WeaponDirection = (Arm.HandWorld - Arm.ShoulderWorld).GetSafeNormal();
+	const float AxialAlignment = static_cast<float>(FMath::Abs(FVector::DotProduct(TipVelocity.GetSafeNormal(), WeaponDirection)));
+	const float MassEff = GetArmTotalMass(Hand);
+	const double Now = World->GetTimeSeconds();
+
+	ProcessImpactSweep(Hand, Arm, Arm.PrevHandWorld, Arm.HandWorld, TipVelocity, MassEff, AxialAlignment, Now);
+	ProcessImpactSweep(Hand, Arm, Arm.PrevTipWorld, Tip, TipVelocity, MassEff, AxialAlignment, Now);
+	ProcessImpactSweep(Hand, Arm, (Arm.PrevHandWorld + Arm.PrevTipWorld) * 0.5, (Arm.HandWorld + Tip) * 0.5, TipVelocity, MassEff, AxialAlignment, Now);
+}
+
+bool UAedirCombatComponent::IsImpactOnCooldown(EAedirHand Hand, const AActor* Victim, double Now) const
+{
+	for (const FAedirTimedContact& Record : ImpactRecords[HandIndex(Hand)])
+	{
+		if (Record.Target.Get() == Victim && Now - Record.Time < ImpactCooldown)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void UAedirCombatComponent::RegisterImpact(EAedirHand Hand, AActor* Victim, double Now)
+{
+	TArray<FAedirTimedContact>& Records = ImpactRecords[HandIndex(Hand)];
+	Records.RemoveAll([this, Now](const FAedirTimedContact& Record)
+	{
+		return !Record.Target.IsValid() || Now - Record.Time >= ImpactCooldown;
+	});
+
+	FAedirTimedContact* Existing = Records.FindByPredicate([Victim](const FAedirTimedContact& Record)
+	{
+		return Record.Target.Get() == Victim;
+	});
+
+	if (Existing)
+	{
+		Existing->Time = Now;
+		return;
+	}
+
+	FAedirTimedContact NewRecord;
+	NewRecord.Target = Victim;
+	NewRecord.Time = Now;
+	Records.Add(NewRecord);
+}
+
+void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& From, const FVector& To, const FVector& TipVelocity, float MassEff, float AxialAlignment, double Now)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	AAedirItemActor* HeldItem = GetHeldItem(Hand);
+
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
+	ObjectParams.AddObjectTypesToQuery(ECC_PhysicsBody);
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic);
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirCombatImpact), false);
+	Params.AddIgnoredActor(Creature);
+	if (HeldItem)
+	{
+		Params.AddIgnoredActor(HeldItem);
+	}
+
+	TArray<FHitResult> Hits;
+	World->SweepMultiByObjectType(Hits, From, To, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(HitRadius), Params);
+
+	for (const FHitResult& Hit : Hits)
+	{
+		AActor* HitActor = Hit.GetActor();
+		if (!HitActor || HitActor == Creature || HitActor == HeldItem || IsImpactOnCooldown(Hand, HitActor, Now))
+		{
+			continue;
+		}
+
+		if (AAedirCreature* Victim = Cast<AAedirCreature>(HitActor))
+		{
+			if (ClashedThisTick.Contains(TWeakObjectPtr<AActor>(Victim)))
+			{
+				continue;
+			}
+
+			const float RelativeSpeed = FMath::Max(0.f, static_cast<float>(FVector::DotProduct(TipVelocity - Victim->GetVelocity(), -Hit.ImpactNormal)));
+			if (RelativeSpeed < MinImpactSpeed)
+			{
+				continue;
+			}
+
+			RegisterImpact(Hand, Victim, Now);
+			ApplyCreatureImpact(Hand, Arm, Victim, Hit, RelativeSpeed, MassEff, AxialAlignment);
+			continue;
+		}
+
+		UPrimitiveComponent* HitComponent = Hit.GetComponent();
+		if (!HitComponent || !HitComponent->IsSimulatingPhysics())
+		{
+			continue;
+		}
+
+		const float RelativeSpeed = FMath::Max(0.f, static_cast<float>(FVector::DotProduct(TipVelocity - HitComponent->GetComponentVelocity(), -Hit.ImpactNormal)));
+		if (RelativeSpeed < MinImpactSpeed)
+		{
+			continue;
+		}
+
+		RegisterImpact(Hand, HitActor, Now);
+		ApplyPhysicsImpact(Arm, Hit, HitComponent, RelativeSpeed, MassEff);
+	}
+}
+
+void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, float RelativeSpeed, float MassEff, float AxialAlignment)
+{
+	AAedirItemActor* HeldItem = GetHeldItem(Hand);
+	const FName Bone = Hit.BoneName;
+	const EAedirBodyZone Zone = ClassifyBodyZone(Bone);
+	const EAedirDamageType DamageType = HeldItem ? HeldItem->GetDamageType() : EAedirDamageType::Blunt;
+	const float FlatDamage = HeldItem ? HeldItem->GetDamage() : FistDamage;
+	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
+	const float ArmorFactor = 1.f - (Victim->Combat ? Victim->Combat->GetArmorProtection(Zone) : 0.f);
+
+	const float Damage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(DamageType, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor + FlatDamage;
+	const float AppliedDamage = Victim->ReceiveCreatureDamage(Damage);
+
+	EAedirLimb Limb = EAedirLimb::LeftArm;
+	if (Victim->Combat && GetBoneLimb(Bone, Limb))
+	{
+		Victim->Combat->ApplyLimbInjury(Limb, Damage * AedirImpactInjuryPerDamage);
+	}
+
+	if (Victim->Balance)
+	{
+		Victim->Balance->ApplyImpulseImpact(-Hit.ImpactNormal * (MassEff * RelativeSpeed * BalanceImpactScale));
+	}
+
+	Arm.HandVelocity *= AedirImpactRecoilScale;
+
+	if (Creature->Stats)
+	{
+		Creature->Stats->ConsumeStamina(Energy * AedirImpactStaminaPerEnergy);
+		if (HeldItem)
+		{
+			Creature->Stats->AddSkillExperience(EAedirSkill::SingleHandWeapon, AedirArmedSkillExperience);
+		}
+	}
+
+	OnImpact.Broadcast(Victim, Bone, Energy, AppliedDamage);
+	OnHitDealt.Broadcast(Victim, AppliedDamage);
+}
+
+void UAedirCombatComponent::ApplyPhysicsImpact(FAedirArmDynamics& Arm, const FHitResult& Hit, UPrimitiveComponent* HitComponent, float RelativeSpeed, float MassEff)
+{
+	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
+	HitComponent->AddImpulseAtLocation(-Hit.ImpactNormal * (MassEff * RelativeSpeed * AedirImpactPropImpulseScale), Hit.ImpactPoint);
+
+	Arm.HandVelocity *= AedirImpactRecoilScale;
+
+	if (Creature->Stats)
+	{
+		Creature->Stats->ConsumeStamina(Energy * AedirImpactStaminaPerEnergy);
+	}
+
+	OnImpact.Broadcast(Hit.GetActor(), Hit.BoneName, Energy, 0.f);
+}
+
+void UAedirCombatComponent::ApplyLimbInjury(EAedirLimb Limb, float Amount)
+{
+	const int32 Index = static_cast<int32>(Limb);
+	if (!IsAuthoritative() || !LimbInjury.IsValidIndex(Index))
+	{
+		return;
+	}
+
+	LimbInjury[Index] = FMath::Clamp(LimbInjury[Index] + Amount, 0.f, 1.f);
+}
+
+void UAedirCombatComponent::HealLimbInjuries(float DeltaTime)
+{
+	for (float& Injury : LimbInjury)
+	{
+		Injury = FMath::Max(0.f, Injury - AedirImpactLimbHealPerSecond * DeltaTime);
+	}
+}
+
 void UAedirCombatComponent::UpdateAI(float DeltaTime)
 {
 	UWorld* World = GetWorld();
@@ -517,8 +1238,16 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		UpdateAITarget(World->GetTimeSeconds());
 	}
 
+	if (AITarget && (!IsValid(AITarget) || (AITarget->Stats && AITarget->Stats->IsDead())))
+	{
+		AITarget = nullptr;
+	}
+
 	if (!AITarget)
 	{
+		CancelSwing(EAedirHand::Left);
+		CancelSwing(EAedirHand::Right);
+
 		if (IsGuardActive(EAedirHand::Left))
 		{
 			SetGuardInternal(EAedirHand::Left, false);
@@ -688,7 +1417,16 @@ void UAedirCombatComponent::ServerSetGuard_Implementation(EAedirHand Hand, bool 
 	SetGuardInternal(Hand, bActive);
 }
 
-void UAedirCombatComponent::ServerStartSwing_Implementation(EAedirHand Hand, EAedirSwingType Type, FVector2D Direction)
+void UAedirCombatComponent::ServerUpdateArmAim_Implementation(EAedirHand Hand, FVector2D Aim, float Extension)
 {
-	TryStartSwing(Hand, Type, Direction);
+	if (!IsGuardActive(Hand))
+	{
+		return;
+	}
+
+	FAedirArmDynamics& Arm = GetArm(Hand);
+	Arm.AimOffsetDeg = FVector2D(
+		FMath::Clamp(Aim.X, -AedirArmAimYawLimit, AedirArmAimYawLimit),
+		FMath::Clamp(Aim.Y, AedirArmAimPitchMin, AedirArmAimPitchMax));
+	Arm.Extension = FMath::Clamp(Extension, 0.f, 1.f);
 }

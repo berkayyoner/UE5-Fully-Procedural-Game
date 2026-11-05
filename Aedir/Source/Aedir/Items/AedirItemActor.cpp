@@ -154,6 +154,16 @@ float AAedirItemActor::GetDamage() const
 	return Damage;
 }
 
+float AAedirItemActor::GetWeaponLength() const
+{
+	return WeaponLength;
+}
+
+EAedirDamageType AAedirItemActor::GetDamageType() const
+{
+	return DamageType;
+}
+
 bool AAedirItemActor::IsPickable(const AAedirItemActor* Item)
 {
 	return Item && !Item->IsHeld();

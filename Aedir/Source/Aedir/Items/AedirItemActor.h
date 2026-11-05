@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Combat/AedirCombatTypes.h"
 #include "Items/AedirItemTypes.h"
 #include "AedirItemActor.generated.h"
 
@@ -47,6 +48,14 @@ public:
 	// Damage dealt per swing while this item is held.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	float Damage = 0.f;
+
+	// Length in cm from the hand to the striking tip. 0 means a short object, treated as 12 cm.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
+	float WeaponLength = 0.f;
+
+	// How the item injures: blunt force, cutting edge or point.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
+	EAedirDamageType DamageType = EAedirDamageType::Blunt;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	TObjectPtr<UMaterialInterface> HighlightOverlayMaterial;
@@ -94,6 +103,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Item")
 	float GetDamage() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Item")
+	float GetWeaponLength() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Item")
+	EAedirDamageType GetDamageType() const;
 
 	static bool IsPickable(const AAedirItemActor* Item);
 

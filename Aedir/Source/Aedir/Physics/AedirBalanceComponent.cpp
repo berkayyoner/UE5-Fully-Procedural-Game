@@ -1,7 +1,9 @@
 #include "AedirBalanceComponent.h"
 
+#include "Combat/AedirCombatComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -9,6 +11,7 @@
 
 namespace
 {
+	constexpr float AedirLegInjuryRecoveryPenalty = 0.5f;
 	constexpr float AedirLeanInterpSpeed = 8.f;
 	constexpr float AedirSafeLandingSpeed = 900.f;
 	constexpr float AedirAthletismRecoveryScale = 100.f;
@@ -202,7 +205,12 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	const float Athletism = StatsComponent ? StatsComponent->Athletism : 0.f;
 	const bool bDead = StatsComponent && StatsComponent->IsDead();
 
-	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * DeltaTime;
+	const AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
+	const float MaxLegInjury = Creature && Creature->Combat
+		? FMath::Max(Creature->Combat->GetLimbInjury(EAedirLimb::LeftLeg), Creature->Combat->GetLimbInjury(EAedirLimb::RightLeg))
+		: 0.f;
+
+	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DeltaTime;
 	SetBalance(Balance + Recovery);
 	DecayLeanDirection(Recovery);
 

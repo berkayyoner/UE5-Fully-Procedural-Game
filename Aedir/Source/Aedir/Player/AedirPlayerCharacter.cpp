@@ -89,6 +89,7 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 
 	PlayerInputComponent->BindAxisKey(EKeys::MouseX, this, &AAedirPlayerCharacter::HandleMouseX);
 	PlayerInputComponent->BindAxisKey(EKeys::MouseY, this, &AAedirPlayerCharacter::HandleMouseY);
+	PlayerInputComponent->BindAxisKey(EKeys::MouseWheelAxis, this, &AAedirPlayerCharacter::HandleMouseWheel);
 
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Pressed, this, &AAedirPlayerCharacter::HandleRunPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftShift, IE_Released, this, &AAedirPlayerCharacter::HandleRunReleased);
@@ -134,14 +135,39 @@ void AAedirPlayerCharacter::ApplyViewPitchLimits()
 
 void AAedirPlayerCharacter::HandleMouseX(float Value)
 {
-	AddControllerYawInput(Value);
+	// While a guard is held the mouse moves the arm instead of the camera.
+	if (!Combat || !Combat->IsInFightStance())
+	{
+		AddControllerYawInput(Value);
+	}
+
 	PendingMouseDelta.X += Value;
 }
 
 void AAedirPlayerCharacter::HandleMouseY(float Value)
 {
-	AddControllerPitchInput(-Value);
+	if (!Combat || !Combat->IsInFightStance())
+	{
+		AddControllerPitchInput(-Value);
+	}
+
 	PendingMouseDelta.Y += Value;
+}
+
+void AAedirPlayerCharacter::HandleMouseWheel(float Value)
+{
+	if (!Combat || Value == 0.f)
+	{
+		return;
+	}
+
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		if (Combat->IsGuardActive(Hand))
+		{
+			Combat->AddExtensionInput(Hand, Value);
+		}
+	}
 }
 
 void AAedirPlayerCharacter::HandleRunPressed()

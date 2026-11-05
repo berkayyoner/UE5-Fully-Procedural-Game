@@ -70,6 +70,7 @@ private:
 
 	void HandleMouseX(float Value);
 	void HandleMouseY(float Value);
+	void HandleMouseWheel(float Value);
 
 	void HandleRunPressed();
 	void HandleRunReleased();
