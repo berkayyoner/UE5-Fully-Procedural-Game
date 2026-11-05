@@ -11,6 +11,7 @@ class UCapsuleComponent;
 class UCharacterMovementComponent;
 class UAedirStatsComponent;
 class UPrimitiveComponent;
+class UPhysicalAnimationComponent;
 class USkeletalMeshComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAedirBalanceEvent);
@@ -148,6 +149,9 @@ private:
 	void SetRagdollPresentation(bool bRagdoll);
 	void ApplyRagdollPhysics(bool bRagdoll);
 	void ProcessHit(AActor* OtherActor, UPrimitiveComponent* OtherComponent, const FHitResult& Hit);
+	void SetupMotors();
+	void UpdateMotors(float DeltaTime, bool bForce);
+	void ApplyMotorGroup(int32 GroupIndex, float Strength);
 
 	UFUNCTION()
 	void OnRep_Ragdoll();
@@ -169,6 +173,14 @@ private:
 
 	UPROPERTY(Transient)
 	TObjectPtr<UCapsuleComponent> BodyCapsule;
+
+	// Physical motors: every simulated limb body is driven towards the procedural pose; the strength scales with stamina, injury and daze.
+	UPROPERTY(Transient)
+	TObjectPtr<UPhysicalAnimationComponent> MotorComponent;
+
+	TArray<FName> MotorGroupBones[5];
+	float AppliedMotorStrength[5] = { -1.f, -1.f, -1.f, -1.f, -1.f };
+	float MotorUpdateTimer = 0.f;
 
 	FRotator CurrentLean = FRotator::ZeroRotator;
 	float TimeBelowThreshold = 0.f;

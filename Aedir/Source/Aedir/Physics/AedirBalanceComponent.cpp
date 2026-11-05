@@ -7,7 +7,12 @@
 #include "Creature/AedirStatsComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Aedir.h"
 #include "Net/UnrealNetwork.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "PhysicsEngine/PhysicalAnimationComponent.h"
+#include "PhysicsEngine/PhysicsAsset.h"
+#include "TimerManager.h"
 
 namespace
 {
@@ -86,10 +91,32 @@ void UAedirBalanceComponent::BeginPlay()
 
 	PelvisRestHeight = static_cast<float>(BodyMesh->GetBoneLocation(PelvisBoneName, EBoneSpaces::ComponentSpace).Z);
 
+	SetupMotors();
+
 	if (FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName))
 	{
 		Pelvis->SetInstanceSimulatePhysics(false);
 	}
+
+	FTimerHandle DiagnosticsTimer;
+	GetWorld()->GetTimerManager().SetTimer(DiagnosticsTimer, [this]()
+	{
+		if (!BodyMesh)
+		{
+			return;
+		}
+		int32 SimulatingBodies = 0;
+		for (const FBodyInstance* Body : BodyMesh->Bodies)
+		{
+			if (Body && Body->IsInstanceSimulatingPhysics())
+			{
+				++SimulatingBodies;
+			}
+		}
+		UE_LOG(LogAedir, Log, TEXT("Balance diagnostics: physics asset %s, %d bodies, %d simulating, pelvis body %s."),
+			BodyMesh->GetPhysicsAsset() ? *BodyMesh->GetPhysicsAsset()->GetName() : TEXT("none"), BodyMesh->Bodies.Num(), SimulatingBodies,
+			BodyMesh->GetBodyInstance(PelvisBoneName) ? TEXT("found") : TEXT("missing"));
+	}, 1.5f, false);
 }
 
 void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
@@ -107,6 +134,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 
 	UpdatePelvisLean(DeltaTime);
+	UpdateMotors(DeltaTime, false);
 
 	if (!bIsRagdoll)
 	{
@@ -457,6 +485,8 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		return;
 	}
 
+	UpdateMotors(0.f, true);
+
 	UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
 	FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName);
 
@@ -563,3 +593,139 @@ void UAedirBalanceComponent::OnMeshHit(UPrimitiveComponent* HitComponent, AActor
 {
 	ProcessHit(OtherActor, OtherComponent, Hit);
 }
+
+void UAedirBalanceComponent::SetupMotors()
+{
+	if (!BodyMesh || !CharacterOwner)
+	{
+		return;
+	}
+
+	for (TArray<FName>& Group : MotorGroupBones)
+	{
+		Group.Reset();
+	}
+
+	// Group 0 = spine and head, 1 = left arm, 2 = right arm, 3 = left leg, 4 = right leg.
+	for (const FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		if (!Body || !Body->BodySetup.IsValid())
+		{
+			continue;
+		}
+
+		const FName BoneName = Body->BodySetup->BoneName;
+		if (BoneName == PelvisBoneName || BoneName == NAME_None)
+		{
+			continue;
+		}
+
+		const EAedirBodyZone Zone = UAedirCombatComponent::ClassifyBodyZone(BoneName);
+		EAedirLimb Limb = EAedirLimb::LeftArm;
+		if (UAedirCombatComponent::GetBoneLimb(BoneName, Limb))
+		{
+			switch (Limb)
+			{
+			case EAedirLimb::LeftArm:
+				MotorGroupBones[1].Add(BoneName);
+				break;
+			case EAedirLimb::RightArm:
+				MotorGroupBones[2].Add(BoneName);
+				break;
+			case EAedirLimb::LeftLeg:
+				MotorGroupBones[3].Add(BoneName);
+				break;
+			case EAedirLimb::RightLeg:
+				MotorGroupBones[4].Add(BoneName);
+				break;
+			}
+		}
+		else if (Zone == EAedirBodyZone::Head || Zone == EAedirBodyZone::Torso)
+		{
+			MotorGroupBones[0].Add(BoneName);
+		}
+	}
+
+	MotorComponent = NewObject<UPhysicalAnimationComponent>(CharacterOwner, TEXT("AedirPhysicalMotors"));
+	if (!MotorComponent)
+	{
+		return;
+	}
+
+	MotorComponent->RegisterComponent();
+	MotorComponent->SetSkeletalMeshComponent(BodyMesh);
+	UpdateMotors(0.f, true);
+}
+
+void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
+{
+	if (!MotorComponent)
+	{
+		return;
+	}
+
+	MotorUpdateTimer -= DeltaTime;
+	if (!bForce && MotorUpdateTimer > 0.f)
+	{
+		return;
+	}
+	MotorUpdateTimer = 0.2f;
+
+	const UAedirStatsComponent* Stats = FindStats();
+	const float StaminaFraction = Stats ? FMath::Clamp(Stats->GetStaminaFraction(), 0.f, 1.f) : 1.f;
+	const UAedirCombatComponent* Combat = CharacterOwner ? CharacterOwner->FindComponentByClass<UAedirCombatComponent>() : nullptr;
+
+	float Common = FMath::Lerp(0.35f, 1.f, StaminaFraction) * (1.f - 0.6f * GetDazeFactor());
+	if (StaggerSeconds > 0.f)
+	{
+		Common *= 0.7f;
+	}
+	if (bIsRagdoll || (Stats && Stats->IsDead()))
+	{
+		Common = 0.04f;
+	}
+
+	float Strength[5];
+	Strength[0] = Common;
+	Strength[1] = Common * (1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::LeftArm) : 0.f));
+	Strength[2] = Common * (1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::RightArm) : 0.f));
+	Strength[3] = Common * (1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::LeftLeg) : 0.f));
+	Strength[4] = Common * (1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::RightLeg) : 0.f));
+
+	for (int32 GroupIndex = 0; GroupIndex < 5; ++GroupIndex)
+	{
+		if (bForce || FMath::Abs(Strength[GroupIndex] - AppliedMotorStrength[GroupIndex]) > 0.04f)
+		{
+			ApplyMotorGroup(GroupIndex, Strength[GroupIndex]);
+		}
+	}
+}
+
+void UAedirBalanceComponent::ApplyMotorGroup(int32 GroupIndex, float Strength)
+{
+	if (!MotorComponent || GroupIndex < 0 || GroupIndex >= 5)
+	{
+		return;
+	}
+
+	// Base spring strengths per group: legs carry the body weight and need the stiffest motors.
+	static const float MotorBaseOrientation[5] = { 3000.f, 1800.f, 1800.f, 6000.f, 6000.f };
+	static const float MotorBaseAngularVelocity[5] = { 300.f, 180.f, 180.f, 600.f, 600.f };
+
+	AppliedMotorStrength[GroupIndex] = Strength;
+
+	FPhysicalAnimationData Data;
+	Data.bIsLocalSimulation = true;
+	Data.OrientationStrength = MotorBaseOrientation[GroupIndex] * Strength;
+	Data.AngularVelocityStrength = MotorBaseAngularVelocity[GroupIndex] * Strength;
+	Data.PositionStrength = 0.f;
+	Data.VelocityStrength = 0.f;
+	Data.MaxLinearForce = 0.f;
+	Data.MaxAngularForce = 0.f;
+
+	for (const FName& BoneName : MotorGroupBones[GroupIndex])
+	{
+		MotorComponent->ApplyPhysicalAnimationSettings(BoneName, Data);
+	}
+}
+
