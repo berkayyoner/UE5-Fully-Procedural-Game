@@ -5,6 +5,7 @@
 #include "Items/AedirItemTypes.h"
 #include "AedirPlayerCharacter.generated.h"
 
+class UAedirWeatherEffectsComponent;
 class UCameraComponent;
 
 UCLASS(Blueprintable)
@@ -17,6 +18,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Player")
 	TObjectPtr<UCameraComponent> FollowCamera;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Weather")
+	TObjectPtr<UAedirWeatherEffectsComponent> WeatherEffects;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Player")
 	float MinViewPitch = -80.f;

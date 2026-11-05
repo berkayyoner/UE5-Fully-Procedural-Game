@@ -47,7 +47,7 @@ namespace
 	constexpr float AedirAITurnSpeed = 220.f;
 	constexpr float AedirAICloseRange = 90.f;
 
-	float SmoothStep01(float Alpha)
+	float CombatSmoothStep01(float Alpha)
 	{
 		const float Clamped = FMath::Clamp(Alpha, 0.f, 1.f);
 		return Clamped * Clamped * (3.f - 2.f * Clamped);
@@ -487,18 +487,18 @@ FVector UAedirCombatComponent::GetSwingLocalTarget(EAedirHand Hand, EAedirSwingT
 
 	if (Clamped < AedirSwingWindupEnd)
 	{
-		const float Eased = SmoothStep01(Clamped / AedirSwingWindupEnd);
+		const float Eased = CombatSmoothStep01(Clamped / AedirSwingWindupEnd);
 		return FMath::Lerp(Guard, ArcStart, Eased)
 			+ FVector(-AedirWindupPullBack * FMath::Sin(Eased * UE_PI), 0.f, 0.f);
 	}
 
 	if (Clamped <= AedirSwingStrikeEnd)
 	{
-		const float Eased = SmoothStep01((Clamped - AedirSwingWindupEnd) / (AedirSwingStrikeEnd - AedirSwingWindupEnd));
+		const float Eased = CombatSmoothStep01((Clamped - AedirSwingWindupEnd) / (AedirSwingStrikeEnd - AedirSwingWindupEnd));
 		return QuadraticBezier(ArcStart, Control, ArcEnd, Eased);
 	}
 
-	const float Eased = SmoothStep01((Clamped - AedirSwingStrikeEnd) / (1.f - AedirSwingStrikeEnd));
+	const float Eased = CombatSmoothStep01((Clamped - AedirSwingStrikeEnd) / (1.f - AedirSwingStrikeEnd));
 	return FMath::Lerp(ArcEnd, Guard, Eased);
 }
 

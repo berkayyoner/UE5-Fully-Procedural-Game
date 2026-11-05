@@ -10,6 +10,8 @@ namespace
 	constexpr float AedirSurfaceRemoveThreshold = 0.001f;
 	constexpr float AedirSurfaceTraceUp = 30.f;
 	constexpr float AedirSurfaceTraceDown = 80.f;
+	constexpr float AedirSurfaceShelterTraceDistance = 4000.f;
+	constexpr double AedirSurfaceShelterRefreshSeconds = 20.0;
 }
 
 void UAedirSurfaceSubsystem::Tick(float DeltaTime)
@@ -27,6 +29,11 @@ void UAedirSurfaceSubsystem::Tick(float DeltaTime)
 	}
 
 	TrimToCellLimit();
+
+	if (ShelterCells.Num() > AedirSurfaceMaxCells)
+	{
+		ShelterCells.Reset();
+	}
 }
 
 TStatId UAedirSurfaceSubsystem::GetStatId() const
@@ -39,7 +46,7 @@ float UAedirSurfaceSubsystem::GetWetness(const FVector& WorldLocation) const
 	const FAedirSurfaceCell* Cell = Cells.Find(GetCellCoord(WorldLocation));
 	const float CellWetness = Cell ? Cell->Wetness : 0.f;
 
-	return FMath::Max(CellWetness, GlobalWetness);
+	return FMath::Max(CellWetness, GlobalWetness * GetOpenFactor(WorldLocation));
 }
 
 float UAedirSurfaceSubsystem::GetSnow(const FVector& WorldLocation) const
@@ -47,7 +54,7 @@ float UAedirSurfaceSubsystem::GetSnow(const FVector& WorldLocation) const
 	const FAedirSurfaceCell* Cell = Cells.Find(GetCellCoord(WorldLocation));
 	const float CellSnow = Cell ? Cell->Snow : 0.f;
 
-	return FMath::Max(CellSnow, GlobalSnow);
+	return FMath::Max(CellSnow, GlobalSnow * GetOpenFactor(WorldLocation));
 }
 
 void UAedirSurfaceSubsystem::AddWetness(const FVector& WorldLocation, float Amount, float DryRatePerSecond)
@@ -143,6 +150,31 @@ bool UAedirSurfaceSubsystem::QuerySurface(UWorld* World, const FVector& Location
 const UAedirPhysicalMaterial* UAedirSurfaceSubsystem::GetAedirMaterial(const FHitResult& Hit)
 {
 	return Cast<UAedirPhysicalMaterial>(Hit.PhysMaterial.Get());
+}
+
+float UAedirSurfaceSubsystem::GetOpenFactor(const FVector& WorldLocation) const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return 1.f;
+	}
+
+	const double Now = World->GetTimeSeconds();
+	FAedirShelterCell& Shelter = ShelterCells.FindOrAdd(GetCellCoord(WorldLocation));
+	if (Now - Shelter.MeasuredAt < AedirSurfaceShelterRefreshSeconds)
+	{
+		return Shelter.OpenFactor;
+	}
+
+	const FVector Start = WorldLocation + FVector::UpVector * AedirSurfaceTraceUp;
+	const FVector End = Start + FVector::UpVector * AedirSurfaceShelterTraceDistance;
+
+	FHitResult Hit;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirSurfaceShelter), false);
+	Shelter.OpenFactor = World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params) ? 0.f : 1.f;
+	Shelter.MeasuredAt = Now;
+	return Shelter.OpenFactor;
 }
 
 FIntPoint UAedirSurfaceSubsystem::GetCellCoord(const FVector& WorldLocation) const

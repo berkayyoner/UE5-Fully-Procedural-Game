@@ -17,6 +17,12 @@ struct FAedirSurfaceCell
 	float MeltRate = 0.f;
 };
 
+struct FAedirShelterCell
+{
+	float OpenFactor = 1.f;
+	double MeasuredAt = -1000000.0;
+};
+
 UCLASS()
 class AEDIR_API UAedirSurfaceSubsystem : public UTickableWorldSubsystem
 {
@@ -53,8 +59,10 @@ public:
 private:
 	FIntPoint GetCellCoord(const FVector& WorldLocation) const;
 	void TrimToCellLimit();
+	float GetOpenFactor(const FVector& WorldLocation) const;
 
 	TMap<FIntPoint, FAedirSurfaceCell> Cells;
+	mutable TMap<FIntPoint, FAedirShelterCell> ShelterCells;
 	float GlobalWetness = 0.f;
 	float GlobalSnow = 0.f;
 };

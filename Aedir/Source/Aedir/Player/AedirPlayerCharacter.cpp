@@ -9,6 +9,7 @@
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Items/AedirItemActor.h"
+#include "Weather/AedirWeatherEffectsComponent.h"
 
 AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -19,6 +20,8 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 	FollowCamera->SetupAttachment(GetCapsuleComponent());
 	FollowCamera->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
 	FollowCamera->bUsePawnControlRotation = true;
+
+	WeatherEffects = CreateDefaultSubobject<UAedirWeatherEffectsComponent>(TEXT("WeatherEffects"));
 }
 
 void AAedirPlayerCharacter::BeginPlay()
