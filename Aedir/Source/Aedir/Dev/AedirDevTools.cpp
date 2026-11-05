@@ -9,6 +9,7 @@
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Creature/AedirCreatureTypes.h"
+#include "Creature/AedirRaceCatalog.h"
 #include "Engine/Engine.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -73,6 +74,22 @@ namespace
 		return FRotator(0.f, Player->GetActorRotation().Yaw, 0.f);
 	}
 
+	FString DevToolsRaceIds()
+	{
+		FString Names;
+		for (const FName& Id : UAedirRaceCatalog::GetIds())
+		{
+			if (!Names.IsEmpty())
+			{
+				Names += TEXT(", ");
+			}
+
+			Names += Id.ToString();
+		}
+
+		return Names;
+	}
+
 	bool DevToolsIsToken(const FString& Token, const TCHAR* Expected)
 	{
 		return Token.Equals(Expected, ESearchCase::IgnoreCase);
@@ -121,6 +138,10 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	else if (Command == TEXT("GiveSkill"))
 	{
 		GiveSkill(Player, Args);
+	}
+	else if (Command == TEXT("SetRace"))
+	{
+		SetRace(Player, Args);
 	}
 	else if (Command == TEXT("Wound"))
 	{
@@ -395,6 +416,21 @@ void UAedirDevTools::GiveSkill(AAedirPlayerCharacter* Player, const FString& Arg
 	DevToolsReport(FString::Printf(TEXT("%s now %.1f"), *SkillEnum->GetNameStringByIndex(SkillIndex), Player->Stats->GetSkill(static_cast<EAedirSkill>(SkillIndex))));
 }
 
+void UAedirDevTools::SetRace(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	const FAedirRaceDef* Race = Tokens.IsEmpty() ? nullptr : UAedirRaceCatalog::Find(FName(*Tokens[0]));
+	if (!Race)
+	{
+		DevToolsReport(FString::Printf(TEXT("Usage: SetRace <%s>"), *DevToolsRaceIds()));
+		return;
+	}
+
+	// The derived Exec SetRace(FString) hides the base SetRace(FName), so the base version is called explicitly.
+	Player->AAedirCreature::SetRace(Race->Id);
+	DevToolsReport(FString::Printf(TEXT("Race set to %s"), *Race->DisplayName.ToString()));
+}
+
 void UAedirDevTools::Wound(AAedirPlayerCharacter* Player, const FString& Args)
 {
 	const TArray<FString> Tokens = DevToolsTokens(Args);
@@ -475,6 +511,8 @@ void UAedirDevTools::Help(AAedirPlayerCharacter* Player, const FString& Args)
 	DevToolsReport(TEXT("  Hurt <amount>: damage through the stats component"));
 	DevToolsReport(TEXT("  God: toggle invulnerability"));
 	DevToolsReport(TEXT("  GiveSkill <SkillName or index> <amount>"));
+	DevToolsReport(TEXT("  ChooseRace <Human|Elf|DarkElf|Dwarf>: change the player's race and starting stats"));
+	DevToolsReport(TEXT("  CharacterCreation: open the race picker (console command on the player)"));
 	DevToolsReport(TEXT("  Wound <Bruise|Cut|Puncture> [bone=upperarm_l]"));
 	DevToolsReport(TEXT("  BloodTest: blood spray in front of the player"));
 	DevToolsReport(TEXT("  DebugBody: toggle centre of mass, support margin and hand drawing"));

@@ -14,9 +14,56 @@
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/World.h"
+#include "Game/AedirGameMode.h"
 #include "Items/AedirItemActor.h"
+#include "TimerManager.h"
+#include "UI/AedirJournalSubsystem.h"
 #include "UI/AedirMenuSubsystem.h"
 #include "Weather/AedirWeatherEffectsComponent.h"
+
+namespace
+{
+	constexpr float PlayerCharacterCreationDelaySeconds = 0.8f;
+	constexpr float PlayerTutorialTurnDegrees = 15.f;
+
+	FName PlayerTutorialQuestId()
+	{
+		return FName(TEXT("Awakening"));
+	}
+
+	const FAedirQuest* PlayerFindQuest(const UAedirJournalSubsystem* Journal, FName QuestId)
+	{
+		return Journal->GetQuests().FindByPredicate([QuestId](const FAedirQuest& Quest)
+		{
+			return Quest.Id == QuestId;
+		});
+	}
+
+	FAedirQuest PlayerBuildAwakeningQuest()
+	{
+		FAedirQuest Quest;
+		Quest.Id = PlayerTutorialQuestId();
+		Quest.Title = FText::FromString(TEXT("Awakening"));
+		Quest.Description = FText::FromString(TEXT("You come to your senses on the training grounds of Aedir. Learn how to move, fight and take what you need."));
+
+		const TCHAR* const ObjectiveTexts[] =
+		{
+			TEXT("Look around with the mouse"),
+			TEXT("Pick up an item (Q or E)"),
+			TEXT("Raise your fists (hold left or right mouse button)"),
+			TEXT("Open your menu (Tab)")
+		};
+		for (const TCHAR* ObjectiveText : ObjectiveTexts)
+		{
+			FAedirQuestObjective Objective;
+			Objective.Text = FText::FromString(ObjectiveText);
+			Quest.Objectives.Add(Objective);
+		}
+
+		return Quest;
+	}
+}
 
 AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
@@ -56,8 +103,18 @@ void AAedirPlayerCharacter::BeginPlay()
 		OnGroupIdChanged.Broadcast(GroupId);
 	}
 
+	if (HasAuthority())
+	{
+		EnsureStarterQuest();
+	}
+
 	ApplyViewPitchLimits();
 	SetFirstPerson(false);
+
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		GetWorldTimerManager().SetTimer(CharacterCreationTimer, this, &AAedirPlayerCharacter::MaybeOpenCharacterCreation, PlayerCharacterCreationDelaySeconds, false);
+	}
 }
 
 void AAedirPlayerCharacter::PossessedBy(AController* NewController)
@@ -65,6 +122,12 @@ void AAedirPlayerCharacter::PossessedBy(AController* NewController)
 	Super::PossessedBy(NewController);
 
 	ApplyViewPitchLimits();
+
+	// BeginPlay usually runs before possession, so the local journal is filled here.
+	if (IsLocallyControlled())
+	{
+		EnsureStarterQuest();
+	}
 }
 
 void AAedirPlayerCharacter::Tick(float DeltaSeconds)
@@ -76,7 +139,7 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		return;
 	}
 
-	if (!IsMenuOpen())
+	if (!IsMenuOpen() && !IsCharacterCreationOpen())
 	{
 		const APlayerController* PlayerController = Cast<APlayerController>(GetController());
 		const float ForwardKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::W) ? 1.f : 0.f;
@@ -87,6 +150,7 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
 	}
 
+	UpdateTutorialObjectives();
 	UpdateHandUseHold(DeltaSeconds);
 	UpdateSwingInput(DeltaSeconds);
 
@@ -477,6 +541,81 @@ bool AAedirPlayerCharacter::IsMenuOpen()
 	return Menu && Menu->IsMenuOpen();
 }
 
+bool AAedirPlayerCharacter::IsCharacterCreationOpen()
+{
+	const UAedirMenuSubsystem* Menu = GetMenuSubsystem();
+	return Menu && Menu->IsCharacterCreationOpen();
+}
+
+void AAedirPlayerCharacter::MaybeOpenCharacterCreation()
+{
+	const AAedirGameMode* GameModeDefaults = GetDefault<AAedirGameMode>();
+	if (GameModeDefaults && GameModeDefaults->bShowCharacterCreationOnStart && IsLocallyControlled())
+	{
+		CharacterCreation();
+	}
+}
+
+void AAedirPlayerCharacter::ServerChooseRace_Implementation(FName ChosenRaceId)
+{
+	AAedirCreature::SetRace(ChosenRaceId);
+	EnsureStarterQuest();
+}
+
+void AAedirPlayerCharacter::CharacterCreation()
+{
+	if (UAedirMenuSubsystem* Menu = GetMenuSubsystem())
+	{
+		Menu->OpenCharacterCreation();
+	}
+}
+
+void AAedirPlayerCharacter::EnsureStarterQuest()
+{
+	UWorld* World = GetWorld();
+	UAedirJournalSubsystem* Journal = World ? World->GetSubsystem<UAedirJournalSubsystem>() : nullptr;
+	if (!Journal || PlayerFindQuest(Journal, PlayerTutorialQuestId()))
+	{
+		return;
+	}
+
+	Journal->AddQuest(PlayerBuildAwakeningQuest());
+}
+
+void AAedirPlayerCharacter::UpdateTutorialObjectives()
+{
+	UWorld* World = GetWorld();
+	UAedirJournalSubsystem* Journal = World ? World->GetSubsystem<UAedirJournalSubsystem>() : nullptr;
+	const FAedirQuest* Quest = Journal ? PlayerFindQuest(Journal, PlayerTutorialQuestId()) : nullptr;
+	if (!Quest || !Quest->bActive || Quest->bCompleted)
+	{
+		return;
+	}
+
+	if (!bTutorialRotationCaptured)
+	{
+		TutorialStartRotation = GetControlRotation();
+		bTutorialRotationCaptured = true;
+	}
+
+	const FRotator Turn = (GetControlRotation() - TutorialStartRotation).GetNormalized();
+	const bool bLookedAround = FMath::Abs(Turn.Yaw) > PlayerTutorialTurnDegrees || FMath::Abs(Turn.Pitch) > PlayerTutorialTurnDegrees;
+	const bool bHoldingItem = Interaction && (IsValid(Interaction->GetHeldItem(EAedirHand::Left)) || IsValid(Interaction->GetHeldItem(EAedirHand::Right)));
+	const bool bInFightStance = Combat && Combat->IsInFightStance();
+	const bool bMenuOpened = IsMenuOpen();
+
+	// Indices match the objective order in PlayerBuildAwakeningQuest.
+	const bool bObjectiveMet[] = { bLookedAround, bHoldingItem, bInFightStance, bMenuOpened };
+	const FName QuestId = PlayerTutorialQuestId();
+	for (int32 Index = 0; Index < static_cast<int32>(UE_ARRAY_COUNT(bObjectiveMet)); ++Index)
+	{
+		if (bObjectiveMet[Index] && Quest->Objectives.IsValidIndex(Index) && !Quest->Objectives[Index].bDone)
+		{
+			Journal->CompleteObjective(QuestId, Index);
+		}
+	}
+}
+
 
 void AAedirPlayerCharacter::SpawnItem(const FString& ItemId, const FString& Mode)
 {
@@ -522,6 +661,11 @@ void AAedirPlayerCharacter::GiveSkill(const FString& SkillName, float Amount)
 {
 	const FString Args = SkillName.IsEmpty() ? FString() : FString::Printf(TEXT("%s %f"), *SkillName, Amount);
 	RunDevCommand(TEXT("GiveSkill"), Args, true);
+}
+
+void AAedirPlayerCharacter::ChooseRace(const FString& RaceName)
+{
+	RunDevCommand(TEXT("SetRace"), RaceName, true);
 }
 
 void AAedirPlayerCharacter::Wound(const FString& WoundType, const FString& Bone)

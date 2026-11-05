@@ -1,5 +1,6 @@
 #include "AedirStatsComponent.h"
 
+#include "Creature/AedirRaceCatalog.h"
 #include "Net/UnrealNetwork.h"
 
 namespace
@@ -85,6 +86,7 @@ void UAedirStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(UAedirStatsComponent, Strength);
 	DOREPLIFETIME(UAedirStatsComponent, Athletism);
 	DOREPLIFETIME(UAedirStatsComponent, Skills);
+	DOREPLIFETIME(UAedirStatsComponent, RaceSizeMultiplier);
 	DOREPLIFETIME(UAedirStatsComponent, bIsDead);
 
 	DOREPLIFETIME_CONDITION(UAedirStatsComponent, HealthRegenPerSecond, COND_InitialOnly);
@@ -218,6 +220,44 @@ void UAedirStatsComponent::SetAthletism(float NewAthletism)
 	OnStatChanged.Broadcast();
 }
 
+void UAedirStatsComponent::ApplyRace(const FAedirRaceDef& Race)
+{
+	if (!IsAuthoritative())
+	{
+		return;
+	}
+
+	MaxHealth = Race.MaxHealth;
+	Health = MaxHealth;
+	MaxMana = Race.MaxMana;
+	Mana = MaxMana;
+	MaxStamina = FMath::Min(Race.MaxStamina, MaxStaminaCap);
+	Stamina = MaxStamina;
+	bIsDead = false;
+
+	Strength = FMath::Clamp(Race.Strength, AedirStatMin, AedirStatMax);
+	Athletism = FMath::Clamp(Race.Athletism, AedirStatMin, AedirStatMax);
+	RaceSizeMultiplier = Race.HeightMultiplier;
+
+	const int32 SkillCount = static_cast<int32>(EAedirSkill::Count);
+	if (Skills.Num() != SkillCount)
+	{
+		Skills.SetNumZeroed(SkillCount);
+	}
+
+	for (const FAedirSkillBonus& Bonus : Race.SkillBonuses)
+	{
+		const int32 Index = static_cast<int32>(Bonus.Skill);
+		if (Skills.IsValidIndex(Index))
+		{
+			Skills[Index] = FMath::Clamp(UAedirRaceCatalog::GetStartSkillValue(Race, Bonus.Skill), AedirSkillMin, AedirSkillMax);
+		}
+	}
+
+	OnStatChanged.Broadcast();
+	OnStrengthChanged.Broadcast(GetSizeScale());
+}
+
 float UAedirStatsComponent::GetHealthFraction() const
 {
 	return SafeFraction(Health, MaxHealth);
@@ -273,7 +313,8 @@ float UAedirStatsComponent::GetSizeScale() const
 {
 	const float Range = StrengthMax - StrengthMin;
 	const float Alpha = Range > 0.f ? FMath::Clamp((Strength - StrengthMin) / Range, 0.f, 1.f) : 0.f;
-	return FMath::Lerp(MinSizeScale, MaxSizeScale, Alpha);
+	const float StrengthScale = FMath::Lerp(MinSizeScale, MaxSizeScale, Alpha);
+	return UAedirRaceCatalog::ComputeRaceSizeScale(StrengthScale, RaceSizeMultiplier);
 }
 
 float UAedirStatsComponent::GetSpeedMultiplier() const
@@ -340,6 +381,11 @@ void UAedirStatsComponent::OnRep_Stats()
 void UAedirStatsComponent::OnRep_Strength()
 {
 	OnStatChanged.Broadcast();
+	OnStrengthChanged.Broadcast(GetSizeScale());
+}
+
+void UAedirStatsComponent::OnRep_RaceSizeMultiplier()
+{
 	OnStrengthChanged.Broadcast(GetSizeScale());
 }
 

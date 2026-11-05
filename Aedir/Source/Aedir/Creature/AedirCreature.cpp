@@ -1,8 +1,10 @@
 #include "AedirCreature.h"
 
+#include "Aedir.h"
 #include "AedirGroupSubsystem.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Items/AedirInteractionComponent.h"
+#include "Creature/AedirRaceCatalog.h"
 #include "AedirStatsComponent.h"
 #include "Animation/AedirGaitComponent.h"
 #include "Animation/AedirProceduralAnimInstance.h"
@@ -74,12 +76,37 @@ void AAedirCreature::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLi
 
 	DOREPLIFETIME(AAedirCreature, GroupId);
 	DOREPLIFETIME(AAedirCreature, CarriedWeight);
+	DOREPLIFETIME(AAedirCreature, RaceId);
 }
 
 void AAedirCreature::SetGroupId_Implementation(FName NewGroupId)
 {
 	GroupId = NewGroupId;
 	OnGroupIdChanged.Broadcast(GroupId);
+}
+
+void AAedirCreature::SetRace_Implementation(FName NewRaceId)
+{
+	const FAedirRaceDef* Race = UAedirRaceCatalog::Find(NewRaceId);
+	if (!Race)
+	{
+		UE_LOG(LogAedir, Warning, TEXT("Unknown race %s"), *NewRaceId.ToString());
+		return;
+	}
+
+	if (Stats)
+	{
+		Stats->ApplyRace(*Race);
+	}
+
+	RaceId = Race->Id;
+	OnRaceChanged.Broadcast(RaceId);
+}
+
+FText AAedirCreature::GetRaceDisplayName() const
+{
+	const FAedirRaceDef* Race = UAedirRaceCatalog::Find(RaceId);
+	return Race ? Race->DisplayName : FText::GetEmpty();
 }
 
 EAedirRelation AAedirCreature::GetRelationTo(const AAedirCreature* Other) const
@@ -202,4 +229,9 @@ void AAedirCreature::ApplySizeScale(float NewSizeScale)
 void AAedirCreature::OnRep_GroupId()
 {
 	OnGroupIdChanged.Broadcast(GroupId);
+}
+
+void AAedirCreature::OnRep_RaceId()
+{
+	OnRaceChanged.Broadcast(RaceId);
 }

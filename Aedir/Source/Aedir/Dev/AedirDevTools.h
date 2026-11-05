@@ -25,6 +25,7 @@ public:
 	static void Hurt(AAedirPlayerCharacter* Player, const FString& Args);
 	static void God(AAedirPlayerCharacter* Player, const FString& Args);
 	static void GiveSkill(AAedirPlayerCharacter* Player, const FString& Args);
+	static void SetRace(AAedirPlayerCharacter* Player, const FString& Args);
 	static void Wound(AAedirPlayerCharacter* Player, const FString& Args);
 	static void BloodTest(AAedirPlayerCharacter* Player, const FString& Args);
 	static void DebugBody(AAedirPlayerCharacter* Player, const FString& Args);

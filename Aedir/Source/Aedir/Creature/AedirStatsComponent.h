@@ -5,6 +5,8 @@
 #include "AedirCreatureTypes.h"
 #include "AedirStatsComponent.generated.h"
 
+struct FAedirRaceDef;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAedirStatChanged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAedirDeath);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirStrengthChanged, float, NewSizeScale);
@@ -52,6 +54,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Stats, Category="Aedir|Stats")
 	TArray<float> Skills;
+
+	// Height multiplier of the chosen race, applied on top of the strength-derived size.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_RaceSizeMultiplier, Category="Aedir|Stats")
+	float RaceSizeMultiplier = 1.f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_IsDead, Category="Aedir|Stats")
 	bool bIsDead = false;
@@ -119,6 +125,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
 	void SetAthletism(float NewAthletism);
 
+	// Server only. Applies a race's starting stats, refills the pools and adds its skill bonuses.
+	void ApplyRace(const FAedirRaceDef& Race);
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetHealthFraction() const;
 
@@ -175,6 +184,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_Strength();
+
+	UFUNCTION()
+	void OnRep_RaceSizeMultiplier();
 
 	UFUNCTION()
 	void OnRep_IsDead();

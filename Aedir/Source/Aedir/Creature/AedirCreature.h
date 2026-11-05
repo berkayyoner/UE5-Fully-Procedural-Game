@@ -14,6 +14,7 @@ class UAedirStatsComponent;
 class UAedirWoundComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirGroupIdChanged, FName, NewGroupId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirRaceChanged, FName, NewRaceId);
 
 UCLASS(Blueprintable)
 class AEDIR_API AAedirCreature : public ACharacter
@@ -50,6 +51,12 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Aedir|Groups")
 	FAedirGroupIdChanged OnGroupIdChanged;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_RaceId, Category="Aedir|Creature")
+	FName RaceId;
+
+	UPROPERTY(BlueprintAssignable, Category="Aedir|Creature")
+	FAedirRaceChanged OnRaceChanged;
+
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Creature")
 	float CarriedWeight = 0.f;
 
@@ -58,6 +65,13 @@ public:
 
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category="Aedir|Groups")
 	void SetGroupId(FName NewGroupId);
+
+	// Server only. Applies the race's stats through the stats component and stores the race id.
+	UFUNCTION(Server, Reliable, BlueprintCallable, Category="Aedir|Creature")
+	void SetRace(FName NewRaceId);
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Creature")
+	FText GetRaceDisplayName() const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Creature")
 	EAedirRelation GetRelationTo(const AAedirCreature* Other) const;
@@ -107,4 +121,7 @@ public:
 private:
 	UFUNCTION()
 	void OnRep_GroupId();
+
+	UFUNCTION()
+	void OnRep_RaceId();
 };

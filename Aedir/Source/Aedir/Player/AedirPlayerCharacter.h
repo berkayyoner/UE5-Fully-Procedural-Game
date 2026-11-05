@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Creature/AedirCreature.h"
+#include "Engine/TimerHandle.h"
 #include "Items/AedirItemTypes.h"
 #include "AedirPlayerCharacter.generated.h"
 
@@ -62,6 +63,13 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
+	// Server only. Applies the chosen race and posts the starter quest.
+	UFUNCTION(Server, Reliable)
+	void ServerChooseRace(FName ChosenRaceId);
+
+	// Opens the race picker on the owning client when the game mode asks for it.
+	void MaybeOpenCharacterCreation();
+
 	// Console commands. Commands that change the world are sent to the server in co-op; ListItems, DebugBody, BloodTest and DevHelp run locally.
 	UFUNCTION(Exec)
 	void SpawnItem(const FString& ItemId, const FString& Mode);
@@ -91,6 +99,13 @@ public:
 	void GiveSkill(const FString& SkillName, float Amount);
 
 	UFUNCTION(Exec)
+	void CharacterCreation();
+
+	// Ids are case-insensitive: Human, Elf, DarkElf, Dwarf.
+	UFUNCTION(Exec)
+	void ChooseRace(const FString& RaceName);
+
+	UFUNCTION(Exec)
 	void Wound(const FString& WoundType, const FString& Bone);
 
 	UFUNCTION(Exec)
@@ -116,6 +131,14 @@ private:
 	void OpenMenuCategory(int32 Category);
 	UAedirMenuSubsystem* GetMenuSubsystem();
 	bool IsMenuOpen();
+	bool IsCharacterCreationOpen();
+
+	void EnsureStarterQuest();
+	void UpdateTutorialObjectives();
+
+	FTimerHandle CharacterCreationTimer;
+	bool bTutorialRotationCaptured = false;
+	FRotator TutorialStartRotation = FRotator::ZeroRotator;
 
 	bool bFirstPerson = false;
 

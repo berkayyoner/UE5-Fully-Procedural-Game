@@ -7,10 +7,17 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
+#include "Player/AedirPlayerCharacter.h"
+#include "UI/SAedirCharacterCreation.h"
 #include "UI/SAedirMenu.h"
 
 void UAedirMenuSubsystem::OpenMenu(int32 StartCategory)
 {
+	if (CreationWidget.IsValid())
+	{
+		return;
+	}
+
 	if (MenuWidget.IsValid())
 	{
 		MenuWidget->SetCategory(StartCategory);
@@ -32,19 +39,7 @@ void UAedirMenuSubsystem::OpenMenu(int32 StartCategory)
 	MenuWidget->SetCategory(StartCategory);
 	GEngine->GameViewport->AddViewportWidgetContent(MenuWidget.ToSharedRef(), 100);
 
-	FInputModeGameAndUI InputMode;
-	InputMode.SetWidgetToFocus(MenuWidget);
-	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	InputMode.SetHideCursorDuringCapture(false);
-	PlayerController->SetInputMode(InputMode);
-	PlayerController->SetShowMouseCursor(false);
-
-	UWorld* World = GetWorld();
-	if (World && World->GetNetMode() == NM_Standalone)
-	{
-		UGameplayStatics::SetGamePaused(World, true);
-		bPausedByMenu = true;
-	}
+	BeginUIMode(PlayerController, MenuWidget.ToSharedRef());
 
 	if (Creature)
 	{
@@ -61,7 +56,98 @@ void UAedirMenuSubsystem::CloseMenu()
 
 	const TSharedRef<SAedirMenu> ClosingWidget = MenuWidget.ToSharedRef();
 	MenuWidget.Reset();
+	RemoveUIWidget(ClosingWidget);
+}
 
+void UAedirMenuSubsystem::ToggleMenu()
+{
+	if (IsMenuOpen())
+	{
+		CloseMenu();
+	}
+	else
+	{
+		OpenMenu(0);
+	}
+}
+
+bool UAedirMenuSubsystem::IsMenuOpen() const
+{
+	return MenuWidget.IsValid();
+}
+
+void UAedirMenuSubsystem::OpenCharacterCreation()
+{
+	if (MenuWidget.IsValid() || CreationWidget.IsValid())
+	{
+		return;
+	}
+
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	APlayerController* PlayerController = LocalPlayer ? LocalPlayer->GetPlayerController(LocalPlayer->GetWorld()) : nullptr;
+	if (!PlayerController || !GEngine || !GEngine->GameViewport)
+	{
+		return;
+	}
+
+	CreationWidget = SNew(SAedirCharacterCreation)
+		.OnConfirm(FAedirRaceChosenDelegate::CreateUObject(this, &UAedirMenuSubsystem::HandleRaceConfirmed))
+		.OnCancel(FSimpleDelegate::CreateUObject(this, &UAedirMenuSubsystem::CloseCharacterCreation));
+	GEngine->GameViewport->AddViewportWidgetContent(CreationWidget.ToSharedRef(), 100);
+
+	BeginUIMode(PlayerController, CreationWidget.ToSharedRef());
+}
+
+bool UAedirMenuSubsystem::IsCharacterCreationOpen() const
+{
+	return CreationWidget.IsValid();
+}
+
+void UAedirMenuSubsystem::Deinitialize()
+{
+	if (GEngine && GEngine->GameViewport)
+	{
+		if (MenuWidget.IsValid())
+		{
+			GEngine->GameViewport->RemoveViewportWidgetContent(MenuWidget.ToSharedRef());
+		}
+		if (CreationWidget.IsValid())
+		{
+			GEngine->GameViewport->RemoveViewportWidgetContent(CreationWidget.ToSharedRef());
+		}
+	}
+	MenuWidget.Reset();
+	CreationWidget.Reset();
+
+	UWorld* World = GetWorld();
+	if (bPausedByMenu && World)
+	{
+		UGameplayStatics::SetGamePaused(World, false);
+	}
+	bPausedByMenu = false;
+
+	Super::Deinitialize();
+}
+
+void UAedirMenuSubsystem::BeginUIMode(APlayerController* PlayerController, const TSharedRef<SWidget>& FocusWidget)
+{
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(FocusWidget);
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	PlayerController->SetInputMode(InputMode);
+	PlayerController->SetShowMouseCursor(false);
+
+	UWorld* World = GetWorld();
+	if (World && World->GetNetMode() == NM_Standalone)
+	{
+		UGameplayStatics::SetGamePaused(World, true);
+		bPausedByMenu = true;
+	}
+}
+
+void UAedirMenuSubsystem::RemoveUIWidget(const TSharedRef<SWidget>& ClosingWidget)
+{
 	if (GEngine && GEngine->GameViewport)
 	{
 		GEngine->GameViewport->RemoveViewportWidgetContent(ClosingWidget);
@@ -82,37 +168,27 @@ void UAedirMenuSubsystem::CloseMenu()
 	bPausedByMenu = false;
 }
 
-void UAedirMenuSubsystem::ToggleMenu()
+void UAedirMenuSubsystem::CloseCharacterCreation()
 {
-	if (IsMenuOpen())
+	if (!CreationWidget.IsValid())
 	{
-		CloseMenu();
+		return;
 	}
-	else
-	{
-		OpenMenu(0);
-	}
+
+	const TSharedRef<SAedirCharacterCreation> ClosingWidget = CreationWidget.ToSharedRef();
+	CreationWidget.Reset();
+	RemoveUIWidget(ClosingWidget);
 }
 
-bool UAedirMenuSubsystem::IsMenuOpen() const
+void UAedirMenuSubsystem::HandleRaceConfirmed(FName RaceId)
 {
-	return MenuWidget.IsValid();
-}
-
-void UAedirMenuSubsystem::Deinitialize()
-{
-	if (MenuWidget.IsValid() && GEngine && GEngine->GameViewport)
+	ULocalPlayer* LocalPlayer = GetLocalPlayer();
+	APlayerController* PlayerController = LocalPlayer ? LocalPlayer->GetPlayerController(LocalPlayer->GetWorld()) : nullptr;
+	AAedirPlayerCharacter* Player = PlayerController ? Cast<AAedirPlayerCharacter>(PlayerController->GetPawn()) : nullptr;
+	if (Player)
 	{
-		GEngine->GameViewport->RemoveViewportWidgetContent(MenuWidget.ToSharedRef());
+		Player->ServerChooseRace(RaceId);
 	}
-	MenuWidget.Reset();
 
-	UWorld* World = GetWorld();
-	if (bPausedByMenu && World)
-	{
-		UGameplayStatics::SetGamePaused(World, false);
-	}
-	bPausedByMenu = false;
-
-	Super::Deinitialize();
+	CloseCharacterCreation();
 }
