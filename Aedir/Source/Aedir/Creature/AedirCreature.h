@@ -7,6 +7,7 @@
 
 class UAedirBalanceComponent;
 class UAedirCombatComponent;
+class UAedirFootstepComponent;
 class UAedirGaitComponent;
 class UAedirInteractionComponent;
 class UAedirStatsComponent;
@@ -35,6 +36,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
 	TObjectPtr<UAedirCombatComponent> Combat;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
+	TObjectPtr<UAedirFootstepComponent> Footsteps;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_GroupId, Category="Aedir|Groups")
 	FName GroupId;

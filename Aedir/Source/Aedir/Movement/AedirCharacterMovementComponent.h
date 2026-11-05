@@ -5,6 +5,7 @@
 #include "AedirCharacterMovementComponent.generated.h"
 
 class FNetworkPredictionData_Client;
+class UAedirFootstepComponent;
 class UAedirStatsComponent;
 
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
@@ -102,7 +103,13 @@ public:
 
 private:
 	UAedirStatsComponent* GetOwnerStats() const;
+	UAedirFootstepComponent* GetOwnerFootsteps() const;
 	float GetCarryRatio() const;
 	float GetDirectionalSpeedMultiplier() const;
 	void SetBodyYaw(float NewYaw);
+	void UpdateSurfaceFriction();
+
+	float BaseGroundFriction = 8.f;
+	float BaseBrakingDecelerationWalking = 1400.f;
+	float BaseMaxAcceleration = 1400.f;
 };

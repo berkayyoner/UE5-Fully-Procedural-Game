@@ -16,6 +16,7 @@ public class Aedir : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"PhysicsCore",
+			"Niagara",
 			"DeveloperSettings",
 			"NetCore"
 		});

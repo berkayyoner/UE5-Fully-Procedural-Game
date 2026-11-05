@@ -3,6 +3,7 @@
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "GameFramework/Character.h"
+#include "Surface/AedirFootstepComponent.h"
 
 namespace
 {
@@ -108,13 +109,19 @@ UAedirCharacterMovementComponent::UAedirCharacterMovementComponent()
 	SetCrouchedHalfHeight(55.f);
 	JumpZVelocity = 420.f;
 	AirControl = 0.25f;
-	GroundFriction = 8.f;
-	BrakingDecelerationWalking = 1400.f;
-	MaxAcceleration = 1400.f;
+	BaseGroundFriction = 8.f;
+	BaseBrakingDecelerationWalking = 1400.f;
+	BaseMaxAcceleration = 1400.f;
+
+	GroundFriction = BaseGroundFriction;
+	BrakingDecelerationWalking = BaseBrakingDecelerationWalking;
+	MaxAcceleration = BaseMaxAcceleration;
 }
 
 void UAedirCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
+	UpdateSurfaceFriction();
+
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	const ACharacter* Character = GetCharacterOwner();
@@ -221,6 +228,12 @@ float UAedirCharacterMovementComponent::GetMaxSpeed() const
 
 	Speed *= 1.f - MaxCarrySlowdown * GetCarryRatio();
 
+	if (const UAedirFootstepComponent* Footsteps = GetOwnerFootsteps())
+	{
+		Speed *= Footsteps->GetSurfaceSpeedMultiplier();
+		Speed *= FMath::Lerp(1.f, 0.85f, Footsteps->GetSurfaceSlipperiness());
+	}
+
 	return Speed;
 }
 
@@ -316,6 +329,22 @@ UAedirStatsComponent* UAedirCharacterMovementComponent::GetOwnerStats() const
 {
 	const AAedirCreature* Creature = Cast<AAedirCreature>(GetCharacterOwner());
 	return Creature ? Creature->Stats.Get() : nullptr;
+}
+
+UAedirFootstepComponent* UAedirCharacterMovementComponent::GetOwnerFootsteps() const
+{
+	const AAedirCreature* Creature = Cast<AAedirCreature>(GetCharacterOwner());
+	return Creature ? Creature->Footsteps.Get() : nullptr;
+}
+
+void UAedirCharacterMovementComponent::UpdateSurfaceFriction()
+{
+	const UAedirFootstepComponent* Footsteps = GetOwnerFootsteps();
+	const float Slipperiness = Footsteps ? Footsteps->GetSurfaceSlipperiness() : 0.f;
+
+	GroundFriction = FMath::Lerp(BaseGroundFriction, 1.2f, Slipperiness);
+	BrakingDecelerationWalking = FMath::Lerp(BaseBrakingDecelerationWalking, 150.f, Slipperiness);
+	MaxAcceleration = FMath::Lerp(BaseMaxAcceleration, 600.f, Slipperiness);
 }
 
 float UAedirCharacterMovementComponent::GetCarryRatio() const

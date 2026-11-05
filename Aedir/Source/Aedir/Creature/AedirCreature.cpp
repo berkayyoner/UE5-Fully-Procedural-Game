@@ -12,6 +12,7 @@
 #include "Movement/AedirCharacterMovementComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Physics/AedirBalanceComponent.h"
+#include "Surface/AedirFootstepComponent.h"
 
 AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UAedirCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
@@ -33,6 +34,7 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	Gait = CreateDefaultSubobject<UAedirGaitComponent>(TEXT("Gait"));
 	Interaction = CreateDefaultSubobject<UAedirInteractionComponent>(TEXT("Interaction"));
 	Combat = CreateDefaultSubobject<UAedirCombatComponent>(TEXT("Combat"));
+	Footsteps = CreateDefaultSubobject<UAedirFootstepComponent>(TEXT("Footsteps"));
 
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())
 	{

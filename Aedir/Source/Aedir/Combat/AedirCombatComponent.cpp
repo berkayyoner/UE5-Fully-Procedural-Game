@@ -15,7 +15,7 @@
 
 namespace
 {
-	constexpr float AedirStatMax = 100.f;
+	constexpr float AedirCombatStatMax = 100.f;
 	constexpr float AedirDefaultStat = 10.f;
 	constexpr float AedirMouseVelocityWindow = 0.1f;
 	constexpr float AedirGuardBlendSpeed = 6.f;
@@ -281,7 +281,7 @@ float UAedirCombatComponent::ComputeWeightFactor(EAedirHand Hand) const
 float UAedirCombatComponent::ComputeSwingDuration(EAedirHand Hand) const
 {
 	const float Athletism = Creature && Creature->Stats ? Creature->Stats->Athletism : AedirDefaultStat;
-	const float AthletismAlpha = FMath::Clamp(Athletism / AedirStatMax, 0.f, 1.f);
+	const float AthletismAlpha = FMath::Clamp(Athletism / AedirCombatStatMax, 0.f, 1.f);
 
 	return SwingDurationBase * ComputeWeightFactor(Hand) * FMath::Lerp(1.15f, 0.85f, AthletismAlpha);
 }
