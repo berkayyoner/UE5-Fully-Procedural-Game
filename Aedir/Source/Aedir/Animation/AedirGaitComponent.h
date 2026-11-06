@@ -400,9 +400,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MoveDirectionLeanRollDegrees = 7.f;
 
-	// A planted foot further than this share of the stride from its home takes an early step.
+	// A planted foot further than this share of the stride from under its hip takes an early step. A normal step drifts about 0.35.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxPlantedDriftStrideFraction = 0.55f;
+	float MaxPlantedDriftStrideFraction = 0.6f;
 
 	// Pause between two stumble steps unless the fall is urgent.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Recovery")

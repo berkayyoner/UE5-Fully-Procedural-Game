@@ -155,6 +155,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	FVector LandingLocation[2];
 	FVector LandingNormal[2];
 	FVector AheadLocation[2];
+	FVector HomeLocation[2];
 
 	const float StanceWidthScale = FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha);
 	const float StanceLeadForwardCm = StanceLeadFootForwardCm * StanceAlpha * ActorScale;
@@ -165,7 +166,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const bool bLeadFoot = (Foot == 1) == bRightLead;
 		const float StanceForwardCm = StanceLeadForwardCm * (bLeadFoot ? 1.f : -0.5f);
 		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * ActorScale) + ActorForward2D * StanceForwardCm;
-		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * (StrideLength * 0.3f) : FVector::ZeroVector);
+		HomeLocation[Foot] = HomeXY;
+		const FVector LandingXY = HomeXY +(bMoving ? MoveDirection * (StrideLength * 0.3f) : FVector::ZeroVector);
 
 		SampleGround(LandingXY, BottomZ, LandingLocation[Foot], LandingNormal[Foot]);
 
@@ -196,7 +198,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	{
 		for (int32 Foot = 0; Foot < 2; ++Foot)
 		{
-			if (!bSwinging[Foot] && (PlantedContact[Foot] - LandingLocation[Foot]).Size2D() > StrideLength * MaxPlantedDriftStrideFraction)
+			if (!bSwinging[Foot] && (PlantedContact[Foot] - HomeLocation[Foot]).Size2D() > StrideLength * MaxPlantedDriftStrideFraction)
 			{
 				BeginRecoverySwing(Foot, LandingLocation[Foot], StrideLength, 0.f, BottomZ);
 				break;
