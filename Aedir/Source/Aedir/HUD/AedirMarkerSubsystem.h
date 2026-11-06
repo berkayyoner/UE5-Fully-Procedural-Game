@@ -34,7 +34,18 @@ struct AEDIR_API FAedirMapMarker
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Marker")
 	bool bShowDistance = true;
+
+	// Visible on the map as a "?" once the player came within the reveal distance. Defaults to true so quest markers always show.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Marker")
+	bool bRevealed = true;
+
+	// Fast travel is only possible to discovered markers. Locations placed in the world start with both flags false.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Marker")
+	bool bDiscovered = true;
 };
+
+// Id of the single marker the player places on the map.
+inline const FName AedirCustomMarkerId(TEXT("PlayerCustomMarker"));
 
 // Local to each machine, not replicated.
 UCLASS()
@@ -54,6 +65,19 @@ public:
 	void ClearMarkers(EAedirMarkerType Type);
 
 	const TArray<FAedirMapMarker>& GetMarkers() const;
+
+	const FAedirMapMarker* FindMarker(FName Id) const;
+
+	// Reveals and discovers markers near PlayerLocation. Returns the labels of the markers discovered by this call.
+	TArray<FText> UpdateDiscovery(const FVector& PlayerLocation);
+
+	void DiscoverAll();
+
+	// Registers an undiscovered, unrevealed location. Returns its id.
+	FName AddLocation(const FText& Label, const FVector& Location);
+
+	// Replaces the player's previous flag. Custom markers are always discovered.
+	void SetCustomMarker(const FVector& Location);
 
 private:
 	TArray<FAedirMapMarker> Markers;

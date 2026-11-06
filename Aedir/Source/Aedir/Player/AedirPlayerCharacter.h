@@ -164,6 +164,16 @@ public:
 	UFUNCTION(Exec)
 	void Knockdown();
 
+	// Diagnostics: logs gait, balance and reach state for the given number of seconds.
+	UFUNCTION(Exec)
+	void GaitInfo(float Seconds);
+
+	UFUNCTION(Exec)
+	void ReachTest(float DelaySeconds);
+
+	UFUNCTION(Exec)
+	void CrouchTest();
+
 	// FallTest 300: lift the body by that many cm and let it fall.
 	UFUNCTION(Exec)
 	void FallTest(float HeightCm);
@@ -182,6 +192,7 @@ private:
 	void HandleJournalPressed();
 	void HandleMapPressed();
 	void HandleSkillsPressed();
+	void HandlePausePressed();
 	void OpenMenuCategory(int32 Category);
 	UAedirMenuSubsystem* GetMenuSubsystem();
 	bool IsMenuOpen();

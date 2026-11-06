@@ -4,7 +4,6 @@
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
-#include "HUD/AedirMarkerSubsystem.h"
 #include "InputCoreTypes.h"
 #include "Input/Events.h"
 #include "Items/AedirInteractionComponent.h"
@@ -22,13 +21,9 @@
 
 namespace
 {
-	const TCHAR* const MenuCategoryNames[] = { TEXT("INVENTORY"), TEXT("MAGIC"), TEXT("SKILLS"), TEXT("MAP"), TEXT("JOURNAL") };
+	const TCHAR* const MenuCategoryNames[] = { TEXT("INVENTORY"), TEXT("MAGIC"), TEXT("SKILLS") };
 	const TCHAR* const MenuHintText = TEXT("[W/S] Select  [A/D] Category  [E] Use  [Q] Drop  [Tab] Close");
 
-	constexpr float MenuMetersPerUnit = 0.01f;
-	constexpr float MenuRadarMinRange = 1000.f;
-	constexpr float MenuRadarPadding = 14.f;
-	const FLinearColor MenuMissionColor(1.f, 0.78f, 0.2f, 1.f);
 	const FLinearColor MenuDimColor(0.45f, 0.45f, 0.45f, 1.f);
 	const FLinearColor MenuTextColor(0.85f, 0.85f, 0.85f, 1.f);
 	const FLinearColor MenuLineColor(1.f, 1.f, 1.f, 0.35f);
@@ -69,18 +64,6 @@ namespace
 		return TEXT("Unknown");
 	}
 
-	const TCHAR* MenuMarkerTypeName(EAedirMarkerType Type)
-	{
-		switch (Type)
-		{
-		case EAedirMarkerType::Mission: return TEXT("Mission");
-		case EAedirMarkerType::Area: return TEXT("Area");
-		case EAedirMarkerType::Custom: return TEXT("Custom");
-		default: break;
-		}
-		return TEXT("Unknown");
-	}
-
 	FString MenuSchoolDescription(EAedirSkill School)
 	{
 		switch (School)
@@ -98,11 +81,6 @@ namespace
 		default: break;
 		}
 		return FString();
-	}
-
-	float MenuDistanceMeters(const AActor* From, const FVector& To)
-	{
-		return static_cast<float>((To - From->GetActorLocation()).Size2D()) * MenuMetersPerUnit;
 	}
 
 	void MenuAddLine(TArray<FAedirMenuLine>& Lines, EAedirMenuLineKind Kind, const FString& Content)
@@ -231,184 +209,195 @@ namespace
 		MenuAddLine(Lines, EAedirMenuLineKind::Heading, FString::Printf(TEXT("Rank: %s"), *UAedirJournalSubsystem::GetSkillRankName(SkillValue).ToString()));
 		MenuAddLine(Lines, EAedirMenuLineKind::Progress, FString());
 	}
+}
 
-	void MenuBuildMapDetail(const AAedirCreature* Pawn, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines)
+TArray<FAedirMenuRow> AedirMenuContent::BuildJournalRows(const UWorld* World)
+{
+	TArray<FAedirMenuRow> Result;
+	const UAedirJournalSubsystem* Journal = World ? World->GetSubsystem<UAedirJournalSubsystem>() : nullptr;
+	if (!Journal)
 	{
-		MenuAddLine(Lines, EAedirMenuLineKind::Radar, FString());
-		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
+		return Result;
+	}
 
-		UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
-		const UAedirMarkerSubsystem* Markers = World ? World->GetSubsystem<UAedirMarkerSubsystem>() : nullptr;
-		if (!Selected || !Markers || !Markers->GetMarkers().IsValidIndex(Selected->Index))
+	const TArray<FAedirQuest>& Quests = Journal->GetQuests();
+	const FName Tracked = Journal->GetTrackedQuest();
+
+	// Active quests first, then completed ones.
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	{
+		for (const FAedirQuest& Quest : Quests)
 		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("No marker selected."));
-		}
-		else
-		{
-			const FAedirMapMarker& Marker = Markers->GetMarkers()[Selected->Index];
-			MenuAddLine(Lines, EAedirMenuLineKind::Title, Marker.Label.ToString());
-			MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Type: %s"), MenuMarkerTypeName(Marker.Type)));
-			if (Pawn)
+			const bool bInActivePass = Pass == 0 && Quest.bActive && !Quest.bCompleted;
+			const bool bInDonePass = Pass == 1 && Quest.bCompleted;
+			if (!bInActivePass && !bInDonePass)
 			{
-				MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Distance: %.0f m"), MenuDistanceMeters(Pawn, Marker.Location)));
+				continue;
 			}
-		}
 
-		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
-		MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("Amber diamond: mission. Square: area. Circle: custom."));
-	}
-
-	void MenuBuildJournalDetail(const AAedirCreature* Pawn, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines)
-	{
-		UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
-		const UAedirJournalSubsystem* Journal = World ? World->GetSubsystem<UAedirJournalSubsystem>() : nullptr;
-		const FAedirQuest* Quest = (Journal && Selected)
-			? Journal->GetQuests().FindByPredicate([Selected](const FAedirQuest& Candidate)
+			FAedirMenuRow Row;
+			Row.Name = Quest.Title.ToString();
+			Row.bDimmed = Quest.bCompleted;
+			if (Quest.bCompleted)
 			{
-				return Candidate.Id == Selected->QuestId;
-			})
-			: nullptr;
-
-		if (!Quest)
-		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("No quest selected."));
-			return;
-		}
-
-		MenuAddLine(Lines, EAedirMenuLineKind::Title, Quest->Title.ToString());
-		MenuAddLine(Lines, EAedirMenuLineKind::Body, Quest->Description.ToString());
-		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
-		MenuAddLine(Lines, EAedirMenuLineKind::Heading, TEXT("Objectives"));
-		for (const FAedirQuestObjective& Objective : Quest->Objectives)
-		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("%s %s"), Objective.bDone ? TEXT("[x]") : TEXT("[ ]"), *Objective.Text.ToString()));
-		}
-
-		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
-		if (Quest->bCompleted)
-		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("Completed"));
-		}
-		else if (Journal->GetTrackedQuest() == Quest->Id)
-		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Text, TEXT("Tracked"));
-		}
-		else
-		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("[E] Track quest"));
+				Row.Value = TEXT("(done)");
+			}
+			else if (Quest.Id == Tracked)
+			{
+				Row.Value = TEXT("tracked");
+			}
+			Row.QuestId = Quest.Id;
+			Result.Add(Row);
 		}
 	}
 
-	TArray<FVector2f> MenuRadarPolygon(const FVector2f& Center, float Radius, int32 Sides, float StartDegrees)
-	{
-		TArray<FVector2f> Points;
-		Points.Reserve(Sides + 1);
-		for (int32 Index = 0; Index <= Sides; ++Index)
+	return Result;
+}
+
+void AedirMenuContent::BuildJournalDetail(const UWorld* World, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines)
+{
+	const UAedirJournalSubsystem* Journal = World ? World->GetSubsystem<UAedirJournalSubsystem>() : nullptr;
+	const FAedirQuest* Quest = (Journal && Selected)
+		? Journal->GetQuests().FindByPredicate([Selected](const FAedirQuest& Candidate)
 		{
-			const float Angle = FMath::DegreesToRadians(StartDegrees + 360.f * Index / Sides);
-			Points.Add(Center + FVector2f(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
-		}
-		return Points;
+			return Candidate.Id == Selected->QuestId;
+		})
+		: nullptr;
+
+	if (!Quest)
+	{
+		MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("No quest selected."));
+		return;
+	}
+
+	MenuAddLine(Lines, EAedirMenuLineKind::Title, Quest->Title.ToString());
+	MenuAddLine(Lines, EAedirMenuLineKind::Body, Quest->Description.ToString());
+	MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
+	MenuAddLine(Lines, EAedirMenuLineKind::Heading, TEXT("Objectives"));
+	for (const FAedirQuestObjective& Objective : Quest->Objectives)
+	{
+		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("%s %s"), Objective.bDone ? TEXT("[x]") : TEXT("[ ]"), *Objective.Text.ToString()));
+	}
+
+	MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
+	if (Quest->bCompleted)
+	{
+		MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("Completed"));
+	}
+	else if (Journal->GetTrackedQuest() == Quest->Id)
+	{
+		MenuAddLine(Lines, EAedirMenuLineKind::Text, TEXT("Tracked"));
+	}
+	else
+	{
+		MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("[E] Track quest"));
 	}
 }
 
-// Top-down radar: player at the centre, north up, markers scaled so the farthest one fits.
-class SAedirMenuRadar : public SLeafWidget
+
+void AedirMenuContent::PopulateDetail(SVerticalBox& Box, const TArray<FAedirMenuLine>& NewLines, const TFunction<TOptional<float>()>& Progress)
 {
-public:
-	SLATE_BEGIN_ARGS(SAedirMenuRadar)
-	{}
-		SLATE_ARGUMENT(TWeakObjectPtr<AAedirCreature>, Creature)
-	SLATE_END_ARGS()
+	Box.ClearChildren();
 
-	void Construct(const FArguments& InArgs)
+	for (const FAedirMenuLine& Line : NewLines)
 	{
-		Creature = InArgs._Creature;
-	}
-
-	virtual FVector2D ComputeDesiredSize(float) const override
-	{
-		return FVector2D(200.f, 200.f);
-	}
-
-	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
-	{
-		const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush("GenericWhiteBox");
-		const FPaintGeometry PaintGeometry = AllottedGeometry.ToPaintGeometry();
-		const FVector2f Size = AllottedGeometry.GetLocalSize();
-		const FVector2f Center = Size * 0.5f;
-		const float Radius = FMath::Max(0.f, FMath::Min(Size.X, Size.Y) * 0.5f - MenuRadarPadding);
-
-		FSlateDrawElement::MakeBox(OutDrawElements, LayerId, PaintGeometry, WhiteBrush, ESlateDrawEffect::None, FLinearColor(0.f, 0.f, 0.f, 0.5f));
-
-		const FLinearColor GridColor(1.f, 1.f, 1.f, 0.18f);
-		for (const float Fraction : { -1.f, -0.5f, 0.f, 0.5f, 1.f })
+		switch (Line.Kind)
 		{
-			const float Offset = Radius * Fraction;
-			FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1, PaintGeometry,
-				TArray<FVector2f>{ FVector2f(Center.X + Offset, Center.Y - Radius), FVector2f(Center.X + Offset, Center.Y + Radius) },
-				ESlateDrawEffect::None, GridColor, true, 1.f);
-			FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1, PaintGeometry,
-				TArray<FVector2f>{ FVector2f(Center.X - Radius, Center.Y + Offset), FVector2f(Center.X + Radius, Center.Y + Offset) },
-				ESlateDrawEffect::None, GridColor, true, 1.f);
+		case EAedirMenuLineKind::Title:
+			Box.AddSlot()
+			.AutoHeight()
+			.Padding(FMargin(0.f, 0.f, 0.f, 6.f))
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Line.Content))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 18))
+				.ColorAndOpacity(FLinearColor::White)
+			];
+			break;
+		case EAedirMenuLineKind::Value:
+			Box.AddSlot()
+			.AutoHeight()
+			.Padding(FMargin(0.f, 0.f, 0.f, 6.f))
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Line.Content))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 30))
+				.ColorAndOpacity(FLinearColor::White)
+			];
+			break;
+		case EAedirMenuLineKind::Heading:
+			Box.AddSlot()
+			.AutoHeight()
+			.Padding(FMargin(0.f, 6.f, 0.f, 4.f))
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Line.Content))
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 11))
+				.ColorAndOpacity(FLinearColor(0.7f, 0.7f, 0.7f, 1.f))
+			];
+			break;
+		case EAedirMenuLineKind::Text:
+			Box.AddSlot()
+			.AutoHeight()
+			.Padding(FMargin(0.f, 2.f))
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Line.Content))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
+				.ColorAndOpacity(MenuTextColor)
+			];
+			break;
+		case EAedirMenuLineKind::Body:
+			Box.AddSlot()
+			.AutoHeight()
+			.Padding(FMargin(0.f, 4.f))
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Line.Content))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+				.ColorAndOpacity(FLinearColor(0.75f, 0.75f, 0.75f, 1.f))
+				.AutoWrapText(true)
+			];
+			break;
+		case EAedirMenuLineKind::Dim:
+			Box.AddSlot()
+			.AutoHeight()
+			.Padding(FMargin(0.f, 2.f))
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Line.Content))
+				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
+				.ColorAndOpacity(MenuDimColor)
+				.AutoWrapText(true)
+			];
+			break;
+		case EAedirMenuLineKind::Progress:
+			Box.AddSlot()
+			.AutoHeight()
+			.Padding(FMargin(0.f, 6.f))
+			[
+				SNew(SBox)
+				.HeightOverride(8.f)
+				[
+					SNew(SProgressBar)
+					.Percent_Lambda([Progress]() -> TOptional<float> { return Progress(); })
+					.FillColorAndOpacity(FLinearColor(0.85f, 0.85f, 0.85f, 1.f))
+				]
+			];
+			break;
+		case EAedirMenuLineKind::Spacer:
+			Box.AddSlot()
+			.AutoHeight()
+			[
+				SNew(SBox)
+				.HeightOverride(10.f)
+			];
+			break;
+		default:
+			break;
 		}
-
-		const FLinearColor BorderColor(1.f, 1.f, 1.f, 0.35f);
-		FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1, PaintGeometry,
-			TArray<FVector2f>{
-				FVector2f(Center.X - Radius, Center.Y - Radius),
-				FVector2f(Center.X + Radius, Center.Y - Radius),
-				FVector2f(Center.X + Radius, Center.Y + Radius),
-				FVector2f(Center.X - Radius, Center.Y + Radius),
-				FVector2f(Center.X - Radius, Center.Y - Radius) },
-			ESlateDrawEffect::None, BorderColor, true, 1.f);
-
-		const AAedirCreature* Pawn = Creature.Get();
-		UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
-		const UAedirMarkerSubsystem* Markers = World ? World->GetSubsystem<UAedirMarkerSubsystem>() : nullptr;
-		if (Pawn && Markers && Radius > 0.f)
-		{
-			const FVector PawnLocation = Pawn->GetActorLocation();
-			const TArray<FAedirMapMarker>& Entries = Markers->GetMarkers();
-
-			float MaxDistance = MenuRadarMinRange;
-			for (const FAedirMapMarker& Marker : Entries)
-			{
-				MaxDistance = FMath::Max(MaxDistance, static_cast<float>((Marker.Location - PawnLocation).Size2D()));
-			}
-			const float Scale = Radius / MaxDistance;
-
-			for (const FAedirMapMarker& Marker : Entries)
-			{
-				const FVector Delta = Marker.Location - PawnLocation;
-				// Delta.X points north (screen up), Delta.Y points east (screen right).
-				const FVector2f ScreenPos = Center + FVector2f(static_cast<float>(Delta.Y), static_cast<float>(-Delta.X)) * Scale;
-				const FLinearColor MarkerColor = Marker.Type == EAedirMarkerType::Mission ? MenuMissionColor : Marker.Color;
-
-				TArray<FVector2f> Shape;
-				switch (Marker.Type)
-				{
-				case EAedirMarkerType::Mission:
-					Shape = MenuRadarPolygon(ScreenPos, 6.f, 4, 90.f);
-					break;
-				case EAedirMarkerType::Area:
-					Shape = MenuRadarPolygon(ScreenPos, 6.f, 4, 45.f);
-					break;
-				default:
-					Shape = MenuRadarPolygon(ScreenPos, 5.f, 12, 0.f);
-					break;
-				}
-				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, PaintGeometry, Shape, ESlateDrawEffect::None, MarkerColor, true, 2.f);
-			}
-		}
-
-		FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, PaintGeometry, MenuRadarPolygon(Center, 5.f, 4, 90.f), ESlateDrawEffect::None, FLinearColor::White, true, 2.f);
-		return LayerId + 3;
 	}
-
-private:
-	TWeakObjectPtr<AAedirCreature> Creature;
-};
+}
 
 void SAedirMenu::Construct(const FArguments& InArgs)
 {
@@ -595,7 +584,6 @@ TArray<FAedirMenuRow> SAedirMenu::BuildRows() const
 {
 	TArray<FAedirMenuRow> Result;
 	const AAedirCreature* Pawn = Creature.Get();
-	UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
 
 	switch (static_cast<EAedirMenuCategory>(CurrentCategory))
 	{
@@ -658,64 +646,6 @@ TArray<FAedirMenuRow> SAedirMenu::BuildRows() const
 		}
 		break;
 	}
-	case EAedirMenuCategory::Map:
-	{
-		const UAedirMarkerSubsystem* Markers = World ? World->GetSubsystem<UAedirMarkerSubsystem>() : nullptr;
-		if (Markers)
-		{
-			const TArray<FAedirMapMarker>& Entries = Markers->GetMarkers();
-			for (int32 MarkerIndex = 0; MarkerIndex < Entries.Num(); ++MarkerIndex)
-			{
-				const FAedirMapMarker& Marker = Entries[MarkerIndex];
-				FAedirMenuRow Row;
-				Row.Name = Marker.Label.ToString();
-				Row.Value = Pawn
-					? FString::Printf(TEXT("%s  %.0f m"), MenuMarkerTypeName(Marker.Type), MenuDistanceMeters(Pawn, Marker.Location))
-					: FString(MenuMarkerTypeName(Marker.Type));
-				Row.Index = MarkerIndex;
-				Result.Add(Row);
-			}
-		}
-		break;
-	}
-	case EAedirMenuCategory::Journal:
-	{
-		const UAedirJournalSubsystem* Journal = World ? World->GetSubsystem<UAedirJournalSubsystem>() : nullptr;
-		if (Journal)
-		{
-			const TArray<FAedirQuest>& Quests = Journal->GetQuests();
-			const FName Tracked = Journal->GetTrackedQuest();
-
-			// Active quests first, then completed ones.
-			for (int32 Pass = 0; Pass < 2; ++Pass)
-			{
-				for (const FAedirQuest& Quest : Quests)
-				{
-					const bool bInActivePass = Pass == 0 && Quest.bActive && !Quest.bCompleted;
-					const bool bInDonePass = Pass == 1 && Quest.bCompleted;
-					if (!bInActivePass && !bInDonePass)
-					{
-						continue;
-					}
-
-					FAedirMenuRow Row;
-					Row.Name = Quest.Title.ToString();
-					Row.bDimmed = Quest.bCompleted;
-					if (Quest.bCompleted)
-					{
-						Row.Value = TEXT("(done)");
-					}
-					else if (Quest.Id == Tracked)
-					{
-						Row.Value = TEXT("tracked");
-					}
-					Row.QuestId = Quest.Id;
-					Result.Add(Row);
-				}
-			}
-		}
-		break;
-	}
 	default:
 		break;
 	}
@@ -739,12 +669,6 @@ TArray<FAedirMenuLine> SAedirMenu::BuildDetailLines(const TArray<FAedirMenuRow>&
 		break;
 	case EAedirMenuCategory::Skills:
 		MenuBuildSkillsDetail(Pawn, Selected, Result);
-		break;
-	case EAedirMenuCategory::Map:
-		MenuBuildMapDetail(Pawn, Selected, Result);
-		break;
-	case EAedirMenuCategory::Journal:
-		MenuBuildJournalDetail(Pawn, Selected, Result);
 		break;
 	default:
 		break;
@@ -858,119 +782,7 @@ void SAedirMenu::RebuildDetail()
 		return;
 	}
 
-	DetailBox->ClearChildren();
-
-	for (const FAedirMenuLine& Line : Lines)
-	{
-		switch (Line.Kind)
-		{
-		case EAedirMenuLineKind::Title:
-			DetailBox->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 0.f, 0.f, 6.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 18))
-				.ColorAndOpacity(FLinearColor::White)
-			];
-			break;
-		case EAedirMenuLineKind::Value:
-			DetailBox->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 0.f, 0.f, 6.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 30))
-				.ColorAndOpacity(FLinearColor::White)
-			];
-			break;
-		case EAedirMenuLineKind::Heading:
-			DetailBox->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 6.f, 0.f, 4.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 11))
-				.ColorAndOpacity(FLinearColor(0.7f, 0.7f, 0.7f, 1.f))
-			];
-			break;
-		case EAedirMenuLineKind::Text:
-			DetailBox->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 2.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
-				.ColorAndOpacity(MenuTextColor)
-			];
-			break;
-		case EAedirMenuLineKind::Body:
-			DetailBox->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 4.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.ColorAndOpacity(FLinearColor(0.75f, 0.75f, 0.75f, 1.f))
-				.AutoWrapText(true)
-			];
-			break;
-		case EAedirMenuLineKind::Dim:
-			DetailBox->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 2.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.ColorAndOpacity(MenuDimColor)
-				.AutoWrapText(true)
-			];
-			break;
-		case EAedirMenuLineKind::Progress:
-			DetailBox->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 6.f))
-			[
-				SNew(SBox)
-				.HeightOverride(8.f)
-				[
-					SNew(SProgressBar)
-					.Percent_Lambda([this]() -> TOptional<float> { return GetSelectedSkillProgress(); })
-					.FillColorAndOpacity(FLinearColor(0.85f, 0.85f, 0.85f, 1.f))
-				]
-			];
-			break;
-		case EAedirMenuLineKind::Radar:
-			DetailBox->AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 8.f))
-			[
-				SNew(SBox)
-				.HeightOverride(280.f)
-				[
-					SNew(SAedirMenuRadar)
-					.Creature(Creature)
-				]
-			];
-			break;
-		case EAedirMenuLineKind::Spacer:
-			DetailBox->AddSlot()
-			.AutoHeight()
-			[
-				SNew(SBox)
-				.HeightOverride(10.f)
-			];
-			break;
-		default:
-			break;
-		}
-	}
+	AedirMenuContent::PopulateDetail(*DetailBox, Lines, [this]() -> TOptional<float> { return GetSelectedSkillProgress(); });
 }
 
 void SAedirMenu::MoveSelection(int32 Delta)
@@ -1022,16 +834,6 @@ void SAedirMenu::ActivateSelected()
 			{
 				Interaction->HolsterToWaist(Hand);
 			}
-		}
-		break;
-	}
-	case EAedirMenuCategory::Journal:
-	{
-		UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
-		UAedirJournalSubsystem* Journal = World ? World->GetSubsystem<UAedirJournalSubsystem>() : nullptr;
-		if (Journal)
-		{
-			Journal->SetActiveQuest(Row.QuestId);
 		}
 		break;
 	}

@@ -18,7 +18,7 @@ namespace
 	constexpr float PelvisLowerInterpSpeed = 8.f;
 	constexpr float PelvisLowerFactor = 1.1f;
 	constexpr float ShoulderAboveHipCm = 45.f;
-	constexpr float ArmReachCm = 75.f;
+	constexpr float ArmReachCm = 95.f;
 	constexpr float ReachRangeMultiplier = 1.5f;
 	constexpr float HighlightInterval = 0.1f;
 

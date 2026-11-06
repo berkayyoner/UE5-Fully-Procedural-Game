@@ -41,7 +41,7 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float PickupRange = 220.f;
+	float PickupRange = 150.f;
 
 	// Distance in cm from the hand bone to the item bounds center that counts as a grab.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")

@@ -134,6 +134,10 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float HipLateralOffset = 0.f;
 
+	// Forward shift of the pelvis in cm while reaching for something low, so the shoulder gets over the item.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HipForwardOffset = 0.f;
+
 	// Pelvis roll in degrees from idle sway and the gait weight shift. Added to PelvisRotation.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float PelvisRollDegrees = 0.f;
@@ -344,7 +348,11 @@ public:
 
 	// Forward torso lean in degrees at a full reach-down.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ReachTorsoLeanMaxDegrees = 55.f;
+	float ReachTorsoLeanMaxDegrees = 70.f;
+
+	// How far the pelvis moves forward at a full low reach.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float ReachHipForwardCm = 25.f;
 
 	// Speed of the fighting stance blend in and out.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")

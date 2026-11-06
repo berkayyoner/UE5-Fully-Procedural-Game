@@ -235,6 +235,7 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AAedirPlayerCharacter::HandleJournalPressed);
 	PlayerInputComponent->BindKey(EKeys::M, IE_Pressed, this, &AAedirPlayerCharacter::HandleMapPressed);
 	PlayerInputComponent->BindKey(EKeys::K, IE_Pressed, this, &AAedirPlayerCharacter::HandleSkillsPressed);
+	PlayerInputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AAedirPlayerCharacter::HandlePausePressed);
 
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AAedirPlayerCharacter::HandleJumpPressed);
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Released, this, &AAedirPlayerCharacter::HandleJumpReleased);
@@ -656,6 +657,14 @@ void AAedirPlayerCharacter::HandleSkillsPressed()
 	OpenMenuCategory(2);
 }
 
+void AAedirPlayerCharacter::HandlePausePressed()
+{
+	if (UAedirMenuSubsystem* Menu = GetMenuSubsystem())
+	{
+		Menu->TogglePauseMenu();
+	}
+}
+
 void AAedirPlayerCharacter::OpenMenuCategory(int32 Category)
 {
 	if (UAedirMenuSubsystem* Menu = GetMenuSubsystem())
@@ -842,6 +851,21 @@ void AAedirPlayerCharacter::Push(float Strength)
 void AAedirPlayerCharacter::Knockdown()
 {
 	RunDevCommand(TEXT("Knockdown"), FString(), true);
+}
+
+void AAedirPlayerCharacter::GaitInfo(float Seconds)
+{
+	RunDevCommand(TEXT("GaitInfo"), FString::Printf(TEXT("%f"), Seconds), false);
+}
+
+void AAedirPlayerCharacter::ReachTest(float DelaySeconds)
+{
+	RunDevCommand(TEXT("ReachTest"), FString::Printf(TEXT("%f"), DelaySeconds), true);
+}
+
+void AAedirPlayerCharacter::CrouchTest()
+{
+	RunDevCommand(TEXT("CrouchTest"), FString(), false);
 }
 
 void AAedirPlayerCharacter::FallTest(float HeightCm)

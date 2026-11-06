@@ -28,6 +28,7 @@ namespace
 	constexpr float HudBarCenterFractions[3] = { 0.22f, 0.5f, 0.78f };
 	const TCHAR* const HudBarLabels[3] = { TEXT("HP"), TEXT("MP"), TEXT("SP") };
 	constexpr float HudMarkerClampAlpha = 0.45f;
+	constexpr float HudUndiscoveredAlpha = 0.4f;
 	constexpr float HudMetersPerUnit = 0.01f;
 	constexpr float HudCompassMarkerRadius = 6.f;
 	constexpr float HudCompassArrowSize = 7.f;
@@ -251,10 +252,16 @@ void AAedirHUD::DrawCompass(const APawn* Pawn)
 	const FVector PawnLocation = Pawn->GetActorLocation();
 	for (const FAedirMapMarker& Marker : Markers->GetMarkers())
 	{
+		if (!Marker.bRevealed)
+		{
+			continue;
+		}
+
 		const FVector Delta = Marker.Location - PawnLocation;
 		const float Bearing = HudNormalizeDegrees(static_cast<float>(FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X))));
 		const float Relative = HudSignedDegrees(Bearing - Heading);
-		const FLinearColor MarkerColor = Marker.Type == EAedirMarkerType::Mission ? HudMissionColor : Marker.Color;
+		const FLinearColor BaseMarkerColor = Marker.Type == EAedirMarkerType::Mission ? HudMissionColor : Marker.Color;
+		const FLinearColor MarkerColor = Marker.bDiscovered ? BaseMarkerColor : HudWithAlpha(BaseMarkerColor, HudUndiscoveredAlpha);
 
 		if (FMath::Abs(Relative) > HalfFov)
 		{

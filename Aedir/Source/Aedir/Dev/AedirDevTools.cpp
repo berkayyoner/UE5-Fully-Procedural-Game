@@ -1,10 +1,71 @@
 #include "Dev/AedirDevTools.h"
+#include "Combat/AedirCombatTypes.h"
+#include "Creature/AedirCreature.h"
+#include "Creature/AedirCreatureTypes.h"
+#include "Engine/World.h"
+#include "Items/AedirCatalogItem.h"
+#include "Items/AedirInteractionComponent.h"
 #include "UI/AedirJournalSubsystem.h"
 
 FAedirDevReported& UAedirDevTools::OnReported()
 {
 	static FAedirDevReported Delegate;
 	return Delegate;
+}
+
+int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const FVector& FacePoint, int32 Count, bool bArmed)
+{
+	constexpr float BanditSpacingCm = 120.f;
+	static const TCHAR* const BanditWeaponIds[] = { TEXT("ShortSword"), TEXT("Mace"), TEXT("BattleAxe"), TEXT("Longsword"), TEXT("Club") };
+
+	if (!World)
+	{
+		return 0;
+	}
+
+	const FVector ToFace = (FacePoint - Center).GetSafeNormal2D();
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, ToFace);
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	int32 Spawned = 0;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const float SideOffset = (static_cast<float>(Index) - static_cast<float>(Count - 1) * 0.5f) * BanditSpacingCm;
+		const FVector Location = Center + Right * SideOffset;
+		const FRotator Facing(0.f, (FacePoint - Location).Rotation().Yaw, 0.f);
+
+		AAedirCreature* Enemy = World->SpawnActor<AAedirCreature>(AAedirCreature::StaticClass(), Location, Facing, SpawnParameters);
+		if (!Enemy)
+		{
+			continue;
+		}
+
+		++Spawned;
+		Enemy->GroupId = FName(TEXT("Bandits"));
+		Enemy->OnGroupIdChanged.Broadcast(Enemy->GroupId);
+
+		const FTransform HandTransform(Facing, Location + FVector(0.f, 0.f, 100.f));
+		if (bArmed && Enemy->Interaction)
+		{
+			const FName WeaponId(BanditWeaponIds[FMath::RandRange(0, UE_ARRAY_COUNT(BanditWeaponIds) - 1)]);
+			if (AAedirCatalogItem* Weapon = AAedirCatalogItem::SpawnCatalogItem(World, WeaponId, HandTransform))
+			{
+				Enemy->Interaction->EquipImmediate(EAedirHand::Right, Weapon);
+			}
+		}
+
+		if (FMath::RandBool())
+		{
+			if (AAedirCatalogItem* Armor = AAedirCatalogItem::SpawnCatalogItem(World, FName(TEXT("LeatherArmor")), HandTransform))
+			{
+				Armor->Use(Enemy);
+			}
+		}
+	}
+
+	return Spawned;
 }
 
 #if !UE_BUILD_SHIPPING
@@ -22,7 +83,9 @@ FAedirDevReported& UAedirDevTools::OnReported()
 #include "Items/AedirCatalogItem.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemCatalog.h"
+#include "Animation/AedirGaitComponent.h"
 #include "Physics/AedirBalanceComponent.h"
+#include "TimerManager.h"
 #include "Player/AedirPlayerCharacter.h"
 #include "UObject/Class.h"
 #include "Weather/AedirWeatherManager.h"
@@ -32,11 +95,10 @@ FAedirDevReported& UAedirDevTools::OnReported()
 
 namespace
 {
-	constexpr float DevToolsSpawnForwardCm = 160.f;
+	constexpr float DevToolsSpawnForwardCm = 90.f;
 	constexpr float DevToolsSpawnUpCm = 80.f;
 	constexpr float DevToolsSpawnSpreadCm = 45.f;
 	constexpr float DevToolsEnemyDistanceCm = 450.f;
-	constexpr float DevToolsEnemySpacingCm = 120.f;
 	constexpr float DevToolsWoundEnergyJoules = 60.f;
 	constexpr float DevToolsWeatherTransitionSeconds = 3.f;
 	constexpr float DevToolsSkillDefaultAmount = 10.f;
@@ -188,6 +250,18 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		FallTest(Player, Args);
 	}
+	else if (Command == TEXT("GaitInfo"))
+	{
+		GaitInfo(Player, Args);
+	}
+	else if (Command == TEXT("ReachTest"))
+	{
+		ReachTest(Player, Args);
+	}
+	else if (Command == TEXT("CrouchTest"))
+	{
+		CrouchTest(Player, Args);
+	}
 	else
 	{
 		DevToolsReport(FString::Printf(TEXT("Unknown dev command %s"), *Command));
@@ -261,51 +335,9 @@ void UAedirDevTools::SpawnEnemy(AAedirPlayerCharacter* Player, const FString& Ar
 		return;
 	}
 
-	static const TCHAR* const DevToolsWeaponIds[] = { TEXT("ShortSword"), TEXT("Mace"), TEXT("BattleAxe"), TEXT("Longsword"), TEXT("Club") };
-	const FVector PlayerLocation = Player->GetActorLocation();
 	const FRotator Yaw = DevToolsFlatYaw(Player);
-	const FVector Forward = Yaw.Vector();
-	const FVector Right = Yaw.RotateVector(FVector::RightVector);
-	const FVector Center = PlayerLocation + Forward * DevToolsEnemyDistanceCm;
-
-	FActorSpawnParameters SpawnParameters;
-	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-	int32 Spawned = 0;
-	for (int32 Index = 0; Index < Count; ++Index)
-	{
-		const float SideOffset = (static_cast<float>(Index) - static_cast<float>(Count - 1) * 0.5f) * DevToolsEnemySpacingCm;
-		const FVector Location = Center + Right * SideOffset;
-		const FRotator Facing(0.f, (PlayerLocation - Location).Rotation().Yaw, 0.f);
-
-		AAedirCreature* Enemy = World->SpawnActor<AAedirCreature>(AAedirCreature::StaticClass(), Location, Facing, SpawnParameters);
-		if (!Enemy)
-		{
-			continue;
-		}
-
-		++Spawned;
-		Enemy->GroupId = FName(TEXT("Bandits"));
-		Enemy->OnGroupIdChanged.Broadcast(Enemy->GroupId);
-
-		const FTransform HandTransform(Facing, Location + FVector(0.f, 0.f, 100.f));
-		if (bArmed && Enemy->Interaction)
-		{
-			const FName WeaponId(DevToolsWeaponIds[FMath::RandRange(0, UE_ARRAY_COUNT(DevToolsWeaponIds) - 1)]);
-			if (AAedirCatalogItem* Weapon = AAedirCatalogItem::SpawnCatalogItem(World, WeaponId, HandTransform))
-			{
-				Enemy->Interaction->EquipImmediate(EAedirHand::Right, Weapon);
-			}
-		}
-
-		if (FMath::RandBool())
-		{
-			if (AAedirCatalogItem* Armor = AAedirCatalogItem::SpawnCatalogItem(World, FName(TEXT("LeatherArmor")), HandTransform))
-			{
-				Armor->Use(Enemy);
-			}
-		}
-	}
+	const FVector PlayerLocation = Player->GetActorLocation();
+	const int32 Spawned = SpawnBandits(World, PlayerLocation + Yaw.Vector() * DevToolsEnemyDistanceCm, PlayerLocation, Count, bArmed);
 
 	DevToolsReport(FString::Printf(TEXT("Spawned %d enemies (%s)"), Spawned, bArmed ? TEXT("armed") : TEXT("unarmed")));
 }
@@ -639,6 +671,56 @@ void UAedirDevTools::Knockdown(AAedirPlayerCharacter* Player, const FString& Arg
 		Player->Balance->ApplyBalanceImpact(Player->GetActorForwardVector(), 2.f);
 		DevToolsReport(TEXT("Knocked down"));
 	}
+}
+
+void UAedirDevTools::GaitInfo(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// Logs the gait, balance and reach state twice a second for a number of seconds, to measure what the body does.
+	const float Seconds = Args.IsEmpty() ? 5.f : FMath::Clamp(FCString::Atof(*Args), 1.f, 60.f);
+	TSharedRef<float> Remaining = MakeShared<float>(Seconds);
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	Player->GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(Player, [Player, Remaining, Handle, Seconds]()
+	{
+		const FAedirGaitState& State = Player->Gait->GetGaitState();
+		UE_LOG(LogAedir, Display, TEXT("[GaitInfo] t=%.1f speed=%.0f crouched=%d balance=%.2f margin=%.1f stagger=%d stepping=%d footLift L%.2f R%.2f hipZ=%.1f spinePitch=%.1f pelvisLower=%.1f z=%.1f"),
+			Seconds - *Remaining, Player->GetVelocity().Size2D(), Player->bIsCrouched ? 1 : 0,
+			Player->Balance ? Player->Balance->GetBalance() : -1.f, Player->Balance ? Player->Balance->GetSupportMargin() : 0.f,
+			Player->Balance && Player->Balance->IsStaggering() ? 1 : 0, State.bStepping ? 1 : 0, State.LeftFootLift, State.RightFootLift,
+			State.HipOffsetZ, State.SpineLeanPitch, Player->Interaction ? Player->Interaction->GetPelvisLowerZ() : 0.f, Player->GetActorLocation().Z);
+		*Remaining -= 0.5f;
+		if (*Remaining <= 0.f)
+		{
+			Player->GetWorldTimerManager().ClearTimer(*Handle);
+		}
+	}), 0.5f, true);
+}
+
+void UAedirDevTools::ReachTest(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// A delay in seconds lets a freshly spawned item land first.
+	const float Delay = Args.IsEmpty() ? 0.f : FCString::Atof(*Args);
+	FTimerHandle ReachTimer;
+	Player->GetWorldTimerManager().SetTimer(ReachTimer, FTimerDelegate::CreateWeakLambda(Player, [Player]()
+	{
+		if (Player->Interaction)
+		{
+			Player->Interaction->StartReach(EAedirHand::Right);
+			DevToolsReport(TEXT("Right hand reaching"));
+		}
+	}), FMath::Max(Delay, 0.01f), false);
+}
+
+void UAedirDevTools::CrouchTest(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	if (Player->bIsCrouched)
+	{
+		Player->UnCrouch();
+	}
+	else
+	{
+		Player->Crouch();
+	}
+	DevToolsReport(Player->bIsCrouched ? TEXT("Crouching") : TEXT("Standing"));
 }
 
 void UAedirDevTools::FallTest(AAedirPlayerCharacter* Player, const FString& Args)

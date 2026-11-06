@@ -58,6 +58,7 @@ namespace
 	constexpr float ComBalanceMaxLossPerSecond = 0.9f;
 	constexpr float ComBalanceRecoveryMarginCm = -8.f;
 	constexpr float ComBalanceSteadyBalance = 0.9f;
+	constexpr float ComBalanceStaticAllowanceCm = 6.f;
 	constexpr float ComBalanceMovingSpeedRef = 300.f;
 	constexpr float ComBalanceMovingAllowanceCm = 30.f;
 	constexpr float ComBalanceReflexRangeCm = 220.f;
@@ -568,7 +569,13 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 			continue;
 		}
 
-		WeightedSum += Body->GetCOMPosition() * Mass;
+		// The animated bone location is used, not the simulated body: legs and spine follow the pose while balanced,
+		// and crouching or reaching would otherwise move the simulated centre of mass away from the pose-driven feet.
+		const FName BoneName = Body->BodySetup.IsValid() ? Body->BodySetup->BoneName : NAME_None;
+		const FVector BodyLocation = BoneName != NAME_None && BodyMesh->GetBoneIndex(BoneName) != INDEX_NONE
+			? BodyMesh->GetBoneLocation(BoneName, EBoneSpaces::WorldSpace)
+			: Body->GetCOMPosition();
+		WeightedSum += BodyLocation * Mass;
 		TotalMass += Mass;
 	}
 
@@ -590,7 +597,7 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	ComputeConvexHull2D(SupportPoints, Hull);
 
 	const FVector2D ComXY(CenterOfMassWorld.X, CenterOfMassWorld.Y);
-	SupportMargin = ComputeSupportMargin(Hull, ComXY);
+	SupportMargin = ComputeSupportMargin(Hull, ComXY) + ComBalanceStaticAllowanceCm;
 	// Walking is a controlled fall: the swing foot leaves the polygon every step, so moving bodies get a margin allowance.
 	const float MoveSpeed = CharacterOwner->GetVelocity().Size2D();
 	SupportMargin += FMath::Clamp(MoveSpeed / ComBalanceMovingSpeedRef, 0.f, 1.f) * ComBalanceMovingAllowanceCm;

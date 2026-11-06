@@ -6,14 +6,13 @@
 class AAedirCreature;
 class SScrollBox;
 class SVerticalBox;
+class UWorld;
 
 enum class EAedirMenuCategory : uint8
 {
 	Inventory,
 	Magic,
 	Skills,
-	Map,
-	Journal,
 	Count
 };
 
@@ -26,7 +25,6 @@ enum class EAedirMenuLineKind : uint8
 	Body,
 	Dim,
 	Progress,
-	Radar,
 	Spacer
 };
 
@@ -59,7 +57,16 @@ struct FAedirMenuLine
 	}
 };
 
-// Full-screen Skyrim-style menu: category tabs, a selectable list on the left and details on the right.
+// Row and detail builders shared by the main menu and the pause menu journal.
+namespace AedirMenuContent
+{
+	TArray<FAedirMenuRow> BuildJournalRows(const UWorld* World);
+	void BuildJournalDetail(const UWorld* World, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines);
+	// Replaces the children of Box with one widget per line. Progress feeds the Progress lines.
+	void PopulateDetail(SVerticalBox& Box, const TArray<FAedirMenuLine>& NewLines, const TFunction<TOptional<float>()>& Progress);
+}
+
+// Full-screen Skyrim-style menu: Inventory, Magic and Skills tabs, a selectable list on the left and details on the right.
 class SAedirMenu : public SCompoundWidget
 {
 public:

@@ -189,7 +189,8 @@ void FAedirProceduralAnimProxy::ApplyPelvis(FCSPose<FCompactPose>& CSPose, const
 	const FVector UpMesh = ActorToMesh.RotateVector(FVector::UpVector);
 	const FVector RightMesh = ActorToMesh.RotateVector(FVector::RightVector);
 	FTransform PelvisTransform = CSPose.GetComponentSpaceTransform(Pelvis);
-	PelvisTransform.AddToTranslation(UpMesh * GaitData.HipOffsetZ + RightMesh * GaitData.HipLateralOffset);
+	const FVector ForwardMeshDirection = ActorToMesh.RotateVector(FVector::ForwardVector);
+	PelvisTransform.AddToTranslation(UpMesh * GaitData.HipOffsetZ + RightMesh * GaitData.HipLateralOffset + ForwardMeshDirection * GaitData.HipForwardOffset);
 
 	FRotator PelvisRotation = GaitData.PelvisRotation;
 	PelvisRotation.Roll += GaitData.PelvisRollDegrees;
