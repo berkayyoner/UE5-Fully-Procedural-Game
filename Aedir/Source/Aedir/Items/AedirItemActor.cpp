@@ -51,6 +51,7 @@ void AAedirItemActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(AAedirItemActor, HeldHand);
 	DOREPLIFETIME(AAedirItemActor, bHolstered);
 	DOREPLIFETIME(AAedirItemActor, bWorn);
+	DOREPLIFETIME(AAedirItemActor, bStowed);
 }
 
 void AAedirItemActor::Use_Implementation(AAedirCreature* User)
@@ -96,12 +97,31 @@ void AAedirItemActor::AttachToWaist(AAedirCreature* Creature, FName BoneName, co
 	bHolstered = true;
 }
 
+void AAedirItemActor::AttachToBackpack(AAedirCreature* Creature)
+{
+	if (!HasAuthority() || !Creature)
+	{
+		return;
+	}
+
+	SetFreePhysics(false);
+	AttachToComponent(Creature->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale);
+
+	Holder = Creature;
+	bHolstered = false;
+	bStowed = true;
+	ApplyStowed(true);
+}
+
 void AAedirItemActor::Detach(const FVector& ThrowVelocity)
 {
 	if (!HasAuthority())
 	{
 		return;
 	}
+
+	bStowed = false;
+	ApplyStowed(false);
 
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	Holder = nullptr;
@@ -175,8 +195,28 @@ void AAedirItemActor::OnRep_Holder()
 	SetFreePhysics(Holder == nullptr);
 }
 
+void AAedirItemActor::OnRep_Stowed()
+{
+	ApplyStowed(bStowed);
+}
+
+void AAedirItemActor::ApplyStowed(bool bNewStowed)
+{
+	SetActorHiddenInGame(bNewStowed);
+	if (Mesh && bNewStowed)
+	{
+		Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+}
+
 void AAedirItemActor::AttachToBone(AAedirCreature* Creature, FName BoneName, const FTransform& HoldOffset)
 {
+	if (bStowed)
+	{
+		bStowed = false;
+		ApplyStowed(false);
+	}
+
 	SetFreePhysics(false);
 
 	AttachToComponent(Creature->GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, BoneName);

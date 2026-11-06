@@ -3,7 +3,10 @@
 #if WITH_DEV_AUTOMATION_TESTS
 
 #include "Misc/AutomationTest.h"
+#include "Items/AedirInteractionComponent.h"
+#include "Items/AedirItemActor.h"
 #include "UI/AedirJournalSubsystem.h"
+#include "UI/SAedirMenu.h"
 #include "UObject/UObjectGlobals.h"
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAedirMenuSkillRankNamesTest, "Aedir.Menu.SkillRankNames", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
@@ -124,6 +127,45 @@ bool FAedirMenuJournalLogicTest::RunTest(const FString& Parameters)
 
 	Journal->RemoveQuest(SecondId);
 	TestEqual(TEXT("RemoveQuest deletes the quest"), Journal->GetQuests().Num(), 1);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAedirMenuBackpackWeightTest, "Aedir.Menu.BackpackWeight", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FAedirMenuBackpackWeightTest::RunTest(const FString& Parameters)
+{
+	UAedirInteractionComponent* Interaction = NewObject<UAedirInteractionComponent>(GetTransientPackage());
+	AAedirItemActor* Sword = NewObject<AAedirItemActor>(GetTransientPackage());
+	AAedirItemActor* Potion = NewObject<AAedirItemActor>(GetTransientPackage());
+	Sword->Weight = 3.5f;
+	Potion->Weight = 0.5f;
+
+	TestTrue(TEXT("Empty backpack weighs nothing"), FMath::IsNearlyZero(Interaction->GetCarriedWeight()));
+
+	Interaction->Backpack.Add(Sword);
+	Interaction->Backpack.Add(Potion);
+	TestTrue(TEXT("Stowed items count towards the carried weight"), FMath::IsNearlyEqual(Interaction->GetCarriedWeight(), 4.f, 0.001f));
+	TestEqual(TEXT("Backpack copy keeps every entry"), Interaction->GetBackpackItemsCopy().Num(), 2);
+
+	Interaction->Backpack.RemoveAt(0);
+	TestTrue(TEXT("Taking an item out lowers the weight"), FMath::IsNearlyEqual(Interaction->GetCarriedWeight(), 0.5f, 0.001f));
+	TestEqual(TEXT("Remaining entry is the potion"), Interaction->GetBackpackItemsCopy()[0], Potion);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAedirMenuRowEqualityTest, "Aedir.Menu.RowEquality", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+
+bool FAedirMenuRowEqualityTest::RunTest(const FString& Parameters)
+{
+	FAedirMenuRow Waist;
+	Waist.Index = 1;
+	FAedirMenuRow Stowed = Waist;
+	TestTrue(TEXT("Identical rows are equal"), Waist == Stowed);
+
+	Stowed.bIsBackpack = true;
+	TestFalse(TEXT("A backpack row differs from a waist row with the same index"), Waist == Stowed);
 
 	return true;
 }

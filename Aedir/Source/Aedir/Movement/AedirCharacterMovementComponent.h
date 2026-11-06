@@ -84,7 +84,7 @@ public:
 
 	// Seconds the body crouches down before the legs push off.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float JumpWindupSeconds = 0.36f;
+	float JumpWindupSeconds = 0.5f;
 
 	// Starts the crouch before a jump; the jump itself fires when the wind-up ends. Returns false when a jump cannot start now.
 	bool BeginJumpWindup();
@@ -126,6 +126,7 @@ private:
 	void UpdateSurfaceFriction();
 
 	float JumpWindupRemaining = 0.f;
+	bool bJumpWindupFired = false;
 	float BaseGroundFriction = 8.f;
 	float BaseBrakingDecelerationWalking = 1400.f;
 	float BaseMaxAcceleration = 1400.f;

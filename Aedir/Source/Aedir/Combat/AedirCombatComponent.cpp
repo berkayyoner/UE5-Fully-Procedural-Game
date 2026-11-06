@@ -68,10 +68,10 @@ namespace
 	constexpr float AedirArmGuardSpeedLow = 250.f;
 	constexpr float AedirArmGuardSpeedHigh = 800.f;
 	constexpr float AedirArmPunchRiseSpeed = 30.f;
-	constexpr float AedirArmPunchFallSpeed = 3.5f;
+	constexpr float AedirArmPunchFallSpeed = 8.f;
 	// Guard: both fists meet in front of the face, at nose height measured from the capsule centre.
 	constexpr float AedirGuardForwardCm = 32.f;
-	constexpr float AedirGuardInwardCm = 3.5f;
+	constexpr float AedirGuardInwardCm = 1.5f;
 	constexpr float AedirGuardFaceHeightCm = 62.f;
 	constexpr float AedirArmSideHoldStart = 0.35f;
 	constexpr float AedirArmSideHoldGain = 3.f;

@@ -21,7 +21,12 @@ namespace
 	constexpr float AedirSettleStepDistanceCm = 5.f;
 	constexpr float AedirSettleRestSpeed = 25.f;
 	constexpr float AedirMinGaitCyclesPerSecond = 0.5f;
-	constexpr float AedirSlowStrideMinScale = 0.5f;
+	constexpr float AedirSlowStrideMinScale = 0.8f;
+	constexpr float JumpWindupPeakAt = 0.6f;
+	constexpr float AirFootTuckCm = 14.f;
+	constexpr float AirLegTuckLift = 0.35f;
+	constexpr float FootLeashStrideFraction = 0.5f;
+	constexpr float FootLeashMinCm = 28.f;
 	constexpr float AedirSettleCooldownSeconds = 0.6f;
 	constexpr float AedirRunBlendInterpSpeed = 6.f;
 	constexpr float AedirMovingBounceFrequency = 2.f;
@@ -117,12 +122,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float Speed2D = Velocity.Size2D();
 	const float MaxGroundSpeed = MovementComponent->WalkSpeed * MovementComponent->RunSpeedMultiplier;
 	const float SpeedAlpha = MaxGroundSpeed > KINDA_SMALL_NUMBER ? FMath::Clamp(Speed2D / MaxGroundSpeed, 0.f, 1.f) : 0.f;
-	const bool bMoving = Speed2D > MovingSpeedThreshold;
-	const bool bTurning = MovementComponent->IsTurningInPlace();
+	// In the air the legs hang and tuck: no stepping, no target search.
+	const bool bAirborne = MovementComponent->IsFalling();
+	const bool bMoving = !bAirborne && Speed2D > MovingSpeedThreshold;
+	const bool bTurning = !bAirborne && MovementComponent->IsTurningInPlace();
 	// A falling centre of mass requests a stumble step, which also starts a step from standing.
 	FVector RecoveryDirection = FVector::ZeroVector;
 	float RecoveryUrgency = 0.f;
-	const bool bRecovering = BalanceComponent && BalanceComponent->GetRecoveryStepRequest(RecoveryDirection, RecoveryUrgency);
+	const bool bRecovering = !bAirborne && BalanceComponent && BalanceComponent->GetRecoveryStepRequest(RecoveryDirection, RecoveryUrgency);
 	const bool bStepping = bMoving || bTurning || bRecovering;
 
 	const UAedirCombatComponent* Combat = CreatureOwner->Combat.Get();
@@ -167,7 +174,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	FVector AheadLocation[2];
 	FVector HomeLocation[2];
 
-	const float StanceWidthScale = FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha);
+	// Crouching, and bending down for something, set the feet wider apart.
+	const UAedirInteractionComponent* WidenInteraction = CreatureOwner->Interaction.Get();
+	const float ReachWidenAlpha = FMath::Clamp((WidenInteraction ? WidenInteraction->GetPelvisLowerZ() : 0.f) / ReachLowerMaxCm, 0.f, 1.f);
+	const float PostureWidthScale = 1.f + (CrouchFootWidenShare * CrouchAlpha) + (CrouchFootWidenShare * ReachWidenAlpha);
+	const float StanceWidthScale = FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha) * PostureWidthScale;
 	const float StanceLeadForwardCm = StanceLeadFootForwardCm * StanceAlpha * ActorScale;
 	for (int32 Foot = 0; Foot < 2; ++Foot)
 	{
@@ -277,6 +288,21 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		PreviousFootFraction[Foot] = Fraction;
 		const bool bInSwingWindow = Fraction < SwingFraction;
 
+		if (bAirborne)
+		{
+			// The foot hangs under its hip, a little tucked, and lands from there.
+			bSwinging[Foot] = false;
+			bRecoverySwinging[Foot] = false;
+			const FVector Hanging(HomeLocation[Foot].X, HomeLocation[Foot].Y, BottomZ + AirFootTuckCm * ActorScale);
+			Contact[Foot] = Hanging;
+			PlantedContact[Foot] = Hanging;
+			PlantedNormal[Foot] = FVector::UpVector;
+			TargetNormal[Foot] = FVector::UpVector;
+			Lift[Foot] = AirLegTuckLift;
+			AnkleWorld[Foot] = Hanging + FVector::UpVector * (AnkleHeightCm * ActorScale);
+			continue;
+		}
+
 		// The support leg of a kick is planted, so a swing that is still running is landed where the leg stands.
 		if (bKicking && Foot != KickFoot && bSwinging[Foot])
 		{
@@ -378,6 +404,35 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		AnkleWorld[Foot] = FootPosition + FVector::UpVector * (AnkleHeightCm * ActorScale);
 	}
 
+	// Safety leash: whatever happened above, no foot may stay further from under its hip than the stride allows.
+	// A foot beyond the leash is pulled back onto it, so a foot left behind is never visible.
+	if (!bAirborne)
+	{
+		const float LeashCm = FMath::Max(StrideLength * FootLeashStrideFraction, FootLeashMinCm * ActorScale);
+		for (int32 Foot = 0; Foot < 2; ++Foot)
+		{
+			if (bKicking && Foot == KickFoot)
+			{
+				continue;
+			}
+
+			FVector Away = Contact[Foot] - HomeLocation[Foot];
+			Away.Z = 0.f;
+			const float AwayDistance = static_cast<float>(Away.Size());
+			if (AwayDistance > LeashCm)
+			{
+				const FVector Pull = Away / AwayDistance * (AwayDistance - LeashCm);
+				AnkleWorld[Foot] -= Pull;
+				Contact[Foot] -= Pull;
+				PlantedContact[Foot] -= FVector(Pull.X, Pull.Y, 0.f);
+				if (bSwinging[Foot])
+				{
+					SwingStartContact[Foot] -= FVector(Pull.X, Pull.Y, 0.f);
+				}
+			}
+		}
+	}
+
 	// The kicking leg follows the kick arc, blended in by the kick pose alpha.
 	if (bKicking)
 	{
@@ -399,7 +454,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	// The pelvis follows the average foot height but sinks mostly to the lower foot, so a foot on a lower step can still reach its floor.
 	const float LowestContactZ = FMath::Min(Contact[0].Z, Contact[1].Z);
 	const float HipFollowZ = LowestContactZ < ContactAverageZ ? FMath::Lerp(ContactAverageZ, LowestContactZ, HipLowerFootShare) : ContactAverageZ;
-	const float DynamicHipTarget = FMath::Clamp(HipFollowZ - BottomZ, HipDynamicMinCm, HipDynamicMaxCm);
+	const float DynamicHipTarget = bAirborne ? 0.f : FMath::Clamp(HipFollowZ - BottomZ, HipDynamicMinCm, HipDynamicMaxCm);
 	DynamicHipOffset = FMath::FInterpTo(DynamicHipOffset, DynamicHipTarget, DeltaTime, HipOffsetInterpSpeed);
 	const float RunLowering = -HipRunLoweringCm * RunBlend;
 	// A walk is already a clear pelvis motion, so the gait terms start at 70% of their size and not at zero.
@@ -413,7 +468,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float ReachLowerCm = Interaction ? FMath::Max(Interaction->GetPelvisLowerZ(), 0.f) : 0.f;
 	const float ReachLowerAlpha = FMath::Clamp(ReachLowerCm / FMath::Max(ReachLowerMaxCm, KINDA_SMALL_NUMBER), 0.f, 1.f);
 	GaitState.HipOffsetZ -= ReachLowerCm;
-	GaitState.HipForwardOffset = ReachHipForwardCm * ReachLowerAlpha * ActorScale;
+	GaitState.HipForwardOffset = ReachHipForwardCm * FMath::Clamp(ReachLowerAlpha * ReachLeanGain, 0.f, 1.f) * ActorScale;
 	GaitState.HipOffsetZ -= StanceHipLowerCm * StanceAlpha;
 
 	// Crouching shrinks the capsule, so the pelvis drops by the same amount and the camera boom stays on the body.
@@ -422,9 +477,12 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.HipOffsetZ -= CrouchDropCm * CrouchAlpha;
 
 	// Jump wind-up: the body sinks before the push-off. Landing: the pelvis absorbs the fall and springs back, less so for athletic bodies.
+	// The dip deepens to its peak, then the legs extend again: the push-off is visible before the feet leave the ground.
 	const float WindupAlpha = MovementComponent->GetJumpWindupAlpha();
-	GaitState.HipOffsetZ -= JumpWindupDipCm * ActorScale * FMath::Sin(WindupAlpha * UE_HALF_PI);
-	const bool bAirborne = MovementComponent->IsFalling();
+	const float WindupDip = WindupAlpha < JumpWindupPeakAt
+		? FMath::Sin(WindupAlpha / JumpWindupPeakAt * UE_HALF_PI)
+		: FMath::Cos((WindupAlpha - JumpWindupPeakAt) / (1.f - JumpWindupPeakAt) * UE_HALF_PI);
+	GaitState.HipOffsetZ -= JumpWindupDipCm * ActorScale * WindupDip;
 	if (bAirborne)
 	{
 		AirFallSpeed = FMath::Max(AirFallSpeed, -static_cast<float>(Velocity.Z));
@@ -466,7 +524,10 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float LookPitch = FMath::Clamp(FRotator::NormalizeAxis(CreatureOwner->GetControlRotation().Pitch), -MaxLookPitchDegrees, MaxLookPitchDegrees);
 
 	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha + BalanceLean.Pitch + LookPitch * SpinePitchShare;
-	GaitState.SpineLeanPitch -= ReachTorsoLeanMaxDegrees * ReachLowerAlpha;
+	// The torso bends earlier than the pelvis sinks, so even an item close to the feet gets the full bend of the spine.
+	GaitState.SpineLeanPitch -= ReachTorsoLeanMaxDegrees * FMath::Clamp(ReachLowerAlpha * ReachLeanGain, 0.f, 1.f);
+	// Crouching bends the spine forward too, the body does not just sink on its legs.
+	GaitState.SpineLeanPitch -= CrouchSpineLeanDegrees * CrouchAlpha;
 	GaitState.SpineLeanPitch -= StanceSpineLeanDegrees * StanceAlpha;
 	GaitState.SpineLeanPitch -= ProtectiveSpineLeanDegrees * ProtectiveAlpha;
 	// Backward positive: the torso leans back to bring the kicking leg up.

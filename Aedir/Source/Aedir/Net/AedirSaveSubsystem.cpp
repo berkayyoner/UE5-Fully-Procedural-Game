@@ -260,6 +260,14 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 			}
 		}
 
+		for (AAedirItemActor* StowedItem : Interaction->GetBackpackItemsCopy())
+		{
+			if (StowedItem)
+			{
+				ItemsToDestroy.AddUnique(StowedItem);
+			}
+		}
+
 		Interaction->ReleaseAllItems();
 	}
 

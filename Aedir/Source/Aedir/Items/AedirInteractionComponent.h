@@ -149,6 +149,25 @@ public:
 	// FromHand is the hand the item is taken from. Returns false when the item cannot be worn.
 	bool WearItem(AAedirItemActor* Item, EAedirHand FromHand);
 
+	// Stows a held or holstered item in the backpack. Clients forward the request to the server.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
+	void AddToBackpack(AAedirItemActor* Item);
+
+	// Takes the backpack entry into a free hand.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
+	void TakeFromBackpack(int32 Index, EAedirHand Hand);
+
+	// Drops the backpack entry on the ground in front of the creature.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
+	void DropFromBackpack(int32 Index);
+
+	// Drops the holstered item of waist slot 0-5.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
+	void DropFromWaist(int32 SlotIndex);
+
+	// Entries keep their backpack index, destroyed items show up as null.
+	TArray<AAedirItemActor*> GetBackpackItemsCopy() const;
+
 	// Highest protection of the worn items covering the zone, range 0..0.9.
 	UFUNCTION(BlueprintPure, Category="Aedir|Interaction")
 	float GetWornArmorProtection(EAedirBodyZone Zone) const;
@@ -165,6 +184,10 @@ public:
 
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	TArray<TObjectPtr<AAedirItemActor>> WornItems;
+
+	// Stowed items: hidden, without collision, counted in the carried weight.
+	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
+	TArray<TObjectPtr<AAedirItemActor>> Backpack;
 
 private:
 	void BeginReach(EAedirHand Hand, AAedirItemActor* Item);
@@ -203,6 +226,18 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerHolsterToWaist(EAedirHand Hand);
+
+	UFUNCTION(Server, Reliable)
+	void ServerAddToBackpack(AAedirItemActor* Item);
+
+	UFUNCTION(Server, Reliable)
+	void ServerTakeFromBackpack(int32 Index, EAedirHand Hand);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropFromBackpack(int32 Index);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDropFromWaist(int32 SlotIndex);
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirItemActor> HighlightedItem;

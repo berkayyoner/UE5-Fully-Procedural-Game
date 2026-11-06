@@ -89,6 +89,10 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Item")
 	bool bHolstered = false;
 
+	// Set while the item sits in a creature's backpack: hidden, without collision and attached to nothing but the body.
+	UPROPERTY(ReplicatedUsing=OnRep_Stowed, BlueprintReadOnly, Category="Aedir|Item")
+	bool bStowed = false;
+
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
@@ -109,6 +113,9 @@ public:
 
 	// Server only.
 	void Detach(const FVector& ThrowVelocity);
+
+	// Server only. Hides the item and keeps it with the creature without any bone attachment.
+	void AttachToBackpack(AAedirCreature* Creature);
 
 	// Server only. Attaches the item to ArmorAttachBone and marks it worn.
 	void AttachToWornBone(AAedirCreature* Creature);
@@ -138,6 +145,11 @@ public:
 private:
 	UFUNCTION()
 	void OnRep_Holder();
+
+	UFUNCTION()
+	void OnRep_Stowed();
+
+	void ApplyStowed(bool bNewStowed);
 
 	void AttachToBone(AAedirCreature* Creature, FName BoneName, const FTransform& HoldOffset);
 	void SetFreePhysics(bool bFree);

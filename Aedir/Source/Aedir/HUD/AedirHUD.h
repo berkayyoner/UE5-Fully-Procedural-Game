@@ -16,18 +16,6 @@ class AEDIR_API AAedirHUD : public AHUD
 public:
 	virtual void DrawHUD() override;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float CrosshairSize = 10.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float CrosshairGap = 5.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float CrosshairThickness = 2.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	FLinearColor CrosshairColor = FLinearColor(1.f, 1.f, 1.f, 0.85f);
-
 	// Fraction of the screen width used by the compass strip.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
 	float CompassWidthFraction = 0.5f;
@@ -80,7 +68,6 @@ private:
 		float FullTime = 1000.f;
 	};
 
-	void DrawCrosshair(float DeltaSeconds, const AAedirCreature* Creature);
 	void DrawCompass(const APawn* Pawn);
 	void DrawBars(float DeltaSeconds, const UAedirStatsComponent* Stats);
 	void DrawPrompt(const AAedirCreature* Creature);
@@ -95,7 +82,6 @@ private:
 	};
 
 	FAedirHudBarState BarStates[3];
-	float CrosshairCurrentGap = -1.f;
 	TArray<FAedirHudNotification> SkillNotifications;
 	TArray<int32> LastSkillLevels;
 	TWeakObjectPtr<const UAedirStatsComponent> NotificationStats;

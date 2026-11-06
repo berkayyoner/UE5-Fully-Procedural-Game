@@ -18,6 +18,7 @@ namespace
 	constexpr double AedirRunMinSpeedSquared = 100.0;
 	constexpr float AedirBodyMovingSpeed = 20.f;
 	constexpr float AedirTurnInPlaceFinishYaw = 5.f;
+	constexpr float AedirJumpFireRemainingShare = 0.2f;
 
 	float SmoothStep01(float Alpha)
 	{
@@ -142,10 +143,18 @@ void UAedirCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick
 	if (JumpWindupRemaining > 0.f)
 	{
 		JumpWindupRemaining -= DeltaTime;
-		if (JumpWindupRemaining <= 0.f && GetCharacterOwner())
+
+		// The push-off fires late in the wind-up, while the legs are already extending again.
+		if (!bJumpWindupFired && JumpWindupRemaining <= JumpWindupSeconds * AedirJumpFireRemainingShare && GetCharacterOwner())
+		{
+			bJumpWindupFired = true;
+			GetCharacterOwner()->Jump();
+		}
+
+		if (JumpWindupRemaining <= 0.f)
 		{
 			JumpWindupRemaining = 0.f;
-			GetCharacterOwner()->Jump();
+			bJumpWindupFired = false;
 		}
 	}
 

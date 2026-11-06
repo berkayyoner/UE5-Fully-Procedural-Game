@@ -1,6 +1,7 @@
 #include "AedirBalanceComponent.h"
 
 #include "Combat/AedirCombatComponent.h"
+#include "Items/AedirInteractionComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
@@ -59,6 +60,7 @@ namespace
 	constexpr float ComBalanceRecoveryMarginCm = -8.f;
 	constexpr float ComBalanceSteadyBalance = 0.9f;
 	constexpr float ComBalanceStaticAllowanceCm = 6.f;
+	constexpr float ComBalanceBendingLowerCm = 5.f;
 	constexpr float ComBalanceMovingSpeedRef = 300.f;
 	constexpr float ComBalanceMovingAllowanceCm = 30.f;
 	constexpr float ComBalanceReflexRangeCm = 220.f;
@@ -605,7 +607,10 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	// A kick is a controlled one-leg stance, so it neither loses balance nor asks for a catching step.
 	const UAedirCombatComponent* KickCombat = CharacterOwner->FindComponentByClass<UAedirCombatComponent>();
 	const bool bKicking = KickCombat && KickCombat->IsKicking();
-	if ((MoveSpeed > 20.f || bKicking) && StaggerSeconds <= 0.f)
+	// Bending down for an item shifts the weight over the feet on purpose and is just as controlled.
+	const UAedirInteractionComponent* ReachInteraction = CharacterOwner->FindComponentByClass<UAedirInteractionComponent>();
+	const bool bBending = ReachInteraction && ReachInteraction->GetPelvisLowerZ() > ComBalanceBendingLowerCm;
+	if ((MoveSpeed > 20.f || bKicking || bBending) && StaggerSeconds <= 0.f)
 	{
 		SupportMargin = FMath::Max(SupportMargin, 0.f);
 	}

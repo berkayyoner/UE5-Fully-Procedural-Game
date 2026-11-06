@@ -16,13 +16,18 @@
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Notifications/SProgressBar.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/SCanvas.h"
+#include "Widgets/SOverlay.h"
 #include "Widgets/SLeafWidget.h"
 #include "Widgets/Text/STextBlock.h"
 
 namespace
 {
-	const TCHAR* const MenuCategoryNames[] = { TEXT("INVENTORY"), TEXT("MAGIC"), TEXT("SKILLS") };
-	const TCHAR* const MenuHintText = TEXT("[W/S] Select  [A/D] Category  [E] Use  [Q] Drop  [Tab] Close");
+	const TCHAR* const MenuInventoryTabNames[] = { TEXT("EQUIPPED"), TEXT("BACKPACK") };
+	const TCHAR* const MenuInventoryHintText = TEXT("[W/S] Select  [A/D] Tab  [LMB] Select, again to use  [RMB] Actions  [E] Use  [Q] Drop  [Tab] Close");
+	const TCHAR* const MenuListHintText = TEXT("[W/S] Select  [Tab] Close");
+	constexpr float MenuContextWidth = 190.f;
+	constexpr float MenuContextHeight = 28.f;
 
 	const FLinearColor MenuDimColor(0.45f, 0.45f, 0.45f, 1.f);
 	const FLinearColor MenuTextColor(0.85f, 0.85f, 0.85f, 1.f);
@@ -93,22 +98,26 @@ namespace
 
 	void MenuAddCharacterStats(const UAedirStatsComponent* Stats, TArray<FAedirMenuLine>& Lines);
 
-	void MenuBuildInventoryDetail(const AAedirCreature* Pawn, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines)
+	AAedirItemActor* MenuFindRowItem(const AAedirCreature* Pawn, const FAedirMenuRow& Row)
 	{
 		const UAedirInteractionComponent* Interaction = Pawn ? Pawn->Interaction.Get() : nullptr;
-		const AAedirItemActor* Item = nullptr;
-		if (Selected && Interaction)
+		if (!Interaction)
 		{
-			if (Selected->bIsHand)
-			{
-				Item = Interaction->GetHeldItem(static_cast<EAedirHand>(Selected->Index));
-			}
-			else
-			{
-				const TArray<AAedirItemActor*> Waist = Interaction->GetWaistItemsCopy();
-				Item = Waist.IsValidIndex(Selected->Index) ? Waist[Selected->Index] : nullptr;
-			}
+			return nullptr;
 		}
+
+		if (Row.bIsHand)
+		{
+			return Interaction->GetHeldItem(static_cast<EAedirHand>(Row.Index));
+		}
+
+		const TArray<AAedirItemActor*> Items = Row.bIsBackpack ? Interaction->GetBackpackItemsCopy() : Interaction->GetWaistItemsCopy();
+		return Items.IsValidIndex(Row.Index) ? Items[Row.Index] : nullptr;
+	}
+
+	void MenuBuildInventoryDetail(const AAedirCreature* Pawn, const FAedirMenuRow* Selected, bool bBackpackTab, TArray<FAedirMenuLine>& Lines)
+	{
+		const AAedirItemActor* Item = Selected ? MenuFindRowItem(Pawn, *Selected) : nullptr;
 
 		if (IsValid(Item))
 		{
@@ -128,7 +137,7 @@ namespace
 		}
 		else
 		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("Nothing in this slot."));
+			MenuAddLine(Lines, EAedirMenuLineKind::Dim, bBackpackTab ? TEXT("The backpack is empty.") : TEXT("Nothing in this slot."));
 		}
 
 		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
@@ -407,7 +416,7 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 	const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush("GenericWhiteBox");
 
 	TSharedRef<SHorizontalBox> TabBar = SNew(SHorizontalBox);
-	for (int32 Index = 0; Index < static_cast<int32>(EAedirMenuCategory::Count); ++Index)
+	for (int32 Index = 0; Index < static_cast<int32>(EAedirInventoryTab::Count); ++Index)
 	{
 		TabBar->AddSlot()
 		.AutoWidth()
@@ -416,9 +425,10 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 			SNew(SBorder)
 			.BorderImage(FStyleDefaults::GetNoBrush())
 			.Padding(FMargin(2.f))
+			.Visibility_Lambda([this, Index]() { return GetTabVisibility(Index); })
 			.OnMouseButtonDown_Lambda([this, Index](const FGeometry&, const FPointerEvent&)
 			{
-				SetCategory(Index);
+				SetInventoryTab(Index);
 				return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 			})
 			[
@@ -431,8 +441,11 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 	}
 
 	ChildSlot
-	.Padding(FMargin(96.f, 64.f))
 	[
+		SNew(SOverlay)
+		+ SOverlay::Slot()
+		.Padding(FMargin(96.f, 64.f))
+		[
 		SNew(SBorder)
 		.BorderImage(WhiteBrush)
 		.BorderBackgroundColor(FLinearColor(0.f, 0.f, 0.f, 0.82f))
@@ -506,9 +519,40 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 			.Padding(FMargin(0.f, 6.f, 0.f, 0.f))
 			[
 				SNew(STextBlock)
-				.Text(FText::FromString(MenuHintText))
+				.Text_Lambda([this]() { return GetHintText(); })
 				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
 				.ColorAndOpacity(FLinearColor(0.7f, 0.7f, 0.7f, 1.f))
+			]
+		]
+		]
+		+ SOverlay::Slot()
+		[
+			SNew(SCanvas)
+			.Visibility(EVisibility::SelfHitTestInvisible)
+			+ SCanvas::Slot()
+			.Position_Lambda([this]() { return ContextPosition; })
+			.Size(FVector2D(MenuContextWidth, MenuContextHeight))
+			[
+				SAssignNew(ContextButton, SBorder)
+				.BorderImage(WhiteBrush)
+				.BorderBackgroundColor_Lambda([this]()
+				{
+					const bool bHovered = ContextButton.IsValid() && ContextButton->IsHovered();
+					return FSlateColor(bHovered ? FLinearColor(0.35f, 0.35f, 0.35f, 0.98f) : FLinearColor(0.08f, 0.08f, 0.08f, 0.98f));
+				})
+				.Visibility_Lambda([this]() { return ContextRow != INDEX_NONE ? EVisibility::Visible : EVisibility::Collapsed; })
+				.Padding(FMargin(10.f, 4.f))
+				.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent&)
+				{
+					RunContextAction();
+					return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
+				})
+				[
+					SNew(STextBlock)
+					.Text_Lambda([this]() { return GetContextText(); })
+					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
+					.ColorAndOpacity(FLinearColor::White)
+				]
 			]
 		]
 	];
@@ -519,13 +563,34 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 void SAedirMenu::SetCategory(int32 NewCategory)
 {
 	const int32 Count = static_cast<int32>(EAedirMenuCategory::Count);
-	CurrentCategory = ((NewCategory % Count) + Count) % Count;
+	const int32 WrappedCategory = ((NewCategory % Count) + Count) % Count;
+	if (WrappedCategory != CurrentCategory)
+	{
+		InventoryTab = 0;
+	}
+	CurrentCategory = WrappedCategory;
 	SelectedRow = 0;
+	CloseContext();
+	RefreshView(true);
+}
+
+void SAedirMenu::SetInventoryTab(int32 NewTab)
+{
+	if (CurrentCategory != static_cast<int32>(EAedirMenuCategory::Inventory))
+	{
+		return;
+	}
+
+	const int32 Count = static_cast<int32>(EAedirInventoryTab::Count);
+	InventoryTab = ((NewTab % Count) + Count) % Count;
+	SelectedRow = 0;
+	CloseContext();
 	RefreshView(true);
 }
 
 FReply SAedirMenu::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
+	CloseContext();
 	// A click anywhere on the menu keeps the keyboard focus here, so Tab can still close it.
 	return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 }
@@ -533,7 +598,6 @@ FReply SAedirMenu::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointer
 FReply SAedirMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
-	const int32 Count = static_cast<int32>(EAedirMenuCategory::Count);
 
 	if (Key == EKeys::Tab || Key == EKeys::Escape)
 	{
@@ -552,22 +616,23 @@ FReply SAedirMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKey
 	}
 	if (Key == EKeys::A || Key == EKeys::Left)
 	{
-		SetCategory(CurrentCategory - 1 + Count);
+		SetInventoryTab(InventoryTab - 1);
 		return FReply::Handled();
 	}
 	if (Key == EKeys::D || Key == EKeys::Right)
 	{
-		SetCategory(CurrentCategory + 1);
+		SetInventoryTab(InventoryTab + 1);
 		return FReply::Handled();
 	}
 	if (Key == EKeys::E)
 	{
-		ActivateSelected();
+		ActivateSelected(false);
 		return FReply::Handled();
 	}
 	if (Key == EKeys::Q)
 	{
-		DropSelected();
+		const int32 Hovered = GetHoveredRow();
+		DropRow(Hovered != INDEX_NONE ? Hovered : SelectedRow);
 		return FReply::Handled();
 	}
 
@@ -590,6 +655,26 @@ TArray<FAedirMenuRow> SAedirMenu::BuildRows() const
 	case EAedirMenuCategory::Inventory:
 	{
 		const UAedirInteractionComponent* Interaction = Pawn ? Pawn->Interaction.Get() : nullptr;
+		if (InventoryTab == static_cast<int32>(EAedirInventoryTab::Backpack))
+		{
+			const TArray<AAedirItemActor*> Stowed = Interaction ? Interaction->GetBackpackItemsCopy() : TArray<AAedirItemActor*>();
+			for (int32 StowedIndex = 0; StowedIndex < Stowed.Num(); ++StowedIndex)
+			{
+				if (!IsValid(Stowed[StowedIndex]))
+				{
+					continue;
+				}
+
+				FAedirMenuRow Row;
+				Row.Name = Stowed[StowedIndex]->ItemName.ToString();
+				Row.Value = FString::Printf(TEXT("%s kg"), *UAedirJournalSubsystem::FormatWeight(Stowed[StowedIndex]->Weight));
+				Row.bIsBackpack = true;
+				Row.Index = StowedIndex;
+				Result.Add(Row);
+			}
+			break;
+		}
+
 		const TArray<AAedirItemActor*> Waist = Interaction ? Interaction->GetWaistItemsCopy() : TArray<AAedirItemActor*>();
 
 		for (int32 HandIndex = 0; HandIndex < 2; ++HandIndex)
@@ -662,7 +747,7 @@ TArray<FAedirMenuLine> SAedirMenu::BuildDetailLines(const TArray<FAedirMenuRow>&
 	switch (static_cast<EAedirMenuCategory>(CurrentCategory))
 	{
 	case EAedirMenuCategory::Inventory:
-		MenuBuildInventoryDetail(Pawn, Selected, Result);
+		MenuBuildInventoryDetail(Pawn, Selected, InventoryTab == static_cast<int32>(EAedirInventoryTab::Backpack), Result);
 		break;
 	case EAedirMenuCategory::Magic:
 		MenuBuildMagicDetail(Pawn, Selected, Result);
@@ -686,6 +771,7 @@ void SAedirMenu::RefreshView(bool bForce)
 	if (bForce || !(NewRows == Rows))
 	{
 		Rows = MoveTemp(NewRows);
+		CloseContext();
 		RebuildList();
 	}
 	if (bForce || !(NewLines == Lines))
@@ -714,18 +800,9 @@ void SAedirMenu::RebuildList()
 		TSharedRef<SBorder> RowBorder = SNew(SBorder)
 		.BorderImage(WhiteBrush)
 		.BorderBackgroundColor_Lambda([this, Index]() { return FSlateColor(GetRowBackground(Index)); })
-		.OnMouseButtonDown_Lambda([this, Index](const FGeometry&, const FPointerEvent&)
+		.OnMouseButtonDown_Lambda([this, Index](const FGeometry& RowGeometry, const FPointerEvent& MouseEvent)
 		{
-			// A click selects a row, a second click on the selected row uses it.
-			if (SelectedRow == Index)
-			{
-				ActivateSelected();
-			}
-			else
-			{
-				SelectedRow = Index;
-				RefreshView(true);
-			}
+			HandleRowClick(Index, RowGeometry, MouseEvent);
 			return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 		})
 		[
@@ -798,7 +875,7 @@ void SAedirMenu::MoveSelection(int32 Delta)
 	ScrollToSelection();
 }
 
-void SAedirMenu::ActivateSelected()
+void SAedirMenu::ActivateSelected(bool bFromClick)
 {
 	if (!Rows.IsValidIndex(SelectedRow))
 	{
@@ -818,10 +895,20 @@ void SAedirMenu::ActivateSelected()
 			break;
 		}
 
-		if (Row.bIsHand)
+		if (Row.bIsBackpack)
 		{
+			// Stowed items are taken in a free hand, the right one first.
+			const EAedirHand Hand = Interaction->GetHandState(EAedirHand::Right) == EAedirHandState::Idle ? EAedirHand::Right : EAedirHand::Left;
+			if (Interaction->GetHandState(Hand) == EAedirHandState::Idle)
+			{
+				Interaction->TakeFromBackpack(Row.Index, Hand);
+			}
+		}
+		else if (Row.bIsHand)
+		{
+			// Clicking a held item does nothing, [E] uses it.
 			const EAedirHand Hand = static_cast<EAedirHand>(Row.Index);
-			if (Interaction->GetHeldItem(Hand))
+			if (!bFromClick && Interaction->GetHeldItem(Hand))
 			{
 				Interaction->UseHeld(Hand);
 			}
@@ -842,24 +929,145 @@ void SAedirMenu::ActivateSelected()
 	}
 }
 
-void SAedirMenu::DropSelected()
+void SAedirMenu::DropRow(int32 RowIndex)
 {
-	if (CurrentCategory != static_cast<int32>(EAedirMenuCategory::Inventory) || !Rows.IsValidIndex(SelectedRow))
+	if (CurrentCategory != static_cast<int32>(EAedirMenuCategory::Inventory) || !Rows.IsValidIndex(RowIndex))
 	{
 		return;
 	}
 
-	const FAedirMenuRow Row = Rows[SelectedRow];
+	const FAedirMenuRow Row = Rows[RowIndex];
 	AAedirCreature* Pawn = Creature.Get();
 	UAedirInteractionComponent* Interaction = Pawn ? Pawn->Interaction.Get() : nullptr;
-	if (Interaction && Row.bIsHand)
+	if (!Interaction || !RowHasItem(Row))
 	{
-		const EAedirHand Hand = static_cast<EAedirHand>(Row.Index);
-		if (Interaction->GetHeldItem(Hand))
+		return;
+	}
+
+	if (Row.bIsBackpack)
+	{
+		Interaction->DropFromBackpack(Row.Index);
+	}
+	else if (Row.bIsHand)
+	{
+		Interaction->DropHeld(static_cast<EAedirHand>(Row.Index));
+	}
+	else
+	{
+		Interaction->DropFromWaist(Row.Index);
+	}
+}
+
+void SAedirMenu::HandleRowClick(int32 Index, const FGeometry& RowGeometry, const FPointerEvent& MouseEvent)
+{
+	CloseContext();
+
+	if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+	{
+		SelectedRow = Index;
+		RefreshView(false);
+		OpenContext(Index, MouseEvent.GetScreenSpacePosition());
+	}
+	else if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+	{
+		// A click selects a row, a second click on the selected row uses it.
+		if (SelectedRow == Index)
 		{
-			Interaction->DropHeld(Hand);
+			ActivateSelected(true);
+		}
+		else
+		{
+			SelectedRow = Index;
+			RefreshView(false);
 		}
 	}
+}
+
+void SAedirMenu::OpenContext(int32 Index, const FVector2D& ScreenPosition)
+{
+	if (CurrentCategory != static_cast<int32>(EAedirMenuCategory::Inventory) || !Rows.IsValidIndex(Index) || !RowHasItem(Rows[Index]))
+	{
+		return;
+	}
+
+	const FGeometry& MenuGeometry = GetCachedGeometry();
+	const FVector2D Size = MenuGeometry.GetLocalSize();
+	const FVector2D Local = MenuGeometry.AbsoluteToLocal(ScreenPosition);
+	ContextPosition = FVector2D(
+		FMath::Clamp(Local.X, 0.0, FMath::Max(0.0, Size.X - MenuContextWidth)),
+		FMath::Clamp(Local.Y, 0.0, FMath::Max(0.0, Size.Y - MenuContextHeight)));
+	ContextRow = Index;
+}
+
+void SAedirMenu::CloseContext()
+{
+	ContextRow = INDEX_NONE;
+}
+
+void SAedirMenu::RunContextAction()
+{
+	const int32 Target = ContextRow;
+	CloseContext();
+	if (!Rows.IsValidIndex(Target) || !RowHasItem(Rows[Target]))
+	{
+		return;
+	}
+
+	const FAedirMenuRow Row = Rows[Target];
+	AAedirCreature* Pawn = Creature.Get();
+	UAedirInteractionComponent* Interaction = Pawn ? Pawn->Interaction.Get() : nullptr;
+	if (!Interaction)
+	{
+		return;
+	}
+
+	if (Row.bIsBackpack)
+	{
+		Interaction->DropFromBackpack(Row.Index);
+	}
+	else
+	{
+		Interaction->AddToBackpack(GetRowItem(Row));
+	}
+}
+
+AAedirItemActor* SAedirMenu::GetRowItem(const FAedirMenuRow& Row) const
+{
+	return MenuFindRowItem(Creature.Get(), Row);
+}
+
+bool SAedirMenu::RowHasItem(const FAedirMenuRow& Row) const
+{
+	return IsValid(GetRowItem(Row));
+}
+
+int32 SAedirMenu::GetHoveredRow() const
+{
+	for (int32 Index = 0; Index < RowWidgets.Num(); ++Index)
+	{
+		if (RowWidgets[Index].IsValid() && RowWidgets[Index]->IsHovered())
+		{
+			return Index;
+		}
+	}
+	return INDEX_NONE;
+}
+
+FText SAedirMenu::GetContextText() const
+{
+	const bool bBackpack = Rows.IsValidIndex(ContextRow) && Rows[ContextRow].bIsBackpack;
+	return FText::FromString(bBackpack ? TEXT("Drop") : TEXT("Stow in backpack"));
+}
+
+FText SAedirMenu::GetHintText() const
+{
+	const bool bInventory = CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory);
+	return FText::FromString(bInventory ? MenuInventoryHintText : MenuListHintText);
+}
+
+EVisibility SAedirMenu::GetTabVisibility(int32 Index) const
+{
+	return (Index == 0 || CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory)) ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 void SAedirMenu::ScrollToSelection()
@@ -889,23 +1097,49 @@ float SAedirMenu::GetSelectedSkillProgress() const
 
 FText SAedirMenu::GetTabText(int32 Index) const
 {
-	const FString Name = MenuCategoryNames[Index];
-	return FText::FromString(Index == CurrentCategory ? FString::Printf(TEXT("[ %s ]"), *Name) : Name);
+	FString Name;
+	bool bActive = true;
+	switch (static_cast<EAedirMenuCategory>(CurrentCategory))
+	{
+	case EAedirMenuCategory::Inventory:
+		Name = MenuInventoryTabNames[FMath::Clamp(Index, 0, 1)];
+		bActive = Index == InventoryTab;
+		break;
+	case EAedirMenuCategory::Magic:
+		Name = TEXT("MAGIC");
+		break;
+	case EAedirMenuCategory::Skills:
+		Name = TEXT("SKILLS");
+		break;
+	default:
+		break;
+	}
+
+	return FText::FromString(bActive ? FString::Printf(TEXT("[ %s ]"), *Name) : Name);
 }
 
 FLinearColor SAedirMenu::GetTabColor(int32 Index) const
 {
-	return Index == CurrentCategory ? FLinearColor::White : FLinearColor(0.5f, 0.5f, 0.5f, 1.f);
+	const bool bActive = CurrentCategory != static_cast<int32>(EAedirMenuCategory::Inventory) || Index == InventoryTab;
+	return bActive ? FLinearColor::White : FLinearColor(0.5f, 0.5f, 0.5f, 1.f);
 }
 
 FLinearColor SAedirMenu::GetRowBackground(int32 Index) const
 {
-	return Index == SelectedRow ? FLinearColor(0.92f, 0.92f, 0.92f, 0.18f) : FLinearColor(0.f, 0.f, 0.f, 0.f);
+	if (Index == SelectedRow)
+	{
+		return FLinearColor(0.92f, 0.92f, 0.92f, 0.18f);
+	}
+	return RowWidgets.IsValidIndex(Index) && RowWidgets[Index]->IsHovered() ? FLinearColor(0.92f, 0.92f, 0.92f, 0.08f) : FLinearColor(0.f, 0.f, 0.f, 0.f);
 }
 
 FLinearColor SAedirMenu::GetRowAccent(int32 Index) const
 {
-	return Index == SelectedRow ? FLinearColor(1.f, 1.f, 1.f, 0.9f) : FLinearColor(1.f, 1.f, 1.f, 0.f);
+	if (Index == SelectedRow)
+	{
+		return FLinearColor(1.f, 1.f, 1.f, 0.9f);
+	}
+	return RowWidgets.IsValidIndex(Index) && RowWidgets[Index]->IsHovered() ? FLinearColor(1.f, 1.f, 1.f, 0.35f) : FLinearColor(1.f, 1.f, 1.f, 0.f);
 }
 
 FLinearColor SAedirMenu::GetRowTextColor(int32 Index) const

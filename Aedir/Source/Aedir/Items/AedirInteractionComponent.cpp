@@ -18,9 +18,14 @@ namespace
 	constexpr float PelvisLowerInterpSpeed = 8.f;
 	constexpr float PelvisLowerFactor = 1.1f;
 	constexpr float ShoulderAboveHipCm = 45.f;
-	constexpr float ArmReachCm = 95.f;
+	constexpr float ArmReachCm = 62.f;
+	constexpr float TorsoForwardCm = 65.f;
+	constexpr float TorsoDropCm = 36.f;
+	constexpr float ArmReachSafety = 0.85f;
 	constexpr float ReachRangeMultiplier = 1.5f;
 	constexpr float HighlightInterval = 0.1f;
+	constexpr float BackpackDropDistance = 60.f;
+	constexpr float BackpackDropHeight = 30.f;
 
 	EAedirHand GetOtherHand(EAedirHand Hand)
 	{
@@ -98,6 +103,7 @@ void UAedirInteractionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	DOREPLIFETIME(UAedirInteractionComponent, RightSlot);
 	DOREPLIFETIME(UAedirInteractionComponent, WaistItems);
 	DOREPLIFETIME(UAedirInteractionComponent, WornItems);
+	DOREPLIFETIME(UAedirInteractionComponent, Backpack);
 }
 
 void UAedirInteractionComponent::StartReach(EAedirHand Hand)
@@ -286,6 +292,14 @@ float UAedirInteractionComponent::GetCarriedWeight() const
 		if (WornItem)
 		{
 			Total += WornItem->Weight;
+		}
+	}
+
+	for (const TObjectPtr<AAedirItemActor>& StowedItem : Backpack)
+	{
+		if (StowedItem)
+		{
+			Total += StowedItem->Weight;
 		}
 	}
 
@@ -487,9 +501,11 @@ void UAedirInteractionComponent::UpdatePelvisLower(float DeltaTime)
 			const FVector ItemLocation = Slot.Item->GetBoundsCenterWorld();
 			const FVector Offset2D = ItemLocation - MeshComponent->GetComponentLocation();
 			const float Horizontal = static_cast<float>(FVector2D(Offset2D.X, Offset2D.Y).Size());
-			const float ShoulderZ = HipZ + ShoulderAboveHipCm;
+			// The bent torso and the shifted pelvis already carry the shoulder forward and down, the arm covers the rest.
+			const float HorizontalLeft = FMath::Max(Horizontal - TorsoForwardCm, 0.f);
+			const float ShoulderZ = HipZ + ShoulderAboveHipCm - TorsoDropCm;
 			const float Vertical = ShoulderZ - static_cast<float>(ItemLocation.Z);
-			const float ReachableVertical = FMath::Sqrt(FMath::Max(ArmReachCm * ArmReachCm - Horizontal * Horizontal, 0.f));
+			const float ReachableVertical = FMath::Sqrt(FMath::Max(ArmReachCm * ArmReachCm - HorizontalLeft * HorizontalLeft, 0.f)) * ArmReachSafety;
 			const float Depth = Vertical - ReachableVertical - ReachLowerStartHeight;
 			Target = FMath::Max(Target, Depth * PelvisLowerFactor);
 		}
@@ -816,6 +832,8 @@ void UAedirInteractionComponent::ReleaseAllItems()
 		WaistItem = nullptr;
 	}
 
+	Backpack.Reset();
+
 	LastStoredWaistIndex[0] = INDEX_NONE;
 	LastStoredWaistIndex[1] = INDEX_NONE;
 	UpdateCarriedWeight();
@@ -855,4 +873,153 @@ TArray<AAedirItemActor*> UAedirInteractionComponent::GetWaistItemsCopy() const
 		Copy.Add(WaistItem.Get());
 	}
 	return Copy;
+}
+
+void UAedirInteractionComponent::AddToBackpack(AAedirItemActor* Item)
+{
+	if (!IsAuthoritative())
+	{
+		ServerAddToBackpack(Item);
+		return;
+	}
+
+	AAedirCreature* Creature = GetCreature();
+	if (!Creature || !Item || Item->bWorn || Item->bStowed || Item->Holder != Creature || Backpack.Contains(Item))
+	{
+		return;
+	}
+
+	const bool bInHand = GetHeldItem(EAedirHand::Left) == Item || GetHeldItem(EAedirHand::Right) == Item;
+	if (!bInHand && !WaistItems.Contains(Item))
+	{
+		return;
+	}
+
+	ReleaseHeldItem(Item);
+	for (TObjectPtr<AAedirItemActor>& WaistItem : WaistItems)
+	{
+		if (WaistItem == Item)
+		{
+			WaistItem = nullptr;
+		}
+	}
+
+	Item->AttachToBackpack(Creature);
+	Backpack.Add(Item);
+	UpdateCarriedWeight();
+}
+
+void UAedirInteractionComponent::TakeFromBackpack(int32 Index, EAedirHand Hand)
+{
+	if (!IsAuthoritative())
+	{
+		ServerTakeFromBackpack(Index, Hand);
+		return;
+	}
+
+	AAedirCreature* Creature = GetCreature();
+	AAedirItemActor* Item = Backpack.IsValidIndex(Index) ? Backpack[Index].Get() : nullptr;
+	if (!Creature || !Item)
+	{
+		return;
+	}
+
+	FAedirHandSlot& Slot = GetSlot(Hand);
+	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
+	const bool bBothHands = RequiresBothHands(Item);
+	if (Slot.State != EAedirHandState::Idle || (bBothHands && Other.State != EAedirHandState::Idle) || Item->Weight > Creature->GetCarryCapacity())
+	{
+		return;
+	}
+
+	Backpack.RemoveAt(Index);
+	Item->AttachToCreatureHand(Creature, Hand);
+
+	Slot.State = EAedirHandState::Holding;
+	Slot.Item = Item;
+	Slot.ReachElapsed = 0.f;
+
+	if (bBothHands)
+	{
+		Other.State = EAedirHandState::Holding;
+		Other.Item = Item;
+		Other.ReachElapsed = 0.f;
+	}
+
+	UpdateCarriedWeight();
+}
+
+void UAedirInteractionComponent::DropFromBackpack(int32 Index)
+{
+	if (!IsAuthoritative())
+	{
+		ServerDropFromBackpack(Index);
+		return;
+	}
+
+	AAedirCreature* Creature = GetCreature();
+	AAedirItemActor* Item = Backpack.IsValidIndex(Index) ? Backpack[Index].Get() : nullptr;
+	if (!Creature || !Item)
+	{
+		return;
+	}
+
+	Backpack.RemoveAt(Index);
+
+	const FVector Forward = Creature->GetActorForwardVector();
+	Item->SetActorLocation(Creature->GetActorLocation() + Forward * BackpackDropDistance + FVector(0.f, 0.f, BackpackDropHeight), false, nullptr, ETeleportType::TeleportPhysics);
+	Item->Detach(Forward * ThrowSpeed * 0.5f + Creature->GetVelocity());
+
+	UpdateCarriedWeight();
+}
+
+void UAedirInteractionComponent::DropFromWaist(int32 SlotIndex)
+{
+	if (!IsAuthoritative())
+	{
+		ServerDropFromWaist(SlotIndex);
+		return;
+	}
+
+	AAedirCreature* Creature = GetCreature();
+	AAedirItemActor* Item = WaistItems.IsValidIndex(SlotIndex) ? WaistItems[SlotIndex].Get() : nullptr;
+	if (!Creature || !Item)
+	{
+		return;
+	}
+
+	WaistItems[SlotIndex] = nullptr;
+	Item->Detach(Creature->GetActorForwardVector() * ThrowSpeed + Creature->GetVelocity());
+	UpdateCarriedWeight();
+}
+
+TArray<AAedirItemActor*> UAedirInteractionComponent::GetBackpackItemsCopy() const
+{
+	TArray<AAedirItemActor*> Copy;
+	Copy.Reserve(Backpack.Num());
+	for (const TObjectPtr<AAedirItemActor>& StowedItem : Backpack)
+	{
+		Copy.Add(StowedItem.Get());
+	}
+	return Copy;
+}
+
+void UAedirInteractionComponent::ServerAddToBackpack_Implementation(AAedirItemActor* Item)
+{
+	AddToBackpack(Item);
+}
+
+void UAedirInteractionComponent::ServerTakeFromBackpack_Implementation(int32 Index, EAedirHand Hand)
+{
+	TakeFromBackpack(Index, Hand);
+}
+
+void UAedirInteractionComponent::ServerDropFromBackpack_Implementation(int32 Index)
+{
+	DropFromBackpack(Index);
+}
+
+void UAedirInteractionComponent::ServerDropFromWaist_Implementation(int32 SlotIndex)
+{
+	DropFromWaist(SlotIndex);
 }

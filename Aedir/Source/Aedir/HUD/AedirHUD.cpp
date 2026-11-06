@@ -17,11 +17,7 @@
 
 namespace
 {
-	constexpr float HudCrosshairFullSpeed = 600.f;
-	constexpr float HudCrosshairMinGapScale = 0.6f;
-	constexpr float HudCrosshairMaxGapScale = 1.6f;
-	constexpr float HudCrosshairCombatExtraGap = 2.f;
-	constexpr float HudCrosshairGapInterpSpeed = 10.f;
+	constexpr float HudPromptLiftPixels = 12.f;
 	constexpr float HudBarFullThreshold = 0.999f;
 	constexpr float HudBarVisibleThreshold = 0.01f;
 	constexpr float HudBarTrailSpeed = 0.4f;
@@ -127,7 +123,6 @@ void AAedirHUD::DrawHUD()
 	AAedirCreature* Creature = Cast<AAedirCreature>(Pawn);
 	const UAedirStatsComponent* Stats = Creature ? Creature->Stats.Get() : nullptr;
 
-	DrawCrosshair(DeltaSeconds, Creature);
 	DrawCompass(Pawn);
 	DrawBars(DeltaSeconds, Stats);
 	UpdateSkillNotifications(DeltaSeconds, Stats);
@@ -138,35 +133,6 @@ void AAedirHUD::DrawHUD()
 	{
 		DrawDeathOverlay();
 	}
-}
-
-void AAedirHUD::DrawCrosshair(float DeltaSeconds, const AAedirCreature* Creature)
-{
-	const float Speed = Creature ? static_cast<float>(Creature->GetVelocity().Size2D()) : 0.f;
-	const float MoveAlpha = FMath::Clamp(Speed / HudCrosshairFullSpeed, 0.f, 1.f);
-	const UAedirCombatComponent* Combat = Creature ? Creature->Combat.Get() : nullptr;
-	const bool bCombatActive = Combat && (Combat->IsInFightStance() || Combat->LeftSwing.bActive || Combat->RightSwing.bActive);
-
-	const float TargetGap = CrosshairGap * FMath::Lerp(HudCrosshairMinGapScale, HudCrosshairMaxGapScale, MoveAlpha)
-		+ (bCombatActive ? HudCrosshairCombatExtraGap : 0.f);
-
-	if (CrosshairCurrentGap < 0.f)
-	{
-		CrosshairCurrentGap = TargetGap;
-	}
-	CrosshairCurrentGap = FMath::FInterpTo(CrosshairCurrentGap, TargetGap, DeltaSeconds, HudCrosshairGapInterpSpeed);
-
-	const float CenterX = static_cast<float>(Canvas->SizeX) * 0.5f;
-	const float CenterY = static_cast<float>(Canvas->SizeY) * 0.5f;
-	const float Gap = CrosshairCurrentGap;
-	const float Size = CrosshairSize;
-	const float Thickness = CrosshairThickness;
-
-	DrawLine(CenterX - Gap - Size, CenterY, CenterX - Gap, CenterY, CrosshairColor, Thickness);
-	DrawLine(CenterX + Gap, CenterY, CenterX + Gap + Size, CenterY, CrosshairColor, Thickness);
-	DrawLine(CenterX, CenterY - Gap - Size, CenterX, CenterY - Gap, CrosshairColor, Thickness);
-	DrawLine(CenterX, CenterY + Gap, CenterX, CenterY + Gap + Size, CrosshairColor, Thickness);
-	DrawRect(CrosshairColor, CenterX - Thickness * 0.5f, CenterY - Thickness * 0.5f, Thickness, Thickness);
 }
 
 void AAedirHUD::DrawCompass(const APawn* Pawn)
@@ -229,18 +195,6 @@ void AAedirHUD::DrawCompass(const APawn* Pawn)
 		const FLinearColor TextColor = FMath::IsNearlyZero(Label.Bearing) ? HudNorthColor : FLinearColor(1.f, 1.f, 1.f, 0.9f);
 		DrawText(Text, TextColor, BearingToScreenX(Relative) - TextWidth * 0.5f, StripTop + 2.f, Font);
 	}
-
-	HudDrawTriangle(Canvas,
-		FVector2D(CenterX, StripBottom + 1.f),
-		FVector2D(CenterX - 5.f, StripBottom + 8.f),
-		FVector2D(CenterX + 5.f, StripBottom + 8.f),
-		FLinearColor(1.f, 1.f, 1.f, 0.9f));
-
-	const FString HeadingText = FString::Printf(TEXT("%03d"), FMath::RoundToInt(Heading) % 360);
-	float HeadingWidth = 0.f;
-	float HeadingHeight = 0.f;
-	GetTextSize(HeadingText, HeadingWidth, HeadingHeight, SmallFont);
-	DrawText(HeadingText, FLinearColor(1.f, 1.f, 1.f, 0.9f), CenterX - HeadingWidth * 0.5f, StripBottom + 10.f, SmallFont);
 
 	UWorld* World = GetWorld();
 	UAedirMarkerSubsystem* Markers = World ? World->GetSubsystem<UAedirMarkerSubsystem>() : nullptr;
@@ -471,24 +425,37 @@ void AAedirHUD::DrawPrompt(const AAedirCreature* Creature)
 	}
 
 	const AAedirItemActor* Item = Interaction->GetHighlightedItem();
-	if (!IsValid(Item))
+	if (!IsValid(Item) || !Item->Mesh)
 	{
 		return;
 	}
 
-	const FString PromptText = FString::Printf(TEXT("[Q] / [E]  %s"), *Item->ItemName.ToString());
+	FString Name = Item->ItemName.ToString();
+	if (Name.IsEmpty())
+	{
+		Name = Item->GetClass()->GetName();
+	}
+
+	const FBoxSphereBounds& Bounds = Item->Mesh->Bounds;
+	const FVector Projected = Canvas->Project(Bounds.Origin + FVector(0.0, 0.0, Bounds.BoxExtent.Z));
+	const bool bOnScreen = Projected.Z > 0.0
+		&& Projected.X >= 0.0 && Projected.X <= Canvas->SizeX
+		&& Projected.Y >= 0.0 && Projected.Y <= Canvas->SizeY;
+	if (!bOnScreen)
+	{
+		return;
+	}
+
 	UFont* MediumFont = UEngine::GetMediumFont();
 	float TextWidth = 0.f;
 	float TextHeight = 0.f;
-	GetTextSize(PromptText, TextWidth, TextHeight, MediumFont);
+	GetTextSize(Name, TextWidth, TextHeight, MediumFont);
 
-	const float CenterX = static_cast<float>(Canvas->SizeX) * 0.5f;
-	const float CenterY = static_cast<float>(Canvas->SizeY) * 0.5f;
-	const float X = CenterX - TextWidth * 0.5f;
-	const float Y = CenterY + FMath::Max(CrosshairCurrentGap, CrosshairGap) + CrosshairSize + 10.f;
+	const float X = static_cast<float>(Projected.X) - TextWidth * 0.5f;
+	const float Y = static_cast<float>(Projected.Y) - TextHeight - HudPromptLiftPixels;
 
-	DrawText(PromptText, FLinearColor(0.f, 0.f, 0.f, 0.8f), X + 1.f, Y + 1.f, MediumFont);
-	DrawText(PromptText, FLinearColor(1.f, 1.f, 1.f, 0.95f), X, Y, MediumFont);
+	DrawText(Name, FLinearColor(0.f, 0.f, 0.f, 0.8f), X + 1.f, Y + 1.f, MediumFont);
+	DrawText(Name, FLinearColor(1.f, 1.f, 1.f, 0.95f), X, Y, MediumFont);
 }
 
 void AAedirHUD::DrawDeathOverlay()

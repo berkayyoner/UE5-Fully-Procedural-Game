@@ -17,6 +17,9 @@ public class AedirEditor : ModuleRules
 			"RHI",
 			"AssetRegistry",
 			"EditorSubsystem",
+			"Slate",
+			"SlateCore",
+			"InputCore",
 			"Aedir"
 		});
 	}

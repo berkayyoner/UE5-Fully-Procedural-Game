@@ -256,10 +256,10 @@ public:
 	float StrideRunCm = 250.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float SideStrideScale = 0.6f;
+	float SideStrideScale = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float BackStrideScale = 0.65f;
+	float BackStrideScale = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float AthleticsStrideDivisor = 400.f;
@@ -350,6 +350,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ReachTorsoLeanMaxDegrees = 70.f;
 
+	// Gain of the torso bend and pelvis shift against the pelvis sink during a low reach.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float ReachLeanGain = 1.8f;
+
+	// Extra foot spacing at a full crouch, and again at a full low reach, as a share of the normal hip width.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float CrouchFootWidenShare = 0.3f;
+
+	// Forward bend of the spine at a full crouch.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float CrouchSpineLeanDegrees = 22.f;
+
 	// How far the pelvis moves forward at a full low reach.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ReachHipForwardCm = 25.f;
@@ -376,7 +388,7 @@ public:
 
 	// Walking stride multiplier at a full fighting stance. Running is not affected.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
-	float StanceWalkStrideMultiplier = 0.7f;
+	float StanceWalkStrideMultiplier = 0.95f;
 
 	// Forward torso lean in degrees at a full fighting stance.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
