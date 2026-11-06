@@ -36,3 +36,4 @@ Feedback round 4 (editor build ok, 60/60 tests, not played): both fist curl sign
 Movement heading may lead the body by at most 35 degrees, so a quick camera turn bends the path instead of sending the creature sideways (builds, 60/60 tests, not played).
 Reverted the heading lead; velocity steering friction restored (separate soft braking friction keeps the weighty stop), body turn rate back to 360 (builds, 60/60 tests, not played).
 Body turn while moving eases with a limited angular acceleration; spine and head follow the pose while balanced (game target compiles, editor build and tests pending, not played).
+Fixed the body turning the wrong way when the camera turns left while moving: FMath::FixedTurn wraps to 0..360, replaced with a signed clamp (editor build ok, 60/60 tests, not played).

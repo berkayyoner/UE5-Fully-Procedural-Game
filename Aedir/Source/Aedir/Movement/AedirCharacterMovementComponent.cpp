@@ -207,7 +207,8 @@ void UAedirCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		if (FMath::Abs(YawDelta) > BodyLagYawMoving)
 		{
 			const float Excess = YawDelta - Sign * BodyLagYawMoving;
-			Step = FMath::FixedTurn(0.f, Excess, RotationRateMoving * DeltaTime);
+			// FixedTurn returns an angle wrapped to 0..360, which turned small left steps into large right ones.
+			Step = FMath::Clamp(Excess, -RotationRateMoving * DeltaTime, RotationRateMoving * DeltaTime);
 		}
 
 		if (FMath::Abs(YawDelta - Step) > MaxBodyHeadYawWhileMoving)
@@ -235,7 +236,7 @@ void UAedirCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 		return;
 	}
 
-	const float Step = FMath::FixedTurn(0.f, YawDelta, TurnInPlaceRate * DeltaTime);
+	const float Step = FMath::Clamp(YawDelta, -TurnInPlaceRate * DeltaTime, TurnInPlaceRate * DeltaTime);
 	SetBodyYaw(CurrentYaw + Step);
 
 	if (FMath::Abs(FMath::FindDeltaAngleDegrees(CurrentYaw + Step, DesiredYaw)) < AedirTurnInPlaceFinishYaw)
