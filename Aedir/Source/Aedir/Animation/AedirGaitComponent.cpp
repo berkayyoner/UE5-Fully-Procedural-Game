@@ -46,6 +46,8 @@ namespace
 	constexpr float AirLegTuckLift = 0.35f;
 	constexpr float FootLeashTriggerShare = 1.25f;
 	constexpr float FootLeashMinCm = 36.f;
+	// A running foot pushes off further behind the body than it landed ahead.
+	constexpr float RunTrailShare = 1.14f;
 	constexpr float AedirRunBlendInterpSpeed = 6.f;
 	constexpr float AedirMovingBounceFrequency = 2.f;
 
@@ -188,7 +190,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float LandingShare = FMath::Lerp(StepLandingShareWalk, StepLandingShareRun, RunMix);
 	const float LandingOffsetCm = FMath::Min(StrideLength * LandingShare, Speed2D * LandingReachSeconds);
 	// A foot is lifted once the body has carried it as far behind the hip as it landed ahead, so its range stays centred under the body.
-	const float StepTriggerCm = FMath::Max(2.f * LandingOffsetCm, AedirMinStepTriggerCm * ActorScale);
+	const float StepTriggerCm = FMath::Max(2.f * LandingOffsetCm * FMath::Lerp(1.f, RunTrailShare, RunMix), AedirMinStepTriggerCm * ActorScale);
 	const float EffectiveStride = StepTriggerCm / FMath::Max(1.f - SwingFraction, KINDA_SMALL_NUMBER);
 
 	AdvancePhase(DeltaTime, bMoving, bTurning, Speed2D, EffectiveStride);
@@ -577,6 +579,12 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	};
 	ReadWeaponAim(EAedirHand::Left, GaitState.LeftWeaponDirWorld, GaitState.LeftWeaponAimAlpha);
 	ReadWeaponAim(EAedirHand::Right, GaitState.RightWeaponDirWorld, GaitState.RightWeaponAimAlpha);
+	EAedirHand GripSecondary = EAedirHand::Left;
+	GaitState.GripSecondaryHand = -1;
+	if (Combat && Combat->GetSecondaryGrip(GripSecondary, GaitState.GripPointInPrimaryHand, GaitState.GripBladeInPrimaryHand, GaitState.GripAlpha))
+	{
+		GaitState.GripSecondaryHand = static_cast<int32>(GripSecondary);
+	}
 	GaitState.LeftArmReachAlpha = LeftReachAlpha;
 	GaitState.RightArmReachAlpha = RightReachAlpha;
 	GaitState.LeftReachTargetWorld = LeftReachTarget;

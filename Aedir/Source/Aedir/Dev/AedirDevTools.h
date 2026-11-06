@@ -45,6 +45,7 @@ public:
 	static void ShotCam(AAedirPlayerCharacter* Player, const FString& Args);
 	static void PlaceItem(AAedirPlayerCharacter* Player, const FString& Args);
 	static void PoseArm(AAedirPlayerCharacter* Player, const FString& Args);
+	static void GripInfo(AAedirPlayerCharacter* Player, const FString& Args);
 
 	// Spawns hostile bandits in a row centred on Center, facing FacePoint. Works in every build, fast travel ambushes use it too. Returns the number spawned.
 	static int32 SpawnBandits(UWorld* World, const FVector& Center, const FVector& FacePoint, int32 Count, bool bArmed);

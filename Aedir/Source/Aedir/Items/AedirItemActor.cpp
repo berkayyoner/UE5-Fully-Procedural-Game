@@ -16,14 +16,16 @@ namespace
 
 namespace
 {
-	constexpr float HandGripPalmShare = 0.62f;
-	constexpr float HandGripPalmDepthCm = 3.2f;
 	constexpr float HangSwingStiffness = 45.f;
 	constexpr float HangSwingDamping = 5.f;
 	constexpr float HangSwingGain = 0.05f;
 	constexpr float HangSwingMaxRadians = 0.7f;
 	constexpr float HangMaxAcceleration = 1800.f;
 	constexpr double ReleaseGraceSeconds = 1.5;
+	// An item let go inside the capsule is pushed out of it gently, not shot away.
+	constexpr float ItemMaxDepenetrationSpeed = 80.f;
+	constexpr float ItemLinearDamping = 0.15f;
+	constexpr float ItemAngularDamping = 0.8f;
 }
 
 AAedirItemActor::AAedirItemActor()
@@ -40,6 +42,8 @@ AAedirItemActor::AAedirItemActor()
 	Mesh->SetCollisionProfileName(TEXT("PhysicsActor"));
 	Mesh->SetSimulatePhysics(true);
 	Mesh->SetUseCCD(true);
+	Mesh->SetLinearDamping(ItemLinearDamping);
+	Mesh->SetAngularDamping(ItemAngularDamping);
 }
 
 void AAedirItemActor::OnConstruction(const FTransform& Transform)
@@ -62,6 +66,7 @@ void AAedirItemActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 
 	DOREPLIFETIME(AAedirItemActor, Holder);
 	DOREPLIFETIME(AAedirItemActor, HeldHand);
+	DOREPLIFETIME(AAedirItemActor, HeldGripShiftCm);
 	DOREPLIFETIME(AAedirItemActor, bHolstered);
 	DOREPLIFETIME(AAedirItemActor, bWorn);
 	DOREPLIFETIME(AAedirItemActor, bStowed);
@@ -82,13 +87,14 @@ void AAedirItemActor::Use_Implementation(AAedirCreature* User)
 	OnUsed(User);
 }
 
-void AAedirItemActor::AttachToCreatureHand(AAedirCreature* Creature, EAedirHand Hand)
+void AAedirItemActor::AttachToCreatureHand(AAedirCreature* Creature, EAedirHand Hand, float GripShiftCm)
 {
 	if (!HasAuthority() || !Creature || !Creature->Interaction)
 	{
 		return;
 	}
 
+	HeldGripShiftCm = GripShiftCm;
 	const FName BoneName = Hand == EAedirHand::Left ? Creature->Interaction->LeftHandBone : Creature->Interaction->RightHandBone;
 	AttachToBone(Creature, BoneName, bUseHandGrip ? ComputeHandGrip(Creature, Hand) : HeldTransform);
 
@@ -150,7 +156,7 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 	const FQuat ItemRotation = FRotationMatrix::MakeFromXY(KnuckleAxis, FingerAxis).ToQuat();
 	const FQuat RelativeRotation = HandRotation.Inverse() * ItemRotation;
 	const FVector RelativePalm = HandRotation.Inverse().RotateVector(Palm - HandLocation);
-	return FTransform(RelativeRotation, RelativePalm - RelativeRotation.RotateVector(FVector(GripLocalCm, 0.f, 0.f)));
+	return FTransform(RelativeRotation, RelativePalm - RelativeRotation.RotateVector(FVector(GripLocalCm + HeldGripShiftCm, 0.f, 0.f)));
 }
 
 void AAedirItemActor::AttachToWaist(AAedirCreature* Creature, FName BoneName, const FVector& SlotOnBone, const FQuat& RotationOnBone, float PivotCm)
@@ -160,6 +166,7 @@ void AAedirItemActor::AttachToWaist(AAedirCreature* Creature, FName BoneName, co
 		return;
 	}
 
+	HeldGripShiftCm = 0.f;
 	AttachToBone(Creature, BoneName, FTransform(RotationOnBone, SlotOnBone - RotationOnBone.RotateVector(FVector(PivotCm, 0.f, 0.f))));
 
 	Holder = Creature;
@@ -241,6 +248,7 @@ void AAedirItemActor::Detach(const FVector& ThrowVelocity)
 
 	bStowed = false;
 	ApplyStowed(false);
+	HeldGripShiftCm = 0.f;
 
 	SetActorTickEnabled(false);
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
@@ -379,6 +387,8 @@ void AAedirItemActor::ApplyItemMass()
 	if (Mesh)
 	{
 		Mesh->SetMassOverrideInKg(NAME_None, Weight, true);
+		Mesh->BodyInstance.SetOverrideMaxDepenetrationVelocity(true);
+		Mesh->BodyInstance.SetMaxDepenetrationVelocity(ItemMaxDepenetrationSpeed);
 	}
 }
 

@@ -31,8 +31,8 @@ namespace
 	constexpr float HudMarkerLabelDegrees = 7.f;
 	constexpr float HudCompassEndFade = 0.26f;
 	constexpr float HudCompassTaper = 0.2f;
-	constexpr float HudCompassPoleFontSize = 17.f;
-	constexpr float HudCompassLabelFontSize = 11.f;
+	constexpr float HudCompassPoleFontSize = 12.f;
+	constexpr float HudCompassLabelFontSize = 9.f;
 	constexpr float HudDeathOverlayAlpha = 0.72f;
 	constexpr float HudDeathFontSize = 46.f;
 	constexpr float HudNotificationLifetime = 4.f;

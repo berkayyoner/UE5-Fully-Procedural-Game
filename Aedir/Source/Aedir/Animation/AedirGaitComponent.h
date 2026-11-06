@@ -72,6 +72,12 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	FVector RightWeaponDirWorld = FVector::ForwardVector;
 
+	// The second hand of a two-hand grip closes on the weapon at a point fixed to the hand that carries it. -1 when there is none.
+	int32 GripSecondaryHand = -1;
+	FVector GripPointInPrimaryHand = FVector::ZeroVector;
+	FVector GripBladeInPrimaryHand = FVector::ForwardVector;
+	float GripAlpha = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float LeftWeaponAimAlpha = 0.f;
 

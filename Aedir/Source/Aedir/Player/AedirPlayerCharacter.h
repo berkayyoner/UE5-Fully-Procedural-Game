@@ -29,7 +29,19 @@ public:
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	float ThirdPersonArmLength = 280.f;
+	float ThirdPersonArmLength = 165.f;
+
+	// The mouse wheel moves the camera between these distances.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraZoomMinCm = 95.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraZoomMaxCm = 360.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraZoomStepCm = 22.f;
+
+	float CameraZoomTargetCm = 165.f;
 
 	// Height of the camera boom pivot above the capsule centre while standing.
 	float CameraBoomBaseZ = 60.f;
@@ -64,7 +76,7 @@ public:
 	FRotator FightCameraSway = FRotator::ZeroRotator;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	FVector ThirdPersonShoulderOffset = FVector(0.f, 45.f, 25.f);
+	FVector ThirdPersonShoulderOffset = FVector(0.f, 18.f, 8.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	FVector FirstPersonEyeOffset = FVector(14.f, 0.f, 62.f);
@@ -179,6 +191,15 @@ public:
 
 	UFUNCTION(Exec)
 	void PoseArm(const FString& PoseArgs);
+
+	UFUNCTION(Exec)
+	void GripInfo();
+
+	UFUNCTION(Exec)
+	void DropHand(int32 RightHand);
+
+	UFUNCTION(Exec)
+	void DrawSlot(int32 RightHand, int32 Slot);
 
 	UFUNCTION(Exec)
 	void HolsterTest(int32 RightHand);

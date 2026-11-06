@@ -45,7 +45,7 @@ namespace
 	constexpr float TwoHandLiftMultiplier = 2.5f;
 	constexpr float OneHandObjectLiftShare = 0.6f;
 	constexpr float ObjectStrainSeconds = 1.5f;
-	constexpr float ObjectThrowWeightKg = 5.f;
+	constexpr float ObjectThrowWeightKg = 1.f;
 	constexpr float CarryForwardCm = 30.f;
 	constexpr float CarrySideCm = 14.f;
 	constexpr float CarryUpCm = 6.f;
@@ -230,12 +230,17 @@ void UAedirInteractionComponent::DropHeld(EAedirHand Hand)
 
 	ReleaseHeldItem(Item);
 
-	// A light item is tossed a little, a heavy one just falls.
-	const float TossShare = FMath::Min(ObjectThrowWeightKg / FMath::Max(Item->Weight, KINDA_SMALL_NUMBER), 1.f);
-	const FVector ThrowVelocity = Creature->GetActorForwardVector() * (ThrowSpeed * TossShare) + Creature->GetVelocity();
-	Item->Detach(ThrowVelocity);
+	Item->Detach(GetTossVelocity(Item, 1.f));
 
 	UpdateCarriedWeight();
+}
+
+FVector UAedirInteractionComponent::GetTossVelocity(const AAedirItemActor* Item, float SpeedShare) const
+{
+	// A light item is tossed a little, a heavy one just falls.
+	const AAedirCreature* Creature = GetCreature();
+	const float TossShare = FMath::Min(ObjectThrowWeightKg / FMath::Max(Item->Weight, KINDA_SMALL_NUMBER), 1.f);
+	return Creature->GetActorForwardVector() * (ThrowSpeed * TossShare * SpeedShare) + Creature->GetVelocity();
 }
 
 void UAedirInteractionComponent::SwapGripOrder()
@@ -248,7 +253,7 @@ void UAedirInteractionComponent::SwapGripOrder()
 
 	AAedirCreature* Creature = GetCreature();
 	AAedirItemActor* Item = GetHeldItem(EAedirHand::Right);
-	if (!Creature || !Item || Item != GetHeldItem(EAedirHand::Left) || Item->ItemClass == EAedirItemClass::Object)
+	if (!Creature || !Item || Item != GetHeldItem(EAedirHand::Left) || Item->ItemClass == EAedirItemClass::Object || Item->HeldGripShiftCm > 0.f)
 	{
 		return;
 	}
@@ -282,6 +287,40 @@ void UAedirInteractionComponent::HolsterToWaist(EAedirHand Hand)
 	}
 
 	BeginHolsterMotion(Hand);
+}
+
+void UAedirInteractionComponent::DrawWaistSlot(EAedirHand Hand, int32 SlotIndex)
+{
+	if (!IsAuthoritative())
+	{
+		ServerDrawWaistSlot(Hand, SlotIndex);
+		return;
+	}
+
+	const int32 Index = static_cast<int32>(Hand);
+	AAedirCreature* Creature = GetCreature();
+	const AAedirItemActor* Item = WaistItems.IsValidIndex(SlotIndex) ? WaistItems[SlotIndex].Get() : nullptr;
+	if (!Creature || !Item || GetHandState(Hand) != EAedirHandState::Idle || HolsterMotion[Index] != EAedirHolsterMotion::None
+		|| (RequiresBothHands(Item) && GetHandState(GetOtherHand(Hand)) != EAedirHandState::Idle))
+	{
+		return;
+	}
+
+	// Nothing moves while the menu pauses the game, so the hand has no way to go there.
+	if (GetWorld() && GetWorld()->IsPaused())
+	{
+		DrawFromWaist(Hand, Creature, SlotIndex);
+		return;
+	}
+
+	HolsterWaistIndex[Index] = SlotIndex;
+	HolsterMotion[Index] = EAedirHolsterMotion::Draw;
+	HolsterElapsed[Index] = 0.f;
+}
+
+bool UAedirInteractionComponent::IsHolsterMoving() const
+{
+	return HolsterMotion[0] != EAedirHolsterMotion::None || HolsterMotion[1] != EAedirHolsterMotion::None;
 }
 
 void UAedirInteractionComponent::BeginHolsterMotion(EAedirHand Hand)
@@ -340,7 +379,7 @@ void UAedirInteractionComponent::UpdateHolsterMotion(EAedirHand Hand, float Delt
 		}
 		else
 		{
-			DrawFromWaist(Hand, Creature);
+			DrawFromWaist(Hand, Creature, HolsterWaistIndex[Index]);
 		}
 	}
 }
@@ -413,7 +452,8 @@ void UAedirInteractionComponent::GetWaistSlot(int32 WaistIndex, const AAedirItem
 		LongAxis = FVector::UpVector;
 		OutPivotCm = -Item->GripLocalCm * 0.5f;
 	}
-	const FQuat RotationInBody = FRotationMatrix::MakeFromXY(LongAxis, Outward).ToQuat();
+	// The flat of the item lies against the body, its thin side facing out.
+	const FQuat RotationInBody = FRotationMatrix::MakeFromXZ(LongAxis, Outward).ToQuat();
 
 	const FQuat BoneInMesh = BodyAsset->GetComposedRefPoseMatrix(WaistBone).ToQuat();
 	const FQuat BodyToBone = BoneInMesh.Inverse() * BodyMesh->GetRelativeRotation().Quaternion().Inverse();
@@ -958,43 +998,23 @@ void UAedirInteractionComponent::StoreHeldToWaist(EAedirHand Hand, AAedirCreatur
 	UpdateCarriedWeight();
 }
 
-void UAedirInteractionComponent::DrawFromWaist(EAedirHand Hand, AAedirCreature* Creature)
+void UAedirInteractionComponent::DrawFromWaist(EAedirHand Hand, AAedirCreature* Creature, int32 SourceIndex)
 {
 	FAedirHandSlot& Slot = GetSlot(Hand);
 	const FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
 
-	const int32 Side = GetWaistSideIndex(Hand);
-	const int32 SideBegin = GetWaistSideBegin(Hand);
-	const int32 SideEnd = SideBegin + WaistSlotsPerSide;
-
-	int32 SourceIndex = LastStoredWaistIndex[Side];
-	const bool bLastValid = SourceIndex >= SideBegin && SourceIndex < SideEnd && WaistItems[SourceIndex];
-	if (!bLastValid)
-	{
-		SourceIndex = INDEX_NONE;
-		for (int32 Index = SideEnd - 1; Index >= SideBegin; --Index)
-		{
-			if (WaistItems[Index])
-			{
-				SourceIndex = Index;
-				break;
-			}
-		}
-	}
-
-	if (SourceIndex == INDEX_NONE)
-	{
-		return;
-	}
-
-	AAedirItemActor* Item = WaistItems[SourceIndex].Get();
-	if (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle)
+	AAedirItemActor* Item = WaistItems.IsValidIndex(SourceIndex) ? WaistItems[SourceIndex].Get() : nullptr;
+	if (!Item || (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle))
 	{
 		return;
 	}
 
 	WaistItems[SourceIndex] = nullptr;
-	LastStoredWaistIndex[Side] = INDEX_NONE;
+	const int32 Side = SourceIndex < WaistSlotsPerSide ? 0 : 1;
+	if (LastStoredWaistIndex[Side] == SourceIndex)
+	{
+		LastStoredWaistIndex[Side] = INDEX_NONE;
+	}
 
 	Item->AttachToCreatureHand(Creature, Hand);
 
@@ -1138,6 +1158,11 @@ void UAedirInteractionComponent::ServerUseHeld_Implementation(EAedirHand Hand)
 void UAedirInteractionComponent::ServerHolsterToWaist_Implementation(EAedirHand Hand)
 {
 	HolsterToWaist(Hand);
+}
+
+void UAedirInteractionComponent::ServerDrawWaistSlot_Implementation(EAedirHand Hand, int32 SlotIndex)
+{
+	DrawWaistSlot(Hand, SlotIndex);
 }
 
 bool UAedirInteractionComponent::EquipImmediate(EAedirHand Hand, AAedirItemActor* Item)
@@ -1347,7 +1372,7 @@ void UAedirInteractionComponent::DropFromBackpack(int32 Index)
 
 	const FVector Forward = Creature->GetActorForwardVector();
 	Item->SetActorLocation(Creature->GetActorLocation() + Forward * BackpackDropDistance + FVector(0.f, 0.f, BackpackDropHeight), false, nullptr, ETeleportType::TeleportPhysics);
-	Item->Detach(Forward * ThrowSpeed * 0.5f + Creature->GetVelocity());
+	Item->Detach(GetTossVelocity(Item, 0.5f));
 
 	UpdateCarriedWeight();
 }
@@ -1368,7 +1393,7 @@ void UAedirInteractionComponent::DropFromWaist(int32 SlotIndex)
 	}
 
 	WaistItems[SlotIndex] = nullptr;
-	Item->Detach(Creature->GetActorForwardVector() * ThrowSpeed + Creature->GetVelocity());
+	Item->Detach(GetTossVelocity(Item, 1.f));
 	UpdateCarriedWeight();
 }
 

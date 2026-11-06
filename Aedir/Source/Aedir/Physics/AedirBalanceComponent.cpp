@@ -1192,6 +1192,20 @@ void UAedirBalanceComponent::UpdateLegBlend(float DeltaTime)
 			}
 		}
 	}
+
+	// Arms are physical, except both of them closed on one weapon: simulated arms would pull the hands off the handle.
+	const bool bArmsOnWeapon = !bPhysical && Combat && Combat->IsTwoHandGrip();
+	ArmPhysicsBlend = FMath::FInterpTo(ArmPhysicsBlend, bArmsOnWeapon ? 0.f : 1.f, DeltaTime, 12.f);
+	for (const int32 GroupIndex : { 1, 2 })
+	{
+		for (const FName& BoneName : MotorGroupBones[GroupIndex])
+		{
+			if (FBodyInstance* Body = BodyMesh->GetBodyInstance(BoneName))
+			{
+				Body->PhysicsBlendWeight = ArmPhysicsBlend;
+			}
+		}
+	}
 }
 
 void UAedirBalanceComponent::ApplyMotorGroup(int32 GroupIndex, float Strength)

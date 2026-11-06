@@ -198,6 +198,7 @@ private:
 	void SetupMotors();
 	void UpdateMotors(float DeltaTime, bool bForce);
 	void UpdateLegBlend(float DeltaTime);
+	float ArmPhysicsBlend = 1.f;
 	float LegPhysicsBlend = 0.f;
 	void ApplyMotorGroup(int32 GroupIndex, float Strength);
 	void SampleCenterOfMass();

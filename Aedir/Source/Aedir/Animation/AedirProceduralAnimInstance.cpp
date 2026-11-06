@@ -1,5 +1,7 @@
 #include "Animation/AedirProceduralAnimInstance.h"
 
+#include "Items/AedirItemActor.h"
+
 #include "Animation/AnimNodeBase.h"
 #include "BoneContainer.h"
 #include "BonePose.h"
@@ -168,6 +170,9 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 
 	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha);
 	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha);
+
+	const bool bGripLeft = GaitData.GripSecondaryHand == static_cast<int32>(EAedirHand::Left);
+	ApplyGripHand(CSPose, RefCSPose, Bones, bGripLeft ? LeftOutwardMesh : RightOutwardMesh, DownMesh, ArmForwardMesh);
 
 	// Fingers are children of the final hand pose, so they are curled after the arm IK.
 	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
@@ -430,6 +435,69 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 	const FVector Target = MeshToWorld.InverseTransformVectorNoScale(DirectionWorld).GetSafeNormal();
 	const FQuat Turn = FQuat::Slerp(FQuat::Identity, SafeDeltaRotation(KnucklesNow, Target), FMath::Clamp(Alpha, 0.f, 1.f));
 	HandTransform.SetRotation((Turn * HandTransform.GetRotation()).GetNormalized());
+	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
+}
+
+void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const
+{
+	if (GaitData.GripSecondaryHand < 0 || GaitData.GripAlpha <= AedirReachAlphaThreshold)
+	{
+		return;
+	}
+
+	const bool bLeft = GaitData.GripSecondaryHand == static_cast<int32>(EAedirHand::Left);
+	const TCHAR* Suffix = bLeft ? TEXT("_l") : TEXT("_r");
+	const FName& HandName = bLeft ? BoneNameSet.LeftHand : BoneNameSet.RightHand;
+	const FName& HumerusName = bLeft ? BoneNameSet.LeftHumerus : BoneNameSet.RightHumerus;
+	const FName& RadiusName = bLeft ? BoneNameSet.LeftRadius : BoneNameSet.RightRadius;
+	const FCompactPoseBoneIndex PrimaryHand = ResolveCompactBone(Bones, bLeft ? BoneNameSet.RightHand : BoneNameSet.LeftHand);
+	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);
+	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
+	const FCompactPoseBoneIndex Index = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("index_01%s"), Suffix)));
+	const FCompactPoseBoneIndex Pinky = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("pinky_01%s"), Suffix)));
+	const FCompactPoseBoneIndex Middle = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("middle_01%s"), Suffix)));
+	const FCompactPoseBoneIndex Thumb = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("thumb_01%s"), Suffix)));
+	if (!PrimaryHand.IsValid() || !Hand.IsValid() || !Radius.IsValid() || !Index.IsValid() || !Pinky.IsValid() || !Middle.IsValid() || !Thumb.IsValid())
+	{
+		return;
+	}
+
+	// The closed hand as the item grip sees it, read from the reference pose in the space of the hand.
+	const FTransform RefHand = RefCSPose.GetComponentSpaceTransform(Hand);
+	const FVector RefToMiddle = RefCSPose.GetComponentSpaceTransform(Middle).GetLocation() - RefHand.GetLocation();
+	const FVector RefKnuckles = (RefCSPose.GetComponentSpaceTransform(Index).GetLocation() - RefCSPose.GetComponentSpaceTransform(Pinky).GetLocation()).GetSafeNormal();
+	FVector RefPalmNormal = FVector::CrossProduct(RefKnuckles, RefToMiddle.GetSafeNormal()).GetSafeNormal();
+	if (FVector::DotProduct(RefPalmNormal, RefCSPose.GetComponentSpaceTransform(Thumb).GetLocation() - RefHand.GetLocation()) < 0.0)
+	{
+		RefPalmNormal = -RefPalmNormal;
+	}
+	const FQuat RefHandInverse = RefHand.GetRotation().Inverse();
+	const FVector PalmInHand = RefHandInverse.RotateVector(RefToMiddle * AAedirItemActor::HandGripPalmShare + RefPalmNormal * AAedirItemActor::HandGripPalmDepthCm);
+	const FQuat ClosedHandInverse = FRotationMatrix::MakeFromXY(RefHandInverse.RotateVector(RefKnuckles), RefHandInverse.RotateVector(RefToMiddle)).ToQuat().Inverse();
+
+	// The point on the weapon comes from the final pose of the carrying hand, so the two hands cannot drift apart.
+	const FTransform PrimaryTransform = CSPose.GetComponentSpaceTransform(PrimaryHand);
+	const FVector HandleMesh = PrimaryTransform.TransformPositionNoScale(GaitData.GripPointInPrimaryHand);
+	const FVector BladeMesh = PrimaryTransform.GetRotation().RotateVector(GaitData.GripBladeInPrimaryHand).GetSafeNormal();
+
+	// The blade runs across the knuckles, the fingers point away from the elbow, and the palm goes on the handle. The elbow
+	// moves with the solve and the wrist with the elbow, so a second pass settles both.
+	FQuat HandRotation = CSPose.GetComponentSpaceTransform(Hand).GetRotation();
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	{
+		const FVector FromElbow = HandleMesh - CSPose.GetComponentSpaceTransform(Radius).GetLocation();
+		FVector Fingers = FVector::VectorPlaneProject(FromElbow, BladeMesh);
+		if (Fingers.IsNearlyZero(1.f))
+		{
+			Fingers = HandRotation.RotateVector(RefHandInverse.RotateVector(RefToMiddle));
+		}
+		HandRotation = FRotationMatrix::MakeFromXY(BladeMesh, Fingers).ToQuat() * ClosedHandInverse;
+		const FVector Wrist = HandleMesh - HandRotation.RotateVector(PalmInHand);
+		ApplyArmReach(CSPose, Bones, HumerusName, RadiusName, HandName, MeshToWorld.TransformPosition(Wrist), GaitData.GripAlpha, OutwardMesh, DownMesh, ForwardMesh);
+	}
+
+	FTransform HandTransform = CSPose.GetComponentSpaceTransform(Hand);
+	HandTransform.SetRotation(FQuat::Slerp(HandTransform.GetRotation(), HandRotation, FMath::Clamp(GaitData.GripAlpha, 0.f, 1.f)).GetNormalized());
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
 }
 

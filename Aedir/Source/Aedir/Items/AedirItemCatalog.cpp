@@ -57,15 +57,15 @@ namespace
 		TArray<FAedirItemDef> Definitions;
 
 		// Weapons. Blades run along X with the hilt at -length/2; shafts are centred on the hand.
-		Definitions.Add(CatalogMakeWeapon(TEXT("Dagger"), TEXT("Dagger"), 0.5f, 30.f, EAedirDamageType::Pierce, 4.f, false, CatalogSteel, FVector(0.30, 0.03, 0.006)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("ShortSword"), TEXT("Short Sword"), 1.1f, 70.f, EAedirDamageType::Slash, 8.f, false, CatalogSteel, FVector(0.70, 0.045, 0.008)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("Sword"), TEXT("Sword"), 1.6f, 105.f, EAedirDamageType::Slash, 11.f, false, CatalogSteel, FVector(1.05, 0.05, 0.01)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("Longsword"), TEXT("Longsword"), 2.1f, 118.f, EAedirDamageType::Slash, 14.f, true, CatalogSteel, FVector(1.18, 0.052, 0.011)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("BattleAxe"), TEXT("Battle Axe"), 2.4f, 80.f, EAedirDamageType::Slash, 12.f, false, CatalogWood, FVector(0.80, 0.03, 0.03)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("Mace"), TEXT("Mace"), 2.0f, 65.f, EAedirDamageType::Blunt, 9.f, false, CatalogWood, FVector(0.65, 0.03, 0.03)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("Warhammer"), TEXT("Warhammer"), 3.2f, 90.f, EAedirDamageType::Blunt, 13.f, false, CatalogWood, FVector(0.90, 0.03, 0.03)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("Club"), TEXT("Club"), 1.4f, 70.f, EAedirDamageType::Blunt, 6.f, false, CatalogWood, FVector(0.62, 0.07, 0.07)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("Spear"), TEXT("Spear"), 2.2f, 180.f, EAedirDamageType::Pierce, 9.f, true, CatalogWood, FVector(1.80, 0.025, 0.025)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Dagger"), TEXT("Dagger"), 0.8f, 30.f, EAedirDamageType::Pierce, 4.f, false, CatalogSteel, FVector(0.30, 0.03, 0.006)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("ShortSword"), TEXT("Short Sword"), 1.8f, 70.f, EAedirDamageType::Slash, 8.f, false, CatalogSteel, FVector(0.70, 0.045, 0.008)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Sword"), TEXT("Sword"), 2.6f, 105.f, EAedirDamageType::Slash, 11.f, false, CatalogSteel, FVector(1.05, 0.05, 0.01)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Longsword"), TEXT("Longsword"), 3.4f, 118.f, EAedirDamageType::Slash, 14.f, true, CatalogSteel, FVector(1.18, 0.052, 0.011)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("BattleAxe"), TEXT("Battle Axe"), 3.6f, 80.f, EAedirDamageType::Slash, 12.f, false, CatalogWood, FVector(0.80, 0.03, 0.03)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Mace"), TEXT("Mace"), 3.2f, 65.f, EAedirDamageType::Blunt, 9.f, false, CatalogWood, FVector(0.65, 0.03, 0.03)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Warhammer"), TEXT("Warhammer"), 4.8f, 90.f, EAedirDamageType::Blunt, 13.f, false, CatalogWood, FVector(0.90, 0.03, 0.03)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Club"), TEXT("Club"), 2.4f, 70.f, EAedirDamageType::Blunt, 6.f, false, CatalogWood, FVector(0.62, 0.07, 0.07)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Spear"), TEXT("Spear"), 3.4f, 180.f, EAedirDamageType::Pierce, 9.f, true, CatalogWood, FVector(1.80, 0.025, 0.025)));
 
 		// Armor. Pieces are centred on their attach bone.
 		Definitions.Add(CatalogMakeArmor(TEXT("LeatherCap"), TEXT("Leather Cap"), 0.4f, EAedirBodyZone::Head, 0.25f, TEXT("head"), CatalogLeather, FVector(0.24, 0.24, 0.22)));
@@ -96,7 +96,7 @@ namespace
 		SetGrip(TEXT("Dagger"), -21.f, 8.f, true);
 		SetGrip(TEXT("ShortSword"), -42.f, 8.f, true);
 		SetGrip(TEXT("Sword"), -65.f, 9.f, true);
-		SetGrip(TEXT("Longsword"), -81.f, 18.f, true);
+		SetGrip(TEXT("Longsword"), -78.f, 11.f, true);
 		SetGrip(TEXT("BattleAxe"), -28.f);
 		SetGrip(TEXT("Mace"), -22.f);
 		SetGrip(TEXT("Warhammer"), -32.f);

@@ -299,6 +299,12 @@ public:
 	// Direction the blade held by this hand should point in, with how much of the stance is blended in.
 	bool GetWeaponAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutAlpha) const;
 
+	// The second hand of a two-hand grip: which hand it is and where it closes on the weapon, in the space of the hand that carries the weapon.
+	bool GetSecondaryGrip(EAedirHand& OutHand, FVector& OutPointInPrimaryHand, FVector& OutBladeInPrimaryHand, float& OutAlpha) const;
+
+	// True while the right mouse button holds a two-handed weapon with one hand up on its blade.
+	bool IsHalfSwording() const;
+
 	// Local player only. Mouse wheel steps change how far the arm reaches, 0..1.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat")
 	void AddExtensionInput(EAedirHand Hand, float WheelDelta);
@@ -469,10 +475,17 @@ private:
 
 	// True while the hand holds a weapon up in the stance, where the mouse moves the blade and not a fist.
 	bool IsWeaponStance(EAedirHand Hand) const;
+	// Both hands stay on a two-handed weapon also with no button held, except while a hand goes to the belt.
+	bool IsGripHeld() const;
+	void UpdateGrip(float DeltaTime);
+	float GetSecondaryGripLocalCm(const AAedirItemActor* Item) const;
 	FVector ComputeWeaponTargetDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	void UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);
 
 	bool bThrustMode = false;
+	float HalfSwordAlpha = 0.f;
+	float SecondaryGripBlend = 0.f;
+	EAedirHand LastGripHand = EAedirHand::Right;
 
 	UFUNCTION(Server, Reliable)
 	void ServerStartShove();

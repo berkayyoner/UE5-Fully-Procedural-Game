@@ -284,6 +284,10 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		PoseArm(Player, Args);
 	}
+	else if (Command == TEXT("GripInfo"))
+	{
+		GripInfo(Player, Args);
+	}
 	else
 	{
 		DevToolsReport(FString::Printf(TEXT("Unknown dev command %s"), *Command));
@@ -765,7 +769,7 @@ void UAedirDevTools::AutoMove(AAedirPlayerCharacter* Player, const FString& Args
 	}
 	Player->SetDevAutoMove(FVector2D(Right, Forward));
 	Player->SetWantsToRun(bRun);
-	DevToolsReport(FString::Printf(TEXT("AutoMove forward %.1f right %.1f run %d"), Forward, Right, bRun ? 1 : 0));
+	DevToolsReport(FString::Printf(TEXT("AutoMove forward %.1f right %.1f run %d mode=%d maxSpeed=%.0f pause=%d"), Forward, Right, bRun ? 1 : 0, static_cast<int32>(Player->GetCharacterMovement()->MovementMode), Player->GetCharacterMovement()->GetMaxSpeed(), Player->GetWorld()->IsPaused() ? 1 : 0));
 }
 
 void UAedirDevTools::ShotCam(AAedirPlayerCharacter* Player, const FString& Args)
@@ -818,6 +822,57 @@ void UAedirDevTools::PoseArm(AAedirPlayerCharacter* Player, const FString& Args)
 	Player->Combat->SetGuard(Hand, FCString::Atoi(*Tokens[1]) != 0);
 	Player->Combat->DevSetArmAim(Hand, FVector2D(FCString::Atof(*Tokens[2]), FCString::Atof(*Tokens[3])), FCString::Atof(*Tokens[4]));
 	Player->Combat->SetThrustMode(FCString::Atoi(*Tokens[5]) != 0);
+}
+
+void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// Where each hand really closes on the item it holds, and where all loose items are, in the final pose of the frame.
+	USkeletalMeshComponent* Mesh = Player->GetMesh();
+	UWorld* World = Player->GetWorld();
+	if (!Mesh || !World || !Player->Interaction)
+	{
+		return;
+	}
+
+	const FVector Capsule = Player->GetActorLocation();
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		const AAedirItemActor* Item = Player->Interaction->GetHeldItem(Hand);
+		if (!Item)
+		{
+			continue;
+		}
+
+		const TCHAR* Suffix = Hand == EAedirHand::Left ? TEXT("_l") : TEXT("_r");
+		const auto BoneWorld = [Mesh, Suffix](const TCHAR* Bone) { return Mesh->GetBoneLocation(FName(*FString::Printf(TEXT("%s%s"), Bone, Suffix))); };
+		const FVector Wrist = BoneWorld(TEXT("hand"));
+		const FVector Knuckles = BoneWorld(TEXT("index_01")) - BoneWorld(TEXT("pinky_01"));
+		const FVector ToMiddle = BoneWorld(TEXT("middle_01")) - Wrist;
+		FVector Normal = FVector::CrossProduct(Knuckles, ToMiddle).GetSafeNormal();
+		if (FVector::DotProduct(Normal, BoneWorld(TEXT("thumb_01")) - Wrist) < 0.0)
+		{
+			Normal = -Normal;
+		}
+		const FVector Palm = Wrist + ToMiddle * AAedirItemActor::HandGripPalmShare + Normal * AAedirItemActor::HandGripPalmDepthCm;
+		const FVector Axis = Item->GetActorForwardVector();
+		const FVector FromItem = Palm - Item->GetActorLocation();
+		const double AlongItem = FVector::DotProduct(FromItem, Axis);
+		const double OffAxis = (FromItem - Axis * AlongItem).Size();
+		const FVector Local = Player->GetActorTransform().InverseTransformPositionNoScale(Palm);
+		const double KnucklesToBlade = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Knuckles.GetSafeNormal(), Axis), -1.0, 1.0)));
+		DevToolsReport(FString::Printf(TEXT("%s hand on %s: carrier=%d along=%.1f offAxis=%.1f knuckleAngle=%.0f palm local %.0f %.0f %.0f bladePitch=%.0f bladeYaw=%.0f"),
+			Hand == EAedirHand::Left ? TEXT("Left") : TEXT("Right"), *Item->ItemName.ToString(), Item->HeldHand == Hand ? 1 : 0, AlongItem, OffAxis, KnucklesToBlade,
+			Local.X, Local.Y, Local.Z, Axis.Rotation().Pitch, FRotator::NormalizeAxis(Axis.Rotation().Yaw - Player->GetActorRotation().Yaw)));
+	}
+
+	for (TActorIterator<AAedirItemActor> It(World); It; ++It)
+	{
+		if (!It->IsHeld())
+		{
+			const FVector Offset = It->GetActorLocation() - Capsule;
+			DevToolsReport(FString::Printf(TEXT("Loose %s: %.1f kg at %.0f cm speed %.0f"), *It->ItemName.ToString(), It->Weight, Offset.Size2D(), It->GetVelocity().Size()));
+		}
+	}
 }
 
 void UAedirDevTools::PlaceItem(AAedirPlayerCharacter* Player, const FString& Args)

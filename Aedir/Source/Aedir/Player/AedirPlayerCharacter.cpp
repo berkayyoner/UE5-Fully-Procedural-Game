@@ -111,6 +111,14 @@ void AAedirPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	// The camera settings of the code win over values stored on the boom in older blueprints.
+	CameraZoomTargetCm = FMath::Clamp(ThirdPersonArmLength, CameraZoomMinCm, CameraZoomMaxCm);
+	if (CameraBoom)
+	{
+		CameraBoom->TargetArmLength = CameraZoomTargetCm;
+		CameraBoom->SocketOffset = ThirdPersonShoulderOffset;
+	}
+
 	if (HasAuthority() && GroupId.IsNone())
 	{
 		GroupId = FName(TEXT("Heroes"));
@@ -313,12 +321,20 @@ void AAedirPlayerCharacter::HandleMouseWheel(float Value)
 		return;
 	}
 
+	// A raised fist takes the wheel to set its reach; everything else zooms the camera.
+	bool bFistRaised = false;
 	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
 	{
-		if (Combat->IsGuardActive(Hand))
+		if (Combat->IsGuardActive(Hand) && !(Interaction && Interaction->GetHeldItem(Hand)))
 		{
 			Combat->AddExtensionInput(Hand, Value);
+			bFistRaised = true;
 		}
+	}
+
+	if (!bFistRaised)
+	{
+		CameraZoomTargetCm = FMath::Clamp(CameraZoomTargetCm - Value * CameraZoomStepCm, CameraZoomMinCm, CameraZoomMaxCm);
 	}
 }
 
@@ -386,6 +402,11 @@ void AAedirPlayerCharacter::HandleRightGuardReleased()
 
 void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 {
+	if (CameraBoom)
+	{
+		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, CameraZoomTargetCm, DeltaSeconds, 10.f);
+	}
+
 	if (CameraBoom && Gait && GetCharacterMovement())
 	{
 		// The capsule changes size at once when crouching; the boom pivot is eased so the camera sinks with the pelvis.
@@ -908,6 +929,27 @@ void AAedirPlayerCharacter::HolsterTest(int32 RightHand)
 void AAedirPlayerCharacter::PoseArm(const FString& PoseArgs)
 {
 	RunDevCommand(TEXT("PoseArm"), PoseArgs, true);
+}
+
+void AAedirPlayerCharacter::GripInfo()
+{
+	RunDevCommand(TEXT("GripInfo"), FString(), false);
+}
+
+void AAedirPlayerCharacter::DropHand(int32 RightHand)
+{
+	if (Interaction)
+	{
+		Interaction->DropHeld(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
+	}
+}
+
+void AAedirPlayerCharacter::DrawSlot(int32 RightHand, int32 Slot)
+{
+	if (Interaction)
+	{
+		Interaction->DrawWaistSlot(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left, Slot);
+	}
 }
 
 void AAedirPlayerCharacter::PlaceItem(const FString& ItemArgs)

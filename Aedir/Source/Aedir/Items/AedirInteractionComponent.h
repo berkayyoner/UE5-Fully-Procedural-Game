@@ -102,6 +102,13 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void HolsterToWaist(EAedirHand Hand);
 
+	// Takes the item of one belt slot in the given hand, whichever side of the belt it hangs on. At once while the game is paused.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
+	void DrawWaistSlot(EAedirHand Hand, int32 SlotIndex);
+
+	// True while a hand is on its way to the belt.
+	bool IsHolsterMoving() const;
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Interaction")
 	EAedirHandState GetHandState(EAedirHand Hand) const;
 
@@ -200,7 +207,7 @@ private:
 	void UpdateHighlight();
 	void UpdateCarriedWeight();
 	void StoreHeldToWaist(EAedirHand Hand, AAedirCreature* Creature);
-	void DrawFromWaist(EAedirHand Hand, AAedirCreature* Creature);
+	void DrawFromWaist(EAedirHand Hand, AAedirCreature* Creature, int32 SourceIndex);
 	void ReleaseHeldItem(const AAedirItemActor* Item);
 	void ClearSlotIfHolding(FAedirHandSlot& Slot, const AAedirItemActor* Item);
 
@@ -228,6 +235,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerHolsterToWaist(EAedirHand Hand);
+
+	UFUNCTION(Server, Reliable)
+	void ServerDrawWaistSlot(EAedirHand Hand, int32 SlotIndex);
 
 	UFUNCTION(Server, Reliable)
 	void ServerAddToBackpack(AAedirItemActor* Item);
@@ -267,6 +277,7 @@ private:
 	int32 FindDrawWaistIndex(EAedirHand Hand) const;
 	void GetWaistSlot(int32 WaistIndex, const AAedirItemActor* Item, FVector& OutSlotOnBone, FQuat& OutRotationOnBone, float& OutPivotCm) const;
 	FVector GetWaistSlotWorld(int32 WaistIndex, const AAedirItemActor* Item) const;
+	FVector GetTossVelocity(const AAedirItemActor* Item, float SpeedShare) const;
 
 	enum class EAedirHolsterMotion : uint8 { None, Store, Draw };
 	EAedirHolsterMotion HolsterMotion[2] = { EAedirHolsterMotion::None, EAedirHolsterMotion::None };

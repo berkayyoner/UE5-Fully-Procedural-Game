@@ -56,6 +56,14 @@ public:
 	// Grip point along the long axis of the item, used when the item is held in the closed hand.
 	float GripLocalCm = 0.f;
 	float GripSpanCm = 13.f;
+
+	// The hollow of a closed hand: this share of the way from the wrist to the knuckles and this far off the back of the hand.
+	static constexpr float HandGripPalmShare = 0.62f;
+	static constexpr float HandGripPalmDepthCm = 3.2f;
+
+	// How far above GripLocalCm the hand it is attached to holds the item. Set while half-swording, where the upper hand carries it.
+	UPROPERTY(Replicated)
+	float HeldGripShiftCm = 0.f;
 	bool bUseHandGrip = false;
 	bool bHangsDiagonal = false;
 
@@ -115,7 +123,7 @@ public:
 	void OnUsed(AAedirCreature* User);
 
 	// Server only.
-	void AttachToCreatureHand(AAedirCreature* Creature, EAedirHand Hand);
+	void AttachToCreatureHand(AAedirCreature* Creature, EAedirHand Hand, float GripShiftCm = 0.f);
 
 	// Server only. Hangs the item from a point on the waist bone, rotated as given, pivoting at PivotCm along its long axis.
 	// It keeps swinging on that pivot with the movement of the body.

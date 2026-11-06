@@ -23,7 +23,7 @@
 namespace
 {
 	const TCHAR* const MenuInventoryTabNames[] = { TEXT("EQUIPPED"), TEXT("BACKPACK") };
-	const TCHAR* const MenuInventoryHintText = TEXT("[W/S] SELECT     [A/D] TAB     [LMB] SELECT, AGAIN TO USE     [RMB] ACTIONS     [E] USE     [Q] DROP     [TAB] CLOSE");
+	const TCHAR* const MenuInventoryHintText = TEXT("[W/S] SELECT     [A/D] TAB     [LMB] SELECT, AGAIN TO USE     [RMB] ACTIONS     BELT: [LMB] RIGHT HAND  [RMB] LEFT HAND  [B] BACKPACK     [E] USE     [Q] DROP     [TAB] CLOSE");
 	const TCHAR* const MenuListHintText = TEXT("[W/S] SELECT     [TAB] CLOSE");
 	constexpr float MenuContextWidth = 210.f;
 	constexpr float MenuContextHeight = 34.f;
@@ -761,6 +761,17 @@ FReply SAedirMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKey
 		DropRow(Hovered != INDEX_NONE ? Hovered : SelectedRow);
 		return FReply::Handled();
 	}
+	if (Key == EKeys::B)
+	{
+		const int32 Hovered = GetHoveredRow();
+		const int32 RowIndex = Hovered != INDEX_NONE ? Hovered : SelectedRow;
+		const AAedirCreature* Pawn = Creature.Get();
+		if (CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory) && Rows.IsValidIndex(RowIndex) && !Rows[RowIndex].bIsBackpack && RowHasItem(Rows[RowIndex]) && Pawn && Pawn->Interaction)
+		{
+			Pawn->Interaction->AddToBackpack(GetRowItem(Rows[RowIndex]));
+		}
+		return FReply::Handled();
+	}
 
 	return FReply::Unhandled();
 }
@@ -1009,12 +1020,10 @@ void SAedirMenu::ActivateSelected(bool bFromClick)
 		}
 		else
 		{
-			// Waist entries are drawn on the side's hand, which must be free.
-			const EAedirHand Hand = Row.Index < 3 ? EAedirHand::Left : EAedirHand::Right;
-			if (Interaction->GetHandState(Hand) == EAedirHandState::Idle)
-			{
-				Interaction->HolsterToWaist(Hand);
-			}
+			// From the keyboard a belt item goes to a free hand, the one on its own side first.
+			const EAedirHand Near = Row.Index < 3 ? EAedirHand::Left : EAedirHand::Right;
+			const EAedirHand Far = Near == EAedirHand::Left ? EAedirHand::Right : EAedirHand::Left;
+			Interaction->DrawWaistSlot(Interaction->GetHandState(Near) == EAedirHandState::Idle ? Near : Far, Row.Index);
 		}
 		break;
 	}
@@ -1055,6 +1064,21 @@ void SAedirMenu::DropRow(int32 RowIndex)
 void SAedirMenu::HandleRowClick(int32 Index, const FGeometry& RowGeometry, const FPointerEvent& MouseEvent)
 {
 	CloseContext();
+
+	// A belt item goes straight to the hand of the button: the left button is the right hand, as everywhere in the game.
+	const bool bInventory = CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory);
+	if (bInventory && Rows.IsValidIndex(Index) && !Rows[Index].bIsBackpack && !Rows[Index].bIsHand && RowHasItem(Rows[Index]))
+	{
+		const AAedirCreature* Pawn = Creature.Get();
+		const FKey Button = MouseEvent.GetEffectingButton();
+		if (Pawn && Pawn->Interaction && (Button == EKeys::LeftMouseButton || Button == EKeys::RightMouseButton))
+		{
+			SelectedRow = Index;
+			Pawn->Interaction->DrawWaistSlot(Button == EKeys::LeftMouseButton ? EAedirHand::Right : EAedirHand::Left, Rows[Index].Index);
+			RefreshView(false);
+			return;
+		}
+	}
 
 	if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 	{
