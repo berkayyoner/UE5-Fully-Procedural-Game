@@ -135,7 +135,7 @@ namespace
 	constexpr float AedirHalfSwordSidePerDegree = 0.12f;
 	constexpr float AedirHalfSwordThrustCm = 30.f;
 	constexpr float AedirHalfSwordRestRoll = 35.f;
-	constexpr float AedirHalfSwordRestTilt = 25.f;
+	constexpr float AedirHalfSwordRestTilt = 8.f;
 	constexpr float AedirHalfSwordTiltPerDegree = 0.9f;
 	constexpr float AedirHalfSwordMaxTilt = 80.f;
 	constexpr float AedirHalfSwordYawLimit = 75.f;
