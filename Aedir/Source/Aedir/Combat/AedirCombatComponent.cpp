@@ -63,7 +63,7 @@ namespace
 	constexpr float AedirArmAimYawLimit = 110.f;
 	constexpr float AedirArmOutwardYawLimit = 80.f;
 	constexpr float AedirArmAcrossYawLimit = 0.f;
-	constexpr float AedirArmConvergeYawDegrees = 9.f;
+	constexpr float AedirArmConvergeYawDegrees = 4.f;
 	constexpr float AedirArmMouseSpeedSmoothing = 10.f;
 	constexpr float AedirArmGuardSpeedLow = 350.f;
 	constexpr float AedirArmGuardSpeedHigh = 1400.f;
@@ -72,9 +72,11 @@ namespace
 	constexpr float AedirGuardForwardCm = 38.f;
 	constexpr float AedirGuardInwardCm = 8.f;
 	constexpr float AedirGuardRaiseCm = 14.f;
+	constexpr float AedirArmSideHoldGain = 3.f;
+	constexpr float AedirGuardHeightPerDegree = 0.45f;
 	constexpr float AedirArmDominanceMargin = 0.1f;
 	constexpr float AedirArmGuardKeepShare = 0.15f;
-	constexpr float AedirArmHeadHeightPitchDegrees = 6.f;
+	constexpr float AedirArmHeadHeightPitchDegrees = 2.f;
 	constexpr float AedirArmAimPitchMin = -70.f;
 	constexpr float AedirArmAimPitchMax = 85.f;
 	constexpr float AedirArmGuardRestYaw = 12.f;
@@ -875,8 +877,8 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 		return AimTarget;
 	}
 
-	// While the other arm is the one being thrown out, this arm stays at the face as the guard.
-	float PunchShare = Arm.PunchBlend;
+	// An arm that is held out to the side stays there; only a centred arm falls back to the guard.
+	float PunchShare = FMath::Clamp(Arm.PunchBlend + OutwardAlpha * AedirArmSideHoldGain, 0.f, 1.f);
 	const EAedirHand OtherHand = Hand == EAedirHand::Right ? EAedirHand::Left : EAedirHand::Right;
 	if (IsGuardActive(OtherHand))
 	{
@@ -891,7 +893,9 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 
 	// The guard fist sits in front of the face, a little inside its own shoulder.
 	const float GuardSide = Hand == EAedirHand::Right ? 1.f : -1.f;
-	const FVector GuardLocal(AedirGuardForwardCm * Scale, GuardSide * AedirGuardInwardCm * Scale, (AedirShoulderHeight + AedirGuardRaiseCm) * Scale);
+	// The mouse still moves the guard up and down around the face.
+	const float GuardHeightCm = AedirGuardRaiseCm + (Arm.AimOffsetDeg.Y - AedirArmGuardRestPitch) * AedirGuardHeightPerDegree;
+	const FVector GuardLocal(AedirGuardForwardCm * Scale, GuardSide * AedirGuardInwardCm * Scale, (AedirShoulderHeight + GuardHeightCm) * Scale);
 	const FVector GuardTarget = Creature->GetActorTransform().TransformPositionNoScale(GuardLocal);
 	return FMath::Lerp(GuardTarget, AimTarget, PunchShare);
 }

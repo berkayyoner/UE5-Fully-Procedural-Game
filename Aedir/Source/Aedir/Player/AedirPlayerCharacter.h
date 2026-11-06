@@ -34,6 +34,33 @@ public:
 	// Height of the camera boom pivot above the capsule centre while standing.
 	float CameraBoomBaseZ = 60.f;
 
+	// C: a kick with a forward lunge. Lunge speed, lift and the stamina paid on top of the kick.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float DynamicKickLungeSpeed = 420.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float DynamicKickLiftSpeed = 90.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float DynamicKickExtraStamina = 8.f;
+
+	// How quickly the camera pivot follows the body, how much of the pelvis height motion it takes over, and the ragdoll follow settings.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraBodyFollowSpeed = 9.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraPelvisInfluence = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraRagdollFollowSpeed = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraRagdollRaiseCm = 45.f;
+
+	FVector CameraRelative = FVector::ZeroVector;
+	float CameraPelvisBaseline = 0.f;
+	bool bCameraStateInitialized = false;
+
 	// Share of the mouse movement that still turns the camera while a guard is held.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float FightCameraMouseScale = 0.015f;
@@ -177,6 +204,7 @@ private:
 	void HandleRightHolsterPressed();
 	void HandleShovePressed();
 	void HandleKickPressed();
+	void HandleDynamicKickPressed();
 
 	void HandleHandPressed(EAedirHand Hand);
 	void HandleHandReleased(EAedirHand Hand);

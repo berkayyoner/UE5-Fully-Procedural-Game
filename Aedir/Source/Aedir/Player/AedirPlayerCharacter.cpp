@@ -4,6 +4,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Animation/AedirGaitComponent.h"
+#include "Creature/AedirStatsComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
@@ -82,7 +83,7 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 	CameraBoom->bUsePawnControlRotation = true;
 	CameraBoom->bDoCollisionTest = true;
 	CameraBoom->bEnableCameraLag = true;
-	CameraBoom->CameraLagSpeed = 18.f;
+	CameraBoom->CameraLagSpeed = 14.f;
 
 	FollowCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FollowCamera"));
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
@@ -232,6 +233,7 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 
 	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);
+	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AAedirPlayerCharacter::HandleDynamicKickPressed);
 }
 
 void AAedirPlayerCharacter::ApplyViewPitchLimits()
@@ -353,7 +355,31 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 		// The capsule changes size at once when crouching; the boom pivot is eased so the camera sinks with the pelvis.
 		const float Drop = FMath::Max(GetDefaultHalfHeight() - GetCharacterMovement()->GetCrouchedHalfHeight(), 0.f);
 		const float CapsuleDrop = bIsCrouched ? Drop : 0.f;
-		CameraBoom->SetRelativeLocation(FVector(0.f, 0.f, CameraBoomBaseZ + CapsuleDrop - Drop * Gait->GetCrouchAlpha()));
+		FVector TargetRelative(0.f, 0.f, CameraBoomBaseZ + CapsuleDrop - Drop * Gait->GetCrouchAlpha());
+		float FollowSpeed = CameraBodyFollowSpeed;
+
+		if (USkeletalMeshComponent* BodyMesh = GetMesh())
+		{
+			const FName PelvisName = Balance ? Balance->PelvisBoneName : FName(TEXT("pelvis"));
+			const FVector PelvisWorld = BodyMesh->GetBoneLocation(PelvisName, EBoneSpaces::WorldSpace);
+			if (Balance && Balance->IsRagdoll())
+			{
+				// A fallen or dead body keeps the camera: the pivot follows the pelvis wherever the ragdoll goes.
+				TargetRelative = GetActorTransform().InverseTransformPositionNoScale(PelvisWorld + FVector(0.f, 0.f, CameraRagdollRaiseCm));
+				FollowSpeed = CameraRagdollFollowSpeed;
+			}
+			else
+			{
+				// The pivot follows the pelvis height with a slight delay, so steps, jumps and landings reach the camera.
+				const float PelvisHeight = static_cast<float>(PelvisWorld.Z - GetActorLocation().Z);
+				CameraPelvisBaseline = bCameraStateInitialized ? FMath::FInterpTo(CameraPelvisBaseline, PelvisHeight, DeltaSeconds, 0.6f) : PelvisHeight;
+				TargetRelative.Z += (PelvisHeight - CameraPelvisBaseline) * CameraPelvisInfluence;
+			}
+		}
+
+		CameraRelative = bCameraStateInitialized ? FMath::VInterpTo(CameraRelative, TargetRelative, DeltaSeconds, FollowSpeed) : TargetRelative;
+		bCameraStateInitialized = true;
+		CameraBoom->SetRelativeLocation(CameraRelative);
 	}
 
 	if (FollowCamera)
@@ -429,6 +455,25 @@ void AAedirPlayerCharacter::HandleShovePressed()
 	}
 
 	Combat->StartShove();
+}
+
+void AAedirPlayerCharacter::HandleDynamicKickPressed()
+{
+	if (!Combat || IsMenuOpen() || IsCharacterCreationOpen())
+	{
+		return;
+	}
+
+	// A dynamic kick throws the whole body into the kick: a lunge forward with the leg, on top of the speed already carried.
+	if (Combat->StartKick())
+	{
+		const FVector Forward = GetActorForwardVector().GetSafeNormal2D();
+		LaunchCharacter(Forward * DynamicKickLungeSpeed + FVector(0.f, 0.f, DynamicKickLiftSpeed), false, false);
+		if (HasAuthority() && Stats)
+		{
+			Stats->ConsumeStamina(DynamicKickExtraStamina);
+		}
+	}
 }
 
 void AAedirPlayerCharacter::HandleKickPressed()

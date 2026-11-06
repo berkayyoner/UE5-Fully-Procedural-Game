@@ -174,7 +174,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * StrafeWidthScale * ActorScale) + ActorForward2D * (StanceForwardCm + StrafeStaggerCm);
 		HomeLocation[Foot] = HomeXY;
 		const float LandingShare = FMath::Lerp(StepLandingShareWalk, StepLandingShareRun, SpeedAlpha * SpeedAlpha);
-		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * (StrideLength * LandingShare) : FVector::ZeroVector);
+		// A slowing body only reaches as far as it still travels, so the last step before a stop never aims at a point it cannot get to.
+		const float LandingOffsetCm = FMath::Min(StrideLength * LandingShare, Speed2D * LandingReachSeconds);
+		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * LandingOffsetCm : FVector::ZeroVector);
 
 		SampleGround(LandingXY, BottomZ, LandingLocation[Foot], LandingNormal[Foot]);
 
@@ -205,7 +207,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	{
 		for (int32 Foot = 0; Foot < 2; ++Foot)
 		{
-			if (!bSwinging[Foot] && (PlantedContact[Foot] - HomeLocation[Foot]).Size2D() > StrideLength * MaxPlantedDriftStrideFraction)
+			if (!bSwinging[Foot] && !bSwinging[1 - Foot] && (PlantedContact[Foot] - HomeLocation[Foot]).Size2D() > StrideLength * MaxPlantedDriftStrideFraction)
 			{
 				BeginRecoverySwing(Foot, LandingLocation[Foot], StrideLength, 0.f, BottomZ);
 				break;
@@ -284,7 +286,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			SettleCooldownRemaining = FMath::Max(SettleCooldownRemaining - DeltaTime, 0.f);
 			if (ToHome.Size2D() > AedirSettleStepDistanceCm * ActorScale || FMath::Abs(ToHome.Z) > 15.f)
 			{
-				if (bAtRest && SettleCooldownRemaining <= 0.f && !bRecoverySwinging[1 - Foot] && !bKicking)
+				if (bAtRest && SettleCooldownRemaining <= 0.f && !bRecoverySwinging[1 - Foot] && !bSwinging[1 - Foot] && !bKicking)
 				{
 					BeginRecoverySwing(Foot, LandingLocation[Foot], 1000.f, 0.f, BottomZ);
 					SettleCooldownRemaining = AedirSettleCooldownSeconds;
@@ -299,7 +301,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 		if (!bSwinging[Foot])
 		{
-			if (!bRecoverySwinging[Foot] && !bKicking && bStepping && bWrapped && bInSwingWindow)
+			if (!bRecoverySwinging[Foot] && !bRecoverySwinging[1 - Foot] && !bKicking && bStepping && bWrapped && bInSwingWindow)
 			{
 				bSwinging[Foot] = true;
 				SwingStartContact[Foot] = PlantedContact[Foot];
@@ -384,7 +386,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	// A walk is already a clear pelvis motion, so the gait terms start at 70% of their size and not at zero.
 	const float GaitIntensity = bMoving ? FMath::Lerp(0.7f, 1.f, SpeedAlpha) : 0.f;
 	// The pelvis only ever sinks below its standing height, deepest while both feet are down, so no foot is lifted off the ground by it.
-	const float Bounce = -HipBounceCm * (0.5f + 0.5f * FMath::Cos(2.f * UE_PI * Phase * AedirMovingBounceFrequency)) * GaitIntensity;
+	const float Bounce = -HipBounceCm * FMath::Lerp(1.f, HipBounceRunScale, RunBlend) * (0.5f + 0.5f * FMath::Cos(2.f * UE_PI * Phase * AedirMovingBounceFrequency)) * GaitIntensity;
 	GaitState.HipOffsetZ = DynamicHipOffset + RunLowering + Bounce;
 
 	// The interaction component smooths its outputs itself, so the reach values are applied directly each frame.
@@ -467,8 +469,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	ArmBlend = FMath::FInterpTo(ArmBlend, bMoving ? 1.f : 0.f, DeltaTime, ArmBlendInterpSpeed);
 	const float DirectionalArmScale = FMath::Lerp(1.f, ArmSideScale, SideAlpha) * FMath::Lerp(1.f, ArmBackScale, BackAlpha);
 	const float ArmAmplitude = FMath::Lerp(MaxArmSwingWalkDegrees, MaxArmSwingRunDegrees, SpeedAlpha * SpeedAlpha) * DirectionalArmScale * ArmBlend;
-	GaitState.ArmSwingLeft = FMath::Sin(2.f * UE_PI * (Phase + 0.5f)) * ArmAmplitude;
-	GaitState.ArmSwingRight = FMath::Sin(2.f * UE_PI * Phase) * ArmAmplitude;
+	// The arms follow the legs: their swing is a little behind the stride phase.
+	GaitState.ArmSwingLeft = FMath::Sin(2.f * UE_PI * (Phase + 0.5f - ArmPhaseLag)) * ArmAmplitude;
+	GaitState.ArmSwingRight = FMath::Sin(2.f * UE_PI * (Phase - ArmPhaseLag)) * ArmAmplitude;
 	GaitState.ArmSwingLeft *= 1.f - LeftReachAlpha;
 	GaitState.ArmSwingRight *= 1.f - RightReachAlpha;
 	const float BalanceNow = BalanceComponent ? BalanceComponent->GetBalance() : 1.f;

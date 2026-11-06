@@ -315,7 +315,11 @@ public:
 	float HipRunLoweringCm = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float HipBounceCm = 4.f;
+	float HipBounceCm = 6.f;
+
+	// Factor on the pelvis bounce at a full run.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float HipBounceRunScale = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HipDynamicMinCm = -40.f;
@@ -386,7 +390,11 @@ public:
 	float ArmBackScale = 0.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ArmBlendInterpSpeed = 6.f;
+	float ArmBlendInterpSpeed = 2.8f;
+
+	// Fraction of a stride cycle the arm swing trails the legs by.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float ArmPhaseLag = 0.08f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ElbowBendWalkDegrees = 5.f;
@@ -410,6 +418,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float StepLandingShareRun = 0.2f;
+
+	// The landing point lies at most this many seconds of travel ahead of the hip.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float LandingReachSeconds = 0.2f;
 
 	// While side-stepping the crossing foot is placed this far in front and the leading foot this far behind.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
