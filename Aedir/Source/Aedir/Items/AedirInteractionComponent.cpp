@@ -16,7 +16,9 @@ namespace
 	constexpr float ReachBlendInSeconds = 0.15f;
 	constexpr float ReachBlendOutSeconds = 0.2f;
 	constexpr float PelvisLowerInterpSpeed = 8.f;
-	constexpr float PelvisLowerFactor = 0.95f;
+	constexpr float PelvisLowerFactor = 1.1f;
+	constexpr float ShoulderAboveHipCm = 45.f;
+	constexpr float ArmReachCm = 75.f;
 	constexpr float ReachRangeMultiplier = 1.5f;
 	constexpr float HighlightInterval = 0.1f;
 
@@ -162,12 +164,44 @@ void UAedirInteractionComponent::DropHeld(EAedirHand Hand)
 		return;
 	}
 
+	// A two-handed weapon gripped by both hands is let go by one hand only; the other hand keeps holding it.
+	const EAedirHand OtherHand = GetOtherHand(Hand);
+	if (Item->bTwoHanded && Item->ItemClass != EAedirItemClass::Object && GetHeldItem(OtherHand) == Item)
+	{
+		ResetSlot(GetSlot(Hand));
+		if (Item->HeldHand == Hand)
+		{
+			Item->AttachToCreatureHand(Creature, OtherHand);
+		}
+		UpdateCarriedWeight();
+		return;
+	}
+
 	ReleaseHeldItem(Item);
 
 	const FVector ThrowVelocity = Creature->GetActorForwardVector() * ThrowSpeed + Creature->GetVelocity();
 	Item->Detach(ThrowVelocity);
 
 	UpdateCarriedWeight();
+}
+
+void UAedirInteractionComponent::SwapGripOrder()
+{
+	if (!IsAuthoritative())
+	{
+		ServerSwapGripOrder();
+		return;
+	}
+
+	AAedirCreature* Creature = GetCreature();
+	AAedirItemActor* Item = GetHeldItem(EAedirHand::Right);
+	if (!Creature || !Item || Item != GetHeldItem(EAedirHand::Left) || !Item->bTwoHanded || Item->ItemClass == EAedirItemClass::Object)
+	{
+		return;
+	}
+
+	// The hand that followed the weapon at the pommel moves up towards the blade, the other one takes the pommel.
+	Item->AttachToCreatureHand(Creature, GetOtherHand(Item->HeldHand));
 }
 
 void UAedirInteractionComponent::UseHeld(EAedirHand Hand)
@@ -345,7 +379,10 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 		return;
 	}
 
-	Item->AttachToCreatureHand(Creature, Hand);
+	// A two-handed weapon grabbed by the pressed hand is gripped higher by it: the weapon follows the other hand at the pommel
+	// and the pressed hand sits above it towards the blade.
+	const bool bGripAboveOtherHand = bBothHands && Item->bTwoHanded && Item->ItemClass != EAedirItemClass::Object;
+	Item->AttachToCreatureHand(Creature, bGripAboveOtherHand ? GetOtherHand(Hand) : Hand);
 
 	Slot.State = EAedirHandState::Holding;
 	Slot.Item = Item;
@@ -445,7 +482,15 @@ void UAedirInteractionComponent::UpdatePelvisLower(float DeltaTime)
 				continue;
 			}
 
-			const float Depth = HipZ - Slot.Item->GetBoundsCenterWorld().Z - ReachLowerStartHeight;
+			// The pelvis sinks until the shoulder is within reach of the item: the arm covers the distance between them,
+			// so the lower the item and the closer to the feet, the deeper the squat.
+			const FVector ItemLocation = Slot.Item->GetBoundsCenterWorld();
+			const FVector Offset2D = ItemLocation - MeshComponent->GetComponentLocation();
+			const float Horizontal = static_cast<float>(FVector2D(Offset2D.X, Offset2D.Y).Size());
+			const float ShoulderZ = HipZ + ShoulderAboveHipCm;
+			const float Vertical = ShoulderZ - static_cast<float>(ItemLocation.Z);
+			const float ReachableVertical = FMath::Sqrt(FMath::Max(ArmReachCm * ArmReachCm - Horizontal * Horizontal, 0.f));
+			const float Depth = Vertical - ReachableVertical - ReachLowerStartHeight;
 			Target = FMath::Max(Target, Depth * PelvisLowerFactor);
 		}
 	}
@@ -680,6 +725,11 @@ void UAedirInteractionComponent::ServerStartReachForItem_Implementation(EAedirHa
 void UAedirInteractionComponent::ServerCancelReach_Implementation(EAedirHand Hand)
 {
 	CancelReach(Hand);
+}
+
+void UAedirInteractionComponent::ServerSwapGripOrder_Implementation()
+{
+	SwapGripOrder();
 }
 
 void UAedirInteractionComponent::ServerDropHeld_Implementation(EAedirHand Hand)

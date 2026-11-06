@@ -498,6 +498,13 @@ void AAedirPlayerCharacter::HandleKickPressed()
 		return;
 	}
 
+	// With a two-handed weapon in both hands X swaps the grip: the upper hand and the lower hand change places.
+	if (Interaction && Combat->IsTwoHandGrip() && Interaction->GetHeldItem(EAedirHand::Left) && Interaction->GetHeldItem(EAedirHand::Left) == Interaction->GetHeldItem(EAedirHand::Right))
+	{
+		Interaction->SwapGripOrder();
+		return;
+	}
+
 	Combat->StartKick();
 }
 

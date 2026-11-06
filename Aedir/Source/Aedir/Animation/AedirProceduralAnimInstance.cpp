@@ -12,7 +12,7 @@ namespace
 {
 	constexpr float AedirKneePoleDistance = 100.f;
 	constexpr float AedirLegMinReachShare = 0.38f;
-	constexpr float AedirLegMaxReachShare = 0.995f;
+	constexpr float AedirLegMaxReachShare = 0.96f;
 	constexpr float AedirWristFollowShare = 0.25f;
 	constexpr float AedirClavicleFollowShare = 0.25f;
 	constexpr float AedirReachAlphaThreshold = 0.001f;

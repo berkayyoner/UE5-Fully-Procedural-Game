@@ -278,6 +278,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float StepHeightSpeedBonusCm = 6.f;
 
+	// Extra foot lift at a full run, so the stride arcs high like a real run.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float RunStepHeightBonusCm = 20.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MaxStepHeightCm = 45.f;
 
@@ -336,7 +340,7 @@ public:
 
 	// Pelvis drop in cm that counts as a full reach-down; scales the knee bend and torso lean.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ReachLowerMaxCm = 55.f;
+	float ReachLowerMaxCm = 60.f;
 
 	// Forward torso lean in degrees at a full reach-down.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
@@ -445,17 +449,17 @@ public:
 
 	// Pelvis sink at a 900 cm/s landing for an untrained body.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
-	float LandingDipMaxCm = 38.f;
+	float LandingDipMaxCm = 52.f;
 
 	// Landing spring: share of the landing speed that becomes pelvis sink speed, spring stiffness and damping.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
-	float LandingDipKick = 0.9f;
+	float LandingDipKick = 1.4f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
-	float LandingDipStiffness = 260.f;
+	float LandingDipStiffness = 170.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
-	float LandingDipDamping = 20.f;
+	float LandingDipDamping = 15.f;
 
 	// 0 standing, 1 fully crouched. Lags the instant capsule change so the pelvis and camera lower gradually.
 	float GetCrouchAlpha() const { return CrouchAlpha; }

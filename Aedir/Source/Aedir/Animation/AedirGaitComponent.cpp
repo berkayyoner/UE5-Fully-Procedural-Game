@@ -21,6 +21,7 @@ namespace
 	constexpr float AedirSettleStepDistanceCm = 5.f;
 	constexpr float AedirSettleRestSpeed = 25.f;
 	constexpr float AedirMinGaitCyclesPerSecond = 0.5f;
+	constexpr float AedirSlowStrideMinScale = 0.5f;
 	constexpr float AedirSettleCooldownSeconds = 0.6f;
 	constexpr float AedirRunBlendInterpSpeed = 6.f;
 	constexpr float AedirMovingBounceFrequency = 2.f;
@@ -145,10 +146,16 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float AthleticsScale = 1.f + Athletism / FMath::Max(AthleticsStrideDivisor, KINDA_SMALL_NUMBER);
 	// The stance shortens walking strides only, running keeps its full stride.
 	const float StanceStrideScale = FMath::Lerp(1.f, StanceWalkStrideMultiplier, StanceAlpha * (1.f - RunBlend));
+	// The stride follows the absolute speed: a walk keeps the walking stride, only speeds past it blend to the running stride,
+	// and slower movement (crouching, backing up) takes shorter steps. SpeedAlpha alone is relative to the top run speed.
+	const float WalkSpeedCm = FMath::Max(MovementComponent->WalkSpeed, 1.f);
+	const float RunSpeedCm = WalkSpeedCm * MovementComponent->RunSpeedMultiplier;
+	const float RunMix = FMath::Clamp((Speed2D - WalkSpeedCm) / FMath::Max(RunSpeedCm - WalkSpeedCm, 1.f), 0.f, 1.f);
+	const float SlowStrideScale = FMath::Clamp(Speed2D / WalkSpeedCm, AedirSlowStrideMinScale, 1.f);
 	const float StrideLength = FMath::Max(
-		FMath::Lerp(StrideWalkCm, StrideRunCm, SpeedAlpha) * ActorScale * DirectionalStrideScale * AthleticsScale * StairFactor * StanceStrideScale,
+		FMath::Lerp(StrideWalkCm * SlowStrideScale, StrideRunCm, RunMix) * ActorScale * DirectionalStrideScale * AthleticsScale * StairFactor * StanceStrideScale,
 		AedirMinStrideLength);
-	const float SwingFraction = FMath::Lerp(SwingFractionWalk, SwingFractionRun, SpeedAlpha);
+	const float SwingFraction = FMath::Lerp(SwingFractionWalk, SwingFractionRun, RunMix);
 	const FVector MoveDirection = bMoving ? Velocity.GetSafeNormal2D() : ActorForward2D;
 
 	AdvancePhase(DeltaTime, bMoving, bTurning, Speed2D, StrideLength);
@@ -174,7 +181,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const float StrafeWidthScale = 1.f + (bMoving ? StrafeFootWidenShare * SideAlpha : 0.f);
 		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * StrafeWidthScale * ActorScale) + ActorForward2D * (StanceForwardCm + StrafeStaggerCm);
 		HomeLocation[Foot] = HomeXY;
-		const float LandingShare = FMath::Lerp(StepLandingShareWalk, StepLandingShareRun, SpeedAlpha * SpeedAlpha);
+		const float LandingShare = FMath::Lerp(StepLandingShareWalk, StepLandingShareRun, RunMix);
 		// A slowing body only reaches as far as it still travels, so the last step before a stop never aims at a point it cannot get to.
 		const float LandingOffsetCm = FMath::Min(StrideLength * LandingShare, Speed2D * LandingReachSeconds);
 		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * LandingOffsetCm : FVector::ZeroVector);
@@ -257,7 +264,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float StairTarget = FMath::Lerp(1.f, StairStrideMultiplier, FMath::Clamp(MaxRise / StairHeightForShorteningCm, 0.f, 1.f));
 	StairFactor = FMath::FInterpTo(StairFactor, StairTarget, DeltaTime, StairFactorInterpSpeed);
 
-	const float SpeedStepHeight = BaseStepHeightCm + StepHeightSpeedBonusCm * SpeedAlpha;
+	const float SpeedStepHeight = BaseStepHeightCm + StepHeightSpeedBonusCm * SpeedAlpha + RunStepHeightBonusCm * RunMix;
 	FVector Contact[2];
 	FVector AnkleWorld[2];
 	float Lift[2] = { 0.f, 0.f };
@@ -283,7 +290,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			// Standing still a foot that is away from its home takes one settling step there instead of jumping, one foot at a time.
 			const FVector ToHome = LandingLocation[Foot] - PlantedContact[Foot];
 			// Only a body that has come to rest settles; a gliding stop would drag the foot after it again and again.
-			const bool bAtRest = Speed2D < AedirSettleRestSpeed;
+			// Changing posture (crouching up or down) moves the home points, but no foot should hop for it.
+			const bool bPostureSettled = FMath::Abs(CrouchAlpha - (CreatureOwner->bIsCrouched ? 1.f : 0.f)) < 0.05f;
+			const bool bAtRest = Speed2D < AedirSettleRestSpeed && bPostureSettled;
 			SettleCooldownRemaining = FMath::Max(SettleCooldownRemaining - DeltaTime, 0.f);
 			if (ToHome.Size2D() > AedirSettleStepDistanceCm * ActorScale || FMath::Abs(ToHome.Z) > 15.f)
 			{
@@ -330,6 +339,15 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		}
 		else
 		{
+			// A planted foot follows the real ground under it, on a slope or while the body changes height, so it never hovers or sinks.
+			if (!bRecoverySwinging[Foot])
+			{
+				FVector PlantedGround;
+				FVector PlantedGroundNormal;
+				SampleGround(PlantedContact[Foot], BottomZ, PlantedGround, PlantedGroundNormal);
+				PlantedContact[Foot].Z = PlantedGround.Z;
+				PlantedNormal[Foot] = PlantedGroundNormal;
+			}
 			Contact[Foot] = PlantedContact[Foot];
 			FootPosition = Contact[Foot];
 			TargetNormal[Foot] = PlantedNormal[Foot];
@@ -413,8 +431,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	else if (AirFallSpeed > 0.f)
 	{
 		// The landing speed becomes a downward velocity of the pelvis, which a spring-damper then turns into a visible sink and recovery.
-		const float AthleticsAbsorb = 1.f - 0.5f * FMath::Clamp(Athletism / 100.f, 0.f, 1.f);
-		LandingDipVelocity += FMath::Min(AirFallSpeed, 1200.f) * LandingDipKick * AthleticsAbsorb * ActorScale;
+		const float AthleticsAbsorb = 1.f - 0.6f * FMath::Clamp(Athletism / 100.f, 0.f, 1.f);
+		LandingDipVelocity += FMath::Min(AirFallSpeed, 1500.f) * LandingDipKick * AthleticsAbsorb * ActorScale;
 		AirFallSpeed = 0.f;
 	}
 	const float DipAcceleration = -LandingDipStiffness * LandingDipCm - LandingDipDamping * LandingDipVelocity;

@@ -86,11 +86,11 @@ public:
 
 	// Maximum pelvis lowering in cm.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float KneeBendMaxLower = 55.f;
+	float KneeBendMaxLower = 60.f;
 
 	// Depth below the hip bone where lowering starts; items above this depth are reached with the arm alone.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float ReachLowerStartHeight = 25.f;
+	float ReachLowerStartHeight = 5.f;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void StartReach(EAedirHand Hand);
@@ -103,6 +103,10 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void DropHeld(EAedirHand Hand);
+
+	// Swaps which hand grips a two-handed weapon higher: the upper hand goes to the pommel and the lower one moves up.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
+	void SwapGripOrder();
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void UseHeld(EAedirHand Hand);
@@ -190,6 +194,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerDropHeld(EAedirHand Hand);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSwapGripOrder();
 
 	UFUNCTION(Server, Reliable)
 	void ServerUseHeld(EAedirHand Hand);

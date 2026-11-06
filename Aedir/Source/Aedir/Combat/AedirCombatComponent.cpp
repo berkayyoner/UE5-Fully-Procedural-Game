@@ -73,6 +73,7 @@ namespace
 	constexpr float AedirGuardForwardCm = 32.f;
 	constexpr float AedirGuardInwardCm = 3.5f;
 	constexpr float AedirGuardFaceHeightCm = 62.f;
+	constexpr float AedirArmSideHoldStart = 0.35f;
 	constexpr float AedirArmSideHoldGain = 3.f;
 	constexpr float AedirArmThrowReachShare = 1.f;
 	constexpr float AedirGuardHeightPerDegree = 0.45f;
@@ -884,7 +885,9 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 	}
 
 	// An arm that is held out to the side stays there; only a centred arm falls back to the guard.
-	float PunchShare = FMath::Clamp(Arm.PunchBlend + OutwardAlpha * AedirArmSideHoldGain, 0.f, 1.f);
+	// Only a clearly outward arm (past about a third of the arc) is held there by the side-hold.
+	const float SideHold = FMath::Clamp((OutwardAlpha - AedirArmSideHoldStart) * AedirArmSideHoldGain, 0.f, 1.f);
+	float PunchShare = FMath::Clamp(Arm.PunchBlend + SideHold, 0.f, 1.f);
 	const EAedirHand OtherHand = Hand == EAedirHand::Right ? EAedirHand::Left : EAedirHand::Right;
 	if (IsGuardActive(OtherHand))
 	{
@@ -1641,8 +1644,8 @@ bool UAedirCombatComponent::EvaluateTwoHandGrip() const
 		return false;
 	}
 
-	const AAedirItemActor* Weapon = LeftItem ? LeftItem : RightItem;
-	return Weapon->bTwoHanded || (bLeftGuard && bRightGuard);
+	// Both hands on the same item is a two-hand grip; with one hand on it, the empty hand only joins while both guards are held.
+	return (LeftItem && RightItem) || (bLeftGuard && bRightGuard);
 }
 
 void UAedirCombatComponent::UpdateTwoHandGrip()
