@@ -315,7 +315,7 @@ public:
 	float HipRunLoweringCm = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float HipBounceCm = 1.5f;
+	float HipBounceCm = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HipDynamicMinCm = -25.f;
@@ -424,7 +424,7 @@ public:
 	float GetCrouchAlpha() const { return CrouchAlpha; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float PelvisYawSwingDegrees = 4.f;
+	float PelvisYawSwingDegrees = 7.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HeadYawScale = 0.45f;
@@ -523,7 +523,7 @@ public:
 
 	// Lateral pelvis shift in cm towards the stance foot while walking or running, at full speed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
-	float WalkWeightShiftLateralCm = 2.5f;
+	float WalkWeightShiftLateralCm = 3.5f;
 
 	// Pelvis roll in degrees towards the stance foot while walking or running, at full speed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")

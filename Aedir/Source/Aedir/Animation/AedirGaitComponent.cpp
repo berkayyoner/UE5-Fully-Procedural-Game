@@ -167,7 +167,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const float StanceForwardCm = StanceLeadForwardCm * (bLeadFoot ? 1.f : -0.5f);
 		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * ActorScale) + ActorForward2D * StanceForwardCm;
 		HomeLocation[Foot] = HomeXY;
-		const FVector LandingXY = HomeXY +(bMoving ? MoveDirection * (StrideLength * 0.3f) : FVector::ZeroVector);
+		const FVector LandingXY = HomeXY +(bMoving ? MoveDirection * (StrideLength * 0.15f) : FVector::ZeroVector);
 
 		SampleGround(LandingXY, BottomZ, LandingLocation[Foot], LandingNormal[Foot]);
 
@@ -367,7 +367,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float DynamicHipTarget = FMath::Clamp(ContactAverageZ - BottomZ, HipDynamicMinCm, HipDynamicMaxCm);
 	DynamicHipOffset = FMath::FInterpTo(DynamicHipOffset, DynamicHipTarget, DeltaTime, HipOffsetInterpSpeed);
 	const float RunLowering = -HipRunLoweringCm * RunBlend;
-	const float Bounce = HipBounceCm * FMath::Sin(2.f * UE_PI * Phase * AedirMovingBounceFrequency) * SpeedAlpha;
+	// A walk is already a clear pelvis motion, so the gait terms start at 70% of their size and not at zero.
+	const float GaitIntensity = bMoving ? FMath::Lerp(0.7f, 1.f, SpeedAlpha) : 0.f;
+	const float Bounce = HipBounceCm * FMath::Sin(2.f * UE_PI * Phase * AedirMovingBounceFrequency) * GaitIntensity;
 	GaitState.HipOffsetZ = DynamicHipOffset + RunLowering + Bounce;
 
 	// The interaction component smooths its outputs itself, so the reach values are applied directly each frame.
@@ -417,7 +419,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	ResolveArmReach(EAedirHand::Right, Combat, Interaction, ActorTransform, ProtectiveRightTarget, ProtectiveAlpha, RightReachTarget, RightReachAlpha);
 
 	const FRotator BalanceLean = BalanceComponent ? BalanceComponent->GetPelvisLean() : FRotator::ZeroRotator;
-	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * SpeedAlpha;
+	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * GaitIntensity;
 	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch, PelvisYaw, BalanceLean.Roll);
 
 	const float LookYaw = MovementComponent->GetYawDeltaToControl();
@@ -519,8 +521,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	// While walking the stance foot takes the weight and the pelvis rolls towards it. Phase is positive while the right foot is in stance.
 	const float StanceSide = FMath::Sin(2.f * UE_PI * Phase);
-	const float GaitLateral = StanceSide * WalkWeightShiftLateralCm * SpeedAlpha * Alive;
-	const float GaitRoll = -StanceSide * WalkWeightShiftRollDegrees * SpeedAlpha * Alive;
+	const float GaitLateral = StanceSide * WalkWeightShiftLateralCm * GaitIntensity * Alive;
+	const float GaitRoll = -StanceSide * WalkWeightShiftRollDegrees * GaitIntensity * Alive;
 
 	GaitState.HipLateralOffset = IdleLateral + GaitLateral;
 	GaitState.PelvisRollDegrees = IdleRoll + GaitRoll;

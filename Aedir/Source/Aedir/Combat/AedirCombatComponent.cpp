@@ -63,6 +63,8 @@ namespace
 	constexpr float AedirArmAimYawLimit = 110.f;
 	constexpr float AedirArmOutwardYawLimit = 80.f;
 	constexpr float AedirArmAcrossYawLimit = 0.f;
+	constexpr float AedirArmConvergeYawDegrees = 9.f;
+	constexpr float AedirArmHeadHeightPitchDegrees = 6.f;
 	constexpr float AedirArmAimPitchMin = -70.f;
 	constexpr float AedirArmAimPitchMax = 85.f;
 	constexpr float AedirArmGuardRestYaw = 12.f;
@@ -836,10 +838,13 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 		return GetGripPointWorld();
 	}
 
-	const double Yaw = Creature->GetActorRotation().Yaw + Arm.AimOffsetDeg.X;
+	// Centred fists converge slightly inwards and up to head height, so they meet the target instead of running parallel past it.
+	const float OutwardSignForAim = Hand == EAedirHand::Right ? 1.f : -1.f;
+	const float CentreShare = 1.f - FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSignForAim / AedirArmOutwardYawLimit, 0.f, 1.f);
+	const double Yaw = Creature->GetActorRotation().Yaw + Arm.AimOffsetDeg.X - OutwardSignForAim * AedirArmConvergeYawDegrees * CentreShare;
 	// Height is relative to where the camera looks, so a punch aimed at the screen centre hits what the crosshair shows.
 	const double CameraPitch = FRotator::NormalizeAxis(Creature->GetControlRotation().Pitch);
-	const FVector AimDirection = FRotator(CameraPitch + Arm.AimOffsetDeg.Y, Yaw, 0.0).Vector();
+	const FVector AimDirection = FRotator(CameraPitch + Arm.AimOffsetDeg.Y + AedirArmHeadHeightPitchDegrees * CentreShare, Yaw, 0.0).Vector();
 	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
 	const float Extension = FMath::Clamp(Arm.Extension, 0.f, 1.f);
 	// Pulled outwards the elbow breaks and the hand travels an arc beside the body; centred the arm reaches straight ahead.
