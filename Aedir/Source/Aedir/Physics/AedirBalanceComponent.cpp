@@ -26,6 +26,7 @@ namespace
 	constexpr float AedirWalkableNormalZ = 0.5f;
 	constexpr float AedirWallImpactMaxLoss = 0.8f;
 	constexpr float AedirObjectImpactBalanceMultiplier = 10.f;
+	constexpr float ObjectImpactMinHeightCm = 50.f;
 	constexpr float AedirObjectImpactDamagePerScore = 0.002f;
 	constexpr float AedirWallImpactDamagePerSpeed = 0.01f;
 
@@ -962,6 +963,14 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 
 	if (OtherComponent && OtherComponent->IsSimulatingPhysics())
 	{
+		// Shins and feet are walked into things all the time; objects only hurt at the knee and above.
+		const float FeetZ = static_cast<float>(Owner->GetActorLocation().Z) - (BodyCapsule ? BodyCapsule->GetScaledCapsuleHalfHeight() : 0.f);
+		const float KneeHeight = ObjectImpactMinHeightCm * static_cast<float>(Owner->GetActorScale3D().Z);
+		if (Hit.ImpactPoint.Z - FeetZ < KneeHeight)
+		{
+			return;
+		}
+
 		const FVector RelativeVelocity = OtherComponent->GetComponentVelocity() - OwnerVelocity;
 		const float ImpactScore = OtherComponent->GetMass() * static_cast<float>(RelativeVelocity.Size());
 

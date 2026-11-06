@@ -249,7 +249,7 @@ public:
 	float StrideWalkCm = 105.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float StrideRunCm = 175.f;
+	float StrideRunCm = 250.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float SideStrideScale = 0.6f;

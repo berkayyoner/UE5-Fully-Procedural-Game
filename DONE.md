@@ -43,3 +43,4 @@ Walking pelvis rotation moved from yaw to roll (X axis): yaw swing 0, roll 6 deg
 Pelvis gait roll is cancelled fully at the lowest spine bone so the upper body stays still (editor build ok, 60/60 tests, not played).
 Lateral hip shift is about 40 percent of full size in a walk and full only when running (builds, not played).
 Slower jump wind-up and landing spring, settle steps only at rest with a cooldown, slower walk and acceleration, pelvis sinks to the lower foot on steps, bodies and ragdolls no longer hurt creatures that walk into them (editor build ok, 60/60 tests, not played).
+Run speed slightly lower, wider run stride (250 cm), object impacts only hurt at knee height and above (game target compiles; editor build and tests pending, not played).

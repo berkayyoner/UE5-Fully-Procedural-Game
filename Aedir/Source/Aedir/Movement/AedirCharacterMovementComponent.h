@@ -20,7 +20,7 @@ public:
 	float WalkSpeed = 120.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float RunSpeedMultiplier = 2.8f;
+	float RunSpeedMultiplier = 2.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float CrouchSpeedMultiplier = 0.5f;
