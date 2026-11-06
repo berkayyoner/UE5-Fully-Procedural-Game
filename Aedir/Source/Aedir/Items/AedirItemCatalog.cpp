@@ -66,6 +66,8 @@ namespace
 		Definitions.Add(CatalogMakeWeapon(TEXT("Warhammer"), TEXT("Warhammer"), 6.2f, 90.f, EAedirDamageType::Blunt, 13.f, false, CatalogWood, FVector(0.90, 0.03, 0.03)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("Club"), TEXT("Club"), 3.2f, 70.f, EAedirDamageType::Blunt, 6.f, false, CatalogWood, FVector(0.62, 0.07, 0.07)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("Spear"), TEXT("Spear"), 4.4f, 180.f, EAedirDamageType::Pierce, 9.f, true, CatalogWood, FVector(1.80, 0.025, 0.025)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Quarterstaff"), TEXT("Quarterstaff"), 2.8f, 170.f, EAedirDamageType::Blunt, 8.f, true, CatalogWood, FVector(1.70, 0.035, 0.035)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Halberd"), TEXT("Halberd"), 5.6f, 175.f, EAedirDamageType::Slash, 15.f, true, CatalogWood, FVector(1.75, 0.03, 0.03)));
 
 		// Armor. Pieces are centred on their attach bone.
 		Definitions.Add(CatalogMakeArmor(TEXT("LeatherCap"), TEXT("Leather Cap"), 0.4f, EAedirBodyZone::Head, 0.25f, TEXT("head"), CatalogLeather, FVector(0.24, 0.24, 0.22)));
@@ -102,6 +104,8 @@ namespace
 		SetGrip(TEXT("Warhammer"), -32.f);
 		SetGrip(TEXT("Club"), -20.f);
 		SetGrip(TEXT("Spear"), -25.f, 40.f);
+		SetGrip(TEXT("Quarterstaff"), -30.f, 50.f);
+		SetGrip(TEXT("Halberd"), -35.f, 45.f);
 
 		return Definitions;
 	}

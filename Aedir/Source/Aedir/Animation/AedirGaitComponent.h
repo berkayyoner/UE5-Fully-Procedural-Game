@@ -78,6 +78,13 @@ struct AEDIR_API FAedirGaitState
 	FVector GripBladeInPrimaryHand = FVector::ForwardVector;
 	float GripAlpha = 0.f;
 
+	// How far a hanging weapon is kept on the front side of the forearm, for each hand.
+	float LeftWristFrontShare = 0.f;
+	float RightWristFrontShare = 0.f;
+
+	// How far the second hand has turned over to lie on top of the weapon, for half-swording.
+	float GripOverhand = 0.f;
+
 	// A big object in both hands: both palms lie on its sides.
 	FVector ObjectCenterWorld = FVector::ZeroVector;
 	float ObjectRadiusCm = 0.f;

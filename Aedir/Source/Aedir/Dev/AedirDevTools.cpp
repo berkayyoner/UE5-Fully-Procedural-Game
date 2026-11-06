@@ -313,7 +313,7 @@ void UAedirDevTools::SpawnItem(AAedirPlayerCharacter* Player, const FString& Arg
 
 	// Items spawned one after the other are spread sideways, so they do not land inside each other.
 	static int32 SpawnCounter = 0;
-	const float SideOffset = static_cast<float>((SpawnCounter++ % 5) - 2) * DevToolsSpawnSpreadCm;
+	const float SideOffset = static_cast<float>((SpawnCounter++ % 9) - 4) * DevToolsSpawnSpreadCm;
 	const FVector Location = Player->GetActorLocation() + Player->GetActorForwardVector() * DevToolsSpawnForwardCm
 		+ Player->GetActorRightVector() * SideOffset + FVector(0.f, 0.f, DevToolsSpawnUpCm);
 	AAedirCatalogItem* Item = AAedirCatalogItem::SpawnCatalogItem(World, Id, FTransform(DevToolsFlatYaw(Player), Location));

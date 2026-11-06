@@ -199,6 +199,12 @@ public:
 	void DropHand(int32 RightHand);
 
 	UFUNCTION(Exec)
+	void HandWatch(int32 RightHand, float Seconds);
+
+	UFUNCTION(Exec)
+	void MouseFlick(int32 RightHand, float DeltaX, float DeltaY, float Seconds);
+
+	UFUNCTION(Exec)
 	void PassHand();
 
 	UFUNCTION(Exec)

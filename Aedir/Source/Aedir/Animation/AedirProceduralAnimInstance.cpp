@@ -177,8 +177,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh);
 	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh);
 
-	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha);
-	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha);
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha, GaitData.LeftWristFrontShare);
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha, GaitData.RightWristFrontShare);
 
 	if (GaitData.ObjectAlpha > AedirReachAlphaThreshold)
 	{
@@ -432,7 +432,7 @@ void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, cons
 	}
 }
 
-void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha) const
+void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha, float FrontShare) const
 {
 	if (Alpha <= AedirReachAlphaThreshold)
 	{
@@ -459,12 +459,23 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 	const FVector Forearm = (HandTransform.GetLocation() - CSPose.GetComponentSpaceTransform(Radius).GetLocation()).GetSafeNormal();
 	FVector Blade = MeshToWorld.InverseTransformVectorNoScale(DirectionWorld).GetSafeNormal();
 
+	// A hanging weapon stays on the front side of the forearm while the arm swings past it. Going through the line of the forearm would turn the whole hand over.
+	const double MinFront = FMath::Sin(FMath::DegreesToRadians(AedirWristMinBladeDegrees));
+	if (FrontShare > 0.f && FVector::DotProduct(Blade, Forearm) > 0.0)
+	{
+		const FVector Front = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::ForwardVector), Forearm).GetSafeNormal();
+		const double Side = FVector::DotProduct(Blade, Front);
+		Blade = (Blade + Front * (FMath::Lerp(Side, FMath::Max(Side, MinFront), static_cast<double>(FrontShare)) - Side)).GetSafeNormal();
+	}
+
 	// The handle crosses the palm: the wrist bends only so far, and a blade pointing along the forearm stops short of its line.
 	const double Along = FVector::DotProduct(Blade, Forearm);
 	const double LimitCos = FMath::Cos(FMath::DegreesToRadians(AedirWristMinBladeDegrees));
 	if (FMath::Abs(Along) > LimitCos)
 	{
-		FVector Across = FVector::VectorPlaneProject(Blade, Forearm);
+		// Close to that line the front of the body decides the side, or the hand would turn over as the blade crosses it.
+		const double Depth = (FMath::Abs(Along) - LimitCos) / (1.0 - LimitCos);
+		FVector Across = FVector::VectorPlaneProject(Blade, Forearm) + FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::ForwardVector), Forearm) * Depth;
 		if (Across.IsNearlyZero(0.01))
 		{
 			Across = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector), Forearm);
@@ -626,7 +637,15 @@ void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCS
 		{
 			Fingers = HandRotation.RotateVector(RefHandInverse.RotateVector(RefToMiddle));
 		}
-		HandRotation = FRotationMatrix::MakeFromXY(BladeMesh, Fingers).ToQuat() * ClosedHandInverse;
+		// In the half-sword the hand lies on top of the blade, so it turns over around its fingers, through thumb up, and its thumb points back along the weapon.
+		FVector Knuckles = BladeMesh;
+		if (GaitData.GripOverhand > 0.f && !Fingers.IsNearlyZero(1.f))
+		{
+			const FVector FingerAxis = Fingers.GetSafeNormal();
+			const float ThumbUpSign = FVector::DotProduct(FVector::CrossProduct(FingerAxis, BladeMesh), -DownMesh) >= 0.0 ? 1.f : -1.f;
+			Knuckles = FQuat(FingerAxis, ThumbUpSign * UE_PI * GaitData.GripOverhand).RotateVector(BladeMesh);
+		}
+		HandRotation = FRotationMatrix::MakeFromXY(Knuckles, Fingers).ToQuat() * ClosedHandInverse;
 		const FVector Wrist = HandleMesh - HandRotation.RotateVector(PalmInHand);
 		ApplyArmReach(CSPose, Bones, HumerusName, RadiusName, HandName, MeshToWorld.TransformPosition(Wrist), GaitData.GripAlpha, OutwardMesh, DownMesh, ForwardMesh);
 	}

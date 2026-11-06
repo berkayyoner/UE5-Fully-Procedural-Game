@@ -312,6 +312,12 @@ public:
 	// True while the right mouse button holds a weapon with the second hand up on its blade.
 	bool IsHalfSwording() const;
 
+	// A weapon that only hangs from the hand, with no stance and no move to or from the belt going on.
+	bool IsHangingWeapon(EAedirHand Hand) const;
+
+	// How far the second hand has gone over to the half-sword hold, from 0 to 1.
+	float GetHalfSwordShare() const;
+
 	// A big object in both hands: where its middle is, how big it is, and how far the hands have come to it.
 	bool GetObjectCarry(FVector& OutCenterWorld, float& OutRadiusCm, float& OutAlpha) const;
 

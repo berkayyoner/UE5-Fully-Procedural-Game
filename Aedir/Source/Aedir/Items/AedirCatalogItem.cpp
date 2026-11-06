@@ -207,6 +207,17 @@ void AAedirCatalogItem::BuildDetails(FName Id)
 		AddDetail(EAedirCatalogShape::Cube, FVector(84.f, 0.f, 0.f), FVector(4.f, 1.8f, 1.8f), FRotator::ZeroRotator, CatalogItemSteel);
 		AddDetail(EAedirCatalogShape::Cube, FVector(93.f, 0.f, 0.f), FVector(6.f, 1.6f, 1.6f), FRotator::ZeroRotator, CatalogItemSteel);
 	}
+	else if (IdText == TEXT("Quarterstaff"))
+	{
+		AddDetail(EAedirCatalogShape::Cube, FVector(81.f, 0.f, 0.f), FVector(8.f, 4.4f, 4.4f), FRotator::ZeroRotator, CatalogItemSteel);
+		AddDetail(EAedirCatalogShape::Cube, FVector(-81.f, 0.f, 0.f), FVector(8.f, 4.4f, 4.4f), FRotator::ZeroRotator, CatalogItemSteel);
+	}
+	else if (IdText == TEXT("Halberd"))
+	{
+		AddDetail(EAedirCatalogShape::Cube, FVector(70.f, 11.f, 0.f), FVector(22.f, 20.f, 1.4f), FRotator::ZeroRotator, CatalogItemSteel);
+		AddDetail(EAedirCatalogShape::Cube, FVector(70.f, -8.f, 0.f), FVector(5.f, 14.f, 1.6f), FRotator::ZeroRotator, CatalogItemSteel);
+		AddDetail(EAedirCatalogShape::Cube, FVector(91.f, 0.f, 0.f), FVector(20.f, 3.f, 1.4f), FRotator::ZeroRotator, CatalogItemSteel);
+	}
 	else if (IdText == TEXT("IronHelm"))
 	{
 		AddDetail(EAedirCatalogShape::Cube, FVector(13.f, 0.f, -2.f), FVector(2.f, 1.2f, 9.f), FRotator::ZeroRotator, CatalogItemSteel);

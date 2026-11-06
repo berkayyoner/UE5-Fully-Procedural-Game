@@ -298,6 +298,7 @@ private:
 	enum class EAedirHolsterMotion : uint8 { None, Store, Draw };
 	EAedirHolsterMotion HolsterMotion[2] = { EAedirHolsterMotion::None, EAedirHolsterMotion::None };
 	float HolsterElapsed[2] = { 0.f, 0.f };
+	float HolsterDrawSettle[2] = { 0.f, 0.f };
 	FVector HolsterStartLocal[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	int32 HolsterWaistIndex[2] = { INDEX_NONE, INDEX_NONE };
 

@@ -14,7 +14,9 @@
 
 namespace
 {
-	constexpr float AedirSwingTwistInterpSpeed = 9.f;
+	constexpr float AedirSwingTwistInterpSpeed = 14.f;
+	// The hand eases into and out of holding an item, it does not jump when the item comes or goes.
+	constexpr float AedirWeaponAimFadeSeconds = 0.2f;
 	constexpr float AedirRestPhaseMin = 0.4f;
 	constexpr float AedirRestPhaseMax = 0.5f;
 	constexpr float AedirRestCatchUpCyclesPerSecond = 2.f;
@@ -565,22 +567,24 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.ArmSwingRight *= 1.f - RightReachAlpha;
 	const float BalanceNow = BalanceComponent ? BalanceComponent->GetBalance() : 1.f;
 	GaitState.ArmBalanceSpread = FMath::FInterpTo(GaitState.ArmBalanceSpread, FMath::Clamp((0.85f - BalanceNow) / 0.5f, 0.f, 1.f), DeltaTime, 10.f);
-	const auto ReadWeaponAim = [Combat](EAedirHand Hand, FVector& OutDirection, float& OutAlpha)
+	const auto ReadWeaponAim = [Combat, DeltaTime](EAedirHand Hand, FVector& OutDirection, float& OutAlpha)
 	{
 		FVector Direction = FVector::ForwardVector;
 		float Alpha = 0.f;
 		if (Combat && Combat->GetWeaponAim(Hand, Direction, Alpha))
 		{
 			OutDirection = Direction;
-			OutAlpha = Alpha;
+			OutAlpha = FMath::FInterpConstantTo(OutAlpha, Alpha, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 		}
 		else
 		{
-			OutAlpha = 0.f;
+			OutAlpha = FMath::FInterpConstantTo(OutAlpha, 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 		}
 	};
 	ReadWeaponAim(EAedirHand::Left, GaitState.LeftWeaponDirWorld, GaitState.LeftWeaponAimAlpha);
 	ReadWeaponAim(EAedirHand::Right, GaitState.RightWeaponDirWorld, GaitState.RightWeaponAimAlpha);
+	GaitState.LeftWristFrontShare = FMath::FInterpConstantTo(GaitState.LeftWristFrontShare, Combat && Combat->IsHangingWeapon(EAedirHand::Left) ? 1.f : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
+	GaitState.RightWristFrontShare = FMath::FInterpConstantTo(GaitState.RightWristFrontShare, Combat && Combat->IsHangingWeapon(EAedirHand::Right) ? 1.f : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.KickLeftLeg = bKickLeftLeg;
 	GaitState.KickSoleAlpha = 0.f;
 	GaitState.ObjectAlpha = 0.f;
@@ -594,6 +598,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	if (Combat && Combat->GetSecondaryGrip(GripSecondary, GaitState.GripPointInPrimaryHand, GaitState.GripBladeInPrimaryHand, GaitState.GripAlpha))
 	{
 		GaitState.GripSecondaryHand = static_cast<int32>(GripSecondary);
+		GaitState.GripOverhand = Combat->GetHalfSwordShare();
 	}
 	GaitState.LeftArmReachAlpha = LeftReachAlpha;
 	GaitState.RightArmReachAlpha = RightReachAlpha;

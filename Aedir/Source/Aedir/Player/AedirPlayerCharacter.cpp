@@ -188,7 +188,7 @@ void AAedirPlayerCharacter::BeginPlay()
 		FTimerHandle TestItemTimer;
 		GetWorldTimerManager().SetTimer(TestItemTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
 		{
-			for (const TCHAR* ItemId : { TEXT("Sword"), TEXT("Longsword"), TEXT("Mace"), TEXT("Boulder") })
+			for (const TCHAR* ItemId : { TEXT("Sword"), TEXT("Longsword"), TEXT("Mace"), TEXT("Boulder"), TEXT("Spear"), TEXT("Club"), TEXT("Quarterstaff"), TEXT("Halberd") })
 			{
 				UAedirDevTools::Execute(this, TEXT("SpawnItem"), ItemId);
 			}
@@ -994,6 +994,67 @@ void AAedirPlayerCharacter::PlaceBlock(float Forward, float Right, float Up, flo
 		Block->SetActorScale3D(FVector(SizeCm / 100.f));
 		Block->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("BlockAll"));
 	}
+}
+
+void AAedirPlayerCharacter::HandWatch(int32 RightHand, float Seconds)
+{
+	// How much the hand turns against the body over a stretch of time, and how fast at the worst moment.
+	const FName HandBone = RightHand != 0 ? TEXT("hand_r") : TEXT("hand_l");
+	struct FWatch
+	{
+		FTimerHandle Timer;
+		FQuat Last = FQuat::Identity;
+		bool bStarted = false;
+		float Elapsed = 0.f;
+		float PeakAt = 0.f;
+		float Total = 0.f;
+		float Peak = 0.f;
+	};
+	TSharedRef<FWatch> Watch = MakeShared<FWatch>();
+	const float Step = 1.f / 60.f;
+	GetWorldTimerManager().SetTimer(Watch->Timer, FTimerDelegate::CreateWeakLambda(this, [this, Watch, HandBone, Seconds, Step]()
+	{
+		const FQuat Now = GetActorQuat().Inverse() * GetMesh()->GetBoneQuaternion(HandBone);
+		Watch->Elapsed += Step;
+		if (Watch->bStarted)
+		{
+			const float Degrees = FMath::RadiansToDegrees(static_cast<float>(Watch->Last.AngularDistance(Now)));
+			Watch->Total += Degrees;
+			if (Degrees > Watch->Peak)
+			{
+				Watch->Peak = Degrees;
+				Watch->PeakAt = Watch->Elapsed;
+			}
+		}
+		Watch->Last = Now;
+		Watch->bStarted = true;
+		if (Watch->Elapsed >= Seconds)
+		{
+			UE_LOG(LogTemp, Display, TEXT("HandWatch total %.0f deg, worst step %.1f deg at %.2f s, spine twist %.1f"), Watch->Total, Watch->Peak, Watch->PeakAt, Combat ? Combat->GetSwingTwistDegrees() : 0.f);
+			GetWorldTimerManager().ClearTimer(Watch->Timer);
+		}
+	}), Step, true);
+}
+
+void AAedirPlayerCharacter::MouseFlick(int32 RightHand, float DeltaX, float DeltaY, float Seconds)
+{
+	// Feeds an arm the same input a moving mouse gives it, for a look at throws and swings without one.
+	const EAedirHand Hand = RightHand != 0 ? EAedirHand::Right : EAedirHand::Left;
+	const float Step = 1.f / 60.f;
+	TSharedRef<FTimerHandle> Timer = MakeShared<FTimerHandle>();
+	TSharedRef<float> Left = MakeShared<float>(Seconds);
+	GetWorldTimerManager().SetTimer(*Timer, FTimerDelegate::CreateWeakLambda(this, [this, Timer, Left, Hand, DeltaX, DeltaY, Step]()
+	{
+		if (Combat)
+		{
+			Combat->AddSwingInput(Hand, FVector2D(DeltaX, DeltaY), Step);
+		}
+		*Left -= Step;
+		if (*Left <= 0.f)
+		{
+			GetWorldTimerManager().ClearTimer(*Timer);
+		}
+	}), Step, true);
 }
 
 void AAedirPlayerCharacter::PassHand()
