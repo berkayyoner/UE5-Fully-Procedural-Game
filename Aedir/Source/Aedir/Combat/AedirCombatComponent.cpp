@@ -65,13 +65,14 @@ namespace
 	constexpr float AedirArmAcrossYawLimit = 0.f;
 	constexpr float AedirArmConvergeYawDegrees = 4.f;
 	constexpr float AedirArmMouseSpeedSmoothing = 10.f;
-	constexpr float AedirArmGuardSpeedLow = 350.f;
-	constexpr float AedirArmGuardSpeedHigh = 1400.f;
-	constexpr float AedirArmPunchRiseSpeed = 14.f;
+	constexpr float AedirArmGuardSpeedLow = 250.f;
+	constexpr float AedirArmGuardSpeedHigh = 800.f;
+	constexpr float AedirArmPunchRiseSpeed = 30.f;
 	constexpr float AedirArmPunchFallSpeed = 3.5f;
-	constexpr float AedirGuardForwardCm = 38.f;
-	constexpr float AedirGuardInwardCm = 8.f;
-	constexpr float AedirGuardRaiseCm = 14.f;
+	// Guard: both fists meet in front of the face, at nose height measured from the capsule centre.
+	constexpr float AedirGuardForwardCm = 32.f;
+	constexpr float AedirGuardInwardCm = 3.5f;
+	constexpr float AedirGuardFaceHeightCm = 62.f;
 	constexpr float AedirArmSideHoldGain = 3.f;
 	constexpr float AedirArmThrowReachShare = 1.f;
 	constexpr float AedirGuardHeightPerDegree = 0.45f;
@@ -300,7 +301,8 @@ void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaT
 
 	// A quick mouse movement throws the arm out along the aim; a slow one pulls it back to the guard in front of the face.
 	const float RawSpeed = static_cast<float>(MouseDeltaThisFrame.Size()) / DeltaTime;
-	Arm.MouseSpeed = FMath::FInterpTo(Arm.MouseSpeed, RawSpeed, DeltaTime, AedirArmMouseSpeedSmoothing);
+	// Attack is instant so a flick counts at once; the speed then decays smoothly.
+	Arm.MouseSpeed = FMath::Max(RawSpeed, FMath::FInterpTo(Arm.MouseSpeed, RawSpeed, DeltaTime, AedirArmMouseSpeedSmoothing));
 	const float PunchTarget = FMath::Clamp((Arm.MouseSpeed - AedirArmGuardSpeedLow) / (AedirArmGuardSpeedHigh - AedirArmGuardSpeedLow), 0.f, 1.f);
 	Arm.PunchBlend = FMath::FInterpTo(Arm.PunchBlend, PunchTarget, DeltaTime, PunchTarget > Arm.PunchBlend ? AedirArmPunchRiseSpeed : AedirArmPunchFallSpeed);
 
@@ -898,8 +900,8 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 	// The guard fist sits in front of the face, a little inside its own shoulder.
 	const float GuardSide = Hand == EAedirHand::Right ? 1.f : -1.f;
 	// The mouse still moves the guard up and down around the face.
-	const float GuardHeightCm = AedirGuardRaiseCm + (Arm.AimOffsetDeg.Y - AedirArmGuardRestPitch) * AedirGuardHeightPerDegree;
-	const FVector GuardLocal(AedirGuardForwardCm * Scale, GuardSide * AedirGuardInwardCm * Scale, (AedirShoulderHeight + GuardHeightCm) * Scale);
+	const float GuardHeightCm = AedirGuardFaceHeightCm + (Arm.AimOffsetDeg.Y - AedirArmGuardRestPitch) * AedirGuardHeightPerDegree;
+	const FVector GuardLocal(AedirGuardForwardCm * Scale, GuardSide * AedirGuardInwardCm * Scale, GuardHeightCm * Scale);
 	const FVector GuardTarget = Creature->GetActorTransform().TransformPositionNoScale(GuardLocal);
 	return FMath::Lerp(GuardTarget, AimTarget, PunchShare);
 }

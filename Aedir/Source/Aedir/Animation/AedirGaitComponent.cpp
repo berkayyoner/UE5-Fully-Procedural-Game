@@ -19,7 +19,8 @@ namespace
 	constexpr float AedirMinStrideLength = 10.f;
 	constexpr float AedirStepHeightClearance = 4.f;
 	constexpr float AedirSettleStepDistanceCm = 5.f;
-	constexpr float AedirSettleRestSpeed = 8.f;
+	constexpr float AedirSettleRestSpeed = 25.f;
+	constexpr float AedirMinGaitCyclesPerSecond = 0.5f;
 	constexpr float AedirSettleCooldownSeconds = 0.6f;
 	constexpr float AedirRunBlendInterpSpeed = 6.f;
 	constexpr float AedirMovingBounceFrequency = 2.f;
@@ -655,7 +656,8 @@ void UAedirGaitComponent::AdvancePhase(float DeltaTime, bool bMoving, bool bTurn
 {
 	if (bMoving)
 	{
-		Phase += Speed2D * DeltaTime / StrideLength;
+		// Even a slow shuffle keeps the cycle turning, or a swing foot would hang in the air for seconds.
+		Phase += FMath::Max(Speed2D / StrideLength, AedirMinGaitCyclesPerSecond) * DeltaTime;
 	}
 	else if (bTurning)
 	{

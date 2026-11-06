@@ -261,7 +261,7 @@ public:
 	float AthleticsStrideDivisor = 400.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MovingSpeedThreshold = 5.f;
+	float MovingSpeedThreshold = 25.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float TurnStepCyclesPerSecond = 1.4f;
@@ -336,11 +336,11 @@ public:
 
 	// Pelvis drop in cm that counts as a full reach-down; scales the knee bend and torso lean.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ReachLowerMaxCm = 40.f;
+	float ReachLowerMaxCm = 55.f;
 
 	// Forward torso lean in degrees at a full reach-down.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ReachTorsoLeanMaxDegrees = 20.f;
+	float ReachTorsoLeanMaxDegrees = 55.f;
 
 	// Speed of the fighting stance blend in and out.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -414,14 +414,14 @@ public:
 
 	// Share of the stride the landing point lies ahead of the hip, in a walk and at a full run.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float StepLandingShareWalk = 0.25f;
+	float StepLandingShareWalk = 0.27f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float StepLandingShareRun = 0.2f;
+	float StepLandingShareRun = 0.26f;
 
 	// The landing point lies at most this many seconds of travel ahead of the hip.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float LandingReachSeconds = 0.2f;
+	float LandingReachSeconds = 0.28f;
 
 	// While side-stepping the crossing foot is placed this far in front and the leading foot this far behind.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")

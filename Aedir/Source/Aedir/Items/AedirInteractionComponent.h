@@ -86,11 +86,11 @@ public:
 
 	// Maximum pelvis lowering in cm.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float KneeBendMaxLower = 45.f;
+	float KneeBendMaxLower = 55.f;
 
 	// Depth below the hip bone where lowering starts; items above this depth are reached with the arm alone.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float ReachLowerStartHeight = 60.f;
+	float ReachLowerStartHeight = 25.f;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void StartReach(EAedirHand Hand);

@@ -16,7 +16,7 @@ namespace
 	constexpr float ReachBlendInSeconds = 0.15f;
 	constexpr float ReachBlendOutSeconds = 0.2f;
 	constexpr float PelvisLowerInterpSpeed = 8.f;
-	constexpr float PelvisLowerFactor = 0.7f;
+	constexpr float PelvisLowerFactor = 0.95f;
 	constexpr float ReachRangeMultiplier = 1.5f;
 	constexpr float HighlightInterval = 0.1f;
 
