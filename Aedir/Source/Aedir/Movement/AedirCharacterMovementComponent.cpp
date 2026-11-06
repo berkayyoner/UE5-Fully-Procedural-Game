@@ -120,8 +120,8 @@ UAedirCharacterMovementComponent::UAedirCharacterMovementComponent()
 	BrakingFrictionFactor = 1.f;
 	BrakingFriction = 1.2f;
 	BaseGroundFriction = 8.f;
-	BaseBrakingDecelerationWalking = 160.f;
-	BaseMaxAcceleration = 240.f;
+	BaseBrakingDecelerationWalking = 130.f;
+	BaseMaxAcceleration = 190.f;
 
 	GroundFriction = BaseGroundFriction;
 	BrakingDecelerationWalking = BaseBrakingDecelerationWalking;

@@ -318,7 +318,11 @@ public:
 	float HipBounceCm = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float HipDynamicMinCm = -25.f;
+	float HipDynamicMinCm = -40.f;
+
+	// How much of the way to the lower foot the pelvis sinks when the feet stand at different heights.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float HipLowerFootShare = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HipDynamicMaxCm = 10.f;
@@ -418,7 +422,7 @@ public:
 
 	// How fast the pelvis springs back up after a landing.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
-	float LandingDipRecoverSpeed = 5.f;
+	float LandingDipRecoverSpeed = 3.f;
 
 	// 0 standing, 1 fully crouched. Lags the instant capsule change so the pelvis and camera lower gradually.
 	float GetCrouchAlpha() const { return CrouchAlpha; }
@@ -620,6 +624,7 @@ private:
 	// Stumble step state per foot. A recovery swing lands on RecoveryLandingWorld instead of the phase-driven landing.
 	float CrouchAlpha = 0.f;
 	float RecoveryCooldownRemaining = 0.f;
+	float SettleCooldownRemaining = 0.f;
 	float AirFallSpeed = 0.f;
 	float LandingDipCm = 0.f;
 	bool bRecoverySwinging[2] = { false, false };

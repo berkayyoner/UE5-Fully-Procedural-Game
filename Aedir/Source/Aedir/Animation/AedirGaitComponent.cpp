@@ -19,6 +19,8 @@ namespace
 	constexpr float AedirMinStrideLength = 10.f;
 	constexpr float AedirStepHeightClearance = 4.f;
 	constexpr float AedirSettleStepDistanceCm = 5.f;
+	constexpr float AedirSettleRestSpeed = 8.f;
+	constexpr float AedirSettleCooldownSeconds = 0.6f;
 	constexpr float AedirRunBlendInterpSpeed = 6.f;
 	constexpr float AedirMovingBounceFrequency = 2.f;
 
@@ -272,11 +274,15 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		{
 			// Standing still a foot that is away from its home takes one settling step there instead of jumping, one foot at a time.
 			const FVector ToHome = LandingLocation[Foot] - PlantedContact[Foot];
+			// Only a body that has come to rest settles; a gliding stop would drag the foot after it again and again.
+			const bool bAtRest = Speed2D < AedirSettleRestSpeed;
+			SettleCooldownRemaining = FMath::Max(SettleCooldownRemaining - DeltaTime, 0.f);
 			if (ToHome.Size2D() > AedirSettleStepDistanceCm * ActorScale || FMath::Abs(ToHome.Z) > 15.f)
 			{
-				if (!bRecoverySwinging[1 - Foot] && !bKicking)
+				if (bAtRest && SettleCooldownRemaining <= 0.f && !bRecoverySwinging[1 - Foot] && !bKicking)
 				{
 					BeginRecoverySwing(Foot, LandingLocation[Foot], 1000.f, 0.f, BottomZ);
+					SettleCooldownRemaining = AedirSettleCooldownSeconds;
 				}
 			}
 			else
@@ -364,7 +370,10 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	RunBlend = FMath::FInterpTo(RunBlend, RunTarget, DeltaTime, AedirRunBlendInterpSpeed);
 
 	const float ContactAverageZ = (Contact[0].Z + Contact[1].Z) * 0.5f;
-	const float DynamicHipTarget = FMath::Clamp(ContactAverageZ - BottomZ, HipDynamicMinCm, HipDynamicMaxCm);
+	// The pelvis follows the average foot height but sinks mostly to the lower foot, so a foot on a lower step can still reach its floor.
+	const float LowestContactZ = FMath::Min(Contact[0].Z, Contact[1].Z);
+	const float HipFollowZ = LowestContactZ < ContactAverageZ ? FMath::Lerp(ContactAverageZ, LowestContactZ, HipLowerFootShare) : ContactAverageZ;
+	const float DynamicHipTarget = FMath::Clamp(HipFollowZ - BottomZ, HipDynamicMinCm, HipDynamicMaxCm);
 	DynamicHipOffset = FMath::FInterpTo(DynamicHipOffset, DynamicHipTarget, DeltaTime, HipOffsetInterpSpeed);
 	const float RunLowering = -HipRunLoweringCm * RunBlend;
 	// A walk is already a clear pelvis motion, so the gait terms start at 70% of their size and not at zero.

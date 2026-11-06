@@ -17,10 +17,10 @@ public:
 	UAedirCharacterMovementComponent();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float WalkSpeed = 140.f;
+	float WalkSpeed = 120.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float RunSpeedMultiplier = 2.4f;
+	float RunSpeedMultiplier = 2.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float CrouchSpeedMultiplier = 0.5f;
@@ -84,7 +84,7 @@ public:
 
 	// Seconds the body crouches down before the legs push off.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float JumpWindupSeconds = 0.2f;
+	float JumpWindupSeconds = 0.36f;
 
 	// Starts the crouch before a jump; the jump itself fires when the wind-up ends. Returns false when a jump cannot start now.
 	bool BeginJumpWindup();

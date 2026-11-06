@@ -950,7 +950,8 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent* OtherComponent, const FHitResult& Hit)
 {
 	AActor* Owner = GetOwner();
-	if (!IsAuthoritative() || OtherActor == Owner)
+	// Creatures hurt each other through combat; walking into or over a body, a ragdoll included, is no impact.
+	if (!IsAuthoritative() || OtherActor == Owner || Cast<AAedirCreature>(OtherActor))
 	{
 		return;
 	}
