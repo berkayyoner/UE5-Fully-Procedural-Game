@@ -681,6 +681,7 @@ private:
 	bool bSwinging[2] = { false, false };
 	float SwingElapsed[2] = { 0.f, 0.f };
 	float SwingDuration[2] = { 0.f, 0.f };
+	float PlantedSeconds[2] = { 0.f, 0.f };
 	// A stumble step lands on a fixed point instead of following the body.
 	bool bSwingFixedTarget[2] = { false, false };
 	FVector FixedLandingWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };

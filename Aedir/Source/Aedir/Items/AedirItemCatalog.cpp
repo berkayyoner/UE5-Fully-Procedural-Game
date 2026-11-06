@@ -59,7 +59,8 @@ namespace
 		// Weapons. Blades run along X with the hilt at -length/2; shafts are centred on the hand.
 		Definitions.Add(CatalogMakeWeapon(TEXT("Dagger"), TEXT("Dagger"), 0.5f, 30.f, EAedirDamageType::Pierce, 4.f, false, CatalogSteel, FVector(0.30, 0.03, 0.006)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("ShortSword"), TEXT("Short Sword"), 1.1f, 70.f, EAedirDamageType::Slash, 8.f, false, CatalogSteel, FVector(0.70, 0.045, 0.008)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("Longsword"), TEXT("Longsword"), 1.6f, 105.f, EAedirDamageType::Slash, 11.f, false, CatalogSteel, FVector(1.05, 0.05, 0.01)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Sword"), TEXT("Sword"), 1.6f, 105.f, EAedirDamageType::Slash, 11.f, false, CatalogSteel, FVector(1.05, 0.05, 0.01)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Longsword"), TEXT("Longsword"), 2.1f, 118.f, EAedirDamageType::Slash, 14.f, true, CatalogSteel, FVector(1.18, 0.052, 0.011)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("BattleAxe"), TEXT("Battle Axe"), 2.4f, 80.f, EAedirDamageType::Slash, 12.f, false, CatalogWood, FVector(0.80, 0.03, 0.03)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("Mace"), TEXT("Mace"), 2.0f, 65.f, EAedirDamageType::Blunt, 9.f, false, CatalogWood, FVector(0.65, 0.03, 0.03)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("Warhammer"), TEXT("Warhammer"), 3.2f, 90.f, EAedirDamageType::Blunt, 13.f, false, CatalogWood, FVector(0.90, 0.03, 0.03)));
@@ -80,24 +81,27 @@ namespace
 		Definitions.Add(CatalogMakeMisc(TEXT("Boulder"), TEXT("Boulder"), EAedirItemClass::Object, 25.f, CatalogStone, FVector(0.40, 0.40, 0.40)));
 
 		// The hand closes on the grip, not on the middle of the item.
-		const auto SetGrip = [&Definitions](const TCHAR* Id, float GripCm)
+		const auto SetGrip = [&Definitions](const TCHAR* Id, float GripCm, float SpanCm = 13.f, bool bDiagonal = false)
 		{
 			for (FAedirItemDef& Def : Definitions)
 			{
 				if (Def.Id == FName(Id))
 				{
 					Def.GripCm = GripCm;
+					Def.GripSpanCm = SpanCm;
+					Def.bHangsDiagonal = bDiagonal;
 				}
 			}
 		};
-		SetGrip(TEXT("Dagger"), -21.f);
-		SetGrip(TEXT("ShortSword"), -42.f);
-		SetGrip(TEXT("Longsword"), -65.f);
+		SetGrip(TEXT("Dagger"), -21.f, 8.f, true);
+		SetGrip(TEXT("ShortSword"), -42.f, 8.f, true);
+		SetGrip(TEXT("Sword"), -65.f, 9.f, true);
+		SetGrip(TEXT("Longsword"), -81.f, 18.f, true);
 		SetGrip(TEXT("BattleAxe"), -28.f);
 		SetGrip(TEXT("Mace"), -22.f);
 		SetGrip(TEXT("Warhammer"), -32.f);
 		SetGrip(TEXT("Club"), -20.f);
-		SetGrip(TEXT("Spear"), -25.f);
+		SetGrip(TEXT("Spear"), -25.f, 40.f);
 
 		return Definitions;
 	}

@@ -16,13 +16,20 @@ namespace
 
 namespace
 {
-	constexpr float HandGripPalmShare = 0.8f;
+	constexpr float HandGripPalmShare = 0.62f;
+	constexpr float HandGripPalmDepthCm = 3.2f;
+	constexpr float HangSwingStiffness = 45.f;
+	constexpr float HangSwingDamping = 5.f;
+	constexpr float HangSwingGain = 0.05f;
+	constexpr float HangSwingMaxRadians = 0.7f;
+	constexpr float HangMaxAcceleration = 1800.f;
 	constexpr double ReleaseGraceSeconds = 1.5;
 }
 
 AAedirItemActor::AAedirItemActor()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	bReplicates = true;
 	bAlwaysRelevant = false;
 	SetReplicateMovement(true);
@@ -132,7 +139,13 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 	const FVector HandLocation = HandMatrix.GetOrigin();
 	const FVector KnuckleAxis = (RefLocation(TEXT("index_01")) - RefLocation(TEXT("pinky_01"))).GetSafeNormal();
 	const FVector FingerAxis = (RefLocation(TEXT("middle_01")) - HandLocation).GetSafeNormal();
-	const FVector Palm = HandLocation + (RefLocation(TEXT("middle_01")) - HandLocation) * HandGripPalmShare;
+	// The handle lies in the hollow of the palm: part way to the knuckles and off the back of the hand, on the side the thumb is on.
+	FVector PalmNormal = FVector::CrossProduct(KnuckleAxis, FingerAxis).GetSafeNormal();
+	if (FVector::DotProduct(PalmNormal, RefLocation(TEXT("thumb_01")) - HandLocation) < 0.0)
+	{
+		PalmNormal = -PalmNormal;
+	}
+	const FVector Palm = HandLocation + (RefLocation(TEXT("middle_01")) - HandLocation) * HandGripPalmShare + PalmNormal * HandGripPalmDepthCm;
 
 	const FQuat ItemRotation = FRotationMatrix::MakeFromXY(KnuckleAxis, FingerAxis).ToQuat();
 	const FQuat RelativeRotation = HandRotation.Inverse() * ItemRotation;
@@ -140,17 +153,67 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 	return FTransform(RelativeRotation, RelativePalm - RelativeRotation.RotateVector(FVector(GripLocalCm, 0.f, 0.f)));
 }
 
-void AAedirItemActor::AttachToWaist(AAedirCreature* Creature, FName BoneName, const FTransform& SlotRelative)
+void AAedirItemActor::AttachToWaist(AAedirCreature* Creature, FName BoneName, const FVector& SlotOnBone, const FQuat& RotationOnBone, float PivotCm)
 {
 	if (!HasAuthority() || !Creature)
 	{
 		return;
 	}
 
-	AttachToBone(Creature, BoneName, WaistTransform * SlotRelative);
+	AttachToBone(Creature, BoneName, FTransform(RotationOnBone, SlotOnBone - RotationOnBone.RotateVector(FVector(PivotCm, 0.f, 0.f))));
 
 	Holder = Creature;
 	bHolstered = true;
+
+	HangSlot = SlotOnBone;
+	HangRotation = RotationOnBone;
+	HangPivotCm = PivotCm;
+	HangSwing = FVector::ZeroVector;
+	HangSwingSpeed = FVector::ZeroVector;
+	bHangTracking = false;
+	SetActorTickEnabled(true);
+}
+
+void AAedirItemActor::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	const USceneComponent* Parent = GetRootComponent() ? GetRootComponent()->GetAttachParent() : nullptr;
+	if (!bHolstered || !Parent || DeltaSeconds <= KINDA_SMALL_NUMBER)
+	{
+		SetActorTickEnabled(false);
+		return;
+	}
+
+	// A hanging item is a small pendulum: the acceleration of the bone it hangs from throws it around its pivot.
+	const FTransform BoneWorld = Parent->GetSocketTransform(GetRootComponent()->GetAttachSocketName());
+	const FVector BoneLocation = BoneWorld.GetLocation();
+	FVector Acceleration = FVector::ZeroVector;
+	if (bHangTracking)
+	{
+		const FVector Velocity = (BoneLocation - HangPreviousBone) / DeltaSeconds;
+		Acceleration = ((Velocity - HangPreviousVelocity) / DeltaSeconds).GetClampedToMaxSize(HangMaxAcceleration);
+		HangPreviousVelocity = Velocity;
+	}
+	HangPreviousBone = BoneLocation;
+	bHangTracking = true;
+
+	// The lever runs from the pivot to the middle of the item.
+	const FVector Lever = HangRotation.RotateVector(FVector(-HangPivotCm >= 0.f ? 1.f : -1.f, 0.f, 0.f));
+	const FVector Inertial = BoneWorld.GetRotation().Inverse().RotateVector(-Acceleration);
+	const FVector Torque = FVector::CrossProduct(Lever, Inertial) * HangSwingGain;
+	HangSwingSpeed += (Torque - HangSwing * HangSwingStiffness - HangSwingSpeed * HangSwingDamping) * DeltaSeconds;
+	HangSwing = (HangSwing + HangSwingSpeed * DeltaSeconds).GetClampedToMaxSize(HangSwingMaxRadians);
+
+	const float Angle = static_cast<float>(HangSwing.Size());
+	const FQuat Swing = Angle > KINDA_SMALL_NUMBER ? FQuat(HangSwing / Angle, Angle) : FQuat::Identity;
+	const FQuat Rotation = Swing * HangRotation;
+	SetActorRelativeTransform(FTransform(Rotation, HangSlot - Rotation.RotateVector(FVector(HangPivotCm, 0.f, 0.f)), BodyScale));
+}
+
+FVector AAedirItemActor::GetGripWorld() const
+{
+	return GetActorLocation() + GetActorForwardVector() * GripLocalCm;
 }
 
 void AAedirItemActor::AttachToBackpack(AAedirCreature* Creature)
@@ -179,6 +242,7 @@ void AAedirItemActor::Detach(const FVector& ThrowVelocity)
 	bStowed = false;
 	ApplyStowed(false);
 
+	SetActorTickEnabled(false);
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	if (Holder)
 	{
@@ -278,6 +342,7 @@ void AAedirItemActor::AttachToBone(AAedirCreature* Creature, FName BoneName, con
 		ApplyStowed(false);
 	}
 
+	SetActorTickEnabled(false);
 	SetFreePhysics(false);
 
 	AttachToComponent(Creature->GetMesh(), FAttachmentTransformRules::KeepRelativeTransform, BoneName);

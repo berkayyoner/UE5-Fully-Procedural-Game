@@ -55,7 +55,12 @@ public:
 
 	// Grip point along the long axis of the item, used when the item is held in the closed hand.
 	float GripLocalCm = 0.f;
+	float GripSpanCm = 13.f;
 	bool bUseHandGrip = false;
+	bool bHangsDiagonal = false;
+
+	// Where the hand closes on the item in the world.
+	FVector GetGripWorld() const;
 
 	// How the item injures: blunt force, cutting edge or point.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
@@ -112,8 +117,11 @@ public:
 	// Server only.
 	void AttachToCreatureHand(AAedirCreature* Creature, EAedirHand Hand);
 
-	// Server only.
-	void AttachToWaist(AAedirCreature* Creature, FName BoneName, const FTransform& SlotRelative);
+	// Server only. Hangs the item from a point on the waist bone, rotated as given, pivoting at PivotCm along its long axis.
+	// It keeps swinging on that pivot with the movement of the body.
+	void AttachToWaist(AAedirCreature* Creature, FName BoneName, const FVector& SlotOnBone, const FQuat& RotationOnBone, float PivotCm);
+
+	virtual void Tick(float DeltaSeconds) override;
 
 	// Server only.
 	void Detach(const FVector& ThrowVelocity);
@@ -166,6 +174,16 @@ private:
 	void ApplyItemMass();
 	FTransform ComputeHoldTransform(const FTransform& HoldOffset) const;
 	FTransform ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const;
+
+	// Hanging from the belt.
+	FVector HangSlot = FVector::ZeroVector;
+	FQuat HangRotation = FQuat::Identity;
+	float HangPivotCm = 0.f;
+	FVector HangSwing = FVector::ZeroVector;
+	FVector HangSwingSpeed = FVector::ZeroVector;
+	FVector HangPreviousBone = FVector::ZeroVector;
+	FVector HangPreviousVelocity = FVector::ZeroVector;
+	bool bHangTracking = false;
 
 	TWeakObjectPtr<const AActor> LastHolder;
 	double LastReleaseTime = -1000.0;

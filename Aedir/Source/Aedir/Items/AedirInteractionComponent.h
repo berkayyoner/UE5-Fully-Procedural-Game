@@ -80,23 +80,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	FName WaistBone = FName(TEXT("pelvis"));
 
-	// Three slots per side, relative to the waist bone. Rotation points the item down.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	TArray<FTransform> LeftWaistSlots = {
-		FTransform(FRotator(-80.f, 0.f, 0.f), FVector(-12.f, -20.f, 0.f)),
-		FTransform(FRotator(-80.f, 0.f, 0.f), FVector(-12.f, -20.f, -14.f)),
-		FTransform(FRotator(-80.f, 0.f, 0.f), FVector(-12.f, -20.f, -28.f))
-	};
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	TArray<FTransform> RightWaistSlots = {
-		FTransform(FRotator(-80.f, 0.f, 0.f), FVector(-12.f, 20.f, 0.f)),
-		FTransform(FRotator(-80.f, 0.f, 0.f), FVector(-12.f, 20.f, -14.f)),
-		FTransform(FRotator(-80.f, 0.f, 0.f), FVector(-12.f, 20.f, -28.f))
-	};
-
-
-
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void StartReach(EAedirHand Hand);
 
@@ -276,6 +259,19 @@ private:
 	FVector GetReachTargetWorld(EAedirHand Hand, const AAedirItemActor* Item) const;
 	bool CanLift(const AAedirItemActor* Item) const;
 	void UpdateObjectStrain(float DeltaTime);
+
+	// The hand goes to the belt first, and the item changes place when it gets there.
+	void BeginHolsterMotion(EAedirHand Hand);
+	void UpdateHolsterMotion(EAedirHand Hand, float DeltaTime);
+	int32 FindFreeWaistIndex(EAedirHand Hand) const;
+	int32 FindDrawWaistIndex(EAedirHand Hand) const;
+	void GetWaistSlot(int32 WaistIndex, const AAedirItemActor* Item, FVector& OutSlotOnBone, FQuat& OutRotationOnBone, float& OutPivotCm) const;
+	FVector GetWaistSlotWorld(int32 WaistIndex, const AAedirItemActor* Item) const;
+
+	enum class EAedirHolsterMotion : uint8 { None, Store, Draw };
+	EAedirHolsterMotion HolsterMotion[2] = { EAedirHolsterMotion::None, EAedirHolsterMotion::None };
+	float HolsterElapsed[2] = { 0.f, 0.f };
+	int32 HolsterWaistIndex[2] = { INDEX_NONE, INDEX_NONE };
 
 	// Where each hand took hold of a big object, in the object's own space.
 	FVector ObjectGripLocal[2] = { FVector::ZeroVector, FVector::ZeroVector };

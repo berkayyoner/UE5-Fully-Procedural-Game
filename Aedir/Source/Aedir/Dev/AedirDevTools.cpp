@@ -16,7 +16,7 @@ FAedirDevReported& UAedirDevTools::OnReported()
 int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const FVector& FacePoint, int32 Count, bool bArmed)
 {
 	constexpr float BanditSpacingCm = 120.f;
-	static const TCHAR* const BanditWeaponIds[] = { TEXT("ShortSword"), TEXT("Mace"), TEXT("BattleAxe"), TEXT("Longsword"), TEXT("Club") };
+	static const TCHAR* const BanditWeaponIds[] = { TEXT("ShortSword"), TEXT("Mace"), TEXT("BattleAxe"), TEXT("Sword"), TEXT("Club") };
 
 	if (!World)
 	{

@@ -180,6 +180,9 @@ public:
 	UFUNCTION(Exec)
 	void PoseArm(const FString& PoseArgs);
 
+	UFUNCTION(Exec)
+	void HolsterTest(int32 RightHand);
+
 	// Fixed movement input for diagnostics, on top of the keyboard.
 	void SetDevAutoMove(const FVector2D& Input) { DevAutoMove = Input; }
 

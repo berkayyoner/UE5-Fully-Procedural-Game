@@ -130,6 +130,8 @@ void AAedirCatalogItem::ApplyDefinition()
 	// The reach of a weapon counts from the hand to the tip.
 	WeaponLength = Def->WeaponLengthCm > 0.f ? Def->WeaponLengthCm * 0.5f - Def->GripCm : 0.f;
 	GripLocalCm = Def->GripCm;
+	GripSpanCm = Def->GripSpanCm;
+	bHangsDiagonal = Def->bHangsDiagonal;
 	bUseHandGrip = true;
 	DamageType = Def->DamageType;
 	Damage = Def->FlatDamage;
@@ -171,6 +173,12 @@ void AAedirCatalogItem::BuildDetails(FName Id)
 		AddDetail(EAedirCatalogShape::Sphere, FVector(-48.6f, 0.f, 0.f), FVector(CatalogItemPommelSize, CatalogItemPommelSize, CatalogItemPommelSize), FRotator::ZeroRotator, CatalogItemSteel);
 	}
 	else if (IdText == TEXT("Longsword"))
+	{
+		AddDetail(EAedirCatalogShape::Cube, FVector(-59.f, 0.f, 0.f), FVector(CatalogItemGuardThickness, 20.f, 2.f), FRotator::ZeroRotator, CatalogItemSteel);
+		AddDetail(EAedirCatalogShape::Cylinder, FVector(-73.f, 0.f, 0.f), FVector(27.f, 2.7f, 2.7f), FRotator(90.f, 0.f, 0.f), CatalogItemWood);
+		AddDetail(EAedirCatalogShape::Sphere, FVector(-88.1f, 0.f, 0.f), FVector(3.4f, 3.4f, 3.4f), FRotator::ZeroRotator, CatalogItemSteel);
+	}
+	else if (IdText == TEXT("Sword"))
 	{
 		AddDetail(EAedirCatalogShape::Cube, FVector(-52.5f, 0.f, 0.f), FVector(CatalogItemGuardThickness, 18.f, 2.f), FRotator::ZeroRotator, CatalogItemSteel);
 		AddDetail(EAedirCatalogShape::Cylinder, FVector(-62.f, 0.f, 0.f), FVector(17.f, 2.6f, 2.6f), FRotator(90.f, 0.f, 0.f), CatalogItemWood);

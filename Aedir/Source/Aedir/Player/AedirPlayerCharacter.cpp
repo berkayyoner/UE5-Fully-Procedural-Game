@@ -167,7 +167,7 @@ void AAedirPlayerCharacter::BeginPlay()
 		FTimerHandle TestItemTimer;
 		GetWorldTimerManager().SetTimer(TestItemTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
 		{
-			for (const TCHAR* ItemId : { TEXT("Longsword"), TEXT("Mace"), TEXT("Club"), TEXT("Boulder") })
+			for (const TCHAR* ItemId : { TEXT("Sword"), TEXT("Longsword"), TEXT("Mace"), TEXT("Boulder") })
 			{
 				UAedirDevTools::Execute(this, TEXT("SpawnItem"), ItemId);
 			}
@@ -250,10 +250,11 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Pressed, this, &AAedirPlayerCharacter::HandleJumpPressed);
 	PlayerInputComponent->BindKey(EKeys::SpaceBar, IE_Released, this, &AAedirPlayerCharacter::HandleJumpReleased);
 
-	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftGuardPressed);
-	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleLeftGuardReleased);
-	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightGuardPressed);
-	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleRightGuardReleased);
+	// The left mouse button works the right hand and the right button the left hand.
+	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightGuardPressed);
+	PlayerInputComponent->BindKey(EKeys::LeftMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleRightGuardReleased);
+	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftGuardPressed);
+	PlayerInputComponent->BindKey(EKeys::RightMouseButton, IE_Released, this, &AAedirPlayerCharacter::HandleLeftGuardReleased);
 
 	PlayerInputComponent->BindKey(EKeys::Q, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHandPressed);
 	PlayerInputComponent->BindKey(EKeys::Q, IE_Released, this, &AAedirPlayerCharacter::HandleLeftHandReleased);
@@ -894,6 +895,14 @@ void AAedirPlayerCharacter::AutoMove(float Forward, float Right, int32 Run, floa
 void AAedirPlayerCharacter::ShotCam(const FString& CameraArgs)
 {
 	RunDevCommand(TEXT("ShotCam"), CameraArgs, false);
+}
+
+void AAedirPlayerCharacter::HolsterTest(int32 RightHand)
+{
+	if (Interaction)
+	{
+		Interaction->HolsterToWaist(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
+	}
 }
 
 void AAedirPlayerCharacter::PoseArm(const FString& PoseArgs)

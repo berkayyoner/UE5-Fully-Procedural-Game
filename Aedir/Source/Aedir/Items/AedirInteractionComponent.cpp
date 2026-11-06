@@ -6,6 +6,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/OverlapResult.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "Items/AedirItemActor.h"
 #include "Math/UnrealMathUtility.h"
@@ -33,7 +34,13 @@ namespace
 	constexpr float ReachMaxHipSideCm = 22.f;
 	constexpr float ReachMaxTwistDegrees = 50.f;
 	constexpr float ReachLeanStepDegrees = 5.f;
-	constexpr float ReachTwoHandSpacingCm = 9.f;
+	constexpr float HolsterHandSeconds = 0.42f;
+	constexpr float HolsterHandArriveCm = 12.f;
+	constexpr float WaistSlotRadiusCm = 22.f;
+	constexpr float WaistSlotUpCm = -4.f;
+	constexpr float WaistSlotYawDegrees[3] = { 95.f, 130.f, 160.f };
+	constexpr float SwordHangBackShare = 1.15f;
+	constexpr float BigObjectHandClearanceCm = 7.f;
 	constexpr float BigObjectHandSpanShare = 0.9f;
 	constexpr float TwoHandLiftMultiplier = 2.5f;
 	constexpr float OneHandObjectLiftShare = 0.6f;
@@ -102,6 +109,8 @@ void UAedirInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 		UpdateObjectStrain(DeltaTime);
 	}
 
+	UpdateHolsterMotion(EAedirHand::Left, DeltaTime);
+	UpdateHolsterMotion(EAedirHand::Right, DeltaTime);
 	UpdateReachBlend(DeltaTime);
 	UpdatePelvisLower(DeltaTime);
 
@@ -272,23 +281,160 @@ void UAedirInteractionComponent::HolsterToWaist(EAedirHand Hand)
 		return;
 	}
 
-	AAedirCreature* Creature = GetCreature();
-	if (!Creature)
+	BeginHolsterMotion(Hand);
+}
+
+void UAedirInteractionComponent::BeginHolsterMotion(EAedirHand Hand)
+{
+	const int32 Index = static_cast<int32>(Hand);
+	if (HolsterMotion[Index] != EAedirHolsterMotion::None)
 	{
 		return;
 	}
 
-	switch (GetHandState(Hand))
+	const AAedirItemActor* Held = GetHeldItem(Hand);
+	if (GetHandState(Hand) == EAedirHandState::Holding && Held && Held->ItemClass != EAedirItemClass::Object)
 	{
-	case EAedirHandState::Holding:
-		StoreHeldToWaist(Hand, Creature);
-		break;
-	case EAedirHandState::Idle:
-		DrawFromWaist(Hand, Creature);
-		break;
-	default:
-		break;
+		HolsterWaistIndex[Index] = FindFreeWaistIndex(Hand);
+		HolsterMotion[Index] = HolsterWaistIndex[Index] != INDEX_NONE ? EAedirHolsterMotion::Store : EAedirHolsterMotion::None;
 	}
+	else if (GetHandState(Hand) == EAedirHandState::Idle)
+	{
+		HolsterWaistIndex[Index] = FindDrawWaistIndex(Hand);
+		HolsterMotion[Index] = HolsterWaistIndex[Index] != INDEX_NONE ? EAedirHolsterMotion::Draw : EAedirHolsterMotion::None;
+	}
+	HolsterElapsed[Index] = 0.f;
+}
+
+void UAedirInteractionComponent::UpdateHolsterMotion(EAedirHand Hand, float DeltaTime)
+{
+	const int32 Index = static_cast<int32>(Hand);
+	const EAedirHolsterMotion Motion = HolsterMotion[Index];
+	if (Motion == EAedirHolsterMotion::None)
+	{
+		return;
+	}
+
+	AAedirCreature* Creature = GetCreature();
+	const AAedirItemActor* Item = Motion == EAedirHolsterMotion::Store ? GetHeldItem(Hand) : (WaistItems.IsValidIndex(HolsterWaistIndex[Index]) ? WaistItems[HolsterWaistIndex[Index]].Get() : nullptr);
+	if (!Creature || !Item)
+	{
+		HolsterMotion[Index] = EAedirHolsterMotion::None;
+		return;
+	}
+
+	HolsterElapsed[Index] += DeltaTime;
+	const FVector Target = GetWaistSlotWorld(HolsterWaistIndex[Index], Item);
+	const bool bArrived = HolsterElapsed[Index] >= HolsterHandSeconds || (HolsterElapsed[Index] > 0.15f && FVector::Dist(GetHandWorld(Hand), Target) < HolsterHandArriveCm);
+	if (!bArrived)
+	{
+		return;
+	}
+
+	HolsterMotion[Index] = EAedirHolsterMotion::None;
+	if (IsAuthoritative())
+	{
+		if (Motion == EAedirHolsterMotion::Store)
+		{
+			StoreHeldToWaist(Hand, Creature);
+		}
+		else
+		{
+			DrawFromWaist(Hand, Creature);
+		}
+	}
+}
+
+int32 UAedirInteractionComponent::FindFreeWaistIndex(EAedirHand Hand) const
+{
+	const int32 SideBegin = GetWaistSideBegin(Hand);
+	for (int32 Index = SideBegin; Index < SideBegin + WaistSlotsPerSide; ++Index)
+	{
+		if (!WaistItems[Index])
+		{
+			return Index;
+		}
+	}
+	return INDEX_NONE;
+}
+
+int32 UAedirInteractionComponent::FindDrawWaistIndex(EAedirHand Hand) const
+{
+	const int32 SideBegin = GetWaistSideBegin(Hand);
+	const int32 SideEnd = SideBegin + WaistSlotsPerSide;
+	const int32 Last = LastStoredWaistIndex[GetWaistSideIndex(Hand)];
+	if (Last >= SideBegin && Last < SideEnd && WaistItems[Last])
+	{
+		return Last;
+	}
+	for (int32 Index = SideEnd - 1; Index >= SideBegin; --Index)
+	{
+		if (WaistItems[Index])
+		{
+			return Index;
+		}
+	}
+	return INDEX_NONE;
+}
+
+void UAedirInteractionComponent::GetWaistSlot(int32 WaistIndex, const AAedirItemActor* Item, FVector& OutSlotOnBone, FQuat& OutRotationOnBone, float& OutPivotCm) const
+{
+	const AAedirCreature* Creature = GetCreature();
+	const USkeletalMeshComponent* BodyMesh = Creature ? Creature->GetMesh() : nullptr;
+	const USkeletalMesh* BodyAsset = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	if (!BodyAsset)
+	{
+		OutSlotOnBone = FVector::ZeroVector;
+		OutRotationOnBone = FQuat::Identity;
+		OutPivotCm = 0.f;
+		return;
+	}
+
+	// The slots run around the hip from the side towards the back. They are worked out in the frame of the body and
+	// converted to the waist bone, whose own axes point anywhere.
+	const float Side = WaistIndex < WaistSlotsPerSide ? -1.f : 1.f;
+	const int32 Row = WaistIndex % WaistSlotsPerSide;
+	const float YawRadians = FMath::DegreesToRadians(WaistSlotYawDegrees[FMath::Clamp(Row, 0, 2)]);
+	const FVector Outward(FMath::Cos(YawRadians), Side * FMath::Sin(YawRadians), 0.f);
+	const FVector SlotInBody = Outward * WaistSlotRadiusCm + FVector(0.f, 0.f, WaistSlotUpCm);
+
+	// Swords hang point down and back with the hilt forward ready to draw. Tools hang by the head, smaller items straight down.
+	const bool bWeapon = Item && Item->ItemClass == EAedirItemClass::Weapon;
+	const bool bDiagonal = Item && Item->bHangsDiagonal;
+	FVector LongAxis = FVector(0.f, 0.f, -1.f);
+	OutPivotCm = 0.f;
+	if (bDiagonal)
+	{
+		LongAxis = FVector(-SwordHangBackShare, 0.f, -1.f).GetSafeNormal();
+		OutPivotCm = Item->GripLocalCm + Item->GripSpanCm;
+	}
+	else if (bWeapon)
+	{
+		LongAxis = FVector::UpVector;
+		OutPivotCm = -Item->GripLocalCm * 0.5f;
+	}
+	const FQuat RotationInBody = FRotationMatrix::MakeFromXY(LongAxis, Outward).ToQuat();
+
+	const FQuat BoneInMesh = BodyAsset->GetComposedRefPoseMatrix(WaistBone).ToQuat();
+	const FQuat BodyToBone = BoneInMesh.Inverse() * BodyMesh->GetRelativeRotation().Quaternion().Inverse();
+	OutSlotOnBone = BodyToBone.RotateVector(SlotInBody);
+	OutRotationOnBone = BodyToBone * RotationInBody;
+}
+
+FVector UAedirInteractionComponent::GetWaistSlotWorld(int32 WaistIndex, const AAedirItemActor* Item) const
+{
+	const AAedirCreature* Creature = GetCreature();
+	const USkeletalMeshComponent* BodyMesh = Creature ? Creature->GetMesh() : nullptr;
+	if (!BodyMesh)
+	{
+		return FVector::ZeroVector;
+	}
+
+	FVector SlotOnBone;
+	FQuat RotationOnBone;
+	float PivotCm = 0.f;
+	GetWaistSlot(WaistIndex, Item, SlotOnBone, RotationOnBone, PivotCm);
+	return BodyMesh->GetSocketTransform(WaistBone).TransformPosition(SlotOnBone);
 }
 
 EAedirHandState UAedirInteractionComponent::GetHandState(EAedirHand Hand) const
@@ -450,12 +596,15 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 	if (Item->ItemClass == EAedirItemClass::Object)
 	{
 		// A big object has no handle: the hand closes where it touches. The first hand carries it, the second one only rests on it.
-		const FVector HandWorld = GetHandWorld(Hand);
+		const FVector Center = Item->GetBoundsCenterWorld();
+		const FVector Extent = Item->GetComponentsBoundingBox().GetExtent();
+		const float Radius = static_cast<float>(FMath::Max(Extent.X, Extent.Y));
+		const FVector HandOnSurface = Center + (GetHandWorld(Hand) - Center).GetSafeNormal() * (Radius + BigObjectHandClearanceCm);
 		if (Other.State != EAedirHandState::Holding)
 		{
 			Item->AttachToHandInPlace(Creature, Hand);
 		}
-		ObjectGripLocal[HandIndex] = Item->GetActorTransform().InverseTransformPosition(HandWorld);
+		ObjectGripLocal[HandIndex] = Item->GetActorTransform().InverseTransformPosition(HandOnSurface);
 
 		Slot.State = EAedirHandState::Holding;
 		Slot.Item = Item;
@@ -537,7 +686,8 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 		// A big object held in both hands is carried up in front of the body.
 		const bool bCarryingObject = Slot.State == EAedirHandState::Holding && Slot.Item && Slot.Item->ItemClass == EAedirItemClass::Object
 			&& GetSlot(GetOtherHand(Hand)).State == EAedirHandState::Holding && GetSlot(GetOtherHand(Hand)).Item == Slot.Item;
-		if (Slot.State == EAedirHandState::Reaching || bCarryingObject)
+		const bool bHolsterMotion = HolsterMotion[Index] != EAedirHolsterMotion::None;
+		if (Slot.State == EAedirHandState::Reaching || bCarryingObject || bHolsterMotion)
 		{
 			ReachBlend[Index] = FMath::Min(1.f, ReachBlend[Index] + DeltaTime / ReachBlendInSeconds);
 		}
@@ -546,7 +696,12 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 			ReachBlend[Index] = FMath::Max(0.f, ReachBlend[Index] - DeltaTime / ReachBlendOutSeconds);
 		}
 
-		if (Slot.Item)
+		if (bHolsterMotion)
+		{
+			const AAedirItemActor* HolsterItem = HolsterMotion[Index] == EAedirHolsterMotion::Store ? Slot.Item.Get() : (WaistItems.IsValidIndex(HolsterWaistIndex[Index]) ? WaistItems[HolsterWaistIndex[Index]].Get() : nullptr);
+			ReachTargetCache[Index] = GetWaistSlotWorld(HolsterWaistIndex[Index], HolsterItem);
+		}
+		else if (Slot.Item)
 		{
 			ReachTargetCache[Index] = GetReachTargetWorld(Hand, Slot.Item);
 		}
@@ -668,7 +823,8 @@ FVector UAedirInteractionComponent::GetReachTargetWorld(EAedirHand Hand, const A
 
 		// The hand goes to the near surface of the object, or to its far side when the other hand already has it.
 		const FVector Extent = Item->GetComponentsBoundingBox().GetExtent();
-		const float Radius = static_cast<float>(FMath::Max(Extent.X, Extent.Y)) * BigObjectHandSpanShare;
+		// The hand bone is the wrist, so it stops short of the surface for the palm to lie on it, not in it.
+		const float Radius = static_cast<float>(FMath::Max(Extent.X, Extent.Y)) * BigObjectHandSpanShare + BigObjectHandClearanceCm;
 		const FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
 		if (Other.Item.Get() == Item)
 		{
@@ -678,12 +834,13 @@ FVector UAedirInteractionComponent::GetReachTargetWorld(EAedirHand Hand, const A
 		return Center + TowardsHand * Radius;
 	}
 
-	// Two hands on one weapon take it a short distance apart.
+	// The hand goes to the handle, not to the middle of the item. Two hands take it a grip apart, the lead hand above.
+	const FVector Grip = Item->GetGripWorld();
 	if (GetSlot(GetOtherHand(Hand)).Item.Get() != Item)
 	{
-		return Center;
+		return Grip;
 	}
-	return Center + Creature->GetActorRightVector() * (Side * ReachTwoHandSpacingCm);
+	return Hand == ReachLeadHand ? Grip + Item->GetActorForwardVector() * Item->GripSpanCm : Grip;
 }
 
 bool UAedirInteractionComponent::CanLift(const AAedirItemActor* Item) const
@@ -793,11 +950,11 @@ void UAedirInteractionComponent::StoreHeldToWaist(EAedirHand Hand, AAedirCreatur
 	WaistItems[FreeIndex] = Item;
 	LastStoredWaistIndex[GetWaistSideIndex(Hand)] = FreeIndex;
 
-	const TArray<FTransform>& Slots = Hand == EAedirHand::Left ? LeftWaistSlots : RightWaistSlots;
-	const int32 SlotIndex = FreeIndex - SideBegin;
-	const FTransform SlotTransform = Slots.IsValidIndex(SlotIndex) ? Slots[SlotIndex] : FTransform::Identity;
-
-	Item->AttachToWaist(Creature, WaistBone, SlotTransform);
+	FVector SlotOnBone;
+	FQuat RotationOnBone;
+	float PivotCm = 0.f;
+	GetWaistSlot(FreeIndex, Item, SlotOnBone, RotationOnBone, PivotCm);
+	Item->AttachToWaist(Creature, WaistBone, SlotOnBone, RotationOnBone, PivotCm);
 	UpdateCarriedWeight();
 }
 
@@ -1025,14 +1182,15 @@ bool UAedirInteractionComponent::HolsterImmediate(int32 SlotIndex, AAedirItemAct
 	}
 
 	const EAedirHand Hand = SlotIndex < WaistSlotsPerSide ? EAedirHand::Left : EAedirHand::Right;
-	const TArray<FTransform>& Slots = Hand == EAedirHand::Left ? LeftWaistSlots : RightWaistSlots;
-	const int32 SlotLocalIndex = SlotIndex - GetWaistSideBegin(Hand);
-	const FTransform SlotTransform = Slots.IsValidIndex(SlotLocalIndex) ? Slots[SlotLocalIndex] : FTransform::Identity;
 
 	WaistItems[SlotIndex] = Item;
 	LastStoredWaistIndex[GetWaistSideIndex(Hand)] = SlotIndex;
 
-	Item->AttachToWaist(Creature, WaistBone, SlotTransform);
+	FVector SlotOnBone;
+	FQuat RotationOnBone;
+	float PivotCm = 0.f;
+	GetWaistSlot(SlotIndex, Item, SlotOnBone, RotationOnBone, PivotCm);
+	Item->AttachToWaist(Creature, WaistBone, SlotOnBone, RotationOnBone, PivotCm);
 	UpdateCarriedWeight();
 	return true;
 }

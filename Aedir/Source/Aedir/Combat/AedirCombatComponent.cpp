@@ -86,21 +86,25 @@ namespace
 	// Weapon stance. The hand stays in front of the chest and moves little; the blade sweeps much further around it.
 	constexpr float AedirWeaponYawLimit = 100.f;
 	constexpr float AedirWeaponPitchMin = -75.f;
-	constexpr float AedirWeaponMouseShare = 1.4f;
-	constexpr float AedirWeaponGuardPitch = 40.f;
+	constexpr float AedirWeaponMouseShare = 1.8f;
+	constexpr float AedirWeaponGuardPitch = 18.f;
 	constexpr float AedirWeaponChestHeightCm = 28.f;
-	constexpr float AedirWeaponChestSideCm = 8.f;
-	constexpr float AedirWeaponHandReachCm = 38.f;
-	constexpr float AedirWeaponHandPitch = -22.f;
-	constexpr float AedirWeaponHandPitchShare = 0.42f;
-	constexpr float AedirWeaponHandYawShare = 0.5f;
+	constexpr float AedirWeaponChestSideCm = 10.f;
+	constexpr float AedirWeaponHandReachCm = 44.f;
+	constexpr float AedirWeaponHandThrowReachCm = 58.f;
+	constexpr float AedirWeaponHandPitch = -18.f;
+	constexpr float AedirWeaponHandPitchShare = 0.7f;
+	constexpr float AedirWeaponHandYawShare = 0.85f;
 	constexpr float AedirWeaponTurnRate = 15.f;
 	constexpr float AedirWeaponTurnMassShare = 0.3f;
 	// Thrust mode.
 	constexpr float AedirThrustMouseExtension = 0.012f;
 	constexpr float AedirThrustSteerShare = 0.25f;
-	constexpr float AedirThrustHandMinCm = 12.f;
 	constexpr float AedirThrustHandMaxCm = 56.f;
+	// A drawn-back thrust waits with the hand beside the waist.
+	constexpr float AedirThrustWaistForwardCm = -4.f;
+	constexpr float AedirThrustWaistSideCm = 25.f;
+	constexpr float AedirThrustWaistUpCm = 2.f;
 	constexpr float AedirArmGuardRestYaw = 12.f;
 	constexpr float AedirArmGuardRestPitch = 15.f;
 	constexpr float AedirArmExtensionStep = 0.08f;
@@ -331,6 +335,11 @@ void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaT
 
 	if (IsWeaponStance(Hand))
 	{
+		const float WeaponMouseSpeed = static_cast<float>(MouseDeltaThisFrame.Size()) / DeltaTime;
+		Arm.MouseSpeed = FMath::Max(WeaponMouseSpeed, FMath::FInterpTo(Arm.MouseSpeed, WeaponMouseSpeed, DeltaTime, AedirArmMouseSpeedSmoothing));
+		const float WeaponThrow = FMath::Clamp((Arm.MouseSpeed - AedirArmGuardSpeedLow) / (AedirArmGuardSpeedHigh - AedirArmGuardSpeedLow), 0.f, 1.f);
+		Arm.PunchBlend = FMath::FInterpTo(Arm.PunchBlend, WeaponThrow, DeltaTime, WeaponThrow > Arm.PunchBlend ? AedirArmPunchRiseSpeed : AedirArmPunchFallSpeed);
+
 		if (bThrustMode)
 		{
 			// Forward and back on the mouse drive the blade along its own line; sideways only steers the point.
@@ -1005,12 +1014,16 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 		const FVector Chest = Creature->GetActorTransform().TransformPositionNoScale(FVector(0.f, ChestSide * WeaponScale, AedirWeaponChestHeightCm * WeaponScale));
 		if (bThrustMode)
 		{
-			return Chest + ComputeWeaponTargetDir(Hand, Arm) * (FMath::Lerp(AedirThrustHandMinCm, AedirThrustHandMaxCm, FMath::Clamp(Arm.Extension, 0.f, 1.f)) * WeaponScale);
+			const float WaistSide = AedirThrustWaistSideCm * (Hand == EAedirHand::Right ? 1.f : -1.f);
+			const FVector Waist = Creature->GetActorTransform().TransformPositionNoScale(FVector(AedirThrustWaistForwardCm, WaistSide, AedirThrustWaistUpCm) * WeaponScale);
+			const FVector Extended = Chest + ComputeWeaponTargetDir(Hand, Arm) * (AedirThrustHandMaxCm * WeaponScale);
+			return FMath::Lerp(Waist, Extended, FMath::Clamp(Arm.Extension, 0.f, 1.f));
 		}
 
-		// The hand orbits a little around the chest and stays in front of the body, the blade does the long travel.
+		// The arm follows the blade around the body and opens up as the swing gets faster.
+		const float HandReach = FMath::Lerp(AedirWeaponHandReachCm, AedirWeaponHandThrowReachCm, Arm.PunchBlend);
 		const FVector HandDirection = FRotator(AedirWeaponHandPitch + Arm.AimOffsetDeg.Y * AedirWeaponHandPitchShare, Creature->GetActorRotation().Yaw + Arm.AimOffsetDeg.X * AedirWeaponHandYawShare, 0.0).Vector();
-		return Chest + HandDirection * (AedirWeaponHandReachCm * WeaponScale);
+		return Chest + HandDirection * (HandReach * WeaponScale);
 	}
 
 	// Centred fists converge slightly inwards and up to head height, so they meet the target instead of running parallel past it.
@@ -1825,7 +1838,7 @@ FVector UAedirCombatComponent::GetGripPointWorld() const
 	}
 
 	const FName HandBone = PrimaryHand == EAedirHand::Left ? Creature->Interaction->LeftHandBone : Creature->Interaction->RightHandBone;
-	return BodyMesh->GetBoneLocation(HandBone) + HeldItem->GetActorForwardVector() * (GripSpacingCm * static_cast<float>(Creature->GetActorScale3D().X));
+	return BodyMesh->GetBoneLocation(HandBone) + HeldItem->GetActorForwardVector() * (HeldItem->GripSpanCm * static_cast<float>(Creature->GetActorScale3D().X));
 }
 
 float UAedirCombatComponent::ComputeShoveEnergy(float Strength, float StaminaFraction)

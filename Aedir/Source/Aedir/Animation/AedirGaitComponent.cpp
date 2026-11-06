@@ -26,6 +26,7 @@ namespace
 	constexpr float AedirMinStepSeconds = 0.14f;
 	constexpr float AedirMaxStepSeconds = 0.38f;
 	constexpr float AedirLandingOverlapStart = 0.75f;
+	constexpr float AedirOverlapMinWalkShare = 1.2f;
 	constexpr float AedirLandingOverlapShare = 1.15f;
 	constexpr float AedirLandingLeadSeconds = 0.03f;
 	constexpr float AedirPlaceStepSeconds = 0.32f;
@@ -272,7 +273,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		// Normally one foot at a time. A foot the body is pulling away from may lift while the other is just coming down.
 		const int32 LaterFoot = 1 - NextStepFoot;
 		const bool bLaterLanding = bSwinging[LaterFoot] && SwingElapsed[LaterFoot] / FMath::Max(SwingDuration[LaterFoot], KINDA_SMALL_NUMBER) > AedirLandingOverlapStart;
-		const bool bNextMayStep = !bSwinging[NextStepFoot] && (!bSwinging[LaterFoot] || (bLaterLanding && FootDistance(NextStepFoot) >= Trigger * AedirLandingOverlapShare));
+		// Up to walking pace and on steady feet there is only ever one foot in the air, and the body settles on both for a moment between steps.
+		const bool bMayOverlap = Speed2D > WalkSpeedCm * AedirOverlapMinWalkShare || bRecovering || (BalanceComponent && BalanceComponent->IsStaggering());
+		const bool bDoubleSupportDone = PlantedSeconds[LaterFoot] >= CycleSeconds * FMath::Max(0.5f - SwingFraction, 0.f);
+		const bool bNextMayStep = !bSwinging[NextStepFoot]
+			&& (bSwinging[LaterFoot] ? (bMayOverlap && bLaterLanding && FootDistance(NextStepFoot) >= Trigger * AedirLandingOverlapShare) : (bMayOverlap || bDoubleSupportDone));
 
 		if (bRecovering && !bFootInAir && (RecoveryCooldownRemaining <= 0.f || RecoveryUrgency > 0.7f))
 		{
@@ -287,7 +292,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		{
 			BeginStep(NextStepFoot, StepSeconds);
 		}
-		else if (!bFootInAir && FootDistance(1 - NextStepFoot) >= Trigger * AedirOutOfTurnStepShare)
+		else if (!bFootInAir && bMayOverlap && FootDistance(1 - NextStepFoot) >= Trigger * AedirOutOfTurnStepShare)
 		{
 			BeginStep(1 - NextStepFoot, StepSeconds);
 		}
@@ -328,6 +333,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			AnkleWorld[Foot] = Hanging + FVector::UpVector * AnkleRestCm;
 			continue;
 		}
+
+		PlantedSeconds[Foot] = bSwinging[Foot] ? 0.f : PlantedSeconds[Foot] + DeltaTime;
 
 		FVector FootPosition;
 		if (bSwinging[Foot])

@@ -30,6 +30,12 @@ struct AEDIR_API FAedirItemDef
 	// Where the hand closes on the item, in cm along its long axis from the centre. Negative is towards the pommel.
 	float GripCm = 0.f;
 
+	// Distance between the two hands on the handle when held in both.
+	float GripSpanCm = 13.f;
+
+	// Hangs from the belt diagonally like a sword ready to be drawn, rather than straight up and down.
+	bool bHangsDiagonal = false;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	EAedirDamageType DamageType = EAedirDamageType::Blunt;
 

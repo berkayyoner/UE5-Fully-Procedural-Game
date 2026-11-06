@@ -68,14 +68,14 @@ bool FAedirCatalogWeaponTest::RunTest(const FString& Parameters)
 
 	const FAedirItemDef* Dagger = UAedirItemCatalog::Find(FName(TEXT("Dagger")));
 	const FAedirItemDef* Mace = UAedirItemCatalog::Find(FName(TEXT("Mace")));
-	const FAedirItemDef* Longsword = UAedirItemCatalog::Find(FName(TEXT("Longsword")));
+	const FAedirItemDef* Longsword = UAedirItemCatalog::Find(FName(TEXT("Sword")));
 	TestTrue(TEXT("Dagger pierces"), Dagger && Dagger->DamageType == EAedirDamageType::Pierce);
 	TestTrue(TEXT("Spear pierces"), Spear->DamageType == EAedirDamageType::Pierce);
 	TestTrue(TEXT("Mace is blunt"), Mace && Mace->DamageType == EAedirDamageType::Blunt);
-	TestTrue(TEXT("Longsword cuts"), Longsword && Longsword->DamageType == EAedirDamageType::Slash);
+	TestTrue(TEXT("The sword cuts"), Longsword && Longsword->DamageType == EAedirDamageType::Slash);
 
 	TestTrue(TEXT("Spear is two-handed"), Spear->bTwoHanded);
-	TestFalse(TEXT("Longsword is one-handed"), Longsword && Longsword->bTwoHanded);
+	TestFalse(TEXT("The sword is one-handed"), Longsword && Longsword->bTwoHanded);
 
 	return true;
 }
