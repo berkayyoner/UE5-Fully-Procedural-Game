@@ -381,7 +381,7 @@ public:
 	float ArmBlendInterpSpeed = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ElbowBendWalkDegrees = 8.f;
+	float ElbowBendWalkDegrees = 14.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ElbowBendRunDegrees = 70.f;
@@ -390,7 +390,14 @@ public:
 	float KneeBendMaxDegrees = 40.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxRunForwardLeanDegrees = 8.f;
+	float MaxRunForwardLeanDegrees = 14.f;
+
+	// Roll of the torso towards the side the body is travelling to, scaled by speed.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float MoveDirectionLeanRollDegrees = 7.f;
+
+	// 0 standing, 1 fully crouched. Lags the instant capsule change so the pelvis and camera lower gradually.
+	float GetCrouchAlpha() const { return CrouchAlpha; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float PelvisYawSwingDegrees = 4.f;
@@ -430,7 +437,7 @@ public:
 
 	// Arm rest pose: the arms fall from the A-pose towards the body while no reach, swing or guard target drives them.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
-	float ArmRestAdductionDegrees = 30.f;
+	float ArmRestAdductionDegrees = 24.f;
 
 	// Sign of the adduction roll on each side. Flip a sign if that arm moves away from the body.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
@@ -445,7 +452,7 @@ public:
 
 	// Natural elbow flexion in degrees at a full rest pose.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Rest")
-	float ElbowRestBendDegrees = 12.f;
+	float ElbowRestBendDegrees = 2.f;
 
 	// Breathing rate in cycles per second at rest and at full exertion.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Breathing")
@@ -512,11 +519,11 @@ public:
 
 	// Planar acceleration in cm/s^2 that counts as a full lean.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
-	float InertiaAccelerationScaleCm = 600.f;
+	float InertiaAccelerationScaleCm = 380.f;
 
 	// Forward lean in degrees under full forward acceleration, and backward lean under full braking.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
-	float InertiaLeanPitchDegrees = 6.f;
+	float InertiaLeanPitchDegrees = 9.f;
 
 	// Roll lean in degrees under full lateral acceleration.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")

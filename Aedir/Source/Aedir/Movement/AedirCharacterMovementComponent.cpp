@@ -114,9 +114,10 @@ UAedirCharacterMovementComponent::UAedirCharacterMovementComponent()
 	SetCrouchedHalfHeight(55.f);
 	JumpZVelocity = 420.f;
 	AirControl = 0.25f;
-	BaseGroundFriction = 8.f;
-	BaseBrakingDecelerationWalking = 1400.f;
-	BaseMaxAcceleration = 1400.f;
+	// Soft acceleration and braking give the body weight: a walk takes about half a second to reach speed.
+	BaseGroundFriction = 4.f;
+	BaseBrakingDecelerationWalking = 520.f;
+	BaseMaxAcceleration = 480.f;
 
 	GroundFriction = BaseGroundFriction;
 	BrakingDecelerationWalking = BaseBrakingDecelerationWalking;

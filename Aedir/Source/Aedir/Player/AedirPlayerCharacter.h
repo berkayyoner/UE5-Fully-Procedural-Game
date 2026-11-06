@@ -31,6 +31,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float ThirdPersonArmLength = 280.f;
 
+	// Height of the camera boom pivot above the capsule centre while standing.
+	float CameraBoomBaseZ = 60.f;
+
+	// Share of the mouse movement that still turns the camera while a guard is held.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float FightCameraMouseScale = 0.03f;
+
 	// Blend of the subtle fight-stance camera drift, 0 outside the stance.
 	float FightCameraAlpha = 0.f;
 	FRotator FightCameraSway = FRotator::ZeroRotator;

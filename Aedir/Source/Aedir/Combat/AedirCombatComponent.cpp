@@ -61,7 +61,7 @@ namespace
 	constexpr float AedirArmProxyInterpSpeed = 12.f;
 	constexpr float AedirArmNetSendInterval = 1.f / 30.f;
 	constexpr float AedirArmAimYawLimit = 110.f;
-	constexpr float AedirArmOutwardYawLimit = 90.f;
+	constexpr float AedirArmOutwardYawLimit = 80.f;
 	constexpr float AedirArmAcrossYawLimit = 0.f;
 	constexpr float AedirArmAimPitchMin = -70.f;
 	constexpr float AedirArmAimPitchMax = 85.f;
@@ -842,7 +842,7 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 	const float Extension = FMath::Clamp(Arm.Extension, 0.f, 1.f);
 	// Pulled outwards the elbow breaks and the hand travels an arc beside the body; centred the arm reaches straight ahead.
 	const float OutwardSign = Hand == EAedirHand::Right ? 1.f : -1.f;
-	const float OutwardAlpha = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign / 90.f, 0.f, 1.f);
+	const float OutwardAlpha = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign / AedirArmOutwardYawLimit, 0.f, 1.f);
 	const float ElbowBendScale = FMath::Lerp(1.f, 0.5f, OutwardAlpha);
 	const float Reach = ElbowBendScale * FMath::Lerp(AedirArmReachMinScale, 1.f, Extension) * (SwingReach + GetEffectiveWeaponLength(Hand)) * Scale;
 

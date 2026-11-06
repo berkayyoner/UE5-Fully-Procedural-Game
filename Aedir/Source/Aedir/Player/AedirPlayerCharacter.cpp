@@ -3,6 +3,8 @@
 #include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Combat/AedirCombatComponent.h"
+#include "Animation/AedirGaitComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -251,21 +253,17 @@ void AAedirPlayerCharacter::ApplyViewPitchLimits()
 
 void AAedirPlayerCharacter::HandleMouseX(float Value)
 {
-	// While a guard is held the mouse moves the arm instead of the camera.
-	if (!Combat || !Combat->IsInFightStance())
-	{
-		AddControllerYawInput(Value);
-	}
+	// While a guard is held the mouse mostly moves the arm; the camera still follows a few percent of it.
+	const bool bFighting = Combat && Combat->IsInFightStance();
+	AddControllerYawInput(bFighting ? Value * FightCameraMouseScale : Value);
 
 	PendingMouseDelta.X += Value;
 }
 
 void AAedirPlayerCharacter::HandleMouseY(float Value)
 {
-	if (!Combat || !Combat->IsInFightStance())
-	{
-		AddControllerPitchInput(-Value);
-	}
+	const bool bFighting = Combat && Combat->IsInFightStance();
+	AddControllerPitchInput(bFighting ? -Value * FightCameraMouseScale : -Value);
 
 	PendingMouseDelta.Y += Value;
 }
@@ -350,6 +348,14 @@ void AAedirPlayerCharacter::HandleRightGuardReleased()
 
 void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 {
+	if (CameraBoom && Gait && GetCharacterMovement())
+	{
+		// The capsule changes size at once when crouching; the boom pivot is eased so the camera sinks with the pelvis.
+		const float Drop = FMath::Max(GetDefaultHalfHeight() - GetCharacterMovement()->GetCrouchedHalfHeight(), 0.f);
+		const float CapsuleDrop = bIsCrouched ? Drop : 0.f;
+		CameraBoom->SetRelativeLocation(FVector(0.f, 0.f, CameraBoomBaseZ + CapsuleDrop - Drop * Gait->GetCrouchAlpha()));
+	}
+
 	if (FollowCamera)
 	{
 		// The fight camera is locked in aim but never dead still: breathing drift plus a lean into the mouse movement.

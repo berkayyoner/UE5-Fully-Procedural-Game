@@ -17,10 +17,10 @@ public:
 	UAedirCharacterMovementComponent();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float WalkSpeed = 180.f;
+	float WalkSpeed = 140.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float RunSpeedMultiplier = 1.75f;
+	float RunSpeedMultiplier = 2.4f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float CrouchSpeedMultiplier = 0.5f;
@@ -62,7 +62,7 @@ public:
 	float RotationRateMoving = 360.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float BodyLagYawMoving = 25.f;
+	float BodyLagYawMoving = 4.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float MaxBodyHeadYawWhileMoving = 35.f;

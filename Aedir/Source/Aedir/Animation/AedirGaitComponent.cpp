@@ -18,6 +18,7 @@ namespace
 	constexpr float AedirRestCatchUpCyclesPerSecond = 2.f;
 	constexpr float AedirMinStrideLength = 10.f;
 	constexpr float AedirStepHeightClearance = 4.f;
+	constexpr float AedirSettleStepDistanceCm = 5.f;
 	constexpr float AedirRunBlendInterpSpeed = 6.f;
 	constexpr float AedirMovingBounceFrequency = 2.f;
 
@@ -251,9 +252,20 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 		if (!bSwinging[Foot] && !bRecoverySwinging[Foot] && !bStepping)
 		{
-			// Standing still the planted contact follows the home location, so the stance offsets reach the feet.
-			PlantedContact[Foot] = LandingLocation[Foot];
-			PlantedNormal[Foot] = LandingNormal[Foot];
+			// Standing still a foot that is away from its home takes one settling step there instead of jumping, one foot at a time.
+			const FVector ToHome = LandingLocation[Foot] - PlantedContact[Foot];
+			if (ToHome.Size2D() > AedirSettleStepDistanceCm * ActorScale || FMath::Abs(ToHome.Z) > 15.f)
+			{
+				if (!bRecoverySwinging[1 - Foot] && !bKicking)
+				{
+					BeginRecoverySwing(Foot, LandingLocation[Foot], 1000.f, 0.f, BottomZ);
+				}
+			}
+			else
+			{
+				PlantedContact[Foot] = LandingLocation[Foot];
+				PlantedNormal[Foot] = LandingNormal[Foot];
+			}
 		}
 
 		if (!bSwinging[Foot])
@@ -349,7 +361,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	// Crouching shrinks the capsule, so the pelvis drops by the same amount and the camera boom stays on the body.
 	const float CrouchDropCm = FMath::Max(CreatureOwner->GetDefaultHalfHeight() - MovementComponent->GetCrouchedHalfHeight(), 0.f) * ActorScale;
-	CrouchAlpha = FMath::FInterpTo(CrouchAlpha, CreatureOwner->bIsCrouched ? 1.f : 0.f, DeltaTime, 14.f);
+	CrouchAlpha = FMath::FInterpTo(CrouchAlpha, CreatureOwner->bIsCrouched ? 1.f : 0.f, DeltaTime, 3.5f);
 	GaitState.HipOffsetZ -= CrouchDropCm * CrouchAlpha;
 
 	FVector LeftReachTarget = FVector::ZeroVector;
@@ -410,7 +422,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.RightReachTargetWorld = RightReachTarget;
 	GaitState.FistAlphaLeft = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Left), 0.f, 1.f) : 0.f;
 	GaitState.FistAlphaRight = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Right), 0.f, 1.f) : 0.f;
-	GaitState.ElbowBend = FMath::Lerp(ElbowBendWalkDegrees, ElbowBendRunDegrees, SpeedAlpha);
+	// Loose arms hang straight while standing; the elbows start to break with the walking and running speed.
+	GaitState.ElbowBend = FMath::Lerp(ElbowBendWalkDegrees, ElbowBendRunDegrees, SpeedAlpha) * ArmBlend;
 	GaitState.KneeBend = FMath::Max(Lift[0], Lift[1]) * KneeBendMaxDegrees + ReachLowerAlpha * KneeBendMaxDegrees;
 	GaitState.KneeBend += StanceKneeBendDegrees * StanceAlpha;
 
@@ -451,7 +464,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float InertiaPitch = FMath::Clamp(-ForwardLoad * InertiaLeanPitchDegrees, -InertiaLeanLimitDegrees, InertiaLeanLimitDegrees) * Alive;
 	const float InertiaRoll = FMath::Clamp(RightLoad * InertiaLeanRollDegrees + TurnLoad * YawRateLeanDegrees, -InertiaLeanLimitDegrees, InertiaLeanLimitDegrees) * Alive;
 	GaitState.SpineLeanPitch += InertiaPitch;
-	GaitState.SpineLeanRoll = InertiaRoll;
+	GaitState.SpineLeanRoll = InertiaRoll + LocalDirection.Y * SpeedAlpha * MoveDirectionLeanRollDegrees;
 
 	// Idle sway and weight shift only while standing still and out of the fighting stance.
 	const float IdleTarget = bStepping ? 0.f : 1.f - StanceAlpha;

@@ -16,6 +16,7 @@ namespace
 	constexpr float AedirReachAlphaThreshold = 0.001f;
 	constexpr float AedirElbowOutwardDistance = 60.f;
 	constexpr float AedirElbowDropDistance = 40.f;
+	constexpr float AedirElbowBackDistance = 90.f;
 	constexpr float AedirFistAlphaThreshold = 0.001f;
 	constexpr int32 AedirFingerCount = 5;
 	constexpr int32 AedirFingerJointCount = 3;
@@ -146,8 +147,9 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	const FVector LeftOutwardMesh = ActorToMesh.RotateVector(-FVector::RightVector);
 	const FVector RightOutwardMesh = ActorToMesh.RotateVector(FVector::RightVector);
 	const FVector DownMesh = ActorToMesh.RotateVector(-FVector::UpVector);
-	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh);
-	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh);
+	const FVector ArmForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
+	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh);
+	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh);
 
 	// Fingers are children of the final hand pose, so they are curled after the arm IK.
 	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
@@ -293,7 +295,7 @@ void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FB
 	}
 }
 
-void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh) const
+void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const
 {
 	if (ReachAlpha <= AedirReachAlphaThreshold)
 	{
@@ -318,7 +320,9 @@ void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, con
 
 	const FVector Effector = MeshToWorld.InverseTransformPosition(HandWorld);
 	// Elbow pole outward from the body and slightly down so the elbow stays out of the torso.
-	const FVector JointTarget = Effector + OutwardMesh * AedirElbowOutwardDistance + DownMesh * AedirElbowDropDistance;
+	// A hand pulled out to the side takes the elbow back with it, like a hook or a drawn bow.
+	const float Sideways = FMath::Clamp(static_cast<float>(FVector::DotProduct((Effector - RootPosition).GetSafeNormal(), OutwardMesh)), 0.f, 1.f);
+	const FVector JointTarget = Effector + OutwardMesh * AedirElbowOutwardDistance + DownMesh * AedirElbowDropDistance - ForwardMesh * (AedirElbowBackDistance * Sideways);
 
 	FVector SolvedJointPosition;
 	FVector SolvedEndPosition;
