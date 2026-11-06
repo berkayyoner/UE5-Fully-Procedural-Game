@@ -73,8 +73,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float TurnInPlaceRate = 130.f;
 
+	// Largest change of the body turn rate in degrees per second squared while moving.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float BodyTurnAcceleration = 900.f;
+
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Aedir|Movement")
 	bool bTurningInPlace = false;
+
+	float BodyYawRate = 0.f;
 
 	// Seconds the body crouches down before the legs push off.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")

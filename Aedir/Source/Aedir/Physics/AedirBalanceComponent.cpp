@@ -1133,7 +1133,8 @@ void UAedirBalanceComponent::UpdateLegBlend(float DeltaTime)
 	const bool bPhysical = bIsRagdoll || StaggerSeconds > 0.f || DazeSeconds > 0.f || Balance < 0.6f || bLegHurt;
 	LegPhysicsBlend = FMath::FInterpTo(LegPhysicsBlend, bPhysical ? 1.f : 0.f, DeltaTime, 8.f);
 
-	for (int32 GroupIndex = 3; GroupIndex <= 4; ++GroupIndex)
+	// The spine and head follow the pose too; a simulated torso lags behind a quickly turning pelvis and swings the wrong way.
+	for (const int32 GroupIndex : { 0, 3, 4 })
 	{
 		for (const FName& BoneName : MotorGroupBones[GroupIndex])
 		{

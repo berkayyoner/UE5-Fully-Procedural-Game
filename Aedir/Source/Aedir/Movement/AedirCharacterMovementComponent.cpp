@@ -215,9 +215,15 @@ void UAedirCharacterMovementComponent::PhysicsRotation(float DeltaTime)
 			Step = YawDelta - Sign * MaxBodyHeadYawWhileMoving;
 		}
 
-		SetBodyYaw(CurrentYaw + Step);
+		// The turn eases in and out: the yaw rate may only change at a limited angular acceleration.
+		const float TargetRate = DeltaTime > KINDA_SMALL_NUMBER ? Step / DeltaTime : 0.f;
+		BodyYawRate = FMath::FInterpConstantTo(BodyYawRate, TargetRate, DeltaTime, BodyTurnAcceleration);
+		const float SmoothedStep = FMath::Abs(BodyYawRate * DeltaTime) > FMath::Abs(YawDelta) ? YawDelta : BodyYawRate * DeltaTime;
+		SetBodyYaw(CurrentYaw + SmoothedStep);
 		return;
 	}
+
+	BodyYawRate = 0.f;
 
 	if (!bTurningInPlace && FMath::Abs(YawDelta) > StandingLookYawLimit)
 	{
