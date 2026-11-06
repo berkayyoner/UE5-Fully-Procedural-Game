@@ -424,7 +424,7 @@ public:
 	float GetCrouchAlpha() const { return CrouchAlpha; }
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float PelvisYawSwingDegrees = 7.f;
+	float PelvisYawSwingDegrees = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HeadYawScale = 0.45f;
@@ -527,7 +527,7 @@ public:
 
 	// Pelvis roll in degrees towards the stance foot while walking or running, at full speed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
-	float WalkWeightShiftRollDegrees = 2.5f;
+	float WalkWeightShiftRollDegrees = 6.f;
 
 	// Share of the pelvis roll that the upper spine counter-rotates.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")

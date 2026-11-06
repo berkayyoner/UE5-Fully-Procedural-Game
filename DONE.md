@@ -39,3 +39,4 @@ Body turn while moving eases with a limited angular acceleration; spine and head
 Fixed the body turning the wrong way when the camera turns left while moving: FMath::FixedTurn wraps to 0..360, replaced with a signed clamp (editor build ok, 60/60 tests, not played).
 Early-step drift is measured from under the hip instead of the forward landing point, so the left foot no longer takes constant premature small steps (editor build ok, 60/60 tests, not played).
 Step targets halved ahead of the hip, stronger pelvis bob/yaw/lateral shift while walking, centred fists converge inwards to head height (editor build ok, 60/60 tests, not played).
+Walking pelvis rotation moved from yaw to roll (X axis): yaw swing 0, roll 6 degrees (builds, tests ok, not played).
