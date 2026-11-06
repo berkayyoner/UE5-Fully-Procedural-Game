@@ -94,6 +94,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
 	void MoveLocal(FVector2D Input);
 
+	// Largest angle the movement heading may run ahead of the body while the body turns after the look direction.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float MoveHeadingLeadMaxDegrees = 35.f;
+
 	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
 	void SetWantsToRun(bool bWantsToRun);
 

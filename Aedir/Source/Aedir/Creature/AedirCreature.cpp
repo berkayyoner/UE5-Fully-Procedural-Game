@@ -158,8 +158,15 @@ float AAedirCreature::GetCarryCapacity() const
 
 void AAedirCreature::MoveLocal(FVector2D Input)
 {
-	const FRotator BaseRotation = Controller ? GetControlRotation() : GetActorRotation();
-	const FRotationMatrix YawMatrix(FRotator(0.f, BaseRotation.Yaw, 0.f));
+	// Input is relative to the look direction, but the heading may only run a limited angle ahead of the body.
+	// The body turns after the head, so a quick camera turn bends the path instead of sending the creature sideways.
+	float BaseYaw = GetActorRotation().Yaw;
+	if (Controller)
+	{
+		const float LookDelta = FRotator::NormalizeAxis(GetControlRotation().Yaw - BaseYaw);
+		BaseYaw += FMath::Clamp(LookDelta, -MoveHeadingLeadMaxDegrees, MoveHeadingLeadMaxDegrees);
+	}
+	const FRotationMatrix YawMatrix(FRotator(0.f, BaseYaw, 0.f));
 
 	AddMovementInput(YawMatrix.GetUnitAxis(EAxis::X), static_cast<float>(Input.Y));
 	AddMovementInput(YawMatrix.GetUnitAxis(EAxis::Y), static_cast<float>(Input.X));
