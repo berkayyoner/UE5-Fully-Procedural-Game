@@ -347,6 +347,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.HipOffsetZ -= ReachLowerCm;
 	GaitState.HipOffsetZ -= StanceHipLowerCm * StanceAlpha;
 
+	// Crouching shrinks the capsule, so the pelvis drops by the same amount and the camera boom stays on the body.
+	const float CrouchDropCm = FMath::Max(CreatureOwner->GetDefaultHalfHeight() - MovementComponent->GetCrouchedHalfHeight(), 0.f) * ActorScale;
+	CrouchAlpha = FMath::FInterpTo(CrouchAlpha, CreatureOwner->bIsCrouched ? 1.f : 0.f, DeltaTime, 14.f);
+	GaitState.HipOffsetZ -= CrouchDropCm * CrouchAlpha;
+
 	FVector LeftReachTarget = FVector::ZeroVector;
 	FVector RightReachTarget = FVector::ZeroVector;
 	float LeftReachAlpha = 0.f;

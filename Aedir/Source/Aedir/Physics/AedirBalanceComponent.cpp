@@ -185,6 +185,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	UpdatePelvisLean(DeltaTime);
 	UpdateMotors(DeltaTime, false);
+	UpdateLegBlend(DeltaTime);
 
 	if (!bIsRagdoll)
 	{
@@ -576,6 +577,11 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	// Walking is a controlled fall: the swing foot leaves the polygon every step, so moving bodies get a margin allowance.
 	const float MoveSpeed = CharacterOwner->GetVelocity().Size2D();
 	SupportMargin += FMath::Clamp(MoveSpeed / ComBalanceMovingSpeedRef, 0.f, 1.f) * ComBalanceMovingAllowanceCm;
+	// Any ordinary locomotion cannot topple a balanced body, the recovery step is for pushes and stumbles only.
+	if (MoveSpeed > 20.f && StaggerSeconds <= 0.f)
+	{
+		SupportMargin = FMath::Max(SupportMargin, 0.f);
+	}
 	bSupportGrounded = true;
 
 	FVector2D Centroid = FVector2D::ZeroVector;
@@ -1104,6 +1110,31 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 		if (bForce || FMath::Abs(Strength[GroupIndex] - AppliedMotorStrength[GroupIndex]) > 0.04f)
 		{
 			ApplyMotorGroup(GroupIndex, Strength[GroupIndex]);
+		}
+	}
+}
+
+void UAedirBalanceComponent::UpdateLegBlend(float DeltaTime)
+{
+	if (!BodyMesh)
+	{
+		return;
+	}
+
+	// Balanced legs follow the IK pose exactly, so simulated feet cannot fight the ground and jitter. Staggering, falling or hurt legs go physical.
+	const UAedirCombatComponent* Combat = CharacterOwner ? CharacterOwner->FindComponentByClass<UAedirCombatComponent>() : nullptr;
+	const bool bLegHurt = Combat && (Combat->GetLimbInjury(EAedirLimb::LeftLeg) > 0.3f || Combat->GetLimbInjury(EAedirLimb::RightLeg) > 0.3f);
+	const bool bPhysical = bIsRagdoll || StaggerSeconds > 0.f || DazeSeconds > 0.f || Balance < 0.6f || bLegHurt;
+	LegPhysicsBlend = FMath::FInterpTo(LegPhysicsBlend, bPhysical ? 1.f : 0.f, DeltaTime, 8.f);
+
+	for (int32 GroupIndex = 3; GroupIndex <= 4; ++GroupIndex)
+	{
+		for (const FName& BoneName : MotorGroupBones[GroupIndex])
+		{
+			if (FBodyInstance* Body = BodyMesh->GetBodyInstance(BoneName))
+			{
+				Body->PhysicsBlendWeight = LegPhysicsBlend;
+			}
 		}
 	}
 }

@@ -37,6 +37,9 @@ namespace
 	constexpr float WeatherManagerLightningBalanceImpact = 0.6f;
 	constexpr float WeatherManagerSoundSpeedCmPerSecond = 34300.f;
 	constexpr float WeatherManagerFullSunLux = 14.f;
+	// The level exposure made the profile values glare, so the applied light is toned down.
+	constexpr float WeatherManagerSunBrightnessScale = 0.55f;
+	constexpr float WeatherManagerSkyBrightnessScale = 0.6f;
 	constexpr float WeatherManagerWetRiseBase = 0.02f;
 	constexpr float WeatherManagerWetRiseRain = 0.05f;
 	constexpr float WeatherManagerWetDryRate = 0.004f;
@@ -526,7 +529,7 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 	{
 		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
 		{
-			SunComponent->SetIntensity(Profile.SunIntensityLux + FlashBoost);
+			SunComponent->SetIntensity(Profile.SunIntensityLux * WeatherManagerSunBrightnessScale + FlashBoost);
 
 			if (!AppliedSunColor.Equals(Profile.SunColor, 0.001f))
 			{
@@ -554,7 +557,7 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 
 			if (bChangedNotably && WorldTime >= NextSkyLightApplyTime)
 			{
-				SkyComponent->SetIntensity(Profile.SkyLightIntensity);
+				SkyComponent->SetIntensity(Profile.SkyLightIntensity * WeatherManagerSkyBrightnessScale);
 				SkyComponent->MarkRenderStateDirty();
 				AppliedSkyLightIntensity = Profile.SkyLightIntensity;
 				NextSkyLightApplyTime = WorldTime + WeatherManagerSkyLightApplyInterval;

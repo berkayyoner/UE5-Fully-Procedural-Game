@@ -62,7 +62,7 @@ namespace
 	constexpr float AedirArmNetSendInterval = 1.f / 30.f;
 	constexpr float AedirArmAimYawLimit = 110.f;
 	constexpr float AedirArmOutwardYawLimit = 90.f;
-	constexpr float AedirArmAcrossYawLimit = 25.f;
+	constexpr float AedirArmAcrossYawLimit = 0.f;
 	constexpr float AedirArmAimPitchMin = -70.f;
 	constexpr float AedirArmAimPitchMax = 85.f;
 	constexpr float AedirArmGuardRestYaw = 12.f;

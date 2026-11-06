@@ -197,6 +197,8 @@ private:
 	void ProcessHit(AActor* OtherActor, UPrimitiveComponent* OtherComponent, const FHitResult& Hit);
 	void SetupMotors();
 	void UpdateMotors(float DeltaTime, bool bForce);
+	void UpdateLegBlend(float DeltaTime);
+	float LegPhysicsBlend = 0.f;
 	void ApplyMotorGroup(int32 GroupIndex, float Strength);
 	void SampleCenterOfMass();
 	void AddFootSupportPoints(FName FootBone, FName BallBone, TArray<FVector2D>& OutPoints) const;

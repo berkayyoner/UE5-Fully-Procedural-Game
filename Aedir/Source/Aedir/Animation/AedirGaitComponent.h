@@ -587,6 +587,7 @@ private:
 	float PreviousFootFraction[2] = { 0.f, 0.5f };
 
 	// Stumble step state per foot. A recovery swing lands on RecoveryLandingWorld instead of the phase-driven landing.
+	float CrouchAlpha = 0.f;
 	bool bRecoverySwinging[2] = { false, false };
 	float RecoverySwingElapsed[2] = { 0.f, 0.f };
 	float RecoverySwingDuration[2] = { 0.f, 0.f };
