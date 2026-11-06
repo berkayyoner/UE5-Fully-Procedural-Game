@@ -1644,6 +1644,12 @@ bool UAedirCombatComponent::EvaluateTwoHandGrip() const
 		return false;
 	}
 
+	// A big object is hugged with both arms and is not swung, so it has no weapon grip.
+	if ((LeftItem ? LeftItem : RightItem)->ItemClass == EAedirItemClass::Object)
+	{
+		return false;
+	}
+
 	// Both hands on the same item is a two-hand grip; with one hand on it, the empty hand only joins while both guards are held.
 	return (LeftItem && RightItem) || (bLeftGuard && bRightGuard);
 }

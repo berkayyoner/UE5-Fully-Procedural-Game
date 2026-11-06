@@ -29,6 +29,17 @@ struct AEDIR_API FAedirHandSlot
 	FVector ReachHandWorld = FVector::ZeroVector;
 };
 
+// How far the body bends down for something low.
+struct FAedirReachPosture
+{
+	float LowerCm = 0.f;
+	float LeanDegrees = 0.f;
+	float HipForwardCm = 0.f;
+	// Sideways shift of the pelvis and twist of the spine towards an item off to the side. Positive is to the right.
+	float HipSideCm = 0.f;
+	float TwistDegrees = 0.f;
+};
+
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
 class AEDIR_API UAedirInteractionComponent : public UActorComponent
 {
@@ -45,7 +56,7 @@ public:
 
 	// Distance in cm from the hand bone to the item bounds center that counts as a grab.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float GrabDistance = 18.f;
+	float GrabDistance = 22.f;
 
 	// Speed in cm/s of the hand moving toward the reach target.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
@@ -84,13 +95,7 @@ public:
 		FTransform(FRotator(-80.f, 0.f, 0.f), FVector(-12.f, 20.f, -28.f))
 	};
 
-	// Maximum pelvis lowering in cm.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float KneeBendMaxLower = 60.f;
 
-	// Depth below the hip bone where lowering starts; items above this depth are reached with the arm alone.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float ReachLowerStartHeight = 5.f;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void StartReach(EAedirHand Hand);
@@ -133,6 +138,20 @@ public:
 	// Positive number of cm the pelvis should go down, smoothed.
 	UFUNCTION(BlueprintPure, Category="Aedir|Interaction")
 	float GetPelvisLowerZ() const;
+
+	// Forward bend of the spine in degrees while reaching low, smoothed.
+	float GetReachLeanDegrees() const { return ReachLeanDegrees; }
+
+	// Forward shift of the pelvis in unscaled cm while reaching low, negative when it sits back. Smoothed.
+	float GetReachHipForward() const { return ReachHipForward; }
+
+	// Sideways shift of the pelvis in unscaled cm and twist of the spine in degrees while reaching low. Smoothed.
+	float GetReachHipSide() const { return ReachHipSide; }
+	float GetReachTwistDegrees() const { return ReachTwistDegrees; }
+
+	// The body posture that brings the shoulder within arm's reach of a point. Forward and lateral are relative to the shoulder's
+	// side of the body, the height is above the floor. All in unscaled cm.
+	static FAedirReachPosture ComputeReachPosture(float ForwardCm, float LateralCm, float ItemHeightCm);
 
 	// Server only. Equips a freshly spawned item into a hand without a reach phase.
 	bool EquipImmediate(EAedirHand Hand, AAedirItemActor* Item);
@@ -246,5 +265,16 @@ private:
 	float ReachBlend[2] = { 0.f, 0.f };
 	FVector ReachTargetCache[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	float PelvisLowerZ = 0.f;
+	float ReachLeanDegrees = 0.f;
+	float ReachHipForward = 0.f;
+	float ReachHipSide = 0.f;
+	float ReachTwistDegrees = 0.f;
+
+	// The hand whose key started a reach. It takes the upper grip on a weapon held in both hands.
+	EAedirHand ReachLeadHand = EAedirHand::Right;
+
+	FVector GetReachTargetWorld(EAedirHand Hand, const AAedirItemActor* Item) const;
+	bool CanLift(const AAedirItemActor* Item) const;
+	void CarryObject(AAedirCreature* Creature, AAedirItemActor* Item);
 	int32 LastStoredWaistIndex[2] = { INDEX_NONE, INDEX_NONE };
 };

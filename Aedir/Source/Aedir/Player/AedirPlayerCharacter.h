@@ -166,10 +166,22 @@ public:
 
 	// Diagnostics: logs gait, balance and reach state for the given number of seconds.
 	UFUNCTION(Exec)
-	void GaitInfo(float Seconds);
+	void GaitInfo(float Seconds, float Interval);
 
 	UFUNCTION(Exec)
-	void ReachTest(float DelaySeconds);
+	void AutoMove(float Forward, float Right, int32 Run, float TurnDegrees);
+
+	UFUNCTION(Exec)
+	void ShotCam(const FString& CameraArgs);
+
+	UFUNCTION(Exec)
+	void PlaceItem(const FString& ItemArgs);
+
+	// Fixed movement input for diagnostics, on top of the keyboard.
+	void SetDevAutoMove(const FVector2D& Input) { DevAutoMove = Input; }
+
+	UFUNCTION(Exec)
+	void ReachTest(float DelaySeconds, int32 BothHands);
 
 	UFUNCTION(Exec)
 	void CrouchTest();
@@ -254,5 +266,6 @@ private:
 	UFUNCTION(Server, Reliable)
 	void ServerDevCommand(const FString& Command, const FString& Args);
 
+	FVector2D DevAutoMove = FVector2D::ZeroVector;
 	bool bDebugBody = false;
 };

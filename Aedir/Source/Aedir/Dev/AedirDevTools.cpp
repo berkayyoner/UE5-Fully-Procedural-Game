@@ -84,6 +84,11 @@ int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const F
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemCatalog.h"
 #include "Animation/AedirGaitComponent.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/PlayerController.h"
 #include "Physics/AedirBalanceComponent.h"
 #include "TimerManager.h"
 #include "Player/AedirPlayerCharacter.h"
@@ -261,6 +266,18 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	else if (Command == TEXT("CrouchTest"))
 	{
 		CrouchTest(Player, Args);
+	}
+	else if (Command == TEXT("AutoMove"))
+	{
+		AutoMove(Player, Args);
+	}
+	else if (Command == TEXT("ShotCam"))
+	{
+		ShotCam(Player, Args);
+	}
+	else if (Command == TEXT("PlaceItem"))
+	{
+		PlaceItem(Player, Args);
 	}
 	else
 	{
@@ -586,6 +603,8 @@ void UAedirDevTools::Help(AAedirPlayerCharacter* Player, const FString& Args)
 	DevToolsReport(TEXT("  Push <strength 0-1>: shove the player's balance forward, 1 is a knockdown push"));
 	DevToolsReport(TEXT("  Knockdown: drop the player to the ground"));
 	DevToolsReport(TEXT("  FallTest <height cm>: lift the player and let them fall"));
+	DevToolsReport(TEXT("  GaitInfo <seconds> [interval]: log foot heights, foot positions and reach to the output log"));
+	DevToolsReport(TEXT("  ReachTest <delay>, CrouchTest, AutoMove <forward> <right> [run], ShotCam <yaw> [dist] [height]|off, PlaceItem <Id> <forward> <right>"));
 	DevToolsReport(TEXT("  DevHelp: this list"));
 }
 
@@ -675,36 +694,149 @@ void UAedirDevTools::Knockdown(AAedirPlayerCharacter* Player, const FString& Arg
 
 void UAedirDevTools::GaitInfo(AAedirPlayerCharacter* Player, const FString& Args)
 {
-	// Logs the gait, balance and reach state twice a second for a number of seconds, to measure what the body does.
-	const float Seconds = Args.IsEmpty() ? 5.f : FMath::Clamp(FCString::Atof(*Args), 1.f, 60.f);
-	TSharedRef<float> Remaining = MakeShared<float>(Seconds);
+	// Logs what the body really does for a number of seconds: heights of the foot bones above the floor, how far each ankle is
+	// in front of the hip, and how far the right hand is from what it reaches for.
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	const float Seconds = Tokens.IsValidIndex(0) ? FMath::Clamp(FCString::Atof(*Tokens[0]), 0.1f, 60.f) : 5.f;
+	const float Interval = Tokens.IsValidIndex(1) ? FMath::Clamp(FCString::Atof(*Tokens[1]), 0.02f, 5.f) : 0.5f;
+	TSharedRef<float> Elapsed = MakeShared<float>(0.f);
 	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
-	Player->GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(Player, [Player, Remaining, Handle, Seconds]()
+	Player->GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(Player, [Player, Elapsed, Handle, Seconds, Interval]()
 	{
 		const FAedirGaitState& State = Player->Gait->GetGaitState();
-		UE_LOG(LogAedir, Display, TEXT("[GaitInfo] t=%.1f speed=%.0f crouched=%d balance=%.2f margin=%.1f stagger=%d stepping=%d footLift L%.2f R%.2f hipZ=%.1f spinePitch=%.1f pelvisLower=%.1f z=%.1f"),
-			Seconds - *Remaining, Player->GetVelocity().Size2D(), Player->bIsCrouched ? 1 : 0,
+		const USkeletalMeshComponent* Mesh = Player->GetMesh();
+		const FVector ActorLocation = Player->GetActorLocation();
+		const FVector Forward = Player->GetActorForwardVector().GetSafeNormal2D();
+		const float FloorZ = static_cast<float>(ActorLocation.Z) - Player->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - 2.15f;
+
+		// Height above the real ground under the bone.
+		const auto Height = [&](const TCHAR* Bone)
+		{
+			const FVector BoneWorld = Mesh->GetBoneLocation(FName(Bone));
+			FHitResult Hit;
+			const FCollisionQueryParams Params(FName(TEXT("AedirGaitInfo")), false, Player);
+			const bool bHit = Player->GetWorld()->LineTraceSingleByChannel(Hit, BoneWorld + FVector(0.f, 0.f, 80.f), BoneWorld - FVector(0.f, 0.f, 150.f), ECC_Visibility, Params);
+			return static_cast<float>(BoneWorld.Z) - (bHit ? static_cast<float>(Hit.ImpactPoint.Z) : FloorZ);
+		};
+		const auto Ahead = [&](const TCHAR* Bone) { return static_cast<float>(FVector::DotProduct(Mesh->GetBoneLocation(FName(Bone)) - ActorLocation, Forward)); };
+
+		float HandToItem = -1.f;
+		const UAedirInteractionComponent* Interaction = Player->Interaction.Get();
+		FVector ReachTarget;
+		float ReachAlpha = 0.f;
+		if (Interaction && Interaction->GetReachPose(EAedirHand::Right, ReachTarget, ReachAlpha))
+		{
+			HandToItem = static_cast<float>(FVector::Dist(Mesh->GetBoneLocation(FName(TEXT("hand_r"))), ReachTarget));
+		}
+
+		UE_LOG(LogAedir, Display, TEXT("[GaitInfo] t=%.2f speed=%.0f air=%d crouch=%d bal=%.2f margin=%.1f step=%d lift %.2f %.2f ankleZ %.1f %.1f ballZ %.1f %.1f ahead %.1f %.1f hip=%.1f spine=%.1f lower=%.1f lean=%.1f hipFwd=%.1f handToItem=%.1f held=%d/%d"),
+			*Elapsed, Player->GetVelocity().Size2D(), Player->GetCharacterMovement()->IsFalling() ? 1 : 0, Player->bIsCrouched ? 1 : 0,
 			Player->Balance ? Player->Balance->GetBalance() : -1.f, Player->Balance ? Player->Balance->GetSupportMargin() : 0.f,
-			Player->Balance && Player->Balance->IsStaggering() ? 1 : 0, State.bStepping ? 1 : 0, State.LeftFootLift, State.RightFootLift,
-			State.HipOffsetZ, State.SpineLeanPitch, Player->Interaction ? Player->Interaction->GetPelvisLowerZ() : 0.f, Player->GetActorLocation().Z);
-		*Remaining -= 0.5f;
-		if (*Remaining <= 0.f)
+			State.bStepping ? 1 : 0, State.LeftFootLift, State.RightFootLift,
+			Height(TEXT("foot_l")), Height(TEXT("foot_r")), Height(TEXT("ball_l")), Height(TEXT("ball_r")), Ahead(TEXT("foot_l")), Ahead(TEXT("foot_r")),
+			State.HipOffsetZ, State.SpineLeanPitch,
+			Interaction ? Interaction->GetPelvisLowerZ() : 0.f, Interaction ? Interaction->GetReachLeanDegrees() : 0.f, Interaction ? Interaction->GetReachHipForward() : 0.f,
+			HandToItem, Interaction && Interaction->GetHeldItem(EAedirHand::Left) ? 1 : 0, Interaction && Interaction->GetHeldItem(EAedirHand::Right) ? 1 : 0);
+
+		*Elapsed += Interval;
+		if (*Elapsed >= Seconds)
 		{
 			Player->GetWorldTimerManager().ClearTimer(*Handle);
 		}
-	}), 0.5f, true);
+	}), Interval, true);
+}
+
+void UAedirDevTools::AutoMove(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// Walks the body with fixed input, so the gait can be measured and filmed without a keyboard.
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	const float Forward = Tokens.IsValidIndex(0) ? FCString::Atof(*Tokens[0]) : 0.f;
+	const float Right = Tokens.IsValidIndex(1) ? FCString::Atof(*Tokens[1]) : 0.f;
+	const bool bRun = Tokens.IsValidIndex(2) && FCString::Atoi(*Tokens[2]) != 0;
+	const float TurnDegrees = Tokens.IsValidIndex(3) ? FCString::Atof(*Tokens[3]) : 0.f;
+	if (AController* Controller = Player->GetController(); Controller && !FMath::IsNearlyZero(TurnDegrees))
+	{
+		Controller->SetControlRotation(Controller->GetControlRotation() + FRotator(0.f, TurnDegrees, 0.f));
+	}
+	Player->SetDevAutoMove(FVector2D(Right, Forward));
+	Player->SetWantsToRun(bRun);
+	DevToolsReport(FString::Printf(TEXT("AutoMove forward %.1f right %.1f run %d"), Forward, Right, bRun ? 1 : 0));
+}
+
+void UAedirDevTools::ShotCam(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// A camera fixed to the body at a yaw angle around it: 90 looks from the right side, 180 from the front. "ShotCam off" gives the view back.
+	APlayerController* Controller = Cast<APlayerController>(Player->GetController());
+	if (!Controller)
+	{
+		return;
+	}
+
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	if (Tokens.IsValidIndex(0) && DevToolsIsToken(Tokens[0], TEXT("off")))
+	{
+		Controller->SetViewTarget(Player);
+		return;
+	}
+
+	const float YawDegrees = Tokens.IsValidIndex(0) ? FCString::Atof(*Tokens[0]) : 90.f;
+	const float Distance = Tokens.IsValidIndex(1) ? FCString::Atof(*Tokens[1]) : 260.f;
+	const float Height = Tokens.IsValidIndex(2) ? FCString::Atof(*Tokens[2]) : -20.f;
+	const float LookHeight = Tokens.IsValidIndex(3) ? FCString::Atof(*Tokens[3]) : -30.f;
+
+	const FRotator Yaw(0.f, YawDegrees, 0.f);
+	const FVector RelativeLocation = Yaw.RotateVector(FVector(Distance, 0.f, 0.f)) + FVector(0.f, 0.f, Height);
+	const FVector LookAt(0.f, 0.f, LookHeight);
+
+	ACameraActor* Camera = Player->GetWorld()->SpawnActor<ACameraActor>();
+	if (!Camera)
+	{
+		return;
+	}
+	Camera->AttachToActor(Player, FAttachmentTransformRules::KeepRelativeTransform);
+	Camera->SetActorRelativeLocation(RelativeLocation);
+	Camera->SetActorRelativeRotation((LookAt - RelativeLocation).Rotation());
+	Camera->GetCameraComponent()->bConstrainAspectRatio = false;
+	Controller->SetViewTarget(Camera);
+}
+
+void UAedirDevTools::PlaceItem(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// Lays a catalog item on the floor at an offset from the feet, to test a grab at an exact distance.
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	UWorld* World = Player->GetWorld();
+	if (Tokens.Num() < 3 || !World || !UAedirItemCatalog::Find(FName(*Tokens[0])))
+	{
+		DevToolsReport(TEXT("Usage: PlaceItem <Id> <forward cm> <right cm>"));
+		return;
+	}
+
+	const FVector Location = Player->GetActorLocation()
+		+ Player->GetActorForwardVector() * FCString::Atof(*Tokens[1])
+		+ Player->GetActorRightVector() * FCString::Atof(*Tokens[2])
+		- FVector(0.f, 0.f, Player->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - 20.f);
+	if (AAedirCatalogItem::SpawnCatalogItem(World, FName(*Tokens[0]), FTransform(DevToolsFlatYaw(Player), Location)))
+	{
+		DevToolsReport(FString::Printf(TEXT("Placed %s"), *Tokens[0]));
+	}
 }
 
 void UAedirDevTools::ReachTest(AAedirPlayerCharacter* Player, const FString& Args)
 {
 	// A delay in seconds lets a freshly spawned item land first.
-	const float Delay = Args.IsEmpty() ? 0.f : FCString::Atof(*Args);
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	const float Delay = Tokens.IsValidIndex(0) ? FCString::Atof(*Tokens[0]) : 0.f;
+	const bool bBothHands = Tokens.IsValidIndex(1) && FCString::Atoi(*Tokens[1]) != 0;
 	FTimerHandle ReachTimer;
-	Player->GetWorldTimerManager().SetTimer(ReachTimer, FTimerDelegate::CreateWeakLambda(Player, [Player]()
+	Player->GetWorldTimerManager().SetTimer(ReachTimer, FTimerDelegate::CreateWeakLambda(Player, [Player, bBothHands]()
 	{
 		if (Player->Interaction)
 		{
 			Player->Interaction->StartReach(EAedirHand::Right);
+			if (bBothHands)
+			{
+				Player->Interaction->StartReach(EAedirHand::Left);
+			}
 			DevToolsReport(TEXT("Right hand reaching"));
 		}
 	}), FMath::Max(Delay, 0.01f), false);

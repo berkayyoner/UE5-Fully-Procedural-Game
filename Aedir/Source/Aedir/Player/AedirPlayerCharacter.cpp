@@ -137,19 +137,29 @@ void AAedirPlayerCharacter::BeginPlay()
 	if (!bStartupCommandsRan && IsLocallyControlled() && FParse::Value(FCommandLine::Get(), TEXT("AedirStartup="), StartupCommands))
 	{
 		bStartupCommandsRan = true;
-		FTimerHandle StartupTimer;
-		GetWorldTimerManager().SetTimer(StartupTimer, FTimerDelegate::CreateWeakLambda(this, [this, StartupCommands]()
+
+		// "Wait 3" between the commands delays everything after it, so a whole test can be scripted from the command line.
+		TArray<FString> Commands;
+		StartupCommands.ParseIntoArray(Commands, TEXT(";"), true);
+		float Delay = 2.f;
+		for (const FString& RawCommand : Commands)
 		{
-			TArray<FString> Commands;
-			StartupCommands.ParseIntoArray(Commands, TEXT(";"), true);
-			if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+			const FString Command = RawCommand.TrimStartAndEnd();
+			if (Command.StartsWith(TEXT("Wait "), ESearchCase::IgnoreCase))
 			{
-				for (const FString& Command : Commands)
-				{
-					PlayerController->ConsoleCommand(Command.TrimStartAndEnd());
-				}
+				Delay += FCString::Atof(*Command.RightChop(5));
+				continue;
 			}
-		}), 2.0f, false);
+
+			FTimerHandle StartupTimer;
+			GetWorldTimerManager().SetTimer(StartupTimer, FTimerDelegate::CreateWeakLambda(this, [this, Command]()
+			{
+				if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+				{
+					PlayerController->ConsoleCommand(Command);
+				}
+			}), Delay, false);
+		}
 	}
 	else if (!bStartupCommandsRan && bSpawnTestItemsOnStart && IsLocallyControlled() && HasAuthority())
 	{
@@ -195,7 +205,7 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		const float BackwardKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::S) ? 1.f : 0.f;
 		const float RightKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::D) ? 1.f : 0.f;
 		const float LeftKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::A) ? 1.f : 0.f;
-		const FVector2D MoveInput(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue);
+		const FVector2D MoveInput = FVector2D(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue) + DevAutoMove;
 		MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
 	}
 
@@ -853,14 +863,29 @@ void AAedirPlayerCharacter::Knockdown()
 	RunDevCommand(TEXT("Knockdown"), FString(), true);
 }
 
-void AAedirPlayerCharacter::GaitInfo(float Seconds)
+void AAedirPlayerCharacter::GaitInfo(float Seconds, float Interval)
 {
-	RunDevCommand(TEXT("GaitInfo"), FString::Printf(TEXT("%f"), Seconds), false);
+	RunDevCommand(TEXT("GaitInfo"), Interval > 0.f ? FString::Printf(TEXT("%f %f"), Seconds, Interval) : FString::Printf(TEXT("%f"), Seconds), false);
 }
 
-void AAedirPlayerCharacter::ReachTest(float DelaySeconds)
+void AAedirPlayerCharacter::AutoMove(float Forward, float Right, int32 Run, float TurnDegrees)
 {
-	RunDevCommand(TEXT("ReachTest"), FString::Printf(TEXT("%f"), DelaySeconds), true);
+	RunDevCommand(TEXT("AutoMove"), FString::Printf(TEXT("%f %f %d %f"), Forward, Right, Run, TurnDegrees), false);
+}
+
+void AAedirPlayerCharacter::ShotCam(const FString& CameraArgs)
+{
+	RunDevCommand(TEXT("ShotCam"), CameraArgs, false);
+}
+
+void AAedirPlayerCharacter::PlaceItem(const FString& ItemArgs)
+{
+	RunDevCommand(TEXT("PlaceItem"), ItemArgs, true);
+}
+
+void AAedirPlayerCharacter::ReachTest(float DelaySeconds, int32 BothHands)
+{
+	RunDevCommand(TEXT("ReachTest"), FString::Printf(TEXT("%f %d"), DelaySeconds, BothHands), true);
 }
 
 void AAedirPlayerCharacter::CrouchTest()

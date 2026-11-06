@@ -22,6 +22,7 @@ namespace
 	constexpr float AedirLeanInterpSpeed = 8.f;
 	constexpr float AedirSafeLandingSpeed = 900.f;
 	constexpr float AedirUntrainedSafeLandingSpeed = 520.f;
+	constexpr float AedirCrashLandingShare = 1.2f;
 	constexpr float AedirAthletismRecoveryScale = 100.f;
 	constexpr float AedirAthletismDamageScale = 200.f;
 	constexpr float AedirWalkableNormalZ = 0.5f;
@@ -259,6 +260,10 @@ void UAedirBalanceComponent::HandleLanded(float LandingSpeed)
 			// Past the safe speed the legs give way and the body slams into the ground.
 			const float CrumpleLoss = FMath::Clamp((LandingSpeed - SafeSpeed) / (SafeSpeed * 0.3f), 0.5f, 1.f);
 			ApplyBalanceImpact(GetOwner()->GetActorForwardVector(), CrumpleLoss);
+			if (LandingSpeed > SafeSpeed * AedirCrashLandingShare && !bIsRagdoll)
+			{
+				EnterRagdoll(MinRagdollSeconds);
+			}
 		}
 	}
 }

@@ -3,6 +3,7 @@
 #include "Aedir.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
@@ -16,12 +17,27 @@ namespace
 	constexpr float ReachBlendInSeconds = 0.15f;
 	constexpr float ReachBlendOutSeconds = 0.2f;
 	constexpr float PelvisLowerInterpSpeed = 8.f;
-	constexpr float PelvisLowerFactor = 1.1f;
-	constexpr float ShoulderAboveHipCm = 45.f;
-	constexpr float ArmReachCm = 62.f;
-	constexpr float TorsoForwardCm = 65.f;
-	constexpr float TorsoDropCm = 36.f;
-	constexpr float ArmReachSafety = 0.85f;
+	constexpr float PelvisRiseInterpSpeed = 3.f;
+	// Standing proportions of the body in unscaled cm, used to work out how far it has to bend for a low item.
+	constexpr float ReachPelvisHeightCm = 95.f;
+	constexpr float ReachTorsoLengthCm = 48.f;
+	constexpr float ReachArmLengthCm = 44.f;
+	constexpr float ReachShoulderSideCm = 18.f;
+	constexpr float ReachMaxLowerCm = 54.f;
+	constexpr float ReachMaxHipBackCm = 30.f;
+	constexpr float ReachMaxHipForwardCm = 25.f;
+	constexpr float ReachMinLeanDegrees = 15.f;
+	constexpr float ReachMaxLeanDegrees = 90.f;
+	constexpr float ReachSpineChordShare = 0.8f;
+	constexpr float ReachHipSideShare = 0.5f;
+	constexpr float ReachMaxHipSideCm = 22.f;
+	constexpr float ReachMaxTwistDegrees = 50.f;
+	constexpr float ReachLeanStepDegrees = 5.f;
+	constexpr float ReachTwoHandSpacingCm = 9.f;
+	constexpr float BigObjectHandSpanShare = 0.9f;
+	constexpr float TwoHandLiftMultiplier = 2.5f;
+	constexpr float CarryForwardCm = 34.f;
+	constexpr float CarryUpCm = 14.f;
 	constexpr float ReachRangeMultiplier = 1.5f;
 	constexpr float HighlightInterval = 0.1f;
 	constexpr float BackpackDropDistance = 60.f;
@@ -172,7 +188,7 @@ void UAedirInteractionComponent::DropHeld(EAedirHand Hand)
 
 	// A two-handed weapon gripped by both hands is let go by one hand only; the other hand keeps holding it.
 	const EAedirHand OtherHand = GetOtherHand(Hand);
-	if (Item->bTwoHanded && Item->ItemClass != EAedirItemClass::Object && GetHeldItem(OtherHand) == Item)
+	if (Item->ItemClass != EAedirItemClass::Object && GetHeldItem(OtherHand) == Item)
 	{
 		ResetSlot(GetSlot(Hand));
 		if (Item->HeldHand == Hand)
@@ -201,7 +217,7 @@ void UAedirInteractionComponent::SwapGripOrder()
 
 	AAedirCreature* Creature = GetCreature();
 	AAedirItemActor* Item = GetHeldItem(EAedirHand::Right);
-	if (!Creature || !Item || Item != GetHeldItem(EAedirHand::Left) || !Item->bTwoHanded || Item->ItemClass == EAedirItemClass::Object)
+	if (!Creature || !Item || Item != GetHeldItem(EAedirHand::Left) || Item->ItemClass == EAedirItemClass::Object)
 	{
 		return;
 	}
@@ -347,32 +363,43 @@ void UAedirInteractionComponent::BeginReach(EAedirHand Hand, AAedirItemActor* It
 	}
 
 	FAedirHandSlot& Slot = GetSlot(Hand);
-	const FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
+	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
 	if (Slot.State != EAedirHandState::Idle)
 	{
 		return;
 	}
 
-	if (Item->Weight > Creature->GetCarryCapacity())
+	if (!CanLift(Item))
 	{
-		UE_LOG(LogAedir, Verbose, TEXT("%s cannot reach %s: weight %.1f exceeds carry capacity"), *GetNameSafe(Creature), *GetNameSafe(Item), Item->Weight);
+		UE_LOG(LogAedir, Verbose, TEXT("%s cannot reach %s: weight %.1f exceeds what it can lift"), *GetNameSafe(Creature), *GetNameSafe(Item), Item->Weight);
 		return;
 	}
 
-	if (Other.Item.Get() == Item)
+	// The second key on the same item sends the second hand after the first.
+	const bool bOtherOnThisItem = Other.Item.Get() == Item;
+	if (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle && !bOtherOnThisItem)
 	{
 		return;
 	}
 
-	if (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle)
+	if (!bOtherOnThisItem)
 	{
-		return;
+		ReachLeadHand = Hand;
 	}
 
 	Slot.State = EAedirHandState::Reaching;
 	Slot.Item = Item;
 	Slot.ReachElapsed = 0.f;
 	Slot.ReachHandWorld = GetHandWorld(Hand);
+
+	// Something that takes two hands is reached for with both, whichever key was pressed.
+	if (RequiresBothHands(Item) && Other.State == EAedirHandState::Idle)
+	{
+		Other.State = EAedirHandState::Reaching;
+		Other.Item = Item;
+		Other.ReachElapsed = 0.f;
+		Other.ReachHandWorld = GetHandWorld(GetOtherHand(Hand));
+	}
 }
 
 void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item)
@@ -386,17 +413,23 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 		return;
 	}
 
-	const bool bBothHands = RequiresBothHands(Item);
-	if (Item->Weight > Creature->GetCarryCapacity() || (bBothHands && Other.State != EAedirHandState::Idle))
+	// Both hands close on the item if it needs them or if both are already on their way to it.
+	const bool bOtherOnThisItem = Other.State == EAedirHandState::Reaching && Other.Item.Get() == Item;
+	const bool bBothHands = RequiresBothHands(Item) || bOtherOnThisItem;
+	if (!CanLift(Item) || (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle && !bOtherOnThisItem))
 	{
 		ResetSlot(Slot);
 		return;
 	}
 
-	// A two-handed weapon grabbed by the pressed hand is gripped higher by it: the weapon follows the other hand at the pommel
-	// and the pressed hand sits above it towards the blade.
-	const bool bGripAboveOtherHand = bBothHands && Item->bTwoHanded && Item->ItemClass != EAedirItemClass::Object;
-	Item->AttachToCreatureHand(Creature, bGripAboveOtherHand ? GetOtherHand(Hand) : Hand);
+	// A weapon gripped in both hands is gripped higher by the hand whose key started the reach: the weapon follows the other hand
+	// at the pommel and the lead hand sits above it towards the blade.
+	const bool bBigObject = Item->ItemClass == EAedirItemClass::Object;
+	Item->AttachToCreatureHand(Creature, bBothHands && !bBigObject ? GetOtherHand(ReachLeadHand) : Hand);
+	if (bBigObject)
+	{
+		CarryObject(Creature, Item);
+	}
 
 	Slot.State = EAedirHandState::Holding;
 	Slot.Item = Item;
@@ -430,7 +463,7 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 
 	Slot.ReachElapsed += DeltaTime;
 
-	const FVector ItemCenter = Item->GetBoundsCenterWorld();
+	const FVector ItemCenter = GetReachTargetWorld(Hand, Item);
 	const FVector ToItem = ItemCenter - Slot.ReachHandWorld;
 	const float Step = ReachSpeed * DeltaTime;
 	if (ToItem.SizeSquared() <= FMath::Square(Step))
@@ -460,9 +493,12 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 {
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
-		const FAedirHandSlot& Slot = GetSlot(static_cast<EAedirHand>(Index));
+		const EAedirHand Hand = static_cast<EAedirHand>(Index);
+		const FAedirHandSlot& Slot = GetSlot(Hand);
 
-		if (Slot.State == EAedirHandState::Reaching)
+		// A big object stays hugged by both arms for as long as it is carried.
+		const bool bCarryingObject = Slot.State == EAedirHandState::Holding && Slot.Item && Slot.Item->ItemClass == EAedirItemClass::Object;
+		if (Slot.State == EAedirHandState::Reaching || bCarryingObject)
 		{
 			ReachBlend[Index] = FMath::Min(1.f, ReachBlend[Index] + DeltaTime / ReachBlendInSeconds);
 		}
@@ -473,46 +509,142 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 
 		if (Slot.Item)
 		{
-			ReachTargetCache[Index] = Slot.Item->GetBoundsCenterWorld();
+			ReachTargetCache[Index] = GetReachTargetWorld(Hand, Slot.Item);
 		}
 	}
 }
 
+FAedirReachPosture UAedirInteractionComponent::ComputeReachPosture(float ForwardCm, float LateralCm, float ItemHeightCm)
+{
+	FAedirReachPosture Posture;
+
+	const float StandingShoulderCm = ReachPelvisHeightCm + ReachTorsoLengthCm;
+	const float StandingDistance = FMath::Sqrt(ForwardCm * ForwardCm + LateralCm * LateralCm + FMath::Square(StandingShoulderCm - ItemHeightCm));
+	if (StandingDistance <= ReachArmLengthCm)
+	{
+		return Posture;
+	}
+
+	// The gentlest bend of the spine that lets the pelvis stay within its squat wins. The pelvis sits back to keep the shoulder
+	// over an item next to the feet, and moves forward for one further away.
+	for (float Lean = ReachMinLeanDegrees; Lean <= ReachMaxLeanDegrees; Lean += ReachLeanStepDegrees)
+	{
+		// The spine curves, so the shoulder ends up on a chord flatter than the bend itself.
+		const float ChordRadians = FMath::DegreesToRadians(Lean * ReachSpineChordShare);
+		const float LeanSin = FMath::Sin(ChordRadians);
+		const float LeanCos = FMath::Cos(ChordRadians);
+		const float HipForward = FMath::Clamp(ForwardCm - ReachTorsoLengthCm * LeanSin, -ReachMaxHipBackCm, ReachMaxHipForwardCm);
+		// Off to the side the pelvis shifts over and the bent torso twists around towards the item.
+		const float HipSide = FMath::Clamp(LateralCm * ReachHipSideShare, -ReachMaxHipSideCm, ReachMaxHipSideCm);
+		const float SideLeft = LateralCm - HipSide;
+		const float TorsoReach = ReachTorsoLengthCm * LeanSin;
+		const float TwistRadians = FMath::Clamp(FMath::Atan2(SideLeft, FMath::Max(ForwardCm - HipForward, 10.f)), -FMath::DegreesToRadians(ReachMaxTwistDegrees), FMath::DegreesToRadians(ReachMaxTwistDegrees));
+		const float ShoulderForward = HipForward + TorsoReach * FMath::Cos(TwistRadians);
+		const float SideRemaining = SideLeft - TorsoReach * FMath::Sin(TwistRadians);
+		const float Remaining = FMath::Sqrt(FMath::Square(ForwardCm - ShoulderForward) + SideRemaining * SideRemaining);
+		const float ArmDown = FMath::Sqrt(FMath::Max(ReachArmLengthCm * ReachArmLengthCm - Remaining * Remaining, 0.f));
+		const float Lower = ReachPelvisHeightCm + ReachTorsoLengthCm * LeanCos - (ItemHeightCm + ArmDown);
+
+		Posture.LowerCm = FMath::Clamp(Lower, 0.f, ReachMaxLowerCm);
+		Posture.LeanDegrees = Lean;
+		Posture.HipForwardCm = HipForward;
+		Posture.HipSideCm = HipSide;
+		Posture.TwistDegrees = FMath::RadiansToDegrees(TwistRadians);
+		if (Lower <= ReachMaxLowerCm)
+		{
+			break;
+		}
+	}
+
+	return Posture;
+}
+
 void UAedirInteractionComponent::UpdatePelvisLower(float DeltaTime)
 {
-	float Target = 0.f;
+	FAedirReachPosture Target;
+	float Scale = 1.f;
 
 	const AAedirCreature* Creature = GetCreature();
-	const USkeletalMeshComponent* MeshComponent = Creature ? Creature->GetMesh() : nullptr;
-	if (MeshComponent)
+	if (Creature)
 	{
-		const float HipZ = MeshComponent->GetBoneLocation(WaistBone).Z;
+		Scale = FMath::Max(FMath::Abs(static_cast<float>(Creature->GetActorScale3D().Z)), KINDA_SMALL_NUMBER);
+		const FTransform ActorTransform = Creature->GetActorTransform();
+		const float FloorZ = static_cast<float>(Creature->GetActorLocation().Z) - Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 
 		for (int32 Index = 0; Index < 2; ++Index)
 		{
-			const FAedirHandSlot& Slot = GetSlot(static_cast<EAedirHand>(Index));
+			const EAedirHand Hand = static_cast<EAedirHand>(Index);
+			const FAedirHandSlot& Slot = GetSlot(Hand);
 			if (Slot.State != EAedirHandState::Reaching || !Slot.Item)
 			{
 				continue;
 			}
 
-			// The pelvis sinks until the shoulder is within reach of the item: the arm covers the distance between them,
-			// so the lower the item and the closer to the feet, the deeper the squat.
-			const FVector ItemLocation = Slot.Item->GetBoundsCenterWorld();
-			const FVector Offset2D = ItemLocation - MeshComponent->GetComponentLocation();
-			const float Horizontal = static_cast<float>(FVector2D(Offset2D.X, Offset2D.Y).Size());
-			// The bent torso and the shifted pelvis already carry the shoulder forward and down, the arm covers the rest.
-			const float HorizontalLeft = FMath::Max(Horizontal - TorsoForwardCm, 0.f);
-			const float ShoulderZ = HipZ + ShoulderAboveHipCm - TorsoDropCm;
-			const float Vertical = ShoulderZ - static_cast<float>(ItemLocation.Z);
-			const float ReachableVertical = FMath::Sqrt(FMath::Max(ArmReachCm * ArmReachCm - HorizontalLeft * HorizontalLeft, 0.f)) * ArmReachSafety;
-			const float Depth = Vertical - ReachableVertical - ReachLowerStartHeight;
-			Target = FMath::Max(Target, Depth * PelvisLowerFactor);
+			const FVector ItemWorld = GetReachTargetWorld(Hand, Slot.Item);
+			const FVector ItemLocal = ActorTransform.InverseTransformPositionNoScale(ItemWorld);
+			const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
+			const FAedirReachPosture Posture = ComputeReachPosture(
+				static_cast<float>(ItemLocal.X) / Scale,
+				static_cast<float>(ItemLocal.Y) / Scale - Side * ReachShoulderSideCm,
+				(static_cast<float>(ItemWorld.Z) - FloorZ) / Scale);
+			if (Posture.LowerCm + Posture.LeanDegrees > Target.LowerCm + Target.LeanDegrees)
+			{
+				Target = Posture;
+			}
 		}
 	}
 
-	Target = FMath::Clamp(Target, 0.f, KneeBendMaxLower);
-	PelvisLowerZ = FMath::FInterpTo(PelvisLowerZ, Target, DeltaTime, PelvisLowerInterpSpeed);
+	// The body straightens up again more slowly than it bent down.
+	const float PostureSpeed = Target.LeanDegrees >= ReachLeanDegrees ? PelvisLowerInterpSpeed : PelvisRiseInterpSpeed;
+	PelvisLowerZ = FMath::FInterpTo(PelvisLowerZ, Target.LowerCm * Scale, DeltaTime, PostureSpeed);
+	ReachLeanDegrees = FMath::FInterpTo(ReachLeanDegrees, Target.LeanDegrees, DeltaTime, PostureSpeed);
+	ReachHipForward = FMath::FInterpTo(ReachHipForward, Target.HipForwardCm, DeltaTime, PostureSpeed);
+	ReachHipSide = FMath::FInterpTo(ReachHipSide, Target.HipSideCm, DeltaTime, PostureSpeed);
+	ReachTwistDegrees = FMath::FInterpTo(ReachTwistDegrees, Target.TwistDegrees, DeltaTime, PostureSpeed);
+}
+
+FVector UAedirInteractionComponent::GetReachTargetWorld(EAedirHand Hand, const AAedirItemActor* Item) const
+{
+	const FVector Center = Item->GetBoundsCenterWorld();
+	const AAedirCreature* Creature = GetCreature();
+	if (!Creature || GetSlot(GetOtherHand(Hand)).Item.Get() != Item)
+	{
+		return Center;
+	}
+
+	// Two hands on one item take its opposite sides: around a big object, a short distance apart on a weapon.
+	const FVector Extent = Item->GetComponentsBoundingBox().GetExtent();
+	const float Span = Item->ItemClass == EAedirItemClass::Object
+		? static_cast<float>(FMath::Max(Extent.X, Extent.Y)) * BigObjectHandSpanShare
+		: ReachTwoHandSpacingCm;
+	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
+	return Center + Creature->GetActorRightVector() * (Side * Span);
+}
+
+bool UAedirInteractionComponent::CanLift(const AAedirItemActor* Item) const
+{
+	const AAedirCreature* Creature = GetCreature();
+	if (!Creature || !Item)
+	{
+		return false;
+	}
+
+	// Two hands lift far more than can be carried comfortably; the excess only slows the body down.
+	return Item->Weight <= Creature->GetCarryCapacity() * (RequiresBothHands(Item) ? TwoHandLiftMultiplier : 1.f);
+}
+
+void UAedirInteractionComponent::CarryObject(AAedirCreature* Creature, AAedirItemActor* Item)
+{
+	// A big object is carried in front of the chest with the arms around it. It rides on the capsule, not on a bone, so the bend of the body at the moment of the grab does not swing it around later.
+	const FVector Extent = Item->GetComponentsBoundingBox().GetExtent();
+	const float Scale = static_cast<float>(Creature->GetActorScale3D().Z);
+	const FVector CarryPoint = Creature->GetActorLocation()
+		+ Creature->GetActorForwardVector() * ((CarryForwardCm * Scale) + static_cast<float>(Extent.X))
+		+ FVector::UpVector * (CarryUpCm * Scale);
+
+	Item->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	Item->AddActorWorldOffset(CarryPoint - Item->GetBoundsCenterWorld());
+	Item->AttachToComponent(Creature->GetCapsuleComponent(), FAttachmentTransformRules::KeepWorldTransform);
 }
 
 void UAedirInteractionComponent::UpdateHighlight()
@@ -883,8 +1015,9 @@ void UAedirInteractionComponent::AddToBackpack(AAedirItemActor* Item)
 		return;
 	}
 
+	// Big objects are carried in the arms and never fit in a backpack.
 	AAedirCreature* Creature = GetCreature();
-	if (!Creature || !Item || Item->bWorn || Item->bStowed || Item->Holder != Creature || Backpack.Contains(Item))
+	if (!Creature || !Item || Item->ItemClass == EAedirItemClass::Object || Item->bWorn || Item->bStowed || Item->Holder != Creature || Backpack.Contains(Item))
 	{
 		return;
 	}

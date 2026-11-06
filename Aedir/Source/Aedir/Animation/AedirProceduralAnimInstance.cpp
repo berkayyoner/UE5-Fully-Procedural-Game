@@ -12,15 +12,19 @@ namespace
 {
 	constexpr float AedirKneePoleDistance = 100.f;
 	constexpr float AedirKneePoleDropDistance = 30.f;
-	constexpr float AedirLegMinReachShare = 0.38f;
-	constexpr float AedirLegMaxReachShare = 0.96f;
+	constexpr float AedirLegMinReachShare = 0.3f;
+	constexpr float AedirLegMaxReachShare = 0.995f;
+	constexpr float AedirHeelLiftStartShare = 0.2f;
+	constexpr float AedirHeelLiftRangeShare = 0.2f;
+	constexpr float AedirHeelRaiseCm = 7.f;
+	constexpr float AedirFootLooseGain = 3.f;
 	constexpr float AedirWristFollowShare = 0.25f;
 	constexpr float AedirClavicleFollowShare = 0.25f;
 	constexpr float AedirReachAlphaThreshold = 0.001f;
 	constexpr float AedirElbowOutwardDistance = 60.f;
 	constexpr float AedirElbowDropDistance = 40.f;
 	constexpr float AedirElbowBackDistance = 90.f;
-	constexpr float AedirElbowGuardOutShare = 0.15f;
+	constexpr float AedirElbowGuardOutShare = 0.3f;
 	constexpr float AedirElbowGuardDropShare = 1.8f;
 	constexpr float AedirElbowOutGain = 2.5f;
 	constexpr float AedirFistAlphaThreshold = 0.001f;
@@ -167,8 +171,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
 
 	const FVector ForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
-	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, GaitData.LeftFootWorld, GaitData.LeftFootRot, ForwardMesh);
-	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.RightFemur, BoneNameSet.RightTibia, BoneNameSet.RightFoot, GaitData.RightFootWorld, GaitData.RightFootRot, ForwardMesh);
+	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, GaitData.LeftFootWorld, GaitData.LeftFootRot, ForwardMesh, GaitData.LeftFootLift);
+	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.RightFemur, BoneNameSet.RightTibia, BoneNameSet.RightFoot, GaitData.RightFootWorld, GaitData.RightFootRot, ForwardMesh, GaitData.RightFootLift);
 
 	FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(CSPose, Output.Pose);
 	Output.Pose.NormalizeRotations();
@@ -398,7 +402,7 @@ void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, cons
 	}
 }
 
-void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh) const
+void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift) const
 {
 	const FCompactPoseBoneIndex Femur = ResolveCompactBone(Bones, FemurName);
 	const FCompactPoseBoneIndex Tibia = ResolveCompactBone(Bones, TibiaName);
@@ -419,6 +423,13 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<
 	// The foot target stays inside the reach of the leg: never stretched past straight, never folded tighter than the knee can bend.
 	const float LegLength = static_cast<float>((JointPosition - RootPosition).Size() + (EndPosition - JointPosition).Size());
 	FVector Effector = MeshToWorld.InverseTransformPosition(FootWorld);
+
+	// A foot trailing behind the hip peels off the ground: the heel rises and the toes stay down, as at the end of a real step.
+	const FVector UpMeshDirection = ActorToMesh.RotateVector(FVector::UpVector);
+	const float BehindShare = static_cast<float>(-FVector::DotProduct(Effector - RootPosition, ForwardMesh)) / FMath::Max(LegLength, 1.f);
+	const float HeelAlpha = FMath::Clamp((BehindShare - AedirHeelLiftStartShare) / AedirHeelLiftRangeShare, 0.f, 1.f);
+	Effector += UpMeshDirection * (AedirHeelRaiseCm * HeelAlpha);
+
 	const FVector ToEffector = Effector - RootPosition;
 	const float EffectorDistance = static_cast<float>(ToEffector.Size());
 	if (EffectorDistance > KINDA_SMALL_NUMBER)
@@ -452,10 +463,12 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<
 
 	FTransform NewFoot = FootTransform;
 	NewFoot.SetTranslation(SolvedEndPosition);
-	// The foot is aligned to the ground itself, not to the shin: the flat reference orientation tilted to the ground normal.
-	// Inheriting the shin angle pitched the toes into the floor and lifted the heels.
-	const FQuat FlatFootRotation = RefCSPose.GetComponentSpaceTransform(Foot).GetRotation();
-	NewFoot.SetRotation(FootTiltMesh * FlatFootRotation);
+	// A foot on the ground lies flat on it: the flat reference orientation tilted to the ground normal.
+	// A foot in the air knows nothing of the ground and keeps its rest angle to the shin, as does a heel peeling off behind the body.
+	const FQuat FlatFootRotation = FootTiltMesh * RefCSPose.GetComponentSpaceTransform(Foot).GetRotation();
+	const FQuat ShinFootRotation = TibiaDelta * FemurDelta * FootTransform.GetRotation();
+	const float LooseAlpha = FMath::Max(FMath::Clamp(FootLift * AedirFootLooseGain, 0.f, 1.f), HeelAlpha);
+	NewFoot.SetRotation(FQuat::Slerp(FlatFootRotation, ShinFootRotation, LooseAlpha).GetNormalized());
 	CSPose.SetComponentSpaceTransform(Foot, NewFoot);
 }
 

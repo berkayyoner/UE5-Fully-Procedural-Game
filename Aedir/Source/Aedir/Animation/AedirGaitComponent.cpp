@@ -3,6 +3,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
@@ -18,16 +19,31 @@ namespace
 	constexpr float AedirRestCatchUpCyclesPerSecond = 2.f;
 	constexpr float AedirMinStrideLength = 10.f;
 	constexpr float AedirStepHeightClearance = 4.f;
-	constexpr float AedirSettleStepDistanceCm = 5.f;
-	constexpr float AedirSettleRestSpeed = 25.f;
+	constexpr float AedirMinStepTriggerCm = 14.f;
+	constexpr float AedirTurnStepTriggerCm = 10.f;
+	constexpr float AedirRestStepTriggerCm = 14.f;
+	constexpr float AedirOutOfTurnStepShare = 1.4f;
+	constexpr float AedirMinStepSeconds = 0.14f;
+	constexpr float AedirMaxStepSeconds = 0.38f;
+	constexpr float AedirLandingOverlapStart = 0.75f;
+	constexpr float AedirLandingOverlapShare = 1.15f;
+	constexpr float AedirLandingLeadSeconds = 0.03f;
+	constexpr float AedirPlaceStepSeconds = 0.32f;
+	constexpr float AedirPhaseCorrectionSpeed = 10.f;
+	constexpr float AedirReachHipHingeShare = 0.5f;
+	constexpr float AedirFootDropLiftLimit = 0.25f;
+	constexpr float AedirLegComfortShare = 0.985f;
+	constexpr float AedirFootDropWalkMaxCm = 16.f;
+	constexpr float AedirFootDropRunMaxCm = 10.f;
+	constexpr float AedirFootDropDownSpeed = 20.f;
+	constexpr float AedirFootDropUpSpeed = 8.f;
 	constexpr float AedirMinGaitCyclesPerSecond = 0.5f;
 	constexpr float AedirSlowStrideMinScale = 0.8f;
 	constexpr float JumpWindupPeakAt = 0.6f;
 	constexpr float AirFootTuckCm = 14.f;
 	constexpr float AirLegTuckLift = 0.35f;
-	constexpr float FootLeashStrideFraction = 0.5f;
-	constexpr float FootLeashMinCm = 28.f;
-	constexpr float AedirSettleCooldownSeconds = 0.6f;
+	constexpr float FootLeashTriggerShare = 1.25f;
+	constexpr float FootLeashMinCm = 36.f;
 	constexpr float AedirRunBlendInterpSpeed = 6.f;
 	constexpr float AedirMovingBounceFrequency = 2.f;
 
@@ -165,9 +181,15 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float SwingFraction = FMath::Lerp(SwingFractionWalk, SwingFractionRun, RunMix);
 	const FVector MoveDirection = bMoving ? Velocity.GetSafeNormal2D() : ActorForward2D;
 
-	AdvancePhase(DeltaTime, bMoving, bTurning, Speed2D, StrideLength);
+	// How far ahead of the hip a foot lands. A slowing body only reaches as far as it still travels,
+	// so the last step before a stop never aims at a point it cannot get to.
+	const float LandingShare = FMath::Lerp(StepLandingShareWalk, StepLandingShareRun, RunMix);
+	const float LandingOffsetCm = FMath::Min(StrideLength * LandingShare, Speed2D * LandingReachSeconds);
+	// A foot is lifted once the body has carried it as far behind the hip as it landed ahead, so its range stays centred under the body.
+	const float StepTriggerCm = FMath::Max(2.f * LandingOffsetCm, AedirMinStepTriggerCm * ActorScale);
+	const float EffectiveStride = StepTriggerCm / FMath::Max(1.f - SwingFraction, KINDA_SMALL_NUMBER);
 
-	const float FootFraction[2] = { WrapUnit(Phase), WrapUnit(Phase + 0.5f) };
+	AdvancePhase(DeltaTime, bMoving, bTurning, Speed2D, EffectiveStride);
 
 	FVector LandingLocation[2];
 	FVector LandingNormal[2];
@@ -192,10 +214,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const float StrafeWidthScale = 1.f + (bMoving ? StrafeFootWidenShare * SideAlpha : 0.f);
 		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * StrafeWidthScale * ActorScale) + ActorForward2D * (StanceForwardCm + StrafeStaggerCm);
 		HomeLocation[Foot] = HomeXY;
-		const float LandingShare = FMath::Lerp(StepLandingShareWalk, StepLandingShareRun, RunMix);
-		// A slowing body only reaches as far as it still travels, so the last step before a stop never aims at a point it cannot get to.
-		const float LandingOffsetCm = FMath::Min(StrideLength * LandingShare, Speed2D * LandingReachSeconds);
-		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * LandingOffsetCm : FVector::ZeroVector);
+		// The body keeps moving while the pose catches up, so the landing leads it by a moment to stay centred under the hip.
+		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * (LandingOffsetCm + Speed2D * AedirLandingLeadSeconds) : FVector::ZeroVector);
 
 		SampleGround(LandingXY, BottomZ, LandingLocation[Foot], LandingNormal[Foot]);
 
@@ -213,52 +233,62 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		{
 			PlantedContact[Foot] = LandingLocation[Foot];
 			PlantedNormal[Foot] = LandingNormal[Foot];
-			PreviousFootFraction[Foot] = FootFraction[Foot];
 			bSwinging[Foot] = false;
 		}
 		bFeetInitialized = true;
 	}
 
-	RecoveryCooldownRemaining = FMath::Max(RecoveryCooldownRemaining - DeltaTime, 0.f);
-
-	// A planted foot the body has walked away from steps early instead of stretching the leg towards a target it cannot reach.
-	if (bMoving && !bKicking && !bRecoverySwinging[0] && !bRecoverySwinging[1])
+	// A kick needs a planted support leg: a step that is still running lands where the leg stands.
+	if (bKicking)
 	{
-		for (int32 Foot = 0; Foot < 2; ++Foot)
-		{
-			if (!bSwinging[Foot] && !bSwinging[1 - Foot] && (PlantedContact[Foot] - HomeLocation[Foot]).Size2D() > StrideLength * MaxPlantedDriftStrideFraction)
-			{
-				BeginRecoverySwing(Foot, LandingLocation[Foot], StrideLength, 0.f, BottomZ);
-				break;
-			}
-		}
-	}
-
-	if (bRecovering && !bRecoverySwinging[0] && !bRecoverySwinging[1] && (RecoveryCooldownRemaining <= 0.f || RecoveryUrgency > 0.7f))
-	{
-		// The free foot furthest towards the fall direction takes the catching step.
-		int32 RecoveryFoot = INDEX_NONE;
-		double BestReach = 0.0;
 		for (int32 Foot = 0; Foot < 2; ++Foot)
 		{
 			if (bSwinging[Foot])
 			{
-				continue;
-			}
-
-			const double Reach = FVector::DotProduct(PlantedContact[Foot] - ActorLocation, RecoveryDirection);
-			if (RecoveryFoot == INDEX_NONE || Reach > BestReach)
-			{
-				RecoveryFoot = Foot;
-				BestReach = Reach;
+				bSwinging[Foot] = false;
+				PlantedContact[Foot] = LandingLocation[Foot];
+				PlantedNormal[Foot] = LandingNormal[Foot];
 			}
 		}
+	}
 
-		if (RecoveryFoot != INDEX_NONE)
+	// Stepping is decided by where each foot is relative to the body, every frame, and never depends on a clock:
+	// the next foot in turn lifts as soon as the body has left it behind, so a step cannot be missed.
+	RecoveryCooldownRemaining = FMath::Max(RecoveryCooldownRemaining - DeltaTime, 0.f);
+	const bool bFootInAir = bSwinging[0] || bSwinging[1];
+	if (!bAirborne && !bKicking)
+	{
+		const float CycleSeconds = EffectiveStride / FMath::Max(Speed2D, 1.f);
+		const float MovingStepSeconds = FMath::Clamp(CycleSeconds * SwingFraction, AedirMinStepSeconds, AedirMaxStepSeconds);
+		const float Trigger = bMoving ? StepTriggerCm : (bTurning ? AedirTurnStepTriggerCm : AedirRestStepTriggerCm) * ActorScale;
+		const float StepSeconds = bMoving ? MovingStepSeconds : AedirPlaceStepSeconds;
+
+		const auto FootDistance = [&](int32 Foot)
 		{
+			return static_cast<float>((PlantedContact[Foot] - LandingLocation[Foot]).Size2D());
+		};
+
+		// Normally one foot at a time. A foot the body is pulling away from may lift while the other is just coming down.
+		const int32 LaterFoot = 1 - NextStepFoot;
+		const bool bLaterLanding = bSwinging[LaterFoot] && SwingElapsed[LaterFoot] / FMath::Max(SwingDuration[LaterFoot], KINDA_SMALL_NUMBER) > AedirLandingOverlapStart;
+		const bool bNextMayStep = !bSwinging[NextStepFoot] && (!bSwinging[LaterFoot] || (bLaterLanding && FootDistance(NextStepFoot) >= Trigger * AedirLandingOverlapShare));
+
+		if (bRecovering && !bFootInAir && (RecoveryCooldownRemaining <= 0.f || RecoveryUrgency > 0.7f))
+		{
+			// The foot furthest towards the fall direction takes the catching step.
+			const double ReachLeft = FVector::DotProduct(PlantedContact[0] - ActorLocation, RecoveryDirection);
+			const double ReachRight = FVector::DotProduct(PlantedContact[1] - ActorLocation, RecoveryDirection);
 			const FVector CatchWorld = BalanceComponent->GetCenterOfMassWorld() + RecoveryDirection * RecoveryStepLandingCm;
-			BeginRecoverySwing(RecoveryFoot, CatchWorld, StrideLength * 0.5f * RecoveryStepMaxStrideMultiplier, RecoveryUrgency, BottomZ);
+			BeginRecoverySwing(ReachRight > ReachLeft ? 1 : 0, CatchWorld, StrideLength * 0.5f * RecoveryStepMaxStrideMultiplier, RecoveryUrgency, BottomZ);
 			RecoveryCooldownRemaining = RecoveryStepCooldownSeconds;
+		}
+		else if (bNextMayStep && FootDistance(NextStepFoot) >= Trigger)
+		{
+			BeginStep(NextStepFoot, StepSeconds);
+		}
+		else if (!bFootInAir && FootDistance(1 - NextStepFoot) >= Trigger * AedirOutOfTurnStepShare)
+		{
+			BeginStep(1 - NextStepFoot, StepSeconds);
 		}
 	}
 
@@ -276,6 +306,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	StairFactor = FMath::FInterpTo(StairFactor, StairTarget, DeltaTime, StairFactorInterpSpeed);
 
 	const float SpeedStepHeight = BaseStepHeightCm + StepHeightSpeedBonusCm * SpeedAlpha + RunStepHeightBonusCm * RunMix;
+	const float AnkleRestCm = (AnkleRefHeightCm > 0.f ? AnkleRefHeightCm : AnkleHeightCm) * ActorScale;
 	FVector Contact[2];
 	FVector AnkleWorld[2];
 	float Lift[2] = { 0.f, 0.f };
@@ -283,94 +314,51 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	for (int32 Foot = 0; Foot < 2; ++Foot)
 	{
-		const float Fraction = FootFraction[Foot];
-		const bool bWrapped = Fraction < PreviousFootFraction[Foot];
-		PreviousFootFraction[Foot] = Fraction;
-		const bool bInSwingWindow = Fraction < SwingFraction;
-
 		if (bAirborne)
 		{
 			// The foot hangs under its hip, a little tucked, and lands from there.
 			bSwinging[Foot] = false;
-			bRecoverySwinging[Foot] = false;
 			const FVector Hanging(HomeLocation[Foot].X, HomeLocation[Foot].Y, BottomZ + AirFootTuckCm * ActorScale);
 			Contact[Foot] = Hanging;
 			PlantedContact[Foot] = Hanging;
 			PlantedNormal[Foot] = FVector::UpVector;
 			TargetNormal[Foot] = FVector::UpVector;
 			Lift[Foot] = AirLegTuckLift;
-			AnkleWorld[Foot] = Hanging + FVector::UpVector * (AnkleHeightCm * ActorScale);
+			AnkleWorld[Foot] = Hanging + FVector::UpVector * AnkleRestCm;
 			continue;
-		}
-
-		// The support leg of a kick is planted, so a swing that is still running is landed where the leg stands.
-		if (bKicking && Foot != KickFoot && bSwinging[Foot])
-		{
-			bSwinging[Foot] = false;
-			PlantedContact[Foot] = LandingLocation[Foot];
-			PlantedNormal[Foot] = LandingNormal[Foot];
-		}
-
-		if (!bSwinging[Foot] && !bRecoverySwinging[Foot] && !bStepping)
-		{
-			// Standing still a foot that is away from its home takes one settling step there instead of jumping, one foot at a time.
-			const FVector ToHome = LandingLocation[Foot] - PlantedContact[Foot];
-			// Only a body that has come to rest settles; a gliding stop would drag the foot after it again and again.
-			// Changing posture (crouching up or down) moves the home points, but no foot should hop for it.
-			const bool bPostureSettled = FMath::Abs(CrouchAlpha - (CreatureOwner->bIsCrouched ? 1.f : 0.f)) < 0.05f;
-			const bool bAtRest = Speed2D < AedirSettleRestSpeed && bPostureSettled;
-			SettleCooldownRemaining = FMath::Max(SettleCooldownRemaining - DeltaTime, 0.f);
-			if (ToHome.Size2D() > AedirSettleStepDistanceCm * ActorScale || FMath::Abs(ToHome.Z) > 15.f)
-			{
-				if (bAtRest && SettleCooldownRemaining <= 0.f && !bRecoverySwinging[1 - Foot] && !bSwinging[1 - Foot] && !bKicking)
-				{
-					BeginRecoverySwing(Foot, LandingLocation[Foot], 1000.f, 0.f, BottomZ);
-					SettleCooldownRemaining = AedirSettleCooldownSeconds;
-				}
-			}
-			else
-			{
-				PlantedContact[Foot] = LandingLocation[Foot];
-				PlantedNormal[Foot] = LandingNormal[Foot];
-			}
-		}
-
-		if (!bSwinging[Foot])
-		{
-			if (!bRecoverySwinging[Foot] && !bRecoverySwinging[1 - Foot] && !bKicking && bStepping && bWrapped && bInSwingWindow)
-			{
-				bSwinging[Foot] = true;
-				SwingStartContact[Foot] = PlantedContact[Foot];
-			}
-		}
-		else if (!bInSwingWindow)
-		{
-			bSwinging[Foot] = false;
-			PlantedContact[Foot] = LandingLocation[Foot];
-			PlantedNormal[Foot] = LandingNormal[Foot];
 		}
 
 		FVector FootPosition;
 		if (bSwinging[Foot])
 		{
-			const float T = FMath::Clamp(Fraction / FMath::Max(SwingFraction, KINDA_SMALL_NUMBER), 0.f, 1.f);
+			SwingElapsed[Foot] += DeltaTime;
+			const float T = FMath::Clamp(SwingElapsed[Foot] / FMath::Max(SwingDuration[Foot], KINDA_SMALL_NUMBER), 0.f, 1.f);
 			const float Smooth = T * T * (3.f - 2.f * T);
 			const float Arc = FMath::Sin(UE_PI * T);
-			const float StepHeight = FMath::Clamp(FMath::Max(SpeedStepHeight, RiseCm[Foot] + AedirStepHeightClearance), 0.f, MaxStepHeightCm);
+			const FVector& Target = bSwingFixedTarget[Foot] ? FixedLandingWorld[Foot] : LandingLocation[Foot];
+			const FVector& TargetUp = bSwingFixedTarget[Foot] ? FixedLandingNormal[Foot] : LandingNormal[Foot];
+			const float Rise = bSwingFixedTarget[Foot] ? static_cast<float>(FMath::Abs(Target.Z - SwingStartContact[Foot].Z)) : RiseCm[Foot];
+			const float StepHeight = FMath::Clamp(FMath::Max(SpeedStepHeight, Rise + AedirStepHeightClearance), 0.f, MaxStepHeightCm);
 
-			Contact[Foot] = FMath::Lerp(SwingStartContact[Foot], LandingLocation[Foot], Smooth);
+			Contact[Foot] = FMath::Lerp(SwingStartContact[Foot], Target, Smooth);
 			FootPosition = Contact[Foot] + FVector::UpVector * (StepHeight * Arc);
 			Lift[Foot] = Arc;
-			TargetNormal[Foot] = LandingNormal[Foot];
+			TargetNormal[Foot] = TargetUp;
+
+			if (T >= 1.f)
+			{
+				bSwinging[Foot] = false;
+				PlantedContact[Foot] = Target;
+				PlantedNormal[Foot] = TargetUp;
+			}
 		}
 		else
 		{
 			// A planted foot follows the real ground under it, on a slope or while the body changes height, so it never hovers or sinks.
-			if (!bRecoverySwinging[Foot])
+			FVector PlantedGround;
+			FVector PlantedGroundNormal;
+			if (SampleGround(PlantedContact[Foot], BottomZ, PlantedGround, PlantedGroundNormal))
 			{
-				FVector PlantedGround;
-				FVector PlantedGroundNormal;
-				SampleGround(PlantedContact[Foot], BottomZ, PlantedGround, PlantedGroundNormal);
 				PlantedContact[Foot].Z = PlantedGround.Z;
 				PlantedNormal[Foot] = PlantedGroundNormal;
 			}
@@ -379,36 +367,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			TargetNormal[Foot] = PlantedNormal[Foot];
 		}
 
-		if (bRecoverySwinging[Foot])
-		{
-			RecoverySwingElapsed[Foot] += DeltaTime;
-			const float T = FMath::Clamp(RecoverySwingElapsed[Foot] / RecoverySwingDuration[Foot], 0.f, 1.f);
-			const float Smooth = T * T * (3.f - 2.f * T);
-			const float Arc = FMath::Sin(UE_PI * T);
-			const float RecoveryRiseCm = FMath::Abs(RecoveryLandingWorld[Foot].Z - SwingStartContact[Foot].Z);
-			const float RecoveryStepHeight = FMath::Clamp(FMath::Max(SpeedStepHeight, RecoveryRiseCm + AedirStepHeightClearance), 0.f, MaxStepHeightCm);
-
-			Contact[Foot] = FMath::Lerp(SwingStartContact[Foot], RecoveryLandingWorld[Foot], Smooth);
-			FootPosition = Contact[Foot] + FVector::UpVector * (RecoveryStepHeight * Arc);
-			Lift[Foot] = Arc;
-			TargetNormal[Foot] = RecoveryLandingNormal[Foot];
-
-			if (T >= 1.f)
-			{
-				bRecoverySwinging[Foot] = false;
-				PlantedContact[Foot] = RecoveryLandingWorld[Foot];
-				PlantedNormal[Foot] = RecoveryLandingNormal[Foot];
-			}
-		}
-
-		AnkleWorld[Foot] = FootPosition + FVector::UpVector * (AnkleHeightCm * ActorScale);
+		AnkleWorld[Foot] = FootPosition + FVector::UpVector * AnkleRestCm;
 	}
 
 	// Safety leash: whatever happened above, no foot may stay further from under its hip than the stride allows.
 	// A foot beyond the leash is pulled back onto it, so a foot left behind is never visible.
 	if (!bAirborne)
 	{
-		const float LeashCm = FMath::Max(StrideLength * FootLeashStrideFraction, FootLeashMinCm * ActorScale);
+		const float LeashCm = FMath::Max(StepTriggerCm * FootLeashTriggerShare, FootLeashMinCm * ActorScale);
 		for (int32 Foot = 0; Foot < 2; ++Foot)
 		{
 			if (bKicking && Foot == KickFoot)
@@ -468,7 +434,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float ReachLowerCm = Interaction ? FMath::Max(Interaction->GetPelvisLowerZ(), 0.f) : 0.f;
 	const float ReachLowerAlpha = FMath::Clamp(ReachLowerCm / FMath::Max(ReachLowerMaxCm, KINDA_SMALL_NUMBER), 0.f, 1.f);
 	GaitState.HipOffsetZ -= ReachLowerCm;
-	GaitState.HipForwardOffset = ReachHipForwardCm * FMath::Clamp(ReachLowerAlpha * ReachLeanGain, 0.f, 1.f) * ActorScale;
+	GaitState.HipForwardOffset = Interaction ? Interaction->GetReachHipForward() * ActorScale : 0.f;
 	GaitState.HipOffsetZ -= StanceHipLowerCm * StanceAlpha;
 
 	// Crouching shrinks the capsule, so the pelvis drops by the same amount and the camera boom stays on the body.
@@ -499,6 +465,32 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	LandingDipCm = FMath::Clamp(LandingDipCm + LandingDipVelocity * DeltaTime, 0.f,LandingDipMaxCm * ActorScale);
 	GaitState.HipOffsetZ -= LandingDipCm;
 
+	// The pelvis sinks just enough for every foot on the ground to be reachable. Without this the leg runs out of length and the foot hovers.
+	CacheLegGeometry();
+	float NeededFootDrop = 0.f;
+	if (!bAirborne && LegLengthCm[0] > 0.f)
+	{
+		const FTransform MeshTransform = BodyMesh->GetComponentTransform();
+		for (int32 Foot = 0; Foot < 2; ++Foot)
+		{
+			if (Lift[Foot] > AedirFootDropLiftLimit)
+			{
+				continue;
+			}
+
+			const FVector Thigh = MeshTransform.TransformPosition(ThighRefLocation[Foot]) + FVector::UpVector * GaitState.HipOffsetZ;
+			const FVector ToAnkle = AnkleWorld[Foot] - Thigh;
+			const float MaxLength = LegLengthCm[Foot] * ActorScale * AedirLegComfortShare;
+			const float Horizontal = FMath::Min(static_cast<float>(ToAnkle.Size2D()), MaxLength * 0.95f);
+			const float VerticalReach = FMath::Sqrt(MaxLength * MaxLength - Horizontal * Horizontal);
+			NeededFootDrop = FMath::Max(NeededFootDrop, static_cast<float>(-ToAnkle.Z) - VerticalReach);
+		}
+	}
+	const float MaxFootDrop = FMath::Lerp(AedirFootDropWalkMaxCm, AedirFootDropRunMaxCm, RunMix) * ActorScale;
+	const float FootDropTarget = FMath::Clamp(NeededFootDrop, 0.f, MaxFootDrop);
+	FootReachDropCm = FMath::FInterpTo(FootReachDropCm, FootDropTarget, DeltaTime, FootDropTarget > FootReachDropCm ? AedirFootDropDownSpeed : AedirFootDropUpSpeed);
+	GaitState.HipOffsetZ -= FootReachDropCm;
+
 	FVector LeftReachTarget = FVector::ZeroVector;
 	FVector RightReachTarget = FVector::ZeroVector;
 	float LeftReachAlpha = 0.f;
@@ -518,14 +510,15 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	const FRotator BalanceLean = BalanceComponent ? BalanceComponent->GetPelvisLean() : FRotator::ZeroRotator;
 	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * GaitIntensity;
-	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch, PelvisYaw, BalanceLean.Roll);
+	// A low reach hinges at the hips as well as along the spine: half of the bend tips the pelvis forward.
+	const float ReachLean = Interaction ? Interaction->GetReachLeanDegrees() : 0.f;
+	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch - ReachLean * AedirReachHipHingeShare, PelvisYaw, BalanceLean.Roll);
 
 	const float LookYaw = MovementComponent->GetYawDeltaToControl();
 	const float LookPitch = FMath::Clamp(FRotator::NormalizeAxis(CreatureOwner->GetControlRotation().Pitch), -MaxLookPitchDegrees, MaxLookPitchDegrees);
 
 	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha + BalanceLean.Pitch + LookPitch * SpinePitchShare;
-	// The torso bends earlier than the pelvis sinks, so even an item close to the feet gets the full bend of the spine.
-	GaitState.SpineLeanPitch -= ReachTorsoLeanMaxDegrees * FMath::Clamp(ReachLowerAlpha * ReachLeanGain, 0.f, 1.f);
+	GaitState.SpineLeanPitch -= ReachLean * (1.f - AedirReachHipHingeShare);
 	// Crouching bends the spine forward too, the body does not just sink on its legs.
 	GaitState.SpineLeanPitch -= CrouchSpineLeanDegrees * CrouchAlpha;
 	GaitState.SpineLeanPitch -= StanceSpineLeanDegrees * StanceAlpha;
@@ -534,7 +527,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineLeanPitch += KickSpineLeanDegrees * KickAlpha;
 	const float TwistTarget = FMath::Clamp(LookYaw * SpineTwistScale, -SpineTwistLimitDegrees, SpineTwistLimitDegrees);
 	SmoothedSpineTwist = FMath::FInterpTo(SmoothedSpineTwist, TwistTarget, DeltaTime, LookInterpSpeed);
-	GaitState.SpineTwistYaw = SmoothedSpineTwist;
+	GaitState.SpineTwistYaw = SmoothedSpineTwist + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f);
 
 	const FRotator HeadTarget(
 		LookPitch * HeadPitchShare,
@@ -628,7 +621,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float GaitLateral = StanceSide * WalkWeightShiftLateralCm * LateralIntensity * Alive;
 	const float GaitRoll = -StanceSide * WalkWeightShiftRollDegrees * GaitIntensity * Alive;
 
-	GaitState.HipLateralOffset = IdleLateral + GaitLateral;
+	GaitState.HipLateralOffset = IdleLateral + GaitLateral + (Interaction ? Interaction->GetReachHipSide() * ActorScale : 0.f);
 	GaitState.PelvisRollDegrees = IdleRoll + GaitRoll;
 	GaitState.SpineCounterRollDegrees = -SpineCounterRollShare * GaitState.PelvisRollDegrees;
 	GaitState.HeadStabilizeRollDegrees = -HeadStabilizeRollShare * GaitState.PelvisRollDegrees;
@@ -697,8 +690,6 @@ void UAedirGaitComponent::ResetForRagdoll()
 	bFeetInitialized = false;
 	bSwinging[0] = false;
 	bSwinging[1] = false;
-	bRecoverySwinging[0] = false;
-	bRecoverySwinging[1] = false;
 	StairFactor = 1.f;
 	RunBlend = 0.f;
 	ArmBlend = 0.f;
@@ -712,6 +703,43 @@ void UAedirGaitComponent::ResetForRagdoll()
 	bMotionInitialized = false;
 }
 
+void UAedirGaitComponent::CacheLegGeometry()
+{
+	USkeletalMesh* SkeletalMesh = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	if (AnkleRefHeightCm > 0.f || !SkeletalMesh)
+	{
+		return;
+	}
+
+	const FName ThighNames[2] = { LeftFemurBoneName, RightFemurBoneName };
+	const FName CalfNames[2] = { LeftTibiaBoneName, RightTibiaBoneName };
+	const FName FootNames[2] = { LeftFootBoneName, RightFootBoneName };
+	for (int32 Foot = 0; Foot < 2; ++Foot)
+	{
+		const FVector ThighRef = SkeletalMesh->GetComposedRefPoseMatrix(ThighNames[Foot]).GetOrigin();
+		const FVector CalfRef = SkeletalMesh->GetComposedRefPoseMatrix(CalfNames[Foot]).GetOrigin();
+		const FVector FootRef = SkeletalMesh->GetComposedRefPoseMatrix(FootNames[Foot]).GetOrigin();
+		ThighRefLocation[Foot] = ThighRef;
+		LegLengthCm[Foot] = static_cast<float>((CalfRef - ThighRef).Size() + (FootRef - CalfRef).Size());
+		AnkleRefHeightCm = static_cast<float>(FootRef.Z);
+	}
+}
+
+void UAedirGaitComponent::BeginStep(int32 Foot, float Seconds)
+{
+	bSwinging[Foot] = true;
+	bSwingFixedTarget[Foot] = false;
+	SwingStartContact[Foot] = PlantedContact[Foot];
+	SwingElapsed[Foot] = 0.f;
+	SwingDuration[Foot] = Seconds;
+	NextStepFoot = 1 - Foot;
+
+	// The visual cycle (arms, pelvis) follows the real steps: left lifts at phase 0, right at 0.5.
+	const float PhaseTarget = Foot == 0 ? 0.f : 0.5f;
+	PhaseError = PhaseTarget - Phase;
+	PhaseError -= FMath::RoundToFloat(PhaseError);
+}
+
 void UAedirGaitComponent::BeginRecoverySwing(int32 Foot, const FVector& CatchWorld, float MaxStepCm, float Urgency, float BottomZ)
 {
 	const FVector Start = PlantedContact[Foot];
@@ -722,14 +750,11 @@ void UAedirGaitComponent::BeginRecoverySwing(int32 Foot, const FVector& CatchWor
 		Offset = Offset.GetSafeNormal() * MaxStepCm;
 	}
 
-	SampleGround(Start + Offset, BottomZ, RecoveryLandingWorld[Foot], RecoveryLandingNormal[Foot]);
+	SampleGround(Start + Offset, BottomZ, FixedLandingWorld[Foot], FixedLandingNormal[Foot]);
 
-	bSwinging[Foot] = false;
-	bRecoverySwinging[Foot] = true;
-	SwingStartContact[Foot] = Start;
-	RecoverySwingElapsed[Foot] = 0.f;
 	// A higher urgency shortens the swing, so the catching foot arrives sooner.
-	RecoverySwingDuration[Foot] = FMath::Max(RecoveryStepSeconds * (1.f - 0.5f * Urgency), KINDA_SMALL_NUMBER);
+	BeginStep(Foot, FMath::Max(RecoveryStepSeconds * (1.f - 0.5f * Urgency), KINDA_SMALL_NUMBER));
+	bSwingFixedTarget[Foot] = true;
 }
 
 void UAedirGaitComponent::AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength)
@@ -748,6 +773,10 @@ void UAedirGaitComponent::AdvancePhase(float DeltaTime, bool bMoving, bool bTurn
 		// Standing still: settle the cycle into the window where both feet are in stance.
 		Phase += AedirRestCatchUpCyclesPerSecond * DeltaTime;
 	}
+
+	const float Correction = PhaseError * FMath::Min(AedirPhaseCorrectionSpeed * DeltaTime, 1.f);
+	Phase += Correction;
+	PhaseError -= Correction;
 
 	Phase -= FMath::Floor(Phase);
 }

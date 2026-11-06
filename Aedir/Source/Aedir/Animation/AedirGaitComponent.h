@@ -346,14 +346,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ReachLowerMaxCm = 60.f;
 
-	// Forward torso lean in degrees at a full reach-down.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ReachTorsoLeanMaxDegrees = 70.f;
-
-	// Gain of the torso bend and pelvis shift against the pelvis sink during a low reach.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ReachLeanGain = 1.8f;
-
 	// Extra foot spacing at a full crouch, and again at a full low reach, as a share of the normal hip width.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float CrouchFootWidenShare = 0.3f;
@@ -361,10 +353,6 @@ public:
 	// Forward bend of the spine at a full crouch.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float CrouchSpineLeanDegrees = 22.f;
-
-	// How far the pelvis moves forward at a full low reach.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ReachHipForwardCm = 25.f;
 
 	// Speed of the fighting stance blend in and out.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -655,7 +643,9 @@ private:
 	void ResetForRagdoll();
 	void AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength);
 	FRotator ComputeFootTilt(const FVector& GroundNormal, const FVector& ActorUp, const FRotator& CurrentTilt, float DeltaTime) const;
+	void BeginStep(int32 Foot, float Seconds);
 	void BeginRecoverySwing(int32 Foot, const FVector& CatchWorld, float MaxStepCm, float Urgency, float BottomZ);
+	void CacheLegGeometry();
 	void ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, const FVector& ProtectiveTargetWorld, float ProtectiveAlpha, FVector& OutTargetWorld, float& OutAlpha) const;
 
 	UPROPERTY(Transient)
@@ -676,20 +666,26 @@ private:
 	FVector PlantedNormal[2] = { FVector::UpVector, FVector::UpVector };
 	FVector SwingStartContact[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	bool bSwinging[2] = { false, false };
-	float PreviousFootFraction[2] = { 0.f, 0.5f };
+	float SwingElapsed[2] = { 0.f, 0.f };
+	float SwingDuration[2] = { 0.f, 0.f };
+	// A stumble step lands on a fixed point instead of following the body.
+	bool bSwingFixedTarget[2] = { false, false };
+	FVector FixedLandingWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector FixedLandingNormal[2] = { FVector::UpVector, FVector::UpVector };
+	int32 NextStepFoot = 0;
+	float PhaseError = 0.f;
 
-	// Stumble step state per foot. A recovery swing lands on RecoveryLandingWorld instead of the phase-driven landing.
 	float CrouchAlpha = 0.f;
 	float RecoveryCooldownRemaining = 0.f;
-	float SettleCooldownRemaining = 0.f;
 	float AirFallSpeed = 0.f;
 	float LandingDipCm = 0.f;
 	float LandingDipVelocity = 0.f;
-	bool bRecoverySwinging[2] = { false, false };
-	float RecoverySwingElapsed[2] = { 0.f, 0.f };
-	float RecoverySwingDuration[2] = { 0.f, 0.f };
-	FVector RecoveryLandingWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
-	FVector RecoveryLandingNormal[2] = { FVector::UpVector, FVector::UpVector };
+
+	// Leg measurements from the reference pose, in unscaled mesh space. Left is index 0.
+	FVector ThighRefLocation[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float LegLengthCm[2] = { 0.f, 0.f };
+	float AnkleRefHeightCm = 0.f;
+	float FootReachDropCm = 0.f;
 
 	float Phase = 0.45f;
 	float StairFactor = 1.f;
