@@ -231,7 +231,12 @@ void FAedirProceduralAnimProxy::ApplySpine(FCSPose<FCompactPose>& CSPose, const 
 		if (BoneIndex >= UpperFirst)
 		{
 			PitchDegrees += ChestPitch;
-			RollDegrees += GaitData.SpineCounterRollDegrees / UpperCount;
+		}
+
+		// The pelvis roll is cancelled at the lowest spine bone, so the motion stays in the hips and the upper body does not sway.
+		if (BoneIndex == 0)
+		{
+			RollDegrees += GaitData.SpineCounterRollDegrees;
 		}
 
 		RotateBone(CSPose, SpineBones[BoneIndex], ActorRotationToMesh(FRotator(PitchDegrees, YawDegrees, RollDegrees).Quaternion()));

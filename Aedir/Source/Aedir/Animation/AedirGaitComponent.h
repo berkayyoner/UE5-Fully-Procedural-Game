@@ -531,11 +531,11 @@ public:
 
 	// Share of the pelvis roll that the upper spine counter-rotates.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
-	float SpineCounterRollShare = 0.4f;
+	float SpineCounterRollShare = 1.f;
 
 	// Share of the pelvis roll that the head counter-rotates to keep its look direction.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Idle")
-	float HeadStabilizeRollShare = 0.6f;
+	float HeadStabilizeRollShare = 0.f;
 
 	// Inertia: smoothing of the planar acceleration and turn rate.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
