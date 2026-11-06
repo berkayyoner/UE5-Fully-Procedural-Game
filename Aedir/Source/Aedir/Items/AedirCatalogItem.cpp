@@ -127,7 +127,10 @@ void AAedirCatalogItem::ApplyDefinition()
 	ItemClass = Def->ItemClass;
 	Weight = Def->WeightKg;
 	bTwoHanded = Def->bTwoHanded;
-	WeaponLength = Def->WeaponLengthCm;
+	// The reach of a weapon counts from the hand to the tip.
+	WeaponLength = Def->WeaponLengthCm > 0.f ? Def->WeaponLengthCm * 0.5f - Def->GripCm : 0.f;
+	GripLocalCm = Def->GripCm;
+	bUseHandGrip = true;
 	DamageType = Def->DamageType;
 	Damage = Def->FlatDamage;
 	ArmorZone = Def->ArmorZone;
@@ -224,7 +227,8 @@ void AAedirCatalogItem::AddDetail(EAedirCatalogShape Shape, const FVector& Cente
 	// The root carries BodyScale, so child transforms are divided by it to land in centimetres in the world.
 	Detail->SetRelativeLocation(CenterCm / BodyScale);
 	Detail->SetRelativeRotation(Rotation);
-	Detail->SetRelativeScale3D(Rotation.UnrotateVector(SizeCm / BodyScale).GetAbs() / CatalogItemShapeCm);
+	// Scale combines per axis regardless of rotation, so the size is first expressed along the detail's own axes and only then divided by the parent's scale.
+	Detail->SetRelativeScale3D(Rotation.UnrotateVector(SizeCm).GetAbs() / BodyScale / CatalogItemShapeCm);
 	Detail->SetMaterial(0, CreateColorMaterial(Color));
 
 	Detail->RegisterComponent();

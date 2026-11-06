@@ -7,10 +7,14 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/PlayerState.h"
+#include "HAL/FileManager.h"
+#include "HUD/AedirMarkerSubsystem.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemActor.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/Paths.h"
 #include "Net/AedirSaveGame.h"
+#include "UI/AedirJournalSubsystem.h"
 #include "Weather/AedirWeatherManager.h"
 #include "Weather/AedirWeatherSubsystem.h"
 
@@ -18,6 +22,36 @@ namespace
 {
 	constexpr int32 SaveSubsystemUserIndex = 0;
 	constexpr float SaveSubsystemRestoreWeatherSeconds = 0.1f;
+	constexpr double SaveSubsystemLocationRadiusCm = 20000.0;
+	const TCHAR* const SaveSubsystemSlotPrefix = TEXT("Save_");
+	const TCHAR* const SaveSubsystemFileExtension = TEXT(".sav");
+	const TCHAR* const SaveSubsystemMapPrefix = TEXT("Lvl_");
+
+	// The closest discovered place around the player, otherwise the level name without its prefix.
+	FString SaveSubsystemFindLocationName(const UWorld* World, const APawn* Pawn, const FString& MapName)
+	{
+		const UAedirMarkerSubsystem* Markers = World ? World->GetSubsystem<UAedirMarkerSubsystem>() : nullptr;
+		if (Markers && Pawn)
+		{
+			const FAedirMapMarker* Closest = nullptr;
+			double ClosestDistance = SaveSubsystemLocationRadiusCm;
+			for (const FAedirMapMarker& Marker : Markers->GetMarkers())
+			{
+				const double Distance = FVector::Dist2D(Marker.Location, Pawn->GetActorLocation());
+				if (Marker.Type == EAedirMarkerType::Area && Marker.bDiscovered && Distance < ClosestDistance)
+				{
+					ClosestDistance = Distance;
+					Closest = &Marker;
+				}
+			}
+			if (Closest)
+			{
+				return Closest->Label.ToString();
+			}
+		}
+
+		return MapName.StartsWith(SaveSubsystemMapPrefix) ? MapName.RightChop(FCString::Strlen(SaveSubsystemMapPrefix)) : MapName;
+	}
 
 	FAedirCreatureSave SaveSubsystemMakeCreatureSave(const FString& PlayerKey, const AAedirCreature* Creature)
 	{
@@ -80,6 +114,78 @@ namespace
 	}
 }
 
+FString AedirSaveSlots::MakeSlotName(int32 Number)
+{
+	return FString::Printf(TEXT("%s%03d"), SaveSubsystemSlotPrefix, Number);
+}
+
+int32 AedirSaveSlots::ParseSlotNumber(const FString& Slot)
+{
+	if (!Slot.StartsWith(SaveSubsystemSlotPrefix, ESearchCase::CaseSensitive))
+	{
+		return INDEX_NONE;
+	}
+
+	const FString Digits = Slot.RightChop(FCString::Strlen(SaveSubsystemSlotPrefix));
+	if (Digits.IsEmpty() || !Digits.IsNumeric() || Digits.Contains(TEXT(".")) || Digits.Contains(TEXT("-")))
+	{
+		return INDEX_NONE;
+	}
+
+	const int32 Number = FCString::Atoi(*Digits);
+	return Number > 0 ? Number : INDEX_NONE;
+}
+
+FString AedirSaveSlots::NextSlotName(const TArray<FString>& ExistingSlots)
+{
+	int32 Highest = 0;
+	for (const FString& Slot : ExistingSlots)
+	{
+		Highest = FMath::Max(Highest, ParseSlotNumber(Slot));
+	}
+	return MakeSlotName(Highest + 1);
+}
+
+FString AedirSaveSlots::SlotFromFileName(const FString& FileName)
+{
+	return FileName.EndsWith(SaveSubsystemFileExtension, ESearchCase::IgnoreCase)
+		? FileName.LeftChop(FCString::Strlen(SaveSubsystemFileExtension))
+		: FString();
+}
+
+FString AedirSaveSlots::MakeDisplayName(const FString& Slot)
+{
+	if (Slot == QuickSaveSlot)
+	{
+		return TEXT("Quick Save");
+	}
+
+	const int32 Number = ParseSlotNumber(Slot);
+	return Number != INDEX_NONE ? FString::Printf(TEXT("Save %d"), Number) : Slot;
+}
+
+void AedirSaveSlots::SortNewestFirst(TArray<FAedirSaveInfo>& Saves)
+{
+	Saves.StableSort([](const FAedirSaveInfo& A, const FAedirSaveInfo& B)
+	{
+		return A.Timestamp != B.Timestamp ? A.Timestamp > B.Timestamp : A.Slot > B.Slot;
+	});
+}
+
+FString AedirSaveSlots::MakeSummary(int32 PlayerLevel, const FString& Location)
+{
+	if (PlayerLevel > 0 && !Location.IsEmpty())
+	{
+		return FString::Printf(TEXT("Level %d  -  %s"), PlayerLevel, *Location);
+	}
+	return PlayerLevel > 0 ? FString::Printf(TEXT("Level %d"), PlayerLevel) : Location;
+}
+
+FString AedirSaveSlots::FormatTimestamp(const FDateTime& Time)
+{
+	return Time.ToString(TEXT("%Y-%m-%d  %H:%M"));
+}
+
 void UAedirSaveSubsystem::Deinitialize()
 {
 	StopAutosave();
@@ -121,6 +227,13 @@ bool UAedirSaveSubsystem::SaveWorld(const FString& Slot)
 		if (Creature)
 		{
 			Save->Players.Add(SaveSubsystemMakeCreatureSave(MakePlayerKey(PlayerController), Creature));
+
+			// The list entry describes the first player, which is the host in a shared world.
+			if (Save->Players.Num() == 1)
+			{
+				Save->PlayerLevel = Creature->Stats ? UAedirJournalSubsystem::GetCharacterLevel(Creature->Stats.Get()) : 0;
+				Save->LocationName = SaveSubsystemFindLocationName(World, Creature, Save->MapName);
+			}
 		}
 	}
 
@@ -392,6 +505,54 @@ FDateTime UAedirSaveSubsystem::GetSaveTimestamp(const FString& Slot) const
 
 	const UAedirSaveGame* Save = Cast<UAedirSaveGame>(UGameplayStatics::LoadGameFromSlot(Slot, SaveSubsystemUserIndex));
 	return Save ? Save->Timestamp : FDateTime(0);
+}
+
+TArray<FString> UAedirSaveSubsystem::FindSlotsOnDisk()
+{
+	TArray<FString> FileNames;
+	const FString Pattern = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("SaveGames"), FString::Printf(TEXT("*%s"), SaveSubsystemFileExtension));
+	IFileManager::Get().FindFiles(FileNames, *Pattern, true, false);
+
+	TArray<FString> Slots;
+	for (const FString& FileName : FileNames)
+	{
+		const FString Slot = AedirSaveSlots::SlotFromFileName(FileName);
+		if (!Slot.IsEmpty())
+		{
+			Slots.Add(Slot);
+		}
+	}
+	return Slots;
+}
+
+TArray<FAedirSaveInfo> UAedirSaveSubsystem::ListSaves() const
+{
+	TArray<FAedirSaveInfo> Saves;
+	for (const FString& Slot : FindSlotsOnDisk())
+	{
+		const UAedirSaveGame* Save = Cast<UAedirSaveGame>(UGameplayStatics::LoadGameFromSlot(Slot, SaveSubsystemUserIndex));
+		if (!Save)
+		{
+			continue;
+		}
+
+		FAedirSaveInfo& Info = Saves.AddDefaulted_GetRef();
+		Info.Slot = Slot;
+		Info.DisplayName = AedirSaveSlots::MakeDisplayName(Slot);
+		Info.Timestamp = Save->Timestamp;
+		Info.PlayerLevel = Save->PlayerLevel;
+		Info.Location = Save->LocationName;
+		Info.MapName = Save->MapName;
+	}
+
+	AedirSaveSlots::SortNewestFirst(Saves);
+	return Saves;
+}
+
+FString UAedirSaveSubsystem::SaveToNewSlot()
+{
+	const FString Slot = AedirSaveSlots::NextSlotName(FindSlotsOnDisk());
+	return SaveWorld(Slot) ? Slot : FString();
 }
 
 void UAedirSaveSubsystem::StartAutosave(const FString& Slot, float IntervalSeconds)

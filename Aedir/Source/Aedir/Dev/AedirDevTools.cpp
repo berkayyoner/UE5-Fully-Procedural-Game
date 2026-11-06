@@ -84,6 +84,7 @@ int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const F
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemCatalog.h"
 #include "Animation/AedirGaitComponent.h"
+#include "Combat/AedirCombatComponent.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -278,6 +279,10 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	else if (Command == TEXT("PlaceItem"))
 	{
 		PlaceItem(Player, Args);
+	}
+	else if (Command == TEXT("PoseArm"))
+	{
+		PoseArm(Player, Args);
 	}
 	else
 	{
@@ -798,6 +803,21 @@ void UAedirDevTools::ShotCam(AAedirPlayerCharacter* Player, const FString& Args)
 	Camera->SetActorRelativeRotation((LookAt - RelativeLocation).Rotation());
 	Camera->GetCameraComponent()->bConstrainAspectRatio = false;
 	Controller->SetViewTarget(Camera);
+}
+
+void UAedirDevTools::PoseArm(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// PoseArm <hand 0|1> <guard 0|1> <aim yaw> <aim pitch> <extension> <thrust 0|1>: holds a stance without a mouse.
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	if (Tokens.Num() < 6 || !Player->Combat)
+	{
+		return;
+	}
+
+	const EAedirHand Hand = FCString::Atoi(*Tokens[0]) == 0 ? EAedirHand::Left : EAedirHand::Right;
+	Player->Combat->SetGuard(Hand, FCString::Atoi(*Tokens[1]) != 0);
+	Player->Combat->DevSetArmAim(Hand, FVector2D(FCString::Atof(*Tokens[2]), FCString::Atof(*Tokens[3])), FCString::Atof(*Tokens[4]));
+	Player->Combat->SetThrustMode(FCString::Atoi(*Tokens[5]) != 0);
 }
 
 void UAedirDevTools::PlaceItem(AAedirPlayerCharacter* Player, const FString& Args)

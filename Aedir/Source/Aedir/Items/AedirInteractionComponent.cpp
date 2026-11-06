@@ -16,8 +16,8 @@ namespace
 	constexpr int32 WaistSlotsPerSide = 3;
 	constexpr float ReachBlendInSeconds = 0.15f;
 	constexpr float ReachBlendOutSeconds = 0.2f;
-	constexpr float PelvisLowerInterpSpeed = 8.f;
-	constexpr float PelvisRiseInterpSpeed = 3.f;
+	constexpr float PelvisLowerInterpSpeed = 2.6f;
+	constexpr float PelvisRiseInterpSpeed = 1.8f;
 	// Standing proportions of the body in unscaled cm, used to work out how far it has to bend for a low item.
 	constexpr float ReachPelvisHeightCm = 95.f;
 	constexpr float ReachTorsoLengthCm = 48.f;
@@ -36,8 +36,12 @@ namespace
 	constexpr float ReachTwoHandSpacingCm = 9.f;
 	constexpr float BigObjectHandSpanShare = 0.9f;
 	constexpr float TwoHandLiftMultiplier = 2.5f;
-	constexpr float CarryForwardCm = 34.f;
-	constexpr float CarryUpCm = 14.f;
+	constexpr float OneHandObjectLiftShare = 0.6f;
+	constexpr float ObjectStrainSeconds = 1.5f;
+	constexpr float ObjectThrowWeightKg = 5.f;
+	constexpr float CarryForwardCm = 30.f;
+	constexpr float CarrySideCm = 14.f;
+	constexpr float CarryUpCm = 6.f;
 	constexpr float ReachRangeMultiplier = 1.5f;
 	constexpr float HighlightInterval = 0.1f;
 	constexpr float BackpackDropDistance = 60.f;
@@ -50,7 +54,7 @@ namespace
 
 	bool RequiresBothHands(const AAedirItemActor* Item)
 	{
-		return Item && (Item->bTwoHanded || Item->ItemClass == EAedirItemClass::Object);
+		return Item && Item->bTwoHanded;
 	}
 
 	int32 GetWaistSideBegin(EAedirHand Hand)
@@ -95,6 +99,7 @@ void UAedirInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	{
 		UpdateReach(EAedirHand::Left, DeltaTime);
 		UpdateReach(EAedirHand::Right, DeltaTime);
+		UpdateObjectStrain(DeltaTime);
 	}
 
 	UpdateReachBlend(DeltaTime);
@@ -133,6 +138,14 @@ void UAedirInteractionComponent::StartReach(EAedirHand Hand)
 
 	if (State != EAedirHandState::Idle)
 	{
+		return;
+	}
+
+	// The free hand joins the other one on a big object it is holding.
+	AAedirItemActor* OtherHeld = GetHeldItem(GetOtherHand(Hand));
+	if (OtherHeld && OtherHeld->ItemClass == EAedirItemClass::Object)
+	{
+		StartReachForItem(Hand, OtherHeld);
 		return;
 	}
 
@@ -188,12 +201,19 @@ void UAedirInteractionComponent::DropHeld(EAedirHand Hand)
 
 	// A two-handed weapon gripped by both hands is let go by one hand only; the other hand keeps holding it.
 	const EAedirHand OtherHand = GetOtherHand(Hand);
-	if (Item->ItemClass != EAedirItemClass::Object && GetHeldItem(OtherHand) == Item)
+	if (GetHeldItem(OtherHand) == Item)
 	{
 		ResetSlot(GetSlot(Hand));
 		if (Item->HeldHand == Hand)
 		{
-			Item->AttachToCreatureHand(Creature, OtherHand);
+			if (Item->ItemClass == EAedirItemClass::Object)
+			{
+				Item->AttachToHandInPlace(Creature, OtherHand);
+			}
+			else
+			{
+				Item->AttachToCreatureHand(Creature, OtherHand);
+			}
 		}
 		UpdateCarriedWeight();
 		return;
@@ -201,7 +221,9 @@ void UAedirInteractionComponent::DropHeld(EAedirHand Hand)
 
 	ReleaseHeldItem(Item);
 
-	const FVector ThrowVelocity = Creature->GetActorForwardVector() * ThrowSpeed + Creature->GetVelocity();
+	// A light item is tossed a little, a heavy one just falls.
+	const float TossShare = FMath::Min(ObjectThrowWeightKg / FMath::Max(Item->Weight, KINDA_SMALL_NUMBER), 1.f);
+	const FVector ThrowVelocity = Creature->GetActorForwardVector() * (ThrowSpeed * TossShare) + Creature->GetVelocity();
 	Item->Detach(ThrowVelocity);
 
 	UpdateCarriedWeight();
@@ -357,13 +379,14 @@ float UAedirInteractionComponent::GetPelvisLowerZ() const
 void UAedirInteractionComponent::BeginReach(EAedirHand Hand, AAedirItemActor* Item)
 {
 	AAedirCreature* Creature = GetCreature();
-	if (!Creature || !Item || !AAedirItemActor::IsPickable(Item))
+	FAedirHandSlot& Slot = GetSlot(Hand);
+	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
+	const bool bJoiningOtherHand = Item && Other.State == EAedirHandState::Holding && Other.Item.Get() == Item;
+	if (!Creature || !Item || (!AAedirItemActor::IsPickable(Item) && !bJoiningOtherHand))
 	{
 		return;
 	}
 
-	FAedirHandSlot& Slot = GetSlot(Hand);
-	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
 	if (Slot.State != EAedirHandState::Idle)
 	{
 		return;
@@ -386,6 +409,7 @@ void UAedirInteractionComponent::BeginReach(EAedirHand Hand, AAedirItemActor* It
 	{
 		ReachLeadHand = Hand;
 	}
+	HoldStrainSeconds = 0.f;
 
 	Slot.State = EAedirHandState::Reaching;
 	Slot.Item = Item;
@@ -422,14 +446,27 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 		return;
 	}
 
+	const int32 HandIndex = static_cast<int32>(Hand);
+	if (Item->ItemClass == EAedirItemClass::Object)
+	{
+		// A big object has no handle: the hand closes where it touches. The first hand carries it, the second one only rests on it.
+		const FVector HandWorld = GetHandWorld(Hand);
+		if (Other.State != EAedirHandState::Holding)
+		{
+			Item->AttachToHandInPlace(Creature, Hand);
+		}
+		ObjectGripLocal[HandIndex] = Item->GetActorTransform().InverseTransformPosition(HandWorld);
+
+		Slot.State = EAedirHandState::Holding;
+		Slot.Item = Item;
+		Slot.ReachElapsed = 0.f;
+		UpdateCarriedWeight();
+		return;
+	}
+
 	// A weapon gripped in both hands is gripped higher by the hand whose key started the reach: the weapon follows the other hand
 	// at the pommel and the lead hand sits above it towards the blade.
-	const bool bBigObject = Item->ItemClass == EAedirItemClass::Object;
-	Item->AttachToCreatureHand(Creature, bBothHands && !bBigObject ? GetOtherHand(ReachLeadHand) : Hand);
-	if (bBigObject)
-	{
-		CarryObject(Creature, Item);
-	}
+	Item->AttachToCreatureHand(Creature, bBothHands ? GetOtherHand(ReachLeadHand) : Hand);
 
 	Slot.State = EAedirHandState::Holding;
 	Slot.Item = Item;
@@ -455,7 +492,8 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 
 	AAedirCreature* Creature = GetCreature();
 	AAedirItemActor* Item = Slot.Item.Get();
-	if (!Creature || !Item || !AAedirItemActor::IsPickable(Item))
+	const bool bOtherHolds = GetHeldItem(GetOtherHand(Hand)) == Item;
+	if (!Creature || !Item || (!AAedirItemActor::IsPickable(Item) && !bOtherHolds))
 	{
 		ResetSlot(Slot);
 		return;
@@ -496,8 +534,9 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 		const EAedirHand Hand = static_cast<EAedirHand>(Index);
 		const FAedirHandSlot& Slot = GetSlot(Hand);
 
-		// A big object stays hugged by both arms for as long as it is carried.
-		const bool bCarryingObject = Slot.State == EAedirHandState::Holding && Slot.Item && Slot.Item->ItemClass == EAedirItemClass::Object;
+		// A big object held in both hands is carried up in front of the body.
+		const bool bCarryingObject = Slot.State == EAedirHandState::Holding && Slot.Item && Slot.Item->ItemClass == EAedirItemClass::Object
+			&& GetSlot(GetOtherHand(Hand)).State == EAedirHandState::Holding && GetSlot(GetOtherHand(Hand)).Item == Slot.Item;
 		if (Slot.State == EAedirHandState::Reaching || bCarryingObject)
 		{
 			ReachBlend[Index] = FMath::Min(1.f, ReachBlend[Index] + DeltaTime / ReachBlendInSeconds);
@@ -607,18 +646,44 @@ FVector UAedirInteractionComponent::GetReachTargetWorld(EAedirHand Hand, const A
 {
 	const FVector Center = Item->GetBoundsCenterWorld();
 	const AAedirCreature* Creature = GetCreature();
-	if (!Creature || GetSlot(GetOtherHand(Hand)).Item.Get() != Item)
+	if (!Creature)
 	{
 		return Center;
 	}
 
-	// Two hands on one item take its opposite sides: around a big object, a short distance apart on a weapon.
-	const FVector Extent = Item->GetComponentsBoundingBox().GetExtent();
-	const float Span = Item->ItemClass == EAedirItemClass::Object
-		? static_cast<float>(FMath::Max(Extent.X, Extent.Y)) * BigObjectHandSpanShare
-		: ReachTwoHandSpacingCm;
+	const FAedirHandSlot& Slot = GetSlot(Hand);
 	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
-	return Center + Creature->GetActorRightVector() * (Side * Span);
+	if (Item->ItemClass == EAedirItemClass::Object)
+	{
+		if (Slot.State == EAedirHandState::Holding)
+		{
+			// Carrying in both hands: the carrying hand goes in front of the body, the other stays where it took hold.
+			if (Item->HeldHand == Hand)
+			{
+				const float Scale = static_cast<float>(Creature->GetActorScale3D().Z);
+				return Creature->GetActorTransform().TransformPositionNoScale(FVector(CarryForwardCm * Scale, Side * CarrySideCm * Scale, CarryUpCm * Scale));
+			}
+			return Item->GetActorTransform().TransformPosition(ObjectGripLocal[static_cast<int32>(Hand)]);
+		}
+
+		// The hand goes to the near surface of the object, or to its far side when the other hand already has it.
+		const FVector Extent = Item->GetComponentsBoundingBox().GetExtent();
+		const float Radius = static_cast<float>(FMath::Max(Extent.X, Extent.Y)) * BigObjectHandSpanShare;
+		const FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
+		if (Other.Item.Get() == Item)
+		{
+			return Center + Creature->GetActorRightVector() * (Side * Radius);
+		}
+		const FVector TowardsHand = (GetHandWorld(Hand) - Center).GetSafeNormal();
+		return Center + TowardsHand * Radius;
+	}
+
+	// Two hands on one weapon take it a short distance apart.
+	if (GetSlot(GetOtherHand(Hand)).Item.Get() != Item)
+	{
+		return Center;
+	}
+	return Center + Creature->GetActorRightVector() * (Side * ReachTwoHandSpacingCm);
 }
 
 bool UAedirInteractionComponent::CanLift(const AAedirItemActor* Item) const
@@ -629,22 +694,45 @@ bool UAedirInteractionComponent::CanLift(const AAedirItemActor* Item) const
 		return false;
 	}
 
+	// A big object can always be tried: whether it can be held is found out with it in the hands.
+	if (Item->ItemClass == EAedirItemClass::Object)
+	{
+		return true;
+	}
+
 	// Two hands lift far more than can be carried comfortably; the excess only slows the body down.
 	return Item->Weight <= Creature->GetCarryCapacity() * (RequiresBothHands(Item) ? TwoHandLiftMultiplier : 1.f);
 }
 
-void UAedirInteractionComponent::CarryObject(AAedirCreature* Creature, AAedirItemActor* Item)
+void UAedirInteractionComponent::UpdateObjectStrain(float DeltaTime)
 {
-	// A big object is carried in front of the chest with the arms around it. It rides on the capsule, not on a bone, so the bend of the body at the moment of the grab does not swing it around later.
-	const FVector Extent = Item->GetComponentsBoundingBox().GetExtent();
-	const float Scale = static_cast<float>(Creature->GetActorScale3D().Z);
-	const FVector CarryPoint = Creature->GetActorLocation()
-		+ Creature->GetActorForwardVector() * ((CarryForwardCm * Scale) + static_cast<float>(Extent.X))
-		+ FVector::UpVector * (CarryUpCm * Scale);
+	AAedirCreature* Creature = GetCreature();
+	AAedirItemActor* LeftItem = GetHeldItem(EAedirHand::Left);
+	AAedirItemActor* RightItem = GetHeldItem(EAedirHand::Right);
+	AAedirItemActor* Object = (LeftItem && LeftItem->ItemClass == EAedirItemClass::Object) ? LeftItem : ((RightItem && RightItem->ItemClass == EAedirItemClass::Object) ? RightItem : nullptr);
+	if (!Creature || !Object)
+	{
+		HoldStrainSeconds = 0.f;
+		return;
+	}
 
-	Item->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
-	Item->AddActorWorldOffset(CarryPoint - Item->GetBoundsCenterWorld());
-	Item->AttachToComponent(Creature->GetCapsuleComponent(), FAttachmentTransformRules::KeepWorldTransform);
+	// More than the hands can bear slips out after a moment, the sooner the heavier it is.
+	const bool bBothHands = LeftItem == RightItem;
+	const float Limit = Creature->GetCarryCapacity() * (bBothHands ? TwoHandLiftMultiplier : OneHandObjectLiftShare);
+	if (Object->Weight <= Limit)
+	{
+		HoldStrainSeconds = FMath::Max(HoldStrainSeconds - DeltaTime, 0.f);
+		return;
+	}
+
+	HoldStrainSeconds += DeltaTime * Object->Weight / FMath::Max(Limit, 1.f);
+	if (HoldStrainSeconds >= ObjectStrainSeconds)
+	{
+		HoldStrainSeconds = 0.f;
+		ReleaseHeldItem(Object);
+		Object->Detach(Creature->GetVelocity());
+		UpdateCarriedWeight();
+	}
 }
 
 void UAedirInteractionComponent::UpdateHighlight()

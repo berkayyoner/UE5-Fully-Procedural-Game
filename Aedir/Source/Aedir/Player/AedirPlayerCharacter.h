@@ -177,6 +177,9 @@ public:
 	UFUNCTION(Exec)
 	void PlaceItem(const FString& ItemArgs);
 
+	UFUNCTION(Exec)
+	void PoseArm(const FString& PoseArgs);
+
 	// Fixed movement input for diagnostics, on top of the keyboard.
 	void SetDevAutoMove(const FVector2D& Input) { DevAutoMove = Input; }
 
@@ -247,6 +250,8 @@ private:
 	void HandleRightHolsterPressed();
 	void HandleShovePressed();
 	void HandleKickPressed();
+	void HandleThrustPressed();
+	void HandleThrustReleased();
 	void HandleDynamicKickPressed();
 
 	void HandleHandPressed(EAedirHand Hand);

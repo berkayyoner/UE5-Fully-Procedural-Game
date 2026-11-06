@@ -17,10 +17,10 @@ public:
 	UAedirCharacterMovementComponent();
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float WalkSpeed = 120.f;
+	float WalkSpeed = 100.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float RunSpeedMultiplier = 2.6f;
+	float RunSpeedMultiplier = 3.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float CrouchSpeedMultiplier = 0.5f;
@@ -82,6 +82,16 @@ public:
 
 	float BodyYawRate = 0.f;
 
+	// Speed left on the steepest walkable slope, going up and going down.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float SlopeUpSpeedScale = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float SlopeDownSpeedScale = 0.72f;
+
+	// Set by the gait while the feet find stairs.
+	void SetStairSpeedScale(float Scale) { StairSpeedScale = Scale; }
+
 	// Seconds the body crouches down before the legs push off.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float JumpWindupSeconds = 0.5f;
@@ -125,6 +135,7 @@ private:
 	void SetBodyYaw(float NewYaw);
 	void UpdateSurfaceFriction();
 
+	float StairSpeedScale = 1.f;
 	float JumpWindupRemaining = 0.f;
 	bool bJumpWindupFired = false;
 	float BaseGroundFriction = 8.f;

@@ -87,6 +87,9 @@ public:
 
 	static FString GetSkillDisplayName(EAedirSkill Skill);
 
+	// Overall level: every 25 skill points raise it by one.
+	static int32 GetCharacterLevel(const class UAedirStatsComponent* Stats);
+
 private:
 	FAedirQuest* FindQuest(FName QuestId);
 	void SyncMarker(const FAedirQuest& Quest);

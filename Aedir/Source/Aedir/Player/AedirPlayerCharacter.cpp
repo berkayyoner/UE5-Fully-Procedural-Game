@@ -265,6 +265,8 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 
 	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);
+	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &AAedirPlayerCharacter::HandleThrustPressed);
+	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Released, this, &AAedirPlayerCharacter::HandleThrustReleased);
 	PlayerInputComponent->BindKey(EKeys::Tilde, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
 	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AAedirPlayerCharacter::HandleDynamicKickPressed);
 }
@@ -489,6 +491,22 @@ void AAedirPlayerCharacter::HandleShovePressed()
 	}
 
 	Combat->StartShove();
+}
+
+void AAedirPlayerCharacter::HandleThrustPressed()
+{
+	if (Combat)
+	{
+		Combat->SetThrustMode(true);
+	}
+}
+
+void AAedirPlayerCharacter::HandleThrustReleased()
+{
+	if (Combat)
+	{
+		Combat->SetThrustMode(false);
+	}
 }
 
 void AAedirPlayerCharacter::HandleDynamicKickPressed()
@@ -876,6 +894,11 @@ void AAedirPlayerCharacter::AutoMove(float Forward, float Right, int32 Run, floa
 void AAedirPlayerCharacter::ShotCam(const FString& CameraArgs)
 {
 	RunDevCommand(TEXT("ShotCam"), CameraArgs, false);
+}
+
+void AAedirPlayerCharacter::PoseArm(const FString& PoseArgs)
+{
+	RunDevCommand(TEXT("PoseArm"), PoseArgs, true);
 }
 
 void AAedirPlayerCharacter::PlaceItem(const FString& ItemArgs)

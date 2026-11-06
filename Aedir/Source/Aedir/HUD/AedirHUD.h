@@ -16,28 +16,28 @@ class AEDIR_API AAedirHUD : public AHUD
 public:
 	virtual void DrawHUD() override;
 
-	// Fraction of the screen width used by the compass strip.
+	// Fraction of the screen width used by the compass strip. The sizes below are for a 1080p screen and scale with its height.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float CompassWidthFraction = 0.5f;
+	float CompassWidthFraction = 0.36f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float CompassTopMargin = 24.f;
+	float CompassTopMargin = 30.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float CompassHeight = 34.f;
+	float CompassHeight = 32.f;
 
 	// Visible heading range of the compass in degrees.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
 	float CompassFovDegrees = 180.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float BarWidth = 280.f;
+	float BarWidth = 360.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float BarHeight = 14.f;
+	float BarHeight = 13.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float BarBottomMargin = 36.f;
+	float BarBottomMargin = 46.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
 	float BarFadeInSpeed = 6.f;
@@ -50,13 +50,13 @@ public:
 	float BarFadeOutDelay = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	FLinearColor HealthBarColor = FLinearColor(0.85f, 0.12f, 0.12f, 1.f);
+	FLinearColor HealthBarColor = FLinearColor(0.34f, 0.012f, 0.01f, 1.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	FLinearColor ManaBarColor = FLinearColor(0.2f, 0.45f, 1.f, 1.f);
+	FLinearColor ManaBarColor = FLinearColor(0.025f, 0.1f, 0.42f, 1.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	FLinearColor StaminaBarColor = FLinearColor(0.25f, 0.85f, 0.3f, 1.f);
+	FLinearColor StaminaBarColor = FLinearColor(0.035f, 0.3f, 0.065f, 1.f);
 
 private:
 	struct FAedirHudBarState

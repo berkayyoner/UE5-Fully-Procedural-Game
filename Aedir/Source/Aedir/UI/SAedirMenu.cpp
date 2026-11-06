@@ -11,27 +11,39 @@
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "UI/AedirJournalSubsystem.h"
+#include "UI/AedirUIStyle.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
-#include "Widgets/Notifications/SProgressBar.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SCanvas.h"
 #include "Widgets/SOverlay.h"
-#include "Widgets/SLeafWidget.h"
 #include "Widgets/Text/STextBlock.h"
 
 namespace
 {
 	const TCHAR* const MenuInventoryTabNames[] = { TEXT("EQUIPPED"), TEXT("BACKPACK") };
-	const TCHAR* const MenuInventoryHintText = TEXT("[W/S] Select  [A/D] Tab  [LMB] Select, again to use  [RMB] Actions  [E] Use  [Q] Drop  [Tab] Close");
-	const TCHAR* const MenuListHintText = TEXT("[W/S] Select  [Tab] Close");
-	constexpr float MenuContextWidth = 190.f;
-	constexpr float MenuContextHeight = 28.f;
+	const TCHAR* const MenuInventoryHintText = TEXT("[W/S] SELECT     [A/D] TAB     [LMB] SELECT, AGAIN TO USE     [RMB] ACTIONS     [E] USE     [Q] DROP     [TAB] CLOSE");
+	const TCHAR* const MenuListHintText = TEXT("[W/S] SELECT     [TAB] CLOSE");
+	constexpr float MenuContextWidth = 210.f;
+	constexpr float MenuContextHeight = 34.f;
+	constexpr float MenuListFraction = AedirUIStyle::ListSeparatorFraction;
+	constexpr float MenuTopMargin = 64.f;
+	constexpr float MenuBottomMargin = 112.f;
+	constexpr float MenuListLeftMargin = 96.f;
+	constexpr float MenuDetailWidth = 660.f;
+	constexpr float MenuRowFontSize = 15.f;
+	constexpr float MenuHintFontSize = 10.f;
+	constexpr float MenuStatusFontSize = 10.5f;
+	constexpr float MenuTitleFontSize = 26.f;
+	constexpr float MenuDetailTitleFontSize = 30.f;
+	constexpr float MenuProgressWidth = 360.f;
+	constexpr float MenuProgressHeight = 12.f;
 
-	const FLinearColor MenuDimColor(0.45f, 0.45f, 0.45f, 1.f);
-	const FLinearColor MenuTextColor(0.85f, 0.85f, 0.85f, 1.f);
-	const FLinearColor MenuLineColor(1.f, 1.f, 1.f, 0.35f);
+	FSlateFontInfo MenuLabelFont(float Size)
+	{
+		return AedirUIStyle::RegularFont(Size, 140);
+	}
 
 	const EAedirSkill MenuMagicSchools[] =
 	{
@@ -96,8 +108,6 @@ namespace
 		Lines.Add(Line);
 	}
 
-	void MenuAddCharacterStats(const UAedirStatsComponent* Stats, TArray<FAedirMenuLine>& Lines);
-
 	AAedirItemActor* MenuFindRowItem(const AAedirCreature* Pawn, const FAedirMenuRow& Row)
 	{
 		const UAedirInteractionComponent* Interaction = Pawn ? Pawn->Interaction.Get() : nullptr;
@@ -119,33 +129,17 @@ namespace
 	{
 		const AAedirItemActor* Item = Selected ? MenuFindRowItem(Pawn, *Selected) : nullptr;
 
-		if (IsValid(Item))
-		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Title, Item->ItemName.ToString());
-			MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Class: %s"), MenuItemClassName(Item->ItemClass)));
-			MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Weight: %s kg"), *UAedirJournalSubsystem::FormatWeight(Item->Weight)));
-			MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Damage: %.0f"), Item->GetDamage()));
-			if (Item->GetWeaponLength() > 0.f)
-			{
-				MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Length: %.0f cm"), Item->GetWeaponLength()));
-			}
-			else
-			{
-				MenuAddLine(Lines, EAedirMenuLineKind::Text, TEXT("Length: Short"));
-			}
-			MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Damage type: %s"), MenuDamageTypeName(Item->GetDamageType())));
-		}
-		else
+		if (!IsValid(Item))
 		{
 			MenuAddLine(Lines, EAedirMenuLineKind::Dim, bBackpackTab ? TEXT("The backpack is empty.") : TEXT("Nothing in this slot."));
+			return;
 		}
 
-		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
-		MenuAddCharacterStats(Pawn ? Pawn->Stats.Get() : nullptr, Lines);
-		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
-		const float Carried = Pawn ? Pawn->GetCarriedWeight() : 0.f;
-		const float Capacity = Pawn ? Pawn->GetCarryCapacity() : 0.f;
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Carry Weight: %s / %.0f"), *UAedirJournalSubsystem::FormatWeight(Carried), Capacity));
+		const FString Length = Item->GetWeaponLength() > 0.f ? FString::Printf(TEXT("%.0f cm"), Item->GetWeaponLength()) : FString(TEXT("Short"));
+		MenuAddLine(Lines, EAedirMenuLineKind::Title, Item->ItemName.ToString());
+		MenuAddLine(Lines, EAedirMenuLineKind::Rule, FString());
+		AedirMenuContent::AddPairLine(Lines, { TEXT("WEIGHT"), UAedirJournalSubsystem::FormatWeight(Item->Weight), TEXT("DAMAGE"), FString::Printf(TEXT("%.0f"), Item->GetDamage()), TEXT("LENGTH"), Length });
+		AedirMenuContent::AddPairLine(Lines, { TEXT("CLASS"), MenuItemClassName(Item->ItemClass), TEXT("TYPE"), MenuDamageTypeName(Item->GetDamageType()) });
 	}
 
 	void MenuBuildMagicDetail(const AAedirCreature* Pawn, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines)
@@ -161,41 +155,9 @@ namespace
 		const float SkillValue = Stats ? Stats->GetSkill(School) : 0.f;
 
 		MenuAddLine(Lines, EAedirMenuLineKind::Title, Selected->Name);
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Skill: %d  %s"), FMath::FloorToInt(SkillValue), *UAedirJournalSubsystem::GetSkillRankName(SkillValue).ToString()));
-		if (Stats)
-		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Magicka: %d / %d"), FMath::RoundToInt(Stats->GetMana()), FMath::RoundToInt(Stats->GetMaxMana())));
-		}
-		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
+		MenuAddLine(Lines, EAedirMenuLineKind::Rule, FString());
+		AedirMenuContent::AddPairLine(Lines, { TEXT("SKILL"), FString::Printf(TEXT("%d"), FMath::FloorToInt(SkillValue)), TEXT("RANK"), UAedirJournalSubsystem::GetSkillRankName(SkillValue).ToString() });
 		MenuAddLine(Lines, EAedirMenuLineKind::Body, MenuSchoolDescription(School));
-	}
-
-	// Overall level: every 25 skill points above the starting values raise it by one.
-	int32 MenuCharacterLevel(const UAedirStatsComponent* Stats)
-	{
-		float Total = 0.f;
-		for (int32 Index = 0; Index < static_cast<int32>(EAedirSkill::Count); ++Index)
-		{
-			Total += Stats->GetSkill(static_cast<EAedirSkill>(Index));
-		}
-		return 1 + FMath::FloorToInt(Total / 25.f);
-	}
-
-	void MenuAddCharacterStats(const UAedirStatsComponent* Stats, TArray<FAedirMenuLine>& Lines)
-	{
-		MenuAddLine(Lines, EAedirMenuLineKind::Heading, TEXT("Character"));
-		if (!Stats)
-		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("No stat data."));
-			return;
-		}
-
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Level: %d"), MenuCharacterLevel(Stats)));
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Strength: %.0f"), Stats->Strength));
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Athletism: %.0f"), Stats->Athletism));
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Health: %d / %d"), FMath::RoundToInt(Stats->GetHealth()), FMath::RoundToInt(Stats->GetMaxHealth())));
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Magicka: %d / %d"), FMath::RoundToInt(Stats->GetMana()), FMath::RoundToInt(Stats->GetMaxMana())));
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Stamina: %d / %d"), FMath::RoundToInt(Stats->GetStamina()), FMath::RoundToInt(Stats->GetMaxStamina())));
 	}
 
 	void MenuBuildSkillsDetail(const AAedirCreature* Pawn, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines)
@@ -209,15 +171,17 @@ namespace
 		const UAedirStatsComponent* Stats = Pawn ? Pawn->Stats.Get() : nullptr;
 		const float SkillValue = Stats ? Stats->GetSkill(static_cast<EAedirSkill>(Selected->Index)) : 0.f;
 
-		// The character stats come first so they are always on screen.
-		MenuAddCharacterStats(Stats, Lines);
-		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
-
 		MenuAddLine(Lines, EAedirMenuLineKind::Title, Selected->Name);
+		MenuAddLine(Lines, EAedirMenuLineKind::Rule, FString());
 		MenuAddLine(Lines, EAedirMenuLineKind::Value, FString::Printf(TEXT("%d"), FMath::FloorToInt(SkillValue)));
-		MenuAddLine(Lines, EAedirMenuLineKind::Heading, FString::Printf(TEXT("Rank: %s"), *UAedirJournalSubsystem::GetSkillRankName(SkillValue).ToString()));
+		MenuAddLine(Lines, EAedirMenuLineKind::Heading, UAedirJournalSubsystem::GetSkillRankName(SkillValue).ToString().ToUpper());
 		MenuAddLine(Lines, EAedirMenuLineKind::Progress, FString());
 	}
+}
+
+void AedirMenuContent::AddPairLine(TArray<FAedirMenuLine>& Lines, TConstArrayView<FString> LabelsAndValues)
+{
+	MenuAddLine(Lines, EAedirMenuLineKind::Pair, FString::Join(LabelsAndValues, TEXT("\t")));
 }
 
 TArray<FAedirMenuRow> AedirMenuContent::BuildJournalRows(const UWorld* World)
@@ -280,12 +244,13 @@ void AedirMenuContent::BuildJournalDetail(const UWorld* World, const FAedirMenuR
 	}
 
 	MenuAddLine(Lines, EAedirMenuLineKind::Title, Quest->Title.ToString());
+	MenuAddLine(Lines, EAedirMenuLineKind::Rule, FString());
 	MenuAddLine(Lines, EAedirMenuLineKind::Body, Quest->Description.ToString());
 	MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
-	MenuAddLine(Lines, EAedirMenuLineKind::Heading, TEXT("Objectives"));
+	MenuAddLine(Lines, EAedirMenuLineKind::Heading, TEXT("OBJECTIVES"));
 	for (const FAedirQuestObjective& Objective : Quest->Objectives)
 	{
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("%s %s"), Objective.bDone ? TEXT("[x]") : TEXT("[ ]"), *Objective.Text.ToString()));
+		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("%s  %s"), Objective.bDone ? TEXT("\u25C6") : TEXT("\u25C7"), *Objective.Text.ToString()));
 	}
 
 	MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
@@ -299,99 +264,124 @@ void AedirMenuContent::BuildJournalDetail(const UWorld* World, const FAedirMenuR
 	}
 	else
 	{
-		MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("[E] Track quest"));
+		MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("[E] TRACK QUEST"));
 	}
 }
 
 
 void AedirMenuContent::PopulateDetail(SVerticalBox& Box, const TArray<FAedirMenuLine>& NewLines, const TFunction<TOptional<float>()>& Progress)
 {
+	using namespace AedirUIStyle;
+
 	Box.ClearChildren();
+
+	const auto AddText = [&Box](const FString& Content, const FSlateFontInfo& Font, const FLinearColor& Color, const FMargin& Padding)
+	{
+		Box.AddSlot()
+		.AutoHeight()
+		.Padding(Padding)
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(Content))
+			.Font(Font)
+			.ColorAndOpacity(Color)
+			.Justification(ETextJustify::Center)
+			.AutoWrapText(true)
+			.ShadowOffset(FVector2D(1.f, 1.f))
+			.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.8f))
+		];
+	};
 
 	for (const FAedirMenuLine& Line : NewLines)
 	{
 		switch (Line.Kind)
 		{
 		case EAedirMenuLineKind::Title:
-			Box.AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 0.f, 0.f, 6.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 18))
-				.ColorAndOpacity(FLinearColor::White)
-			];
+			AddText(Line.Content, LightFont(MenuDetailTitleFontSize, 30), IvoryBright, FMargin(0.f, 0.f, 0.f, 2.f));
 			break;
 		case EAedirMenuLineKind::Value:
-			Box.AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 0.f, 0.f, 6.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 30))
-				.ColorAndOpacity(FLinearColor::White)
-			];
+			AddText(Line.Content, LightFont(44.f), IvoryBright, FMargin(0.f, 0.f, 0.f, 0.f));
 			break;
 		case EAedirMenuLineKind::Heading:
-			Box.AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 6.f, 0.f, 4.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 11))
-				.ColorAndOpacity(FLinearColor(0.7f, 0.7f, 0.7f, 1.f))
-			];
+			AddText(Line.Content, MenuLabelFont(11.f), Metal, FMargin(0.f, 4.f, 0.f, 6.f));
 			break;
 		case EAedirMenuLineKind::Text:
-			Box.AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 2.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
-				.ColorAndOpacity(MenuTextColor)
-			];
+			AddText(Line.Content, RegularFont(13.f), Ivory, FMargin(0.f, 3.f));
 			break;
 		case EAedirMenuLineKind::Body:
-			Box.AddSlot()
-			.AutoHeight()
-			.Padding(FMargin(0.f, 4.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.ColorAndOpacity(FLinearColor(0.75f, 0.75f, 0.75f, 1.f))
-				.AutoWrapText(true)
-			];
+			AddText(Line.Content, LightFont(14.f), Ivory, FMargin(20.f, 8.f));
 			break;
 		case EAedirMenuLineKind::Dim:
+			AddText(Line.Content, RegularFont(11.f, 40), TextDim, FMargin(0.f, 3.f));
+			break;
+		case EAedirMenuLineKind::Rule:
 			Box.AddSlot()
 			.AutoHeight()
-			.Padding(FMargin(0.f, 2.f))
+			.Padding(FMargin(0.f, 4.f, 0.f, 10.f))
 			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Line.Content))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.ColorAndOpacity(MenuDimColor)
-				.AutoWrapText(true)
+				SNew(SAedirUIPaint)
+				.DesiredSize(FVector2D(MenuDetailWidth, 12.f))
+				.Painter([](const FVector2f& Size, FAedirUIMesh& Mesh)
+				{
+					AddOrnamentRule(Mesh, Size * 0.5f, FMath::Min(Size.X * 0.5f, 300.f), Metal);
+				})
 			];
 			break;
+		case EAedirMenuLineKind::Pair:
+		{
+			TArray<FString> Parts;
+			Line.Content.ParseIntoArray(Parts, TEXT("\t"), false);
+			TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
+			for (int32 Index = 0; Index + 1 < Parts.Num(); Index += 2)
+			{
+				Row->AddSlot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(FMargin(Index == 0 ? 0.f : 34.f, 0.f, 9.f, 0.f))
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(Parts[Index]))
+					.Font(MenuLabelFont(10.f))
+					.ColorAndOpacity(TextDim)
+				];
+				Row->AddSlot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(Parts[Index + 1]))
+					.Font(RegularFont(14.f))
+					.ColorAndOpacity(Ivory)
+					.ShadowOffset(FVector2D(1.f, 1.f))
+					.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.8f))
+				];
+			}
+			Box.AddSlot()
+			.AutoHeight()
+			.HAlign(HAlign_Center)
+			.Padding(FMargin(0.f, 3.f))
+			[
+				Row
+			];
+			break;
+		}
 		case EAedirMenuLineKind::Progress:
 			Box.AddSlot()
 			.AutoHeight()
-			.Padding(FMargin(0.f, 6.f))
+			.HAlign(HAlign_Center)
+			.Padding(FMargin(0.f, 4.f))
 			[
-				SNew(SBox)
-				.HeightOverride(8.f)
-				[
-					SNew(SProgressBar)
-					.Percent_Lambda([Progress]() -> TOptional<float> { return Progress(); })
-					.FillColorAndOpacity(FLinearColor(0.85f, 0.85f, 0.85f, 1.f))
-				]
+				SNew(SAedirUIPaint)
+				.DesiredSize(FVector2D(MenuProgressWidth, MenuProgressHeight))
+				.Painter([Progress](const FVector2f& Size, FAedirUIMesh& Mesh)
+				{
+					const FVector2f Center = Size * 0.5f;
+					const float HalfWidth = Size.X * 0.5f;
+					const float Fraction = FMath::Clamp(Progress().Get(0.f), 0.f, 1.f);
+					AddTaperedBar(Mesh, Center, HalfWidth, Size.Y * 0.4f, 12.f, FLinearColor(0.f, 0.f, 0.f, 0.5f), FLinearColor(0.f, 0.f, 0.f, 0.72f), FLinearColor(0.f, 0.f, 0.f, 0.5f));
+					AddTaperedBar(Mesh, Center, (HalfWidth - 3.f) * Fraction, Size.Y * 0.28f, 8.f, WithAlpha(Metal, 0.5f), Ivory, WithAlpha(Metal, 0.4f));
+					AddTaperedFrame(Mesh, Center, HalfWidth, Size.Y * 0.4f, 12.f, 1.f, WithAlpha(Metal, 0.8f));
+				})
 			];
 			break;
 		case EAedirMenuLineKind::Spacer:
@@ -399,7 +389,7 @@ void AedirMenuContent::PopulateDetail(SVerticalBox& Box, const TArray<FAedirMenu
 			.AutoHeight()
 			[
 				SNew(SBox)
-				.HeightOverride(10.f)
+				.HeightOverride(12.f)
 			];
 			break;
 		default:
@@ -408,23 +398,211 @@ void AedirMenuContent::PopulateDetail(SVerticalBox& Box, const TArray<FAedirMenu
 	}
 }
 
+void AedirMenuContent::PaintListBackdrop(const FVector2f& Size, FAedirUIMesh& Mesh, float VignetteStrength)
+{
+	using namespace AedirUIStyle;
+
+	AddVignette(Mesh, Size, 0.24f * VignetteStrength, 0.86f * VignetteStrength);
+
+	const float SeparatorX = Size.X * MenuListFraction;
+	AddGradientPanel(Mesh, FVector2f::ZeroVector, FVector2f(Size.X * 0.52f, Size.Y), Size.X * 0.26f, FLinearColor(0.f, 0.f, 0.f, 0.86f));
+
+	// Darker floor behind the item card and the key hints.
+	const FLinearColor Clear(0.f, 0.f, 0.f, 0.f);
+	const FLinearColor Floor(0.f, 0.f, 0.f, 0.72f);
+	Mesh.AddGradientRect(FVector2f(0.f, Size.Y * 0.56f), FVector2f(Size.X, Size.Y), Clear, Clear, Floor, Floor);
+	const float DetailCenterX = (SeparatorX + Size.X) * 0.5f;
+	AddGlow(Mesh, FVector2f(DetailCenterX, Size.Y - MenuBottomMargin - 90.f), FVector2f(620.f, 320.f), FLinearColor(0.f, 0.f, 0.f, 0.62f));
+
+	AddDoubleLine(Mesh, SeparatorX, MenuTopMargin - 18.f, Size.Y - MenuBottomMargin + 6.f, Metal);
+	AddOrnamentRule(Mesh, FVector2f(Size.X * 0.5f, Size.Y - MenuBottomMargin + 28.f), Size.X * 0.46f, WithAlpha(Metal, 0.85f));
+}
+
+TSharedRef<SWidget> AedirMenuContent::MakeListRow(const FAedirMenuRow& Row, const FSlateFontInfo& Font, TFunction<FLinearColor()> TextColor, TFunction<float()> MarkerStrength)
+{
+	using namespace AedirUIStyle;
+
+	TSharedRef<SVerticalBox> NameBox = SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(Row.Name))
+			.Font(Font)
+			.ColorAndOpacity_Lambda([TextColor]() { return FSlateColor(TextColor()); })
+			.ShadowOffset(FVector2D(1.f, 1.f))
+			.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.7f))
+		];
+
+	if (!Row.SubText.IsEmpty())
+	{
+		NameBox->AddSlot()
+		.AutoHeight()
+		.Padding(FMargin(0.f, 1.f, 0.f, 0.f))
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(Row.SubText))
+			.Font(RegularFont(10.f, 30))
+			.ColorAndOpacity(TextDim)
+		];
+	}
+
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(FMargin(0.f, 0.f, 8.f, 0.f))
+		[
+			SNew(SAedirUIPaint)
+			.DesiredSize(FVector2D(22.f, 16.f))
+			.Painter([MarkerStrength](const FVector2f& Size, FAedirUIMesh& Mesh)
+			{
+				const float Strength = MarkerStrength();
+				if (Strength > 0.f)
+				{
+					const FVector2f Spot(Size.X - 7.f, Size.Y * 0.5f);
+					const FLinearColor Color = WithAlpha(IvoryBright, Strength);
+					AddDiamond(Mesh, Spot, 4.5f, 4.5f, Color);
+					AddFadedLine(Mesh, FVector2f(0.f, Spot.Y), Spot - FVector2f(5.f, 0.f), 1.f, Color, 1.f, 0.f);
+				}
+			})
+		]
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.f)
+		.VAlign(VAlign_Center)
+		.Padding(FMargin(0.f, 5.f))
+		[
+			NameBox
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(FMargin(14.f, 5.f, 6.f, 5.f))
+		[
+			SNew(STextBlock)
+			.Text(FText::FromString(Row.Value))
+			.Font(LightFont(FMath::Max(12.f, Font.Size - 2.f)))
+			.ColorAndOpacity_Lambda([TextColor]() { return FSlateColor(WithAlpha(TextColor(), 0.78f)); })
+			.ShadowOffset(FVector2D(1.f, 1.f))
+			.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.7f))
+		];
+}
+
+TSharedRef<SWidget> AedirMenuContent::MakeListScreen(const TSharedRef<SWidget>& Header, const TSharedRef<SWidget>& List, const TSharedRef<SWidget>& Detail, const TAttribute<FText>& Status, const TAttribute<FText>& Hint, float VignetteStrength)
+{
+	using namespace AedirUIStyle;
+
+	return SNew(SOverlay)
+		+ SOverlay::Slot()
+		[
+			SNew(SAedirUIPaint)
+			.Painter([VignetteStrength](const FVector2f& Size, FAedirUIMesh& Mesh)
+			{
+				PaintListBackdrop(Size, Mesh, VignetteStrength);
+			})
+		]
+		+ SOverlay::Slot()
+		.Padding(FMargin(0.f, MenuTopMargin, 0.f, MenuBottomMargin))
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(MenuListFraction)
+			[
+				// The margins sit inside the slot: on the slot itself they would shift the column off the double line.
+				SNew(SBox)
+				.Padding(FMargin(MenuListLeftMargin, 0.f, 30.f, 0.f))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						Header
+					]
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(FMargin(0.f, 10.f, 0.f, 12.f))
+					[
+						SNew(SAedirUIPaint)
+						.DesiredSize(FVector2D(100.f, 3.f))
+						.Painter([](const FVector2f& Size, FAedirUIMesh& Mesh)
+						{
+							AddFadedLine(Mesh, FVector2f(0.f, Size.Y * 0.5f), FVector2f(Size.X, Size.Y * 0.5f), 1.f, Metal, 0.f, 0.6f);
+						})
+					]
+					+ SVerticalBox::Slot()
+					.FillHeight(1.f)
+					[
+						List
+					]
+				]
+			]
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.f - MenuListFraction)
+			.VAlign(VAlign_Bottom)
+			.HAlign(HAlign_Center)
+			[
+				SNew(SBox)
+				.WidthOverride(MenuDetailWidth)
+				.Padding(FMargin(0.f, 0.f, 0.f, 14.f))
+				[
+					Detail
+				]
+			]
+		]
+		+ SOverlay::Slot()
+		.VAlign(VAlign_Bottom)
+		.HAlign(HAlign_Center)
+		.Padding(FMargin(40.f, 0.f, 40.f, 20.f))
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Center)
+			.Padding(FMargin(0.f, 0.f, 0.f, 10.f))
+			[
+				SNew(STextBlock)
+				.Text(Status)
+				.Font(MenuLabelFont(MenuStatusFontSize))
+				.ColorAndOpacity(Ivory)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Center)
+			[
+				SNew(STextBlock)
+				.Text(Hint)
+				.Font(RegularFont(MenuHintFontSize, 60))
+				.ColorAndOpacity(TextDim)
+			]
+		];
+}
+
+TSharedRef<SWidget> AedirMenuContent::MakeTitle(const TAttribute<FText>& Title)
+{
+	return SNew(STextBlock)
+		.Text(Title)
+		.Font(AedirUIStyle::TitleFont(MenuTitleFontSize))
+		.ColorAndOpacity(AedirUIStyle::IvoryBright)
+		.ShadowOffset(FVector2D(1.f, 1.f))
+		.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.8f));
+}
+
 void SAedirMenu::Construct(const FArguments& InArgs)
 {
 	Creature = InArgs._Creature;
 	CloseDelegate = InArgs._OnClose;
-
-	const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush("GenericWhiteBox");
 
 	TSharedRef<SHorizontalBox> TabBar = SNew(SHorizontalBox);
 	for (int32 Index = 0; Index < static_cast<int32>(EAedirInventoryTab::Count); ++Index)
 	{
 		TabBar->AddSlot()
 		.AutoWidth()
-		.Padding(FMargin(14.f, 0.f))
+		.Padding(FMargin(0.f, 0.f, 26.f, 0.f))
 		[
 			SNew(SBorder)
 			.BorderImage(FStyleDefaults::GetNoBrush())
-			.Padding(FMargin(2.f))
+			.Padding(FMargin(0.f, 2.f))
+			.Cursor(EMouseCursor::Hand)
 			.Visibility_Lambda([this, Index]() { return GetTabVisibility(Index); })
 			.OnMouseButtonDown_Lambda([this, Index](const FGeometry&, const FPointerEvent&)
 			{
@@ -434,96 +612,43 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 			[
 				SNew(STextBlock)
 				.Text_Lambda([this, Index]() { return GetTabText(Index); })
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+				.Font(MenuLabelFont(11.f))
 				.ColorAndOpacity_Lambda([this, Index]() { return FSlateColor(GetTabColor(Index)); })
 			]
 		];
 	}
 
+	const TSharedRef<SWidget> Header = SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		[
+			AedirMenuContent::MakeTitle(TAttribute<FText>::CreateLambda([this]() { return GetTitleText(); }))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(0.f, 6.f, 0.f, 0.f))
+		[
+			TabBar
+		];
+
+	const TSharedRef<SWidget> List = SAssignNew(ListScroll, SScrollBox)
+		.ScrollBarVisibility(EVisibility::Collapsed)
+		+ SScrollBox::Slot()
+		[
+			SAssignNew(ListBox, SVerticalBox)
+		];
+
+	const TSharedRef<SWidget> Detail = SAssignNew(DetailBox, SVerticalBox);
+
 	ChildSlot
 	[
 		SNew(SOverlay)
 		+ SOverlay::Slot()
-		.Padding(FMargin(96.f, 64.f))
 		[
-		SNew(SBorder)
-		.BorderImage(WhiteBrush)
-		.BorderBackgroundColor(FLinearColor(0.f, 0.f, 0.f, 0.82f))
-		.Padding(FMargin(28.f, 20.f))
-		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.HAlign(HAlign_Center)
-			.Padding(FMargin(0.f, 0.f, 0.f, 8.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(TEXT("AEDIR")))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.ColorAndOpacity(FLinearColor(0.6f, 0.6f, 0.6f, 1.f))
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.HAlign(HAlign_Center)
-			.Padding(FMargin(0.f, 0.f, 0.f, 10.f))
-			[
-				TabBar
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			[
-				SNew(SBox)
-				.HeightOverride(1.f)
-				[
-					SNew(SBorder)
-					.BorderImage(WhiteBrush)
-					.BorderBackgroundColor(MenuLineColor)
-				]
-			]
-			+ SVerticalBox::Slot()
-			.FillHeight(1.f)
-			.Padding(FMargin(0.f, 12.f))
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.FillWidth(0.42f)
-				[
-					SAssignNew(ListScroll, SScrollBox)
-					+ SScrollBox::Slot()
-					[
-						SAssignNew(ListBox, SVerticalBox)
-					]
-				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.Padding(FMargin(12.f, 0.f))
-				[
-					SNew(SBox)
-					.WidthOverride(1.f)
-					[
-						SNew(SBorder)
-						.BorderImage(WhiteBrush)
-						.BorderBackgroundColor(MenuLineColor)
-					]
-				]
-				+ SHorizontalBox::Slot()
-				.FillWidth(0.58f)
-				.Padding(FMargin(12.f, 0.f, 0.f, 0.f))
-				[
-					SAssignNew(DetailBox, SVerticalBox)
-				]
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.HAlign(HAlign_Center)
-			.Padding(FMargin(0.f, 6.f, 0.f, 0.f))
-			[
-				SNew(STextBlock)
-				.Text_Lambda([this]() { return GetHintText(); })
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.ColorAndOpacity(FLinearColor(0.7f, 0.7f, 0.7f, 1.f))
-			]
-		]
+			AedirMenuContent::MakeListScreen(Header, List, Detail,
+				TAttribute<FText>::CreateLambda([this]() { return GetStatusText(); }),
+				TAttribute<FText>::CreateLambda([this]() { return GetHintText(); }),
+				1.f)
 		]
 		+ SOverlay::Slot()
 		[
@@ -534,14 +659,15 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 			.Size(FVector2D(MenuContextWidth, MenuContextHeight))
 			[
 				SAssignNew(ContextButton, SBorder)
-				.BorderImage(WhiteBrush)
+				.BorderImage(FCoreStyle::Get().GetBrush("GenericWhiteBox"))
 				.BorderBackgroundColor_Lambda([this]()
 				{
 					const bool bHovered = ContextButton.IsValid() && ContextButton->IsHovered();
-					return FSlateColor(bHovered ? FLinearColor(0.35f, 0.35f, 0.35f, 0.98f) : FLinearColor(0.08f, 0.08f, 0.08f, 0.98f));
+					return FSlateColor(bHovered ? AedirUIStyle::PanelSelected : FLinearColor(0.f, 0.f, 0.f, 0.94f));
 				})
 				.Visibility_Lambda([this]() { return ContextRow != INDEX_NONE ? EVisibility::Visible : EVisibility::Collapsed; })
-				.Padding(FMargin(10.f, 4.f))
+				.Padding(FMargin(12.f, 6.f))
+				.VAlign(VAlign_Center)
 				.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent&)
 				{
 					RunContextAction();
@@ -550,8 +676,8 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 				[
 					SNew(STextBlock)
 					.Text_Lambda([this]() { return GetContextText(); })
-					.Font(FCoreStyle::GetDefaultFontStyle("Regular", 11))
-					.ColorAndOpacity(FLinearColor::White)
+					.Font(AedirUIStyle::RegularFont(12.f))
+					.ColorAndOpacity(AedirUIStyle::Ivory)
 				]
 			]
 		]
@@ -791,58 +917,26 @@ void SAedirMenu::RebuildList()
 	ListBox->ClearChildren();
 	RowWidgets.Reset();
 
-	const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush("GenericWhiteBox");
-	const FSlateFontInfo RowFont = FCoreStyle::GetDefaultFontStyle("Regular", 11);
+	const FSlateFontInfo RowFont = AedirUIStyle::LightFont(MenuRowFontSize, 20);
 
 	for (int32 Index = 0; Index < Rows.Num(); ++Index)
 	{
-		const FAedirMenuRow& Row = Rows[Index];
 		TSharedRef<SBorder> RowBorder = SNew(SBorder)
-		.BorderImage(WhiteBrush)
-		.BorderBackgroundColor_Lambda([this, Index]() { return FSlateColor(GetRowBackground(Index)); })
+		.BorderImage(FStyleDefaults::GetNoBrush())
+		.Padding(FMargin(0.f))
 		.OnMouseButtonDown_Lambda([this, Index](const FGeometry& RowGeometry, const FPointerEvent& MouseEvent)
 		{
 			HandleRowClick(Index, RowGeometry, MouseEvent);
 			return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 		})
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				SNew(SBox)
-				.WidthOverride(3.f)
-				[
-					SNew(SBorder)
-					.BorderImage(WhiteBrush)
-					.BorderBackgroundColor_Lambda([this, Index]() { return FSlateColor(GetRowAccent(Index)); })
-				]
-			]
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.f)
-			.VAlign(VAlign_Center)
-			.Padding(FMargin(10.f, 5.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Row.Name))
-				.Font(RowFont)
-				.ColorAndOpacity_Lambda([this, Index]() { return FSlateColor(GetRowTextColor(Index)); })
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(FMargin(10.f, 5.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Row.Value))
-				.Font(RowFont)
-				.ColorAndOpacity_Lambda([this, Index]() { return FSlateColor(GetRowTextColor(Index)); })
-			]
+			AedirMenuContent::MakeListRow(Rows[Index], RowFont,
+				[this, Index]() { return GetRowTextColor(Index); },
+				[this, Index]() { return GetRowMarker(Index); })
 		];
 
 		ListBox->AddSlot()
 		.AutoHeight()
-		.Padding(FMargin(0.f, 1.f))
 		[
 			RowBorder
 		];
@@ -1067,7 +1161,7 @@ FText SAedirMenu::GetHintText() const
 
 EVisibility SAedirMenu::GetTabVisibility(int32 Index) const
 {
-	return (Index == 0 || CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory)) ? EVisibility::Visible : EVisibility::Collapsed;
+	return CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory) ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 void SAedirMenu::ScrollToSelection()
@@ -1095,62 +1189,61 @@ float SAedirMenu::GetSelectedSkillProgress() const
 	return UAedirJournalSubsystem::GetSkillRankProgress01(Stats->GetSkill(static_cast<EAedirSkill>(Rows[SelectedRow].Index)));
 }
 
-FText SAedirMenu::GetTabText(int32 Index) const
+FText SAedirMenu::GetTitleText() const
 {
-	FString Name;
-	bool bActive = true;
 	switch (static_cast<EAedirMenuCategory>(CurrentCategory))
 	{
-	case EAedirMenuCategory::Inventory:
-		Name = MenuInventoryTabNames[FMath::Clamp(Index, 0, 1)];
-		bActive = Index == InventoryTab;
-		break;
-	case EAedirMenuCategory::Magic:
-		Name = TEXT("MAGIC");
-		break;
-	case EAedirMenuCategory::Skills:
-		Name = TEXT("SKILLS");
-		break;
-	default:
-		break;
+	case EAedirMenuCategory::Inventory: return FText::FromString(TEXT("INVENTORY"));
+	case EAedirMenuCategory::Magic: return FText::FromString(TEXT("MAGIC"));
+	case EAedirMenuCategory::Skills: return FText::FromString(TEXT("SKILLS"));
+	default: break;
+	}
+	return FText::GetEmpty();
+}
+
+FText SAedirMenu::GetStatusText() const
+{
+	const AAedirCreature* Pawn = Creature.Get();
+	const UAedirStatsComponent* Stats = Pawn ? Pawn->Stats.Get() : nullptr;
+	if (!Stats)
+	{
+		return FText::GetEmpty();
 	}
 
-	return FText::FromString(bActive ? FString::Printf(TEXT("[ %s ]"), *Name) : Name);
+	return FText::FromString(FString::Printf(TEXT("LEVEL %d     HEALTH %d/%d     MAGICKA %d/%d     STAMINA %d/%d     STRENGTH %.0f     ATHLETISM %.0f     CARRY WEIGHT %s/%.0f"),
+		UAedirJournalSubsystem::GetCharacterLevel(Stats),
+		FMath::RoundToInt(Stats->GetHealth()), FMath::RoundToInt(Stats->GetMaxHealth()),
+		FMath::RoundToInt(Stats->GetMana()), FMath::RoundToInt(Stats->GetMaxMana()),
+		FMath::RoundToInt(Stats->GetStamina()), FMath::RoundToInt(Stats->GetMaxStamina()),
+		Stats->Strength, Stats->Athletism,
+		*UAedirJournalSubsystem::FormatWeight(Pawn->GetCarriedWeight()), Pawn->GetCarryCapacity()));
+}
+
+FText SAedirMenu::GetTabText(int32 Index) const
+{
+	return FText::FromString(MenuInventoryTabNames[FMath::Clamp(Index, 0, 1)]);
 }
 
 FLinearColor SAedirMenu::GetTabColor(int32 Index) const
 {
-	const bool bActive = CurrentCategory != static_cast<int32>(EAedirMenuCategory::Inventory) || Index == InventoryTab;
-	return bActive ? FLinearColor::White : FLinearColor(0.5f, 0.5f, 0.5f, 1.f);
+	return Index == InventoryTab ? AedirUIStyle::IvoryBright : AedirUIStyle::TextDim;
 }
 
-FLinearColor SAedirMenu::GetRowBackground(int32 Index) const
+float SAedirMenu::GetRowMarker(int32 Index) const
 {
 	if (Index == SelectedRow)
 	{
-		return FLinearColor(0.92f, 0.92f, 0.92f, 0.18f);
+		return 1.f;
 	}
-	return RowWidgets.IsValidIndex(Index) && RowWidgets[Index]->IsHovered() ? FLinearColor(0.92f, 0.92f, 0.92f, 0.08f) : FLinearColor(0.f, 0.f, 0.f, 0.f);
-}
-
-FLinearColor SAedirMenu::GetRowAccent(int32 Index) const
-{
-	if (Index == SelectedRow)
-	{
-		return FLinearColor(1.f, 1.f, 1.f, 0.9f);
-	}
-	return RowWidgets.IsValidIndex(Index) && RowWidgets[Index]->IsHovered() ? FLinearColor(1.f, 1.f, 1.f, 0.35f) : FLinearColor(1.f, 1.f, 1.f, 0.f);
+	return RowWidgets.IsValidIndex(Index) && RowWidgets[Index]->IsHovered() ? 0.4f : 0.f;
 }
 
 FLinearColor SAedirMenu::GetRowTextColor(int32 Index) const
 {
-	if (!Rows.IsValidIndex(Index))
+	const bool bSelected = Index == SelectedRow;
+	if (Rows.IsValidIndex(Index) && Rows[Index].bDimmed)
 	{
-		return MenuTextColor;
+		return bSelected ? AedirUIStyle::Ivory : AedirUIStyle::TextDim;
 	}
-	if (Rows[Index].bDimmed)
-	{
-		return MenuDimColor;
-	}
-	return Index == SelectedRow ? FLinearColor::White : MenuTextColor;
+	return bSelected ? AedirUIStyle::IvoryBright : AedirUIStyle::WithAlpha(AedirUIStyle::Ivory, 0.82f);
 }

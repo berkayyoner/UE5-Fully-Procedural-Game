@@ -14,6 +14,12 @@ namespace
 	constexpr int32 AedirHighlightStencilValue = 250;
 }
 
+namespace
+{
+	constexpr float HandGripPalmShare = 0.8f;
+	constexpr double ReleaseGraceSeconds = 1.5;
+}
+
 AAedirItemActor::AAedirItemActor()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -77,11 +83,61 @@ void AAedirItemActor::AttachToCreatureHand(AAedirCreature* Creature, EAedirHand 
 	}
 
 	const FName BoneName = Hand == EAedirHand::Left ? Creature->Interaction->LeftHandBone : Creature->Interaction->RightHandBone;
-	AttachToBone(Creature, BoneName, HeldTransform);
+	AttachToBone(Creature, BoneName, bUseHandGrip ? ComputeHandGrip(Creature, Hand) : HeldTransform);
 
 	Holder = Creature;
 	HeldHand = Hand;
 	bHolstered = false;
+}
+
+void AAedirItemActor::AttachToHandInPlace(AAedirCreature* Creature, EAedirHand Hand)
+{
+	if (!HasAuthority() || !Creature || !Creature->Interaction)
+	{
+		return;
+	}
+
+	SetFreePhysics(false);
+	const FName BoneName = Hand == EAedirHand::Left ? Creature->Interaction->LeftHandBone : Creature->Interaction->RightHandBone;
+	AttachToComponent(Creature->GetMesh(), FAttachmentTransformRules::KeepWorldTransform, BoneName);
+
+	Holder = Creature;
+	HeldHand = Hand;
+	bHolstered = false;
+}
+
+bool AAedirItemActor::WasJustReleasedBy(const AActor* Creature) const
+{
+	const UWorld* World = GetWorld();
+	return World && LastHolder.Get() == Creature && World->GetTimeSeconds() - LastReleaseTime < ReleaseGraceSeconds;
+}
+
+FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const
+{
+	const USkeletalMesh* BodyAsset = Creature->GetMesh() ? Creature->GetMesh()->GetSkeletalMeshAsset() : nullptr;
+	if (!BodyAsset)
+	{
+		return HeldTransform;
+	}
+
+	// The axes of a closed hand come from the skeleton: a handle runs across the knuckles, its blade out on the thumb side.
+	const TCHAR* Suffix = Hand == EAedirHand::Left ? TEXT("_l") : TEXT("_r");
+	const auto RefLocation = [&](const TCHAR* Bone)
+	{
+		return BodyAsset->GetComposedRefPoseMatrix(FName(*FString::Printf(TEXT("%s%s"), Bone, Suffix))).GetOrigin();
+	};
+
+	const FMatrix HandMatrix = BodyAsset->GetComposedRefPoseMatrix(FName(*FString::Printf(TEXT("hand%s"), Suffix)));
+	const FQuat HandRotation = HandMatrix.ToQuat();
+	const FVector HandLocation = HandMatrix.GetOrigin();
+	const FVector KnuckleAxis = (RefLocation(TEXT("index_01")) - RefLocation(TEXT("pinky_01"))).GetSafeNormal();
+	const FVector FingerAxis = (RefLocation(TEXT("middle_01")) - HandLocation).GetSafeNormal();
+	const FVector Palm = HandLocation + (RefLocation(TEXT("middle_01")) - HandLocation) * HandGripPalmShare;
+
+	const FQuat ItemRotation = FRotationMatrix::MakeFromXY(KnuckleAxis, FingerAxis).ToQuat();
+	const FQuat RelativeRotation = HandRotation.Inverse() * ItemRotation;
+	const FVector RelativePalm = HandRotation.Inverse().RotateVector(Palm - HandLocation);
+	return FTransform(RelativeRotation, RelativePalm - RelativeRotation.RotateVector(FVector(GripLocalCm, 0.f, 0.f)));
 }
 
 void AAedirItemActor::AttachToWaist(AAedirCreature* Creature, FName BoneName, const FTransform& SlotRelative)
@@ -124,6 +180,11 @@ void AAedirItemActor::Detach(const FVector& ThrowVelocity)
 	ApplyStowed(false);
 
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	if (Holder)
+	{
+		LastHolder = Holder;
+		LastReleaseTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	}
 	Holder = nullptr;
 	bHolstered = false;
 

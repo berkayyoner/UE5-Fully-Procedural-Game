@@ -94,6 +94,9 @@ struct FAedirArmDynamics
 	float MouseSpeed = 0.f;
 	float PunchBlend = 0.f;
 
+	// World direction the blade points in while a weapon is in the stance. It lags the mouse, more so for a heavy weapon.
+	FVector WeaponDir = FVector::ZeroVector;
+
 	bool bScriptedControl = false;
 	FVector ScriptedTargetWorld = FVector::ZeroVector;
 
@@ -193,7 +196,7 @@ public:
 
 	// Distance in cm from the primary hand to the grip point of the secondary hand on the weapon.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
-	float GripSpacingCm = 28.f;
+	float GripSpacingCm = 13.f;
 
 	// Share of the weapon mass that the two arms carry together while two-hand gripped. Only the remainder loads the stiffness.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
@@ -286,6 +289,15 @@ public:
 	// Local player only. While the guard is held the mouse moves the arm: MouseDeltaThisFrame uses raw mouse axis values (MouseY is positive when the mouse moves down).
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat")
 	void AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaThisFrame, float DeltaTime);
+
+	// Thrust mode (Alt held): the weapon points where the camera looks and the mouse pushes it forward and pulls it back.
+	void SetThrustMode(bool bActive);
+
+	// Places an arm at an exact aim, for tests without a mouse.
+	void DevSetArmAim(EAedirHand Hand, FVector2D AimDegrees, float Extension);
+
+	// Direction the blade held by this hand should point in, with how much of the stance is blended in.
+	bool GetWeaponAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutAlpha) const;
 
 	// Local player only. Mouse wheel steps change how far the arm reaches, 0..1.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat")
@@ -451,6 +463,16 @@ private:
 
 	UFUNCTION(Server, Unreliable)
 	void ServerUpdateArmAim(EAedirHand Hand, FVector2D Aim, float Extension);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetThrustMode(bool bActive);
+
+	// True while the hand holds a weapon up in the stance, where the mouse moves the blade and not a fist.
+	bool IsWeaponStance(EAedirHand Hand) const;
+	FVector ComputeWeaponTargetDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
+	void UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);
+
+	bool bThrustMode = false;
 
 	UFUNCTION(Server, Reliable)
 	void ServerStartShove();

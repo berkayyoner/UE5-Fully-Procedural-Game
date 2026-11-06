@@ -1,5 +1,6 @@
 #include "UI/AedirJournalSubsystem.h"
 
+#include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
 #include "HUD/AedirMarkerSubsystem.h"
 
@@ -150,6 +151,21 @@ float UAedirJournalSubsystem::GetSkillRankProgress01(float SkillValue)
 	const float Clamped = FMath::Clamp(SkillValue, 0.f, 100.f);
 	const float BandStart = FMath::FloorToFloat(Clamped / 25.f) * 25.f;
 	return FMath::Clamp((Clamped - BandStart) / 25.f, 0.f, 1.f);
+}
+
+int32 UAedirJournalSubsystem::GetCharacterLevel(const UAedirStatsComponent* Stats)
+{
+	if (!Stats)
+	{
+		return 0;
+	}
+
+	float Total = 0.f;
+	for (int32 Index = 0; Index < static_cast<int32>(EAedirSkill::Count); ++Index)
+	{
+		Total += Stats->GetSkill(static_cast<EAedirSkill>(Index));
+	}
+	return 1 + FMath::FloorToInt(Total / 25.f);
 }
 
 FString UAedirJournalSubsystem::FormatWeight(float Kg)

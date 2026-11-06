@@ -60,10 +60,10 @@ public:
 
 	// Speed in cm/s of the hand moving toward the reach target.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float ReachSpeed = 350.f;
+	float ReachSpeed = 160.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float ReachTimeout = 2.f;
+	float ReachTimeout = 4.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	float UseHoldTime = 0.4f;
@@ -275,6 +275,10 @@ private:
 
 	FVector GetReachTargetWorld(EAedirHand Hand, const AAedirItemActor* Item) const;
 	bool CanLift(const AAedirItemActor* Item) const;
-	void CarryObject(AAedirCreature* Creature, AAedirItemActor* Item);
+	void UpdateObjectStrain(float DeltaTime);
+
+	// Where each hand took hold of a big object, in the object's own space.
+	FVector ObjectGripLocal[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float HoldStrainSeconds = 0.f;
 	int32 LastStoredWaistIndex[2] = { INDEX_NONE, INDEX_NONE };
 };

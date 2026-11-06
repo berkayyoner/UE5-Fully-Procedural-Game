@@ -45,6 +45,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Menu")
 	bool IsMenuOpen() const;
 
+	// True while a menu with a title in the top left corner is open: the category menu or the pause menu.
+	bool IsListMenuOpen() const;
+
 	// Shows the race picker. Does nothing while a menu is open. Confirming sends the race to the possessed character.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Menu")
 	void OpenCharacterCreation();

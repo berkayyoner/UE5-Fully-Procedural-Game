@@ -99,6 +99,13 @@ public:
 	UPROPERTY()
 	double WorldSeconds = 0.0;
 
+	// Shown in the save list. Saves written before these fields existed read as 0 and empty.
+	UPROPERTY()
+	int32 PlayerLevel = 0;
+
+	UPROPERTY()
+	FString LocationName;
+
 	UPROPERTY()
 	TArray<FAedirCreatureSave> Players;
 

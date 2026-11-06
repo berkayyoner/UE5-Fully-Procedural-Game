@@ -283,6 +283,19 @@ float UAedirCharacterMovementComponent::GetMaxSpeed() const
 	}
 
 	Speed *= GetDirectionalSpeedMultiplier();
+	Speed *= StairSpeedScale;
+
+	// A slope slows the body by how steep it is along the way it is going: climbing most, descending less.
+	if (IsMovingOnGround() && CurrentFloor.bBlockingHit)
+	{
+		const FVector FloorNormal = CurrentFloor.HitResult.ImpactNormal;
+		const float SlopeAlpha = FMath::Clamp(FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FloorNormal.Z), 0.f, 1.f))) / GetWalkableFloorAngle(), 0.f, 1.f);
+		const FVector MoveHeading = Velocity.GetSafeNormal2D();
+		const float Along = static_cast<float>(FVector::DotProduct(FVector(FloorNormal.X, FloorNormal.Y, 0.f).GetSafeNormal(), MoveHeading));
+		// Along < 0: moving against the downhill direction, so uphill.
+		const float SlopeScale = Along < 0.f ? SlopeUpSpeedScale : SlopeDownSpeedScale;
+		Speed *= FMath::Lerp(1.f, SlopeScale, SlopeAlpha * FMath::Abs(Along));
+	}
 
 	if (const UAedirStatsComponent* Stats = GetOwnerStats())
 	{

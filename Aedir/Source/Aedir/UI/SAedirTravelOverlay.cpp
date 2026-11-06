@@ -24,18 +24,29 @@ void SAedirTravelOverlay::Construct(const FArguments& InArgs)
 			.HAlign(HAlign_Center)
 			[
 				SNew(STextBlock)
-				.Text(FText::FromString(TEXT("Travelling...")))
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 26))
-				.ColorAndOpacity(AedirUIStyle::Accent)
+				.Text(FText::FromString(TEXT("TRAVELLING")))
+				.Font(AedirUIStyle::TitleFont(26.f))
+				.ColorAndOpacity(AedirUIStyle::Ivory)
 			]
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			.HAlign(HAlign_Center)
-			.Padding(FMargin(0.f, 10.f, 0.f, 0.f))
+			.Padding(FMargin(0.f, 12.f))
+			[
+				SNew(SAedirUIPaint)
+				.DesiredSize(FVector2D(520.f, 12.f))
+				.Painter([](const FVector2f& Size, FAedirUIMesh& Mesh)
+				{
+					AedirUIStyle::AddOrnamentRule(Mesh, Size * 0.5f, Size.X * 0.5f, AedirUIStyle::Metal);
+				})
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.HAlign(HAlign_Center)
 			[
 				SAssignNew(HoursText, STextBlock)
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 14))
-				.ColorAndOpacity(AedirUIStyle::Text)
+				.Font(AedirUIStyle::LightFont(14.f, 40))
+				.ColorAndOpacity(AedirUIStyle::TextDim)
 			]
 		]
 	];

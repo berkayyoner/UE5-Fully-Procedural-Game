@@ -79,6 +79,26 @@ namespace
 		Definitions.Add(CatalogMakeMisc(TEXT("OldBook"), TEXT("Old Book"), EAedirItemClass::Book, 0.8f, CatalogLeather, FVector(0.22, 0.16, 0.04)));
 		Definitions.Add(CatalogMakeMisc(TEXT("Boulder"), TEXT("Boulder"), EAedirItemClass::Object, 25.f, CatalogStone, FVector(0.40, 0.40, 0.40)));
 
+		// The hand closes on the grip, not on the middle of the item.
+		const auto SetGrip = [&Definitions](const TCHAR* Id, float GripCm)
+		{
+			for (FAedirItemDef& Def : Definitions)
+			{
+				if (Def.Id == FName(Id))
+				{
+					Def.GripCm = GripCm;
+				}
+			}
+		};
+		SetGrip(TEXT("Dagger"), -21.f);
+		SetGrip(TEXT("ShortSword"), -42.f);
+		SetGrip(TEXT("Longsword"), -65.f);
+		SetGrip(TEXT("BattleAxe"), -28.f);
+		SetGrip(TEXT("Mace"), -22.f);
+		SetGrip(TEXT("Warhammer"), -32.f);
+		SetGrip(TEXT("Club"), -20.f);
+		SetGrip(TEXT("Spear"), -25.f);
+
 		return Definitions;
 	}
 }

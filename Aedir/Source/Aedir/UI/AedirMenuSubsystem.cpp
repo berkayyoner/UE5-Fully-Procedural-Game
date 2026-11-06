@@ -251,6 +251,11 @@ bool UAedirMenuSubsystem::IsMenuOpen() const
 	return MenuWidget.IsValid() || RadialWidget.IsValid() || PauseWidget.IsValid() || MapWidget.IsValid();
 }
 
+bool UAedirMenuSubsystem::IsListMenuOpen() const
+{
+	return MenuWidget.IsValid() || PauseWidget.IsValid();
+}
+
 void UAedirMenuSubsystem::HandleRadialChosen(EAedirRadialOption Option)
 {
 	switch (Option)

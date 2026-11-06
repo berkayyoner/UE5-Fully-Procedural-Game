@@ -166,6 +166,9 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh);
 	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh);
 
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha);
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha);
+
 	// Fingers are children of the final hand pose, so they are curled after the arm IK.
 	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
 	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
@@ -400,6 +403,34 @@ void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, cons
 		BoneTransform.SetRotation(BoneTransform.GetRotation() * LocalCurl);
 		CSPose.SetComponentSpaceTransform(Bone, BoneTransform);
 	}
+}
+
+void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha) const
+{
+	if (Alpha <= AedirReachAlphaThreshold)
+	{
+		return;
+	}
+
+	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);
+	const FCompactPoseBoneIndex Index = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("index_01%s"), Suffix)));
+	const FCompactPoseBoneIndex Pinky = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("pinky_01%s"), Suffix)));
+	if (!Hand.IsValid() || !Index.IsValid() || !Pinky.IsValid())
+	{
+		return;
+	}
+
+	// The blade runs across the knuckles. The wrist turns the shortest way to bring that line onto the wanted direction.
+	const FQuat RefHandRotation = RefCSPose.GetComponentSpaceTransform(Hand).GetRotation();
+	const FVector RefKnuckles = RefCSPose.GetComponentSpaceTransform(Index).GetLocation() - RefCSPose.GetComponentSpaceTransform(Pinky).GetLocation();
+	const FVector KnucklesInHand = RefHandRotation.Inverse().RotateVector(RefKnuckles.GetSafeNormal());
+
+	FTransform HandTransform = CSPose.GetComponentSpaceTransform(Hand);
+	const FVector KnucklesNow = HandTransform.GetRotation().RotateVector(KnucklesInHand);
+	const FVector Target = MeshToWorld.InverseTransformVectorNoScale(DirectionWorld).GetSafeNormal();
+	const FQuat Turn = FQuat::Slerp(FQuat::Identity, SafeDeltaRotation(KnucklesNow, Target), FMath::Clamp(Alpha, 0.f, 1.f));
+	HandTransform.SetRotation((Turn * HandTransform.GetRotation()).GetNormalized());
+	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
 }
 
 void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift) const

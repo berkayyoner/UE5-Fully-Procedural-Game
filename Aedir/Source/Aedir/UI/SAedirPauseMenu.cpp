@@ -8,24 +8,25 @@
 #include "InputCoreTypes.h"
 #include "Input/Events.h"
 #include "Kismet/KismetSystemLibrary.h"
-#include "Net/AedirSaveSubsystem.h"
 #include "Styling/CoreStyle.h"
 #include "Travel/AedirTravelSubsystem.h"
 #include "UI/AedirJournalSubsystem.h"
 #include "UI/AedirUIStyle.h"
 #include "Widgets/Layout/SBorder.h"
-#include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
 
 namespace
 {
 	const TCHAR* const PauseTabNames[] = { TEXT("OPTIONS"), TEXT("JOURNAL") };
-	const TCHAR* const PauseHintText = TEXT("[W/S] Select  [A/D] Tab  [Enter] Confirm  [Esc] Close");
-	const TCHAR* const PauseQuickSaveSlot = TEXT("QuickSave");
-	const TCHAR* const PauseSaveSlot = TEXT("Save1");
 	const TCHAR* const PauseQualityNames[] = { TEXT("Native"), TEXT("Quality"), TEXT("Balanced"), TEXT("Performance"), TEXT("Ultra Performance") };
+	constexpr float PauseRowFontSize = 18.f;
+	constexpr float PauseSaveRowFontSize = 15.f;
+	constexpr float PauseConfirmHalfHeight = 104.f;
+	constexpr float PauseConfirmFontSize = 24.f;
+	constexpr float PauseVignette = 1.08f;
 
 	enum class EPauseAction : int32
 	{
@@ -37,8 +38,10 @@ namespace
 		Upscaler,
 		Quality,
 		Back,
-		QuitYes,
-		QuitNo
+		NewSave,
+		NoSaves,
+		// Rows of the save lists use this plus their index in the save list.
+		FirstSaveRow = 100
 	};
 
 	void PauseAddLine(TArray<FAedirMenuLine>& Lines, EAedirMenuLineKind Kind, const FString& Content)
@@ -47,6 +50,12 @@ namespace
 		Line.Kind = Kind;
 		Line.Content = Content;
 		Lines.Add(Line);
+	}
+
+	void PauseAddHeader(TArray<FAedirMenuLine>& Lines, const FString& Title)
+	{
+		PauseAddLine(Lines, EAedirMenuLineKind::Title, Title);
+		PauseAddLine(Lines, EAedirMenuLineKind::Rule, FString());
 	}
 
 	FAedirMenuRow PauseMakeRow(const TCHAR* Name, EPauseAction Action, const FString& Value = FString())
@@ -70,13 +79,10 @@ namespace
 		return GameInstance ? GameInstance->GetSubsystem<UAedirSaveSubsystem>() : nullptr;
 	}
 
-	FString PauseSaveInfo(const UAedirSaveSubsystem* Saves, const TCHAR* Slot)
+	// Saves store UTC, the player reads local time.
+	FString PauseFormatLocalTime(const FDateTime& Utc)
 	{
-		if (!Saves || !Saves->DoesSaveExist(Slot))
-		{
-			return TEXT("empty");
-		}
-		return Saves->GetSaveTimestamp(Slot).ToString(TEXT("%Y-%m-%d %H:%M"));
+		return AedirSaveSlots::FormatTimestamp(Utc + (FDateTime::Now() - FDateTime::UtcNow()));
 	}
 }
 
@@ -85,106 +91,133 @@ void SAedirPauseMenu::Construct(const FArguments& InArgs)
 	World = InArgs._World;
 	CloseDelegate = InArgs._OnClose;
 
-	const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush("GenericWhiteBox");
+	using namespace AedirUIStyle;
+
+	RefreshSaveEntries();
 
 	TSharedRef<SHorizontalBox> TabBar = SNew(SHorizontalBox);
 	for (int32 Index = 0; Index < static_cast<int32>(EAedirPauseTab::Count); ++Index)
 	{
 		TabBar->AddSlot()
 		.AutoWidth()
-		.Padding(FMargin(22.f, 0.f))
+		.Padding(FMargin(0.f, 0.f, 26.f, 0.f))
 		[
 			SNew(SBorder)
 			.BorderImage(FStyleDefaults::GetNoBrush())
-			.Padding(FMargin(2.f))
+			.Padding(FMargin(0.f, 2.f))
 			.Cursor(EMouseCursor::Hand)
 			.OnMouseButtonDown_Lambda([this, Index](const FGeometry&, const FPointerEvent&)
 			{
-				SetTab(Index);
+				if (!IsConfirmOpen())
+				{
+					SetTab(Index);
+				}
 				return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 			})
 			[
 				SNew(STextBlock)
-				.Text_Lambda([this, Index]()
-				{
-					const FString Name = PauseTabNames[Index];
-					return FText::FromString(Index == CurrentTab ? FString::Printf(TEXT("[ %s ]"), *Name) : Name);
-				})
-				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 14))
-				.ColorAndOpacity_Lambda([this, Index]() { return FSlateColor(Index == CurrentTab ? AedirUIStyle::Accent : AedirUIStyle::TextDim); })
+				.Text(FText::FromString(PauseTabNames[Index]))
+				.Font(RegularFont(11.f, 140))
+				.ColorAndOpacity_Lambda([this, Index]() { return FSlateColor(Index == CurrentTab ? IvoryBright : TextDim); })
 			]
 		];
 	}
 
-	ChildSlot
-	.Padding(FMargin(96.f, 64.f))
-	[
-		SNew(SBorder)
-		.BorderImage(WhiteBrush)
-		.BorderBackgroundColor(AedirUIStyle::Panel)
-		.Padding(FMargin(28.f, 20.f))
+	const TSharedRef<SWidget> Header = SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
 		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.HAlign(HAlign_Center)
-			.Padding(FMargin(0.f, 0.f, 0.f, 10.f))
+			AedirMenuContent::MakeTitle(TAttribute<FText>::CreateLambda([this]() { return GetTitleText(); }))
+		]
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(FMargin(0.f, 6.f, 0.f, 0.f))
+		[
+			TabBar
+		];
+
+	const TSharedRef<SWidget> List = SAssignNew(ListScroll, SScrollBox)
+		.ScrollBarVisibility(EVisibility::Collapsed)
+		+ SScrollBox::Slot()
+		[
+			SAssignNew(ListBox, SVerticalBox)
+		];
+
+	const TSharedRef<SWidget> Detail = SAssignNew(DetailBox, SVerticalBox);
+
+	ChildSlot
+	[
+		SNew(SOverlay)
+		+ SOverlay::Slot()
+		[
+			AedirMenuContent::MakeListScreen(Header, List, Detail,
+				TAttribute<FText>(),
+				TAttribute<FText>::CreateLambda([this]() { return GetHintText(); }),
+				PauseVignette)
+		]
+		+ SOverlay::Slot()
+		[
+			// Visible, so the band takes every click while the question is open.
+			SNew(SBorder)
+			.BorderImage(FStyleDefaults::GetNoBrush())
+			.Padding(FMargin(0.f))
+			.Visibility_Lambda([this]() { return IsConfirmOpen() ? EVisibility::Visible : EVisibility::Collapsed; })
+			.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent&)
+			{
+				return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
+			})
 			[
-				TabBar
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			[
-				SNew(SBox)
-				.HeightOverride(1.f)
+				SNew(SOverlay)
+				+ SOverlay::Slot()
 				[
-					SNew(SBorder)
-					.BorderImage(WhiteBrush)
-					.BorderBackgroundColor(AedirUIStyle::Line)
+					SNew(SAedirUIPaint)
+					.Painter([](const FVector2f& Size, FAedirUIMesh& Mesh)
+					{
+						AddModalBand(Mesh, Size, Size.Y * 0.5f, PauseConfirmHalfHeight);
+					})
 				]
-			]
-			+ SVerticalBox::Slot()
-			.FillHeight(1.f)
-			.Padding(FMargin(0.f, 12.f))
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.FillWidth(0.42f)
+				+ SOverlay::Slot()
+				.HAlign(HAlign_Center)
+				.VAlign(VAlign_Center)
 				[
-					SAssignNew(ListScroll, SScrollBox)
-					+ SScrollBox::Slot()
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.HAlign(HAlign_Center)
 					[
-						SAssignNew(ListBox, SVerticalBox)
+						SNew(STextBlock)
+						.Text_Lambda([this]() { return GetConfirmPrompt(); })
+						.Font(LightFont(PauseConfirmFontSize, 30))
+						.ColorAndOpacity(IvoryBright)
+					]
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.HAlign(HAlign_Center)
+					.Padding(FMargin(0.f, 6.f, 0.f, 20.f))
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]() { return GetConfirmDetail(); })
+						.Font(RegularFont(11.f, 40))
+						.ColorAndOpacity(TextDim)
+					]
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.HAlign(HAlign_Center)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						.Padding(FMargin(0.f, 0.f, 70.f, 0.f))
+						[
+							MakeConfirmButton(TEXT("YES"), true)
+						]
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							MakeConfirmButton(TEXT("NO"), false)
+						]
 					]
 				]
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.Padding(FMargin(12.f, 0.f))
-				[
-					SNew(SBox)
-					.WidthOverride(1.f)
-					[
-						SNew(SBorder)
-						.BorderImage(WhiteBrush)
-						.BorderBackgroundColor(AedirUIStyle::Line)
-					]
-				]
-				+ SHorizontalBox::Slot()
-				.FillWidth(0.58f)
-				.Padding(FMargin(12.f, 0.f, 0.f, 0.f))
-				[
-					SAssignNew(DetailBox, SVerticalBox)
-				]
-			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.HAlign(HAlign_Center)
-			.Padding(FMargin(0.f, 6.f, 0.f, 0.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(PauseHintText))
-				.Font(FCoreStyle::GetDefaultFontStyle("Regular", 10))
-				.ColorAndOpacity(AedirUIStyle::TextDim)
 			]
 		]
 	];
@@ -192,13 +225,85 @@ void SAedirPauseMenu::Construct(const FArguments& InArgs)
 	RefreshView(true);
 }
 
+TSharedRef<SWidget> SAedirPauseMenu::MakeConfirmButton(const TCHAR* Label, bool bYes)
+{
+	using namespace AedirUIStyle;
+
+	return SNew(SBorder)
+		.BorderImage(FStyleDefaults::GetNoBrush())
+		.Padding(FMargin(0.f))
+		.Cursor(EMouseCursor::Hand)
+		.OnMouseMove_Lambda([this, bYes](const FGeometry&, const FPointerEvent& MouseEvent)
+		{
+			if (!MouseEvent.GetCursorDelta().IsNearlyZero())
+			{
+				bConfirmYesSelected = bYes;
+			}
+			return FReply::Unhandled();
+		})
+		.OnMouseButtonDown_Lambda([this, bYes](const FGeometry&, const FPointerEvent& MouseEvent)
+		{
+			if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+			{
+				AnswerConfirm(bYes);
+			}
+			return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
+		})
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(FMargin(0.f, 0.f, 10.f, 0.f))
+			[
+				SNew(SAedirUIPaint)
+				.DesiredSize(FVector2D(12.f, 12.f))
+				.Painter([this, bYes](const FVector2f& Size, FAedirUIMesh& Mesh)
+				{
+					if (bConfirmYesSelected == bYes)
+					{
+						AddDiamond(Mesh, Size * 0.5f, 4.5f, 4.5f, IvoryBright);
+					}
+				})
+			]
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Label))
+				.Font(TitleFont(18.f))
+				.ColorAndOpacity_Lambda([this, bYes]() { return FSlateColor(bConfirmYesSelected == bYes ? IvoryBright : TextDim); })
+			]
+		];
+}
+
 void SAedirPauseMenu::SetTab(int32 NewTab)
 {
 	const int32 Count = static_cast<int32>(EAedirPauseTab::Count);
 	CurrentTab = ((NewTab % Count) + Count) % Count;
-	Page = EPage::Main;
+	Page = EAedirPausePage::Main;
 	SelectedRow = 0;
 	RefreshView(true);
+}
+
+void SAedirPauseMenu::GoToPage(EAedirPausePage NewPage)
+{
+	// Coming back to the main page, the cursor returns to the row that opened the page.
+	const int32 ReturnRow = Page == EAedirPausePage::SaveList ? 1 : (Page == EAedirPausePage::LoadList ? 2 : (Page == EAedirPausePage::Settings ? 3 : 0));
+	CurrentTab = static_cast<int32>(EAedirPauseTab::Options);
+	Page = NewPage;
+	SelectedRow = NewPage == EAedirPausePage::Main ? ReturnRow : 0;
+	if (Page == EAedirPausePage::SaveList || Page == EAedirPausePage::LoadList)
+	{
+		RefreshSaveEntries();
+	}
+	RefreshView(true);
+}
+
+void SAedirPauseMenu::RefreshSaveEntries()
+{
+	const UAedirSaveSubsystem* Saves = PauseGetSaves(World.Get());
+	SaveEntries = Saves ? Saves->ListSaves() : TArray<FAedirSaveInfo>();
 }
 
 FReply SAedirPauseMenu::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
@@ -211,19 +316,35 @@ FReply SAedirPauseMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& 
 	const FKey Key = InKeyEvent.GetKey();
 	const int32 Count = static_cast<int32>(EAedirPauseTab::Count);
 
-	if (Key == EKeys::Escape && Page != EPage::Main)
+	if (IsConfirmOpen())
 	{
-		GoToPage(EPage::Main);
+		if (Key == EKeys::Escape || Key == EKeys::Tab || Key == EKeys::N)
+		{
+			AnswerConfirm(false);
+		}
+		else if (Key == EKeys::Y)
+		{
+			AnswerConfirm(true);
+		}
+		else if (Key == EKeys::Enter || Key == EKeys::E)
+		{
+			AnswerConfirm(bConfirmYesSelected);
+		}
+		else if (Key == EKeys::A || Key == EKeys::D || Key == EKeys::W || Key == EKeys::S || Key == EKeys::Left || Key == EKeys::Right || Key == EKeys::Up || Key == EKeys::Down)
+		{
+			bConfirmYesSelected = !bConfirmYesSelected;
+		}
+		return FReply::Handled();
+	}
+
+	if (Key == EKeys::Escape && Page != EAedirPausePage::Main)
+	{
+		GoToPage(EAedirPausePage::Main);
 		return FReply::Handled();
 	}
 	if (Key == EKeys::Escape || Key == EKeys::Tab)
 	{
 		CloseDelegate.ExecuteIfBound();
-		return FReply::Handled();
-	}
-	if (Page == EPage::QuitConfirm && (Key == EKeys::Y || Key == EKeys::N))
-	{
-		Activate(static_cast<int32>(Key == EKeys::Y ? EPauseAction::QuitYes : EPauseAction::QuitNo));
 		return FReply::Handled();
 	}
 	if (Key == EKeys::W || Key == EKeys::Up)
@@ -236,12 +357,12 @@ FReply SAedirPauseMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& 
 		MoveSelection(1);
 		return FReply::Handled();
 	}
-	if (Key == EKeys::A || Key == EKeys::Left)
+	if ((Key == EKeys::A || Key == EKeys::Left) && Page == EAedirPausePage::Main)
 	{
 		SetTab(CurrentTab - 1 + Count);
 		return FReply::Handled();
 	}
-	if (Key == EKeys::D || Key == EKeys::Right)
+	if ((Key == EKeys::D || Key == EKeys::Right) && Page == EAedirPausePage::Main)
 	{
 		SetTab(CurrentTab + 1);
 		return FReply::Handled();
@@ -249,6 +370,11 @@ FReply SAedirPauseMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& 
 	if (Key == EKeys::Enter || Key == EKeys::E)
 	{
 		ActivateSelected();
+		return FReply::Handled();
+	}
+	if (Key == EKeys::Delete)
+	{
+		AskDeleteSelected();
 		return FReply::Handled();
 	}
 
@@ -271,14 +397,14 @@ TArray<FAedirMenuRow> SAedirPauseMenu::BuildRows() const
 	TArray<FAedirMenuRow> Result;
 	switch (Page)
 	{
-	case EPage::Main:
+	case EAedirPausePage::Main:
 		Result.Add(PauseMakeRow(TEXT("Quick Save"), EPauseAction::QuickSave));
 		Result.Add(PauseMakeRow(TEXT("Save"), EPauseAction::Save));
 		Result.Add(PauseMakeRow(TEXT("Load"), EPauseAction::Load));
 		Result.Add(PauseMakeRow(TEXT("Settings"), EPauseAction::Settings));
 		Result.Add(PauseMakeRow(TEXT("Quit"), EPauseAction::Quit));
 		break;
-	case EPage::Settings:
+	case EAedirPausePage::Settings:
 	{
 		const UAedirUpscalerSubsystem* Upscaler = PauseGetUpscaler(World.Get());
 		const FString UpscalerName = Upscaler ? Upscaler->GetUpscalerDisplayName(Upscaler->GetCurrentUpscaler()).ToString() : FString(TEXT("n/a"));
@@ -288,12 +414,42 @@ TArray<FAedirMenuRow> SAedirPauseMenu::BuildRows() const
 		Result.Add(PauseMakeRow(TEXT("Back"), EPauseAction::Back));
 		break;
 	}
-	case EPage::QuitConfirm:
-		Result.Add(PauseMakeRow(TEXT("Yes, quit the game"), EPauseAction::QuitYes));
-		Result.Add(PauseMakeRow(TEXT("No"), EPauseAction::QuitNo));
+	case EAedirPausePage::SaveList:
+	case EAedirPausePage::LoadList:
+		if (Page == EAedirPausePage::SaveList)
+		{
+			Result.Add(PauseMakeRow(TEXT("New Save"), EPauseAction::NewSave));
+		}
+		else if (SaveEntries.IsEmpty())
+		{
+			FAedirMenuRow Empty = PauseMakeRow(TEXT("No saves found"), EPauseAction::NoSaves);
+			Empty.bDimmed = true;
+			Result.Add(Empty);
+		}
+		for (int32 Index = 0; Index < SaveEntries.Num(); ++Index)
+		{
+			const FAedirSaveInfo& Entry = SaveEntries[Index];
+			FAedirMenuRow Row;
+			Row.Name = Entry.DisplayName;
+			Row.Value = PauseFormatLocalTime(Entry.Timestamp);
+			Row.SubText = AedirSaveSlots::MakeSummary(Entry.PlayerLevel, Entry.Location);
+			Row.Index = static_cast<int32>(EPauseAction::FirstSaveRow) + Index;
+			Result.Add(Row);
+		}
+		Result.Add(PauseMakeRow(TEXT("Back"), EPauseAction::Back));
 		break;
 	}
 	return Result;
+}
+
+const FAedirSaveInfo* SAedirPauseMenu::GetRowSave(int32 RowIndex) const
+{
+	if (!Rows.IsValidIndex(RowIndex))
+	{
+		return nullptr;
+	}
+	const int32 EntryIndex = Rows[RowIndex].Index - static_cast<int32>(EPauseAction::FirstSaveRow);
+	return SaveEntries.IsValidIndex(EntryIndex) ? &SaveEntries[EntryIndex] : nullptr;
 }
 
 TArray<FAedirMenuLine> SAedirPauseMenu::BuildDetailLines(const TArray<FAedirMenuRow>& NewRows) const
@@ -307,50 +463,79 @@ TArray<FAedirMenuLine> SAedirPauseMenu::BuildDetailLines(const TArray<FAedirMenu
 		return Result;
 	}
 
-	if (Page == EPage::QuitConfirm)
-	{
-		PauseAddLine(Result, EAedirMenuLineKind::Title, TEXT("Quit"));
-		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Are you sure you want to quit? Unsaved progress is lost."));
-		PauseAddLine(Result, EAedirMenuLineKind::Dim, TEXT("[Y] Yes  [N] No"));
-		return Result;
-	}
-
 	if (!Selected)
 	{
 		return Result;
 	}
 
-	const UAedirSaveSubsystem* Saves = PauseGetSaves(World.Get());
+	const int32 EntryIndex = Selected->Index - static_cast<int32>(EPauseAction::FirstSaveRow);
+	if (SaveEntries.IsValidIndex(EntryIndex))
+	{
+		const FAedirSaveInfo& Entry = SaveEntries[EntryIndex];
+		PauseAddHeader(Result, Entry.DisplayName);
+		if (Entry.PlayerLevel > 0)
+		{
+			AedirMenuContent::AddPairLine(Result, { TEXT("LEVEL"), FString::FromInt(Entry.PlayerLevel), TEXT("SAVED"), PauseFormatLocalTime(Entry.Timestamp) });
+		}
+		else
+		{
+			AedirMenuContent::AddPairLine(Result, { TEXT("SAVED"), PauseFormatLocalTime(Entry.Timestamp) });
+		}
+		if (!Entry.Location.IsEmpty())
+		{
+			AedirMenuContent::AddPairLine(Result, { TEXT("LOCATION"), Entry.Location });
+		}
+		return Result;
+	}
+
+	const FAedirSaveInfo* Newest = SaveEntries.IsEmpty() ? nullptr : &SaveEntries[0];
+	const FAedirSaveInfo* Quick = SaveEntries.FindByPredicate([](const FAedirSaveInfo& Entry) { return Entry.Slot == AedirSaveSlots::QuickSaveSlot; });
+
 	switch (static_cast<EPauseAction>(Selected->Index))
 	{
 	case EPauseAction::QuickSave:
-		PauseAddLine(Result, EAedirMenuLineKind::Title, Selected->Name);
+		PauseAddHeader(Result, Selected->Name);
 		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Saves the world right now to the quick slot."));
-		PauseAddLine(Result, EAedirMenuLineKind::Dim, FString::Printf(TEXT("Last quick save: %s"), *PauseSaveInfo(Saves, PauseQuickSaveSlot)));
+		PauseAddLine(Result, EAedirMenuLineKind::Dim, FString::Printf(TEXT("Last quick save: %s"), Quick ? *PauseFormatLocalTime(Quick->Timestamp) : TEXT("none")));
 		break;
 	case EPauseAction::Save:
-		PauseAddLine(Result, EAedirMenuLineKind::Title, Selected->Name);
-		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Saves the world to the manual slot."));
-		PauseAddLine(Result, EAedirMenuLineKind::Dim, FString::Printf(TEXT("Last save: %s"), *PauseSaveInfo(Saves, PauseSaveSlot)));
+		PauseAddHeader(Result, Selected->Name);
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Writes a new save or replaces an existing one."));
+		PauseAddLine(Result, EAedirMenuLineKind::Dim, FString::Printf(TEXT("%d saves"), SaveEntries.Num()));
 		break;
 	case EPauseAction::Load:
-		PauseAddLine(Result, EAedirMenuLineKind::Title, Selected->Name);
-		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Loads the most recent save."));
-		PauseAddLine(Result, EAedirMenuLineKind::Dim, FString::Printf(TEXT("Quick save: %s"), *PauseSaveInfo(Saves, PauseQuickSaveSlot)));
-		PauseAddLine(Result, EAedirMenuLineKind::Dim, FString::Printf(TEXT("Save: %s"), *PauseSaveInfo(Saves, PauseSaveSlot)));
+		PauseAddHeader(Result, Selected->Name);
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Returns to one of your saves."));
+		PauseAddLine(Result, EAedirMenuLineKind::Dim, FString::Printf(TEXT("Latest: %s"), Newest ? *Newest->DisplayName : TEXT("none")));
 		break;
 	case EPauseAction::Settings:
-		PauseAddLine(Result, EAedirMenuLineKind::Title, Selected->Name);
+		PauseAddHeader(Result, Selected->Name);
 		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Upscaler and its quality level."));
 		break;
 	case EPauseAction::Quit:
-		PauseAddLine(Result, EAedirMenuLineKind::Title, Selected->Name);
+		PauseAddHeader(Result, Selected->Name);
 		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Leaves the game after a confirmation."));
 		break;
 	case EPauseAction::Upscaler:
 	case EPauseAction::Quality:
-		PauseAddLine(Result, EAedirMenuLineKind::Title, Selected->Name);
+		PauseAddHeader(Result, Selected->Name);
 		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Press Enter to switch to the next option. The change applies immediately."));
+		break;
+	case EPauseAction::NewSave:
+		PauseAddHeader(Result, Selected->Name);
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Writes the world to a new save and keeps all the others."));
+		PauseAddLine(Result, EAedirMenuLineKind::Dim, AedirSaveSlots::MakeDisplayName(AedirSaveSlots::NextSlotName([this]()
+		{
+			TArray<FString> Slots;
+			for (const FAedirSaveInfo& Entry : SaveEntries)
+			{
+				Slots.Add(Entry.Slot);
+			}
+			return Slots;
+		}())));
+		break;
+	case EPauseAction::NoSaves:
+		PauseAddLine(Result, EAedirMenuLineKind::Dim, TEXT("There is nothing to load yet."));
 		break;
 	default:
 		break;
@@ -381,23 +566,33 @@ void SAedirPauseMenu::RebuildList()
 	ListBox->ClearChildren();
 	RowWidgets.Reset();
 
-	const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush("GenericWhiteBox");
-	const FSlateFontInfo RowFont = FCoreStyle::GetDefaultFontStyle("Regular", 12);
+	const bool bSaveList = CurrentTab == static_cast<int32>(EAedirPauseTab::Options) && (Page == EAedirPausePage::SaveList || Page == EAedirPausePage::LoadList);
+	const FSlateFontInfo RowFont = AedirUIStyle::LightFont(bSaveList ? PauseSaveRowFontSize : PauseRowFontSize, 20);
+	const float RowGap = bSaveList ? 2.f : 5.f;
 
 	for (int32 Index = 0; Index < Rows.Num(); ++Index)
 	{
-		const FAedirMenuRow& Row = Rows[Index];
 		TSharedRef<SBorder> RowBorder = SNew(SBorder)
-		.BorderImage(WhiteBrush)
-		.BorderBackgroundColor_Lambda([this, Index]() { return FSlateColor(GetRowBackground(Index)); })
+		.BorderImage(FStyleDefaults::GetNoBrush())
+		.Padding(FMargin(0.f))
 		.Cursor(EMouseCursor::Hand)
-		.OnMouseMove_Lambda([this, Index](const FGeometry&, const FPointerEvent&)
+		.OnMouseMove_Lambda([this, Index](const FGeometry&, const FPointerEvent& MouseEvent)
 		{
-			SelectedRow = Index;
+			// Slate also sends moves with no motion when widgets change, a resting cursor must not undo W and S.
+			if (!MouseEvent.GetCursorDelta().IsNearlyZero())
+			{
+				SelectedRow = Index;
+			}
 			return FReply::Unhandled();
 		})
 		.OnMouseButtonDown_Lambda([this, Index](const FGeometry&, const FPointerEvent& MouseEvent)
 		{
+			if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
+			{
+				SelectedRow = Index;
+				AskDeleteSelected();
+				return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
+			}
 			if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 			{
 				return FReply::Handled();
@@ -417,43 +612,14 @@ void SAedirPauseMenu::RebuildList()
 			return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 		})
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				SNew(SBox)
-				.WidthOverride(3.f)
-				[
-					SNew(SBorder)
-					.BorderImage(WhiteBrush)
-					.BorderBackgroundColor_Lambda([this, Index]() { return FSlateColor(GetRowAccent(Index)); })
-				]
-			]
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.f)
-			.VAlign(VAlign_Center)
-			.Padding(FMargin(12.f, 8.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Row.Name))
-				.Font(RowFont)
-				.ColorAndOpacity_Lambda([this, Index]() { return FSlateColor(GetRowTextColor(Index)); })
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(FMargin(12.f, 8.f))
-			[
-				SNew(STextBlock)
-				.Text(FText::FromString(Row.Value))
-				.Font(RowFont)
-				.ColorAndOpacity_Lambda([this, Index]() { return FSlateColor(GetRowTextColor(Index)); })
-			]
+			AedirMenuContent::MakeListRow(Rows[Index], RowFont,
+				[this, Index]() { return GetRowTextColor(Index); },
+				[this, Index]() { return GetRowMarker(Index); })
 		];
 
 		ListBox->AddSlot()
 		.AutoHeight()
-		.Padding(FMargin(0.f, 1.f))
+		.Padding(FMargin(0.f, RowGap))
 		[
 			RowBorder
 		];
@@ -505,22 +671,28 @@ void SAedirPauseMenu::ActivateSelected()
 
 void SAedirPauseMenu::Activate(int32 Action)
 {
+	if (const FAedirSaveInfo* Entry = SaveEntries.IsValidIndex(Action - static_cast<int32>(EPauseAction::FirstSaveRow)) ? &SaveEntries[Action - static_cast<int32>(EPauseAction::FirstSaveRow)] : nullptr)
+	{
+		ActivateSaveRow(*Entry);
+		return;
+	}
+
 	switch (static_cast<EPauseAction>(Action))
 	{
 	case EPauseAction::QuickSave:
 		QuickSave();
 		break;
 	case EPauseAction::Save:
-		SaveToSlot();
+		GoToPage(EAedirPausePage::SaveList);
 		break;
 	case EPauseAction::Load:
-		LoadLatest();
+		GoToPage(EAedirPausePage::LoadList);
 		break;
 	case EPauseAction::Settings:
-		GoToPage(EPage::Settings);
+		GoToPage(EAedirPausePage::Settings);
 		break;
 	case EPauseAction::Quit:
-		GoToPage(EPage::QuitConfirm);
+		AskConfirm(EConfirm::Quit, FString());
 		break;
 	case EPauseAction::Upscaler:
 		CycleUpscaler();
@@ -529,20 +701,149 @@ void SAedirPauseMenu::Activate(int32 Action)
 		CycleQuality();
 		break;
 	case EPauseAction::Back:
-	case EPauseAction::QuitNo:
-		GoToPage(EPage::Main);
+		GoToPage(EAedirPausePage::Main);
 		break;
-	case EPauseAction::QuitYes:
-		ConfirmQuit();
+	case EPauseAction::NewSave:
+		SaveToNewSlot();
+		break;
+	default:
 		break;
 	}
 }
 
-void SAedirPauseMenu::GoToPage(EPage NewPage)
+void SAedirPauseMenu::ActivateSaveRow(const FAedirSaveInfo& Entry)
 {
-	Page = NewPage;
-	SelectedRow = 0;
+	AskConfirm(Page == EAedirPausePage::SaveList ? EConfirm::Overwrite : EConfirm::Load, Entry.Slot);
+}
+
+void SAedirPauseMenu::AskConfirm(EConfirm Kind, const FString& Slot)
+{
+	Confirm = Kind;
+	ConfirmSlot = Slot;
+	// Enter pressed twice by accident must not destroy anything.
+	bConfirmYesSelected = false;
+}
+
+void SAedirPauseMenu::AskDeleteSelected()
+{
+	if (Page != EAedirPausePage::SaveList && Page != EAedirPausePage::LoadList)
+	{
+		return;
+	}
+
+	if (const FAedirSaveInfo* Entry = GetRowSave(SelectedRow))
+	{
+		AskConfirm(EConfirm::Delete, Entry->Slot);
+	}
+}
+
+void SAedirPauseMenu::AnswerConfirm(bool bYes)
+{
+	const EConfirm Kind = Confirm;
+	const FString Slot = ConfirmSlot;
+	Confirm = EConfirm::None;
+	ConfirmSlot.Reset();
+	if (!bYes)
+	{
+		return;
+	}
+
+	UAedirSaveSubsystem* Saves = PauseGetSaves(World.Get());
+	switch (Kind)
+	{
+	case EConfirm::Quit:
+	{
+		UWorld* CurrentWorld = World.Get();
+		APlayerController* PlayerController = CurrentWorld ? CurrentWorld->GetFirstPlayerController() : nullptr;
+		UKismetSystemLibrary::QuitGame(CurrentWorld, PlayerController, EQuitPreference::Quit, false);
+		break;
+	}
+	case EConfirm::Overwrite:
+		Notify(Saves && Saves->SaveWorld(Slot) ? TEXT("Game saved") : TEXT("Save failed"));
+		RefreshSaveEntries();
+		break;
+	case EConfirm::Load:
+		if (Saves && Saves->LoadWorld(Slot))
+		{
+			Notify(TEXT("Game loaded"));
+			CloseDelegate.ExecuteIfBound();
+			return;
+		}
+		Notify(TEXT("Load failed"));
+		break;
+	case EConfirm::Delete:
+		Notify(Saves && Saves->DeleteSave(Slot) ? TEXT("Save deleted") : TEXT("Delete failed"));
+		RefreshSaveEntries();
+		break;
+	default:
+		break;
+	}
 	RefreshView(true);
+}
+
+FText SAedirPauseMenu::GetConfirmPrompt() const
+{
+	switch (Confirm)
+	{
+	case EConfirm::Quit: return FText::FromString(TEXT("Quit the game?"));
+	case EConfirm::Overwrite: return FText::FromString(TEXT("Overwrite this save?"));
+	case EConfirm::Load: return FText::FromString(TEXT("Load this save?"));
+	case EConfirm::Delete: return FText::FromString(TEXT("Delete this save?"));
+	default: break;
+	}
+	return FText::GetEmpty();
+}
+
+FText SAedirPauseMenu::GetConfirmDetail() const
+{
+	if (Confirm == EConfirm::Quit)
+	{
+		return FText::FromString(TEXT("Unsaved progress is lost."));
+	}
+
+	const FAedirSaveInfo* Entry = SaveEntries.FindByPredicate([this](const FAedirSaveInfo& Candidate) { return Candidate.Slot == ConfirmSlot; });
+	if (!Entry)
+	{
+		return FText::GetEmpty();
+	}
+	if (Confirm == EConfirm::Load)
+	{
+		return FText::FromString(FString::Printf(TEXT("%s, %s. Unsaved progress is lost."), *Entry->DisplayName, *PauseFormatLocalTime(Entry->Timestamp)));
+	}
+	return FText::FromString(FString::Printf(TEXT("%s, %s"), *Entry->DisplayName, *PauseFormatLocalTime(Entry->Timestamp)));
+}
+
+FText SAedirPauseMenu::GetHintText() const
+{
+	if (IsConfirmOpen())
+	{
+		return FText::FromString(TEXT("[A/D] CHOOSE     [ENTER] CONFIRM     [Y] YES     [N] NO     [ESC] BACK"));
+	}
+	if (CurrentTab == static_cast<int32>(EAedirPauseTab::Options) && (Page == EAedirPausePage::SaveList || Page == EAedirPausePage::LoadList))
+	{
+		return FText::FromString(TEXT("[W/S] SELECT     [ENTER] CONFIRM     [DEL / RMB] DELETE     [ESC] BACK"));
+	}
+	if (Page != EAedirPausePage::Main)
+	{
+		return FText::FromString(TEXT("[W/S] SELECT     [ENTER] CONFIRM     [ESC] BACK"));
+	}
+	return FText::FromString(TEXT("[W/S] SELECT     [A/D] TAB     [ENTER] CONFIRM     [ESC] CLOSE"));
+}
+
+FText SAedirPauseMenu::GetTitleText() const
+{
+	if (CurrentTab == static_cast<int32>(EAedirPauseTab::Journal))
+	{
+		return FText::FromString(TEXT("JOURNAL"));
+	}
+	switch (Page)
+	{
+	case EAedirPausePage::Settings: return FText::FromString(TEXT("SETTINGS"));
+	case EAedirPausePage::SaveList: return FText::FromString(TEXT("SAVE"));
+	case EAedirPausePage::LoadList: return FText::FromString(TEXT("LOAD"));
+	default: break;
+	}
+	return FText::FromString(TEXT("PAUSED"));
 }
 
 void SAedirPauseMenu::Notify(const FString& Message) const
@@ -559,38 +860,18 @@ void SAedirPauseMenu::Notify(const FString& Message) const
 void SAedirPauseMenu::QuickSave()
 {
 	UAedirSaveSubsystem* Saves = PauseGetSaves(World.Get());
-	Notify(Saves && Saves->SaveWorld(PauseQuickSaveSlot) ? TEXT("Quick saved") : TEXT("Quick save failed"));
+	Notify(Saves && Saves->SaveWorld(AedirSaveSlots::QuickSaveSlot) ? TEXT("Quick saved") : TEXT("Quick save failed"));
+	RefreshSaveEntries();
 	RefreshView(true);
 }
 
-void SAedirPauseMenu::SaveToSlot()
+void SAedirPauseMenu::SaveToNewSlot()
 {
 	UAedirSaveSubsystem* Saves = PauseGetSaves(World.Get());
-	Notify(Saves && Saves->SaveWorld(PauseSaveSlot) ? TEXT("Game saved") : TEXT("Save failed"));
+	const FString Slot = Saves ? Saves->SaveToNewSlot() : FString();
+	Notify(Slot.IsEmpty() ? TEXT("Save failed") : FString::Printf(TEXT("Saved as %s"), *AedirSaveSlots::MakeDisplayName(Slot)));
+	RefreshSaveEntries();
 	RefreshView(true);
-}
-
-void SAedirPauseMenu::LoadLatest()
-{
-	UAedirSaveSubsystem* Saves = PauseGetSaves(World.Get());
-	const bool bQuick = Saves && Saves->DoesSaveExist(PauseQuickSaveSlot);
-	const bool bManual = Saves && Saves->DoesSaveExist(PauseSaveSlot);
-	if (!bQuick && !bManual)
-	{
-		Notify(TEXT("No save found"));
-		return;
-	}
-
-	const bool bUseQuick = bQuick && (!bManual || Saves->GetSaveTimestamp(PauseQuickSaveSlot) >= Saves->GetSaveTimestamp(PauseSaveSlot));
-	if (Saves->LoadWorld(bUseQuick ? PauseQuickSaveSlot : PauseSaveSlot))
-	{
-		Notify(TEXT("Game loaded"));
-		CloseDelegate.ExecuteIfBound();
-	}
-	else
-	{
-		Notify(TEXT("Load failed"));
-	}
 }
 
 void SAedirPauseMenu::CycleUpscaler()
@@ -630,28 +911,17 @@ void SAedirPauseMenu::CycleQuality()
 	RefreshView(true);
 }
 
-void SAedirPauseMenu::ConfirmQuit()
+float SAedirPauseMenu::GetRowMarker(int32 Index) const
 {
-	UWorld* CurrentWorld = World.Get();
-	APlayerController* PlayerController = CurrentWorld ? CurrentWorld->GetFirstPlayerController() : nullptr;
-	UKismetSystemLibrary::QuitGame(CurrentWorld, PlayerController, EQuitPreference::Quit, false);
-}
-
-FLinearColor SAedirPauseMenu::GetRowBackground(int32 Index) const
-{
-	return Index == SelectedRow ? AedirUIStyle::PanelSelected : FLinearColor(0.f, 0.f, 0.f, 0.f);
-}
-
-FLinearColor SAedirPauseMenu::GetRowAccent(int32 Index) const
-{
-	return Index == SelectedRow ? AedirUIStyle::Accent : FLinearColor(1.f, 1.f, 1.f, 0.f);
+	return Index == SelectedRow ? 1.f : 0.f;
 }
 
 FLinearColor SAedirPauseMenu::GetRowTextColor(int32 Index) const
 {
+	const bool bSelected = Index == SelectedRow;
 	if (Rows.IsValidIndex(Index) && Rows[Index].bDimmed)
 	{
-		return AedirUIStyle::TextDim;
+		return bSelected ? AedirUIStyle::Ivory : AedirUIStyle::TextDim;
 	}
-	return Index == SelectedRow ? FLinearColor::White : AedirUIStyle::Text;
+	return bSelected ? AedirUIStyle::IvoryBright : AedirUIStyle::WithAlpha(AedirUIStyle::Ivory, 0.8f);
 }

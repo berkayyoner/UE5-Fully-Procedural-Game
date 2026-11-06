@@ -2,14 +2,10 @@
 
 #include "Creature/AedirCreature.h"
 #include "Engine/World.h"
-#include "Fonts/FontMeasure.h"
-#include "Framework/Application/SlateApplication.h"
 #include "HUD/AedirMarkerSubsystem.h"
 #include "InputCoreTypes.h"
 #include "Input/Events.h"
 #include "Rendering/DrawElements.h"
-#include "Rendering/SlateRenderer.h"
-#include "Styling/CoreStyle.h"
 #include "Travel/AedirTravelLogic.h"
 #include "UI/AedirUIStyle.h"
 
@@ -26,54 +22,71 @@ namespace
 	constexpr float MapMessageSeconds = 2.5f;
 	constexpr float MapFramePadding = 22.f;
 	constexpr float MapGridMinPixels = 70.f;
-	constexpr int32 MapVignetteSteps = 14;
-	constexpr float MapVignetteStepPixels = 16.f;
 	constexpr float MapDialogWidth = 480.f;
-	constexpr float MapDialogHeight = 176.f;
+	constexpr float MapDialogHeight = 208.f;
 	constexpr float MapButtonWidth = 150.f;
-	constexpr float MapButtonHeight = 44.f;
+	constexpr float MapButtonHeight = 40.f;
 	constexpr float MapMetersPerCm = 0.01f;
 
-	const FLinearColor MapParchment(0.115f, 0.092f, 0.066f, 1.f);
-	const FLinearColor MapGridMinor(0.9f, 0.76f, 0.45f, 0.07f);
-	const FLinearColor MapGridMajor(0.9f, 0.76f, 0.45f, 0.16f);
-	const FLinearColor MapMissionColor(1.f, 0.78f, 0.2f, 1.f);
-	const FLinearColor MapLocationColor(0.92f, 0.86f, 0.7f, 1.f);
-	const FLinearColor MapUnknownColor(0.55f, 0.5f, 0.42f, 0.9f);
+	const FLinearColor MapParchment(FColor(78, 66, 48));
+	const FLinearColor MapParchmentDark(FColor(38, 31, 22));
+	const FLinearColor MapGridMinor(FColor(204, 186, 146, 22));
+	const FLinearColor MapGridMajor(FColor(204, 186, 146, 54));
+	const FLinearColor MapMissionColor(FColor(226, 190, 112));
+	const FLinearColor MapLocationColor = AedirUIStyle::Ivory;
+	const FLinearColor MapUnknownColor(FColor(168, 158, 136, 220));
 
 	const float MapGridSteps[] = { 1000.f, 2500.f, 5000.f, 10000.f, 25000.f, 50000.f, 100000.f, 250000.f, 500000.f };
 
 	float MapMeasureWidth(const FString& Text, const FSlateFontInfo& Font)
 	{
-		if (!FSlateApplication::IsInitialized())
-		{
-			return 0.f;
-		}
-		return FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Text, Font).X;
+		return AedirUIStyle::MeasureText(Text, Font).X;
 	}
 
 	void MapDrawText(FSlateWindowElementList& Elements, int32 Layer, const FGeometry& Geometry, const FString& Text, const FSlateFontInfo& Font, const FVector2f& Position, const FLinearColor& Color, bool bCenterX)
 	{
-		const float X = bCenterX ? Position.X - MapMeasureWidth(Text, Font) * 0.5f : Position.X;
-		FSlateDrawElement::MakeText(Elements, Layer, Geometry.ToOffsetPaintGeometry(FVector2f(X, Position.Y)), Text, Font, ESlateDrawEffect::None, Color);
+		AedirUIStyle::DrawText(Elements, Layer, Geometry, Text, Font, Position, Color, bCenterX ? EAedirTextAlign::Center : EAedirTextAlign::Left, 0.75f);
+	}
+
+	// Frame of the map: two faded lines on each side and a diamond ornament in each corner.
+	void MapAddFrame(FAedirUIMesh& Mesh, const FVector2f& Min, const FVector2f& Max)
+	{
+		using namespace AedirUIStyle;
+
+		constexpr float Inset = 6.f;
+		constexpr float CornerClear = 16.f;
+		const FLinearColor Outer = WithAlpha(Metal, 0.9f);
+		const FLinearColor Inner = WithAlpha(Metal, 0.42f);
+
+		for (const float Offset : { 0.f, Inset })
+		{
+			const FLinearColor& Color = Offset == 0.f ? Outer : Inner;
+			const FVector2f A = Min + FVector2f(Offset, Offset);
+			const FVector2f B = Max - FVector2f(Offset, Offset);
+			Mesh.AddLine(FVector2f(A.X + CornerClear, A.Y), FVector2f(B.X - CornerClear, A.Y), 1.f, Color, Color);
+			Mesh.AddLine(FVector2f(A.X + CornerClear, B.Y), FVector2f(B.X - CornerClear, B.Y), 1.f, Color, Color);
+			Mesh.AddLine(FVector2f(A.X, A.Y + CornerClear), FVector2f(A.X, B.Y - CornerClear), 1.f, Color, Color);
+			Mesh.AddLine(FVector2f(B.X, A.Y + CornerClear), FVector2f(B.X, B.Y - CornerClear), 1.f, Color, Color);
+		}
+
+		for (const FVector2f& Corner : { Min, FVector2f(Max.X, Min.Y), Max, FVector2f(Min.X, Max.Y) })
+		{
+			const FVector2f Toward = FVector2f(Corner.X < (Min.X + Max.X) * 0.5f ? 1.f : -1.f, Corner.Y < (Min.Y + Max.Y) * 0.5f ? 1.f : -1.f);
+			const FVector2f Spot = Corner + Toward * (Inset * 0.5f);
+			AddDiamond(Mesh, Spot, 5.f, 5.f, Outer);
+			AddDiamondOutline(Mesh, Spot, 11.f, 11.f, 1.f, Inner);
+		}
+
+		// A small break with a diamond in the middle of the long sides, where the map names its directions.
+		for (const FVector2f& Spot : { FVector2f((Min.X + Max.X) * 0.5f, Min.Y), FVector2f((Min.X + Max.X) * 0.5f, Max.Y), FVector2f(Min.X, (Min.Y + Max.Y) * 0.5f), FVector2f(Max.X, (Min.Y + Max.Y) * 0.5f) })
+		{
+			AddDiamond(Mesh, Spot, 3.5f, 3.5f, Outer);
+		}
 	}
 
 	void MapDrawLine(FSlateWindowElementList& Elements, int32 Layer, const FGeometry& Geometry, const FVector2f& A, const FVector2f& B, const FLinearColor& Color, float Thickness)
 	{
 		FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), TArray<FVector2f>{ A, B }, ESlateDrawEffect::None, Color, true, Thickness);
-	}
-
-	void MapDrawBox(FSlateWindowElementList& Elements, int32 Layer, const FGeometry& Geometry, const FVector2f& Position, const FVector2f& Size, const FLinearColor& Color)
-	{
-		const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush("GenericWhiteBox");
-		FSlateDrawElement::MakeBox(Elements, Layer, Geometry.ToPaintGeometry(Size, FSlateLayoutTransform(Position)), WhiteBrush, ESlateDrawEffect::None, Color);
-	}
-
-	void MapDrawFrame(FSlateWindowElementList& Elements, int32 Layer, const FGeometry& Geometry, const FVector2f& Min, const FVector2f& Max, const FLinearColor& Color, float Thickness)
-	{
-		FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(),
-			TArray<FVector2f>{ Min, FVector2f(Max.X, Min.Y), Max, FVector2f(Min.X, Max.Y), Min },
-			ESlateDrawEffect::None, Color, true, Thickness);
 	}
 
 	void MapDrawPolygon(FSlateWindowElementList& Elements, int32 Layer, const FGeometry& Geometry, const FVector2f& Center, float Radius, int32 Sides, float StartDegrees, const FLinearColor& Color, float Thickness)
@@ -86,15 +99,6 @@ namespace
 			Points.Add(Center + FVector2f(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
 		}
 		FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Color, true, Thickness);
-	}
-
-	// A filled square turned 45 degrees.
-	void MapDrawDiamond(FSlateWindowElementList& Elements, int32 Layer, const FGeometry& Geometry, const FVector2f& Center, float HalfDiagonal, const FLinearColor& Color)
-	{
-		const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush("GenericWhiteBox");
-		const float Side = HalfDiagonal * 1.4142f;
-		FSlateDrawElement::MakeRotatedBox(Elements, Layer, Geometry.ToPaintGeometry(FVector2f(Side, Side), FSlateLayoutTransform(Center - FVector2f(Side, Side) * 0.5f)),
-			WhiteBrush, ESlateDrawEffect::None, UE_PI * 0.25f, TOptional<FVector2D>(), FSlateDrawElement::RelativeToElement, Color);
 	}
 
 	FString MapFormatDistance(float Cm)
@@ -460,11 +464,14 @@ void SAedirMap::CancelTravel()
 
 int32 SAedirMap::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const
 {
+	using namespace AedirUIStyle;
+
 	const FVector2f Size = AllottedGeometry.GetLocalSize();
-	const FSlateFontInfo SmallFont = FCoreStyle::GetDefaultFontStyle("Regular", 11);
-	const FSlateFontInfo LabelFont = FCoreStyle::GetDefaultFontStyle("Bold", 12);
-	const FSlateFontInfo BigFont = FCoreStyle::GetDefaultFontStyle("Bold", 20);
-	const FSlateFontInfo DirectionFont = FCoreStyle::GetDefaultFontStyle("Bold", 16);
+	const float Feather = 1.f / FMath::Max(AllottedGeometry.Scale, UE_KINDA_SMALL_NUMBER);
+	const FSlateFontInfo SmallFont = RegularFont(11.f, 30);
+	const FSlateFontInfo LabelFont = LightFont(14.f, 40);
+	const FSlateFontInfo BigFont = LightFont(26.f, 30);
+	const FSlateFontInfo DirectionFont = RegularFont(17.f);
 
 	const AAedirCreature* Pawn = Creature.Get();
 	UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
@@ -476,7 +483,16 @@ int32 SAedirMap::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeomet
 	const int32 FrameLayer = LayerId + 6;
 	const int32 DialogLayer = LayerId + 10;
 
-	MapDrawBox(OutDrawElements, BackgroundLayer, AllottedGeometry, FVector2f::ZeroVector, Size, MapParchment);
+	{
+		// Aged paper: a lighter middle under a darker top and bottom. The two patches break up the flat colour.
+		FAedirUIMesh Paper(Feather);
+		const FVector2f Middle(Size.X, Size.Y * 0.5f);
+		Paper.AddGradientRect(FVector2f::ZeroVector, Middle, MapParchmentDark, MapParchmentDark, MapParchment, MapParchment);
+		Paper.AddGradientRect(FVector2f(0.f, Size.Y * 0.5f), Size, MapParchment, MapParchment, MapParchmentDark, MapParchmentDark);
+		AddGlow(Paper, Size * FVector2f(0.32f, 0.38f), Size * 0.5f, FLinearColor(0.f, 0.f, 0.f, 0.16f));
+		AddGlow(Paper, Size * FVector2f(0.72f, 0.64f), Size * 0.42f, WithAlpha(MapParchment, 0.45f));
+		DrawMesh(OutDrawElements, BackgroundLayer, AllottedGeometry, Paper);
+	}
 
 	// Grid in world space, spacing chosen so the lines stay readable at every zoom.
 	float GridStep = MapGridSteps[UE_ARRAY_COUNT(MapGridSteps) - 1];
@@ -506,16 +522,10 @@ int32 SAedirMap::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeomet
 		MapDrawLine(OutDrawElements, GridLayer, AllottedGeometry, FVector2f(X, 0.f), FVector2f(X, Size.Y), Line % 5 == 0 ? MapGridMajor : MapGridMinor, 1.f);
 	}
 
-	// Darkened edges.
-	for (int32 Step = 0; Step < MapVignetteSteps; ++Step)
 	{
-		const float Fade = 1.f - static_cast<float>(Step) / MapVignetteSteps;
-		const FLinearColor Shade(0.f, 0.f, 0.f, 0.5f * Fade * Fade);
-		const float Offset = Step * MapVignetteStepPixels;
-		MapDrawBox(OutDrawElements, GridLayer + 1, AllottedGeometry, FVector2f(0.f, Offset), FVector2f(Size.X, MapVignetteStepPixels), Shade);
-		MapDrawBox(OutDrawElements, GridLayer + 1, AllottedGeometry, FVector2f(0.f, Size.Y - Offset - MapVignetteStepPixels), FVector2f(Size.X, MapVignetteStepPixels), Shade);
-		MapDrawBox(OutDrawElements, GridLayer + 1, AllottedGeometry, FVector2f(Offset, 0.f), FVector2f(MapVignetteStepPixels, Size.Y), Shade);
-		MapDrawBox(OutDrawElements, GridLayer + 1, AllottedGeometry, FVector2f(Size.X - Offset - MapVignetteStepPixels, 0.f), FVector2f(MapVignetteStepPixels, Size.Y), Shade);
+		FAedirUIMesh Edges(Feather);
+		AddVignette(Edges, Size, 0.f, 0.88f);
+		DrawMesh(OutDrawElements, GridLayer + 1, AllottedGeometry, Edges);
 	}
 
 	const bool bDialogOpen = !PendingMarkerId.IsNone();
@@ -536,7 +546,7 @@ int32 SAedirMap::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeomet
 			const FVector2f Unit = Length > 1.f ? Direction / Length : FVector2f::ZeroVector;
 			for (float Offset = 0.f; Offset < Length; Offset += 16.f)
 			{
-				MapDrawLine(OutDrawElements, MarkerLayer, AllottedGeometry, PlayerScreen + Unit * Offset, PlayerScreen + Unit * FMath::Min(Offset + 8.f, Length), FLinearColor(AedirUIStyle::Accent.R, AedirUIStyle::Accent.G, AedirUIStyle::Accent.B, 0.7f), 2.f);
+				MapDrawLine(OutDrawElements, MarkerLayer, AllottedGeometry, PlayerScreen + Unit * Offset, PlayerScreen + Unit * FMath::Min(Offset + 8.f, Length), WithAlpha(Ivory, 0.7f), 1.5f);
 			}
 		}
 
@@ -556,37 +566,40 @@ int32 SAedirMap::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeomet
 
 			const bool bHovered = Index == HoveredIndex;
 			const FString LabelText = Marker.Label.ToString();
+			FAedirUIMesh MarkerMesh(Feather);
 
 			if (Marker.Type == EAedirMarkerType::Custom)
 			{
-				const FLinearColor FlagColor = Marker.Color;
-				MapDrawLine(OutDrawElements, MarkerLayer, AllottedGeometry, Screen, Screen + FVector2f(0.f, -22.f), FlagColor, 2.f);
-				FSlateDrawElement::MakeLines(OutDrawElements, MarkerLayer, AllottedGeometry.ToPaintGeometry(),
-					TArray<FVector2f>{ Screen + FVector2f(0.f, -22.f), Screen + FVector2f(13.f, -17.f), Screen + FVector2f(0.f, -12.f) },
-					ESlateDrawEffect::None, FlagColor, true, 2.f);
+				const FVector2f Top = Screen + FVector2f(0.f, -22.f);
+				const FVector2f FlagPoints[] = { Top, Screen + FVector2f(13.f, -17.f), Screen + FVector2f(0.f, -12.f) };
+				MarkerMesh.AddLine(Screen, Top, 1.6f, Marker.Color, Marker.Color);
+				MarkerMesh.AddConvex(FlagPoints, Marker.Color);
+				DrawMesh(OutDrawElements, MarkerLayer, AllottedGeometry, MarkerMesh);
 				continue;
 			}
 
 			if (!Marker.bDiscovered)
 			{
-				const FLinearColor UnknownColor = bHovered ? AedirUIStyle::Accent : MapUnknownColor;
-				MapDrawText(OutDrawElements, MarkerLayer, AllottedGeometry, TEXT("?"), BigFont, Screen - FVector2f(0.f, 14.f), UnknownColor, true);
+				const FLinearColor UnknownColor = bHovered ? IvoryBright : MapUnknownColor;
+				MapDrawText(OutDrawElements, MarkerLayer, AllottedGeometry, TEXT("?"), BigFont, Screen - FVector2f(0.f, 18.f), UnknownColor, true);
 				continue;
 			}
 
 			const FLinearColor Base = Marker.Type == EAedirMarkerType::Mission ? MapMissionColor : MapLocationColor;
-			const FLinearColor Color = bHovered ? FLinearColor::White : Base;
+			const FLinearColor Color = bHovered ? IvoryBright : Base;
 			const float Radius = bHovered ? 11.f : 8.f;
+			AddDiamond(MarkerMesh, Screen, Radius + 3.f, Radius + 3.f, FLinearColor(0.f, 0.f, 0.f, 0.55f));
 			if (Marker.Type == EAedirMarkerType::Mission)
 			{
-				MapDrawDiamond(OutDrawElements, MarkerLayer, AllottedGeometry, Screen, Radius, Color);
+				AddDiamond(MarkerMesh, Screen, Radius, Radius, Color);
 			}
 			else
 			{
-				MapDrawPolygon(OutDrawElements, MarkerLayer, AllottedGeometry, Screen, Radius, 16, 0.f, Color, 2.f);
-				MapDrawDiamond(OutDrawElements, MarkerLayer, AllottedGeometry, Screen, 4.f, Color);
+				AddDiamondOutline(MarkerMesh, Screen, Radius, Radius, 1.4f, Color);
+				AddDiamond(MarkerMesh, Screen, Radius * 0.4f, Radius * 0.4f, Color);
 			}
-			MapDrawText(OutDrawElements, MarkerLayer, AllottedGeometry, LabelText, bHovered ? LabelFont : SmallFont, Screen + FVector2f(0.f, 14.f), bHovered ? FLinearColor::White : AedirUIStyle::Text, true);
+			DrawMesh(OutDrawElements, MarkerLayer, AllottedGeometry, MarkerMesh);
+			MapDrawText(OutDrawElements, MarkerLayer, AllottedGeometry, LabelText, bHovered ? LabelFont : SmallFont, Screen + FVector2f(0.f, 15.f), bHovered ? IvoryBright : Ivory, true);
 		}
 
 		// Tooltip for the hovered marker.
@@ -597,14 +610,19 @@ int32 SAedirMap::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeomet
 			const FString Detail = Marker.bDiscovered
 				? FString::Printf(TEXT("%s away   -   click to fast travel"), *MapFormatDistance(static_cast<float>((Marker.Location - PlayerLocation).Size2D())))
 				: FString(TEXT("Get closer to discover it"));
-			const float TipWidth = FMath::Max(MapMeasureWidth(Title, LabelFont), MapMeasureWidth(Detail, SmallFont)) + 24.f;
-			FVector2f TipPosition = WorldToScreen(Marker.Location, Size) + FVector2f(18.f, -52.f);
+			const float TipWidth = FMath::Max(MapMeasureWidth(Title, LabelFont), MapMeasureWidth(Detail, SmallFont)) + 40.f;
+			FVector2f TipPosition = WorldToScreen(Marker.Location, Size) + FVector2f(18.f, -58.f);
 			TipPosition.X = FMath::Clamp(TipPosition.X, 8.f, Size.X - TipWidth - 8.f);
 			TipPosition.Y = FMath::Clamp(TipPosition.Y, 8.f, Size.Y - 60.f);
-			MapDrawBox(OutDrawElements, MarkerLayer + 1, AllottedGeometry, TipPosition, FVector2f(TipWidth, 46.f), FLinearColor(0.f, 0.f, 0.f, 0.85f));
-			MapDrawFrame(OutDrawElements, MarkerLayer + 2, AllottedGeometry, TipPosition, TipPosition + FVector2f(TipWidth, 46.f), AedirUIStyle::Line, 1.f);
-			MapDrawText(OutDrawElements, MarkerLayer + 2, AllottedGeometry, Title, LabelFont, TipPosition + FVector2f(12.f, 4.f), AedirUIStyle::Accent, false);
-			MapDrawText(OutDrawElements, MarkerLayer + 2, AllottedGeometry, Detail, SmallFont, TipPosition + FVector2f(12.f, 25.f), AedirUIStyle::Text, false);
+
+			FAedirUIMesh Tip(Feather);
+			const FLinearColor TipDark(0.f, 0.f, 0.f, 0.8f);
+			AddGradientPanel(Tip, TipPosition, TipPosition + FVector2f(TipWidth + 30.f, 50.f), TipPosition.X + TipWidth * 0.7f, TipDark);
+			AddFadedLine(Tip, TipPosition + FVector2f(0.f, 27.f), TipPosition + FVector2f(TipWidth, 27.f), 1.f, Metal, 0.f, 0.7f);
+			DrawMesh(OutDrawElements, MarkerLayer + 1, AllottedGeometry, Tip);
+
+			MapDrawText(OutDrawElements, MarkerLayer + 2, AllottedGeometry, Title, LabelFont, TipPosition + FVector2f(12.f, 3.f), IvoryBright, false);
+			MapDrawText(OutDrawElements, MarkerLayer + 2, AllottedGeometry, Detail, SmallFont, TipPosition + FVector2f(12.f, 30.f), Ivory, false);
 		}
 	}
 
@@ -618,19 +636,42 @@ int32 SAedirMap::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeomet
 		const FVector2f BackLeft = PlayerScreen - Direction * 9.f + Side * 9.f;
 		const FVector2f BackRight = PlayerScreen - Direction * 9.f - Side * 9.f;
 		const FVector2f Notch = PlayerScreen - Direction * 4.f;
-		FSlateDrawElement::MakeLines(OutDrawElements, MarkerLayer + 1, AllottedGeometry.ToPaintGeometry(),
-			TArray<FVector2f>{ Tip, BackLeft, Notch, BackRight, Tip }, ESlateDrawEffect::None, FLinearColor::White, true, 3.f);
+		FAedirUIMesh Arrow(Feather);
+		const FVector2f ShadowOffset(0.f, 2.f);
+		const FVector2f ShadowLeft[] = { Tip + ShadowOffset, Notch + ShadowOffset, BackLeft + ShadowOffset };
+		const FVector2f ShadowRight[] = { Tip + ShadowOffset, BackRight + ShadowOffset, Notch + ShadowOffset };
+		const FVector2f LeftWing[] = { Tip, Notch, BackLeft };
+		const FVector2f RightWing[] = { Tip, BackRight, Notch };
+		Arrow.AddConvex(ShadowLeft, FLinearColor(0.f, 0.f, 0.f, 0.6f));
+		Arrow.AddConvex(ShadowRight, FLinearColor(0.f, 0.f, 0.f, 0.6f));
+		Arrow.AddConvex(LeftWing, IvoryBright);
+		Arrow.AddConvex(RightWing, Metal);
+		DrawMesh(OutDrawElements, MarkerLayer + 1, AllottedGeometry, Arrow);
 	}
 
 	// Frame, title and compass directions.
 	const FVector2f FrameMin(MapFramePadding, MapFramePadding);
 	const FVector2f FrameMax = Size - FrameMin;
-	MapDrawFrame(OutDrawElements, FrameLayer, AllottedGeometry, FrameMin, FrameMax, AedirUIStyle::Accent, 2.f);
-	MapDrawFrame(OutDrawElements, FrameLayer, AllottedGeometry, FrameMin + FVector2f(6.f, 6.f), FrameMax - FVector2f(6.f, 6.f), AedirUIStyle::Line, 1.f);
-	MapDrawText(OutDrawElements, FrameLayer, AllottedGeometry, TEXT("N"), DirectionFont, FVector2f(Size.X * 0.5f, FrameMin.Y + 12.f), AedirUIStyle::Accent, true);
-	MapDrawText(OutDrawElements, FrameLayer, AllottedGeometry, TEXT("S"), DirectionFont, FVector2f(Size.X * 0.5f, FrameMax.Y - 34.f), AedirUIStyle::Accent, true);
-	MapDrawText(OutDrawElements, FrameLayer, AllottedGeometry, TEXT("W"), DirectionFont, FVector2f(FrameMin.X + 18.f, Size.Y * 0.5f - 10.f), AedirUIStyle::Accent, false);
-	MapDrawText(OutDrawElements, FrameLayer, AllottedGeometry, TEXT("E"), DirectionFont, FVector2f(FrameMax.X - 30.f, Size.Y * 0.5f - 10.f), AedirUIStyle::Accent, false);
+	{
+		FAedirUIMesh Frame(Feather);
+		MapAddFrame(Frame, FrameMin, FrameMax);
+
+		// Soft dark bands so the title and the hints stay readable over any marker.
+		const FLinearColor BandDark(0.f, 0.f, 0.f, 0.6f);
+		const FLinearColor BandClear(0.f, 0.f, 0.f, 0.f);
+		const float Middle = Size.X * 0.5f;
+		Frame.AddGradientRect(FVector2f(Middle - 420.f, FrameMin.Y + 8.f), FVector2f(Middle, FrameMin.Y + 76.f), BandClear, BandDark, BandClear, BandClear);
+		Frame.AddGradientRect(FVector2f(Middle, FrameMin.Y + 8.f), FVector2f(Middle + 420.f, FrameMin.Y + 76.f), BandDark, BandClear, BandClear, BandClear);
+		AddOrnamentRule(Frame, FVector2f(Middle, FrameMin.Y + 62.f), 240.f, Metal);
+		DrawMesh(OutDrawElements, FrameLayer, AllottedGeometry, Frame);
+	}
+
+	const int32 FrameTextLayer = FrameLayer + 1;
+	DrawText(OutDrawElements, FrameTextLayer, AllottedGeometry, TEXT("AEDIR"), TitleFont(22.f), FVector2f(Size.X * 0.5f, FrameMin.Y + 16.f), IvoryBright, EAedirTextAlign::Center, 0.8f);
+	MapDrawText(OutDrawElements, FrameTextLayer, AllottedGeometry, TEXT("N"), DirectionFont, FVector2f(Size.X * 0.5f, FrameMin.Y + 76.f), Ivory, true);
+	MapDrawText(OutDrawElements, FrameTextLayer, AllottedGeometry, TEXT("S"), DirectionFont, FVector2f(Size.X * 0.5f, FrameMax.Y - 62.f), Ivory, true);
+	MapDrawText(OutDrawElements, FrameTextLayer, AllottedGeometry, TEXT("W"), DirectionFont, FVector2f(FrameMin.X + 18.f, Size.Y * 0.5f - 12.f), Ivory, false);
+	MapDrawText(OutDrawElements, FrameTextLayer, AllottedGeometry, TEXT("E"), DirectionFont, FVector2f(FrameMax.X - 34.f, Size.Y * 0.5f - 12.f), Ivory, false);
 
 	// Scale bar.
 	const float BarMeters = [this]()
@@ -640,46 +681,55 @@ int32 SAedirMap::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeomet
 		return Target / Magnitude >= 5.f ? Magnitude * 5.f : (Target / Magnitude >= 2.f ? Magnitude * 2.f : Magnitude);
 	}();
 	const float BarPixels = BarMeters / (CmPerPixel * MapMetersPerCm);
-	const FVector2f BarStart(FrameMin.X + 28.f, FrameMax.Y - 44.f);
-	MapDrawLine(OutDrawElements, FrameLayer, AllottedGeometry, BarStart, BarStart + FVector2f(BarPixels, 0.f), AedirUIStyle::Text, 2.f);
-	MapDrawLine(OutDrawElements, FrameLayer, AllottedGeometry, BarStart + FVector2f(0.f, -5.f), BarStart + FVector2f(0.f, 5.f), AedirUIStyle::Text, 2.f);
-	MapDrawLine(OutDrawElements, FrameLayer, AllottedGeometry, BarStart + FVector2f(BarPixels, -5.f), BarStart + FVector2f(BarPixels, 5.f), AedirUIStyle::Text, 2.f);
-	MapDrawText(OutDrawElements, FrameLayer, AllottedGeometry, MapFormatDistance(BarMeters / MapMetersPerCm), SmallFont, BarStart + FVector2f(0.f, 8.f), AedirUIStyle::Text, false);
+	const FVector2f BarStart(FrameMin.X + 34.f, FrameMax.Y - 46.f);
+	{
+		FAedirUIMesh Scale(Feather);
+		Scale.AddLine(BarStart, BarStart + FVector2f(BarPixels, 0.f), 1.f, Ivory, Ivory);
+		AddDiamond(Scale, BarStart, 2.5f, 5.f, Ivory);
+		AddDiamond(Scale, BarStart + FVector2f(BarPixels, 0.f), 2.5f, 5.f, Ivory);
+		DrawMesh(OutDrawElements, FrameLayer, AllottedGeometry, Scale);
+	}
+	MapDrawText(OutDrawElements, FrameTextLayer, AllottedGeometry, MapFormatDistance(BarMeters / MapMetersPerCm), SmallFont, BarStart + FVector2f(0.f, 7.f), Ivory, false);
 
-	MapDrawText(OutDrawElements, FrameLayer, AllottedGeometry, TEXT("[WASD] Pan   [Wheel] Zoom   [LMB] Fast travel   [RMB] Place marker   [Space] Centre   [Esc] Close"), SmallFont,
-		FVector2f(Size.X * 0.5f, FrameMax.Y - 30.f), AedirUIStyle::TextDim, true);
+	DrawText(OutDrawElements, FrameTextLayer, AllottedGeometry, TEXT("[WASD] PAN     [WHEEL] ZOOM     [LMB] FAST TRAVEL     [RMB] PLACE MARKER     [SPACE] CENTRE     [ESC] CLOSE"), RegularFont(10.f, 60),
+		FVector2f(Size.X * 0.5f, FrameMax.Y - 30.f), TextDim, EAedirTextAlign::Center, 0.8f);
 
 	if (MessageRemaining > 0.f)
 	{
 		const float Alpha = FMath::Clamp(MessageRemaining / 0.5f, 0.f, 1.f);
-		MapDrawText(OutDrawElements, FrameLayer, AllottedGeometry, Message.ToString(), LabelFont, FVector2f(Size.X * 0.5f, FrameMin.Y + 54.f), FLinearColor(1.f, 0.82f, 0.5f, Alpha), true);
+		MapDrawText(OutDrawElements, FrameTextLayer, AllottedGeometry, Message.ToString(), LabelFont, FVector2f(Size.X * 0.5f, FrameMin.Y + 104.f), WithAlpha(IvoryBright, Alpha), true);
 	}
 
 	// Confirmation dialog.
 	if (bDialogOpen)
 	{
-		MapDrawBox(OutDrawElements, DialogLayer, AllottedGeometry, FVector2f::ZeroVector, Size, FLinearColor(0.f, 0.f, 0.f, 0.6f));
-
 		const FMapDialogLayout Layout = MapGetDialogLayout(Size);
-		MapDrawBox(OutDrawElements, DialogLayer + 1, AllottedGeometry, Layout.Position, Layout.Size, FLinearColor(0.05f, 0.04f, 0.03f, 0.98f));
-		MapDrawFrame(OutDrawElements, DialogLayer + 2, AllottedGeometry, Layout.Position, Layout.Position + Layout.Size, AedirUIStyle::Accent, 2.f);
+		const FVector2f ButtonSize(MapButtonWidth, MapButtonHeight);
+		const FVector2f ButtonPositions[] = { Layout.YesPosition, Layout.NoPosition };
+		const TCHAR* const ButtonLabels[] = { TEXT("YES"), TEXT("NO") };
+
+		FAedirUIMesh Dialog(Feather);
+		AddModalBand(Dialog, Size, Size.Y * 0.5f, MapDialogHeight * 0.5f);
+		for (int32 Button = 0; Button < 2; ++Button)
+		{
+			if (MapInside(MousePosition, ButtonPositions[Button], ButtonSize))
+			{
+				AddDiamond(Dialog, ButtonPositions[Button] + FVector2f(ButtonSize.X * 0.5f - 44.f, ButtonSize.Y * 0.5f), 4.5f, 4.5f, IvoryBright);
+			}
+		}
+		DrawMesh(OutDrawElements, DialogLayer, AllottedGeometry, Dialog);
 
 		const FAedirMapMarker* Target = Markers ? Markers->FindMarker(PendingMarkerId) : nullptr;
 		if (Target)
 		{
-			MapDrawText(OutDrawElements, DialogLayer + 2, AllottedGeometry, Target->Label.ToString(), LabelFont, FVector2f(Size.X * 0.5f, Layout.Position.Y + 16.f), AedirUIStyle::Accent, true);
+			DrawText(OutDrawElements, DialogLayer + 1, AllottedGeometry, Target->Label.ToString().ToUpper(), RegularFont(11.f, 140), FVector2f(Size.X * 0.5f, Layout.Position.Y + 28.f), Metal, EAedirTextAlign::Center);
 		}
-		MapDrawText(OutDrawElements, DialogLayer + 2, AllottedGeometry, TEXT("Are you sure you want to fast travel?"), BigFont, FVector2f(Size.X * 0.5f, Layout.Position.Y + 44.f), AedirUIStyle::Text, true);
+		MapDrawText(OutDrawElements, DialogLayer + 1, AllottedGeometry, TEXT("Fast travel here?"), BigFont, FVector2f(Size.X * 0.5f, Layout.Position.Y + 52.f), IvoryBright, true);
 
-		const FVector2f ButtonSize(MapButtonWidth, MapButtonHeight);
-		const FVector2f ButtonPositions[] = { Layout.YesPosition, Layout.NoPosition };
-		const TCHAR* const ButtonLabels[] = { TEXT("Yes  [Y]"), TEXT("No  [N]") };
 		for (int32 Button = 0; Button < 2; ++Button)
 		{
 			const bool bHot = MapInside(MousePosition, ButtonPositions[Button], ButtonSize);
-			MapDrawBox(OutDrawElements, DialogLayer + 2, AllottedGeometry, ButtonPositions[Button], ButtonSize, bHot ? AedirUIStyle::PanelSelected : AedirUIStyle::Panel);
-			MapDrawFrame(OutDrawElements, DialogLayer + 3, AllottedGeometry, ButtonPositions[Button], ButtonPositions[Button] + ButtonSize, bHot ? AedirUIStyle::Accent : AedirUIStyle::Line, 1.f);
-			MapDrawText(OutDrawElements, DialogLayer + 3, AllottedGeometry, ButtonLabels[Button], LabelFont, ButtonPositions[Button] + FVector2f(ButtonSize.X * 0.5f, 12.f), bHot ? FLinearColor::White : AedirUIStyle::Text, true);
+			DrawText(OutDrawElements, DialogLayer + 1, AllottedGeometry, ButtonLabels[Button], TitleFont(18.f), ButtonPositions[Button] + FVector2f(ButtonSize.X * 0.5f, 5.f), bHot ? IvoryBright : Ivory, EAedirTextAlign::Center);
 		}
 	}
 

@@ -65,6 +65,19 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float ArmBalanceSpread = 0.f;
 
+	// Direction of the blade in each hand and how far the hand turns to it. Zero alpha when no weapon is up.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	FVector LeftWeaponDirWorld = FVector::ForwardVector;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	FVector RightWeaponDirWorld = FVector::ForwardVector;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float LeftWeaponAimAlpha = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float RightWeaponAimAlpha = 0.f;
+
 	// Elbow flexion in degrees.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float ElbowBend = 0.f;
@@ -253,7 +266,7 @@ public:
 	float StrideWalkCm = 105.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float StrideRunCm = 250.f;
+	float StrideRunCm = 190.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float SideStrideScale = 0.85f;
@@ -327,7 +340,7 @@ public:
 
 	// Factor on the pelvis bounce at a full run.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float HipBounceRunScale = 2.f;
+	float HipBounceRunScale = 0.7f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HipDynamicMinCm = -40.f;
@@ -429,7 +442,7 @@ public:
 	float StepLandingShareWalk = 0.27f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float StepLandingShareRun = 0.26f;
+	float StepLandingShareRun = 0.24f;
 
 	// The landing point lies at most this many seconds of travel ahead of the hip.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")

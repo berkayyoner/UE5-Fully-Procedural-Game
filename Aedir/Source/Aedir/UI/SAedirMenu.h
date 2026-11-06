@@ -9,6 +9,7 @@ class SBorder;
 class SScrollBox;
 class SVerticalBox;
 class UWorld;
+struct FAedirUIMesh;
 
 enum class EAedirMenuCategory : uint8
 {
@@ -27,13 +28,19 @@ enum class EAedirMenuLineKind : uint8
 	Body,
 	Dim,
 	Progress,
-	Spacer
+	Spacer,
+	// Ornament line under a title.
+	Rule,
+	// One row of "LABEL value" pairs, tab separated.
+	Pair
 };
 
 struct FAedirMenuRow
 {
 	FString Name;
 	FString Value;
+	// Small second line under the name.
+	FString SubText;
 	bool bDimmed = false;
 	// Inventory only: true for a hand row (Index is the hand), false for a waist slot (Index is the slot).
 	bool bIsHand = false;
@@ -45,7 +52,7 @@ struct FAedirMenuRow
 
 	bool operator==(const FAedirMenuRow& Other) const
 	{
-		return Name == Other.Name && Value == Other.Value && bDimmed == Other.bDimmed
+		return Name == Other.Name && Value == Other.Value && SubText == Other.SubText && bDimmed == Other.bDimmed
 			&& bIsHand == Other.bIsHand && bIsBackpack == Other.bIsBackpack && Index == Other.Index && QuestId == Other.QuestId;
 	}
 };
@@ -68,6 +75,15 @@ namespace AedirMenuContent
 	void BuildJournalDetail(const UWorld* World, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines);
 	// Replaces the children of Box with one widget per line. Progress feeds the Progress lines.
 	void PopulateDetail(SVerticalBox& Box, const TArray<FAedirMenuLine>& NewLines, const TFunction<TOptional<float>()>& Progress);
+	void AddPairLine(TArray<FAedirMenuLine>& Lines, TConstArrayView<FString> LabelsAndValues);
+
+	// Vignette, the list panel fading out to the right, the double line between list and details.
+	void PaintListBackdrop(const FVector2f& Size, FAedirUIMesh& Mesh, float VignetteStrength);
+	// Plain text row with a small marker instead of a filled background. MarkerStrength is 0 when no marker should show.
+	TSharedRef<SWidget> MakeListRow(const FAedirMenuRow& Row, const FSlateFontInfo& Font, TFunction<FLinearColor()> TextColor, TFunction<float()> MarkerStrength);
+	// The layout shared by the category menus and the pause menu.
+	TSharedRef<SWidget> MakeListScreen(const TSharedRef<SWidget>& Header, const TSharedRef<SWidget>& List, const TSharedRef<SWidget>& Detail, const TAttribute<FText>& Status, const TAttribute<FText>& Hint, float VignetteStrength);
+	TSharedRef<SWidget> MakeTitle(const TAttribute<FText>& Title);
 }
 
 // Inventory tabs shown at the top of the Inventory category.
@@ -120,10 +136,11 @@ private:
 	void ScrollToSelection();
 	float GetSelectedSkillProgress() const;
 
+	FText GetTitleText() const;
+	FText GetStatusText() const;
 	FText GetTabText(int32 Index) const;
 	FLinearColor GetTabColor(int32 Index) const;
-	FLinearColor GetRowBackground(int32 Index) const;
-	FLinearColor GetRowAccent(int32 Index) const;
+	float GetRowMarker(int32 Index) const;
 	FLinearColor GetRowTextColor(int32 Index) const;
 
 	TWeakObjectPtr<AAedirCreature> Creature;

@@ -34,7 +34,8 @@ namespace
 	constexpr float AedirFootDropLiftLimit = 0.25f;
 	constexpr float AedirLegComfortShare = 0.985f;
 	constexpr float AedirFootDropWalkMaxCm = 16.f;
-	constexpr float AedirFootDropRunMaxCm = 10.f;
+	constexpr float AedirFootDropRunMaxCm = 6.f;
+	constexpr float AedirStairMinSpeedScale = 0.6f;
 	constexpr float AedirFootDropDownSpeed = 20.f;
 	constexpr float AedirFootDropUpSpeed = 8.f;
 	constexpr float AedirMinGaitCyclesPerSecond = 0.5f;
@@ -413,6 +414,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.LeftFootRot = ComputeFootTilt(TargetNormal[0], ActorUp, GaitState.LeftFootRot, DeltaTime);
 	GaitState.RightFootRot = ComputeFootTilt(TargetNormal[1], ActorUp, GaitState.RightFootRot, DeltaTime);
 
+	// Stairs make the body climb more slowly.
+	MovementComponent->SetStairSpeedScale(FMath::GetMappedRangeValueClamped(FVector2f(StairStrideMultiplier, 1.f), FVector2f(AedirStairMinSpeedScale, 1.f), StairFactor));
+
 	const float RunTarget = MovementComponent->IsRunningNow() ? SpeedAlpha : 0.f;
 	RunBlend = FMath::FInterpTo(RunBlend, RunTarget, DeltaTime, AedirRunBlendInterpSpeed);
 
@@ -550,6 +554,22 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.ArmSwingRight *= 1.f - RightReachAlpha;
 	const float BalanceNow = BalanceComponent ? BalanceComponent->GetBalance() : 1.f;
 	GaitState.ArmBalanceSpread = FMath::FInterpTo(GaitState.ArmBalanceSpread, FMath::Clamp((0.85f - BalanceNow) / 0.5f, 0.f, 1.f), DeltaTime, 10.f);
+	const auto ReadWeaponAim = [Combat](EAedirHand Hand, FVector& OutDirection, float& OutAlpha)
+	{
+		FVector Direction = FVector::ForwardVector;
+		float Alpha = 0.f;
+		if (Combat && Combat->GetWeaponAim(Hand, Direction, Alpha))
+		{
+			OutDirection = Direction;
+			OutAlpha = Alpha;
+		}
+		else
+		{
+			OutAlpha = 0.f;
+		}
+	};
+	ReadWeaponAim(EAedirHand::Left, GaitState.LeftWeaponDirWorld, GaitState.LeftWeaponAimAlpha);
+	ReadWeaponAim(EAedirHand::Right, GaitState.RightWeaponDirWorld, GaitState.RightWeaponAimAlpha);
 	GaitState.LeftArmReachAlpha = LeftReachAlpha;
 	GaitState.RightArmReachAlpha = RightReachAlpha;
 	GaitState.LeftReachTargetWorld = LeftReachTarget;

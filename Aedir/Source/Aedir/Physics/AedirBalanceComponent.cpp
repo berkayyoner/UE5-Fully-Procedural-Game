@@ -2,6 +2,7 @@
 
 #include "Combat/AedirCombatComponent.h"
 #include "Items/AedirInteractionComponent.h"
+#include "Items/AedirItemActor.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
@@ -984,6 +985,12 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 	AActor* Owner = GetOwner();
 	// Creatures hurt each other through combat; walking into or over a body, a ragdoll included, is no impact.
 	if (!IsAuthoritative() || OtherActor == Owner || Cast<AAedirCreature>(OtherActor))
+	{
+		return;
+	}
+
+	// What the body has just let go of is not an impact.
+	if (const AAedirItemActor* Released = Cast<AAedirItemActor>(OtherActor); Released && Released->WasJustReleasedBy(Owner))
 	{
 		return;
 	}

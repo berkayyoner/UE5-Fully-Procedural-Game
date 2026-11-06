@@ -53,6 +53,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	float WeaponLength = 0.f;
 
+	// Grip point along the long axis of the item, used when the item is held in the closed hand.
+	float GripLocalCm = 0.f;
+	bool bUseHandGrip = false;
+
 	// How the item injures: blunt force, cutting edge or point.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	EAedirDamageType DamageType = EAedirDamageType::Blunt;
@@ -114,6 +118,12 @@ public:
 	// Server only.
 	void Detach(const FVector& ThrowVelocity);
 
+	// Takes the item in a hand exactly where the hand touches it, for big objects with no handle.
+	void AttachToHandInPlace(AAedirCreature* Creature, EAedirHand Hand);
+
+	// True for a short while after this creature let go of the item, so a dropped item does not count as hitting it.
+	bool WasJustReleasedBy(const AActor* Creature) const;
+
 	// Server only. Hides the item and keeps it with the creature without any bone attachment.
 	void AttachToBackpack(AAedirCreature* Creature);
 
@@ -155,5 +165,9 @@ private:
 	void SetFreePhysics(bool bFree);
 	void ApplyItemMass();
 	FTransform ComputeHoldTransform(const FTransform& HoldOffset) const;
+	FTransform ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const;
+
+	TWeakObjectPtr<const AActor> LastHolder;
+	double LastReleaseTime = -1000.0;
 	FVector GetStaticBoundsCenter() const;
 };

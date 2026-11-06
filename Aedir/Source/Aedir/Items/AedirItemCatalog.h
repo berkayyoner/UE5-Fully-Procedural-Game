@@ -27,6 +27,9 @@ struct AEDIR_API FAedirItemDef
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	float WeaponLengthCm = 0.f;
 
+	// Where the hand closes on the item, in cm along its long axis from the centre. Negative is towards the pommel.
+	float GripCm = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	EAedirDamageType DamageType = EAedirDamageType::Blunt;
 

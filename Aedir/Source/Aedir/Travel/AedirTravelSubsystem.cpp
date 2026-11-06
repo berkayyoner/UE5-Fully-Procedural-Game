@@ -14,6 +14,7 @@
 #include "HUD/AedirMarkerSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "Travel/AedirTravelLogic.h"
+#include "UI/AedirMenuSubsystem.h"
 #include "UI/SAedirNotifications.h"
 #include "UI/SAedirTravelOverlay.h"
 
@@ -95,7 +96,13 @@ void UAedirTravelSubsystem::EnsureNotifications()
 		return;
 	}
 
-	Notifications = SNew(SAedirNotifications);
+	Notifications = SNew(SAedirNotifications)
+		.AvoidMenu_Lambda([this]()
+		{
+			const ULocalPlayer* LocalPlayer = GetLocalPlayer();
+			const UAedirMenuSubsystem* Menus = LocalPlayer ? LocalPlayer->GetSubsystem<UAedirMenuSubsystem>() : nullptr;
+			return Menus && Menus->IsListMenuOpen();
+		});
 	GEngine->GameViewport->AddViewportWidgetContent(Notifications.ToSharedRef(), TravelNotificationZOrder);
 }
 
