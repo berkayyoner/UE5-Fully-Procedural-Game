@@ -11,6 +11,9 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Dev/AedirDevTools.h"
+#include "Engine/GameViewportClient.h"
+#include "Engine/Engine.h"
+#include "UI/SAedirConsole.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Physics/AedirBalanceComponent.h"
@@ -98,6 +101,12 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 	WeatherEffects = CreateDefaultSubobject<UAedirWeatherEffectsComponent>(TEXT("WeatherEffects"));
 }
 
+void AAedirPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	CloseConsole();
+	Super::EndPlay(EndPlayReason);
+}
+
 void AAedirPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
@@ -141,6 +150,18 @@ void AAedirPlayerCharacter::BeginPlay()
 				}
 			}
 		}), 2.0f, false);
+	}
+	else if (!bStartupCommandsRan && bSpawnTestItemsOnStart && IsLocallyControlled() && HasAuthority())
+	{
+		// Grab and inventory tests need something to pick up, so a few catalog items drop in front of the player.
+		FTimerHandle TestItemTimer;
+		GetWorldTimerManager().SetTimer(TestItemTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			for (const TCHAR* ItemId : { TEXT("Longsword"), TEXT("Mace"), TEXT("Club"), TEXT("Boulder") })
+			{
+				UAedirDevTools::Execute(this, TEXT("SpawnItem"), ItemId);
+			}
+		}), 1.5f, false);
 	}
 #endif
 }
@@ -233,6 +254,7 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 
 	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);
+	PlayerInputComponent->BindKey(EKeys::Tilde, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
 	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AAedirPlayerCharacter::HandleDynamicKickPressed);
 }
 
@@ -371,9 +393,10 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 			else
 			{
 				// The pivot follows the pelvis height with a slight delay, so steps, jumps and landings reach the camera.
-				const float PelvisHeight = static_cast<float>(PelvisWorld.Z - GetActorLocation().Z);
-				CameraPelvisBaseline = bCameraStateInitialized ? FMath::FInterpTo(CameraPelvisBaseline, PelvisHeight, DeltaSeconds, 0.6f) : PelvisHeight;
-				TargetRelative.Z += (PelvisHeight - CameraPelvisBaseline) * CameraPelvisInfluence;
+				// Horizontally too: sway, lean and step shifts of the pelvis move the pivot a little.
+				const FVector PelvisLocal = GetActorTransform().InverseTransformPositionNoScale(PelvisWorld);
+				CameraPelvisBaseline = bCameraStateInitialized ? FMath::VInterpTo(CameraPelvisBaseline, PelvisLocal, DeltaSeconds, 0.6f) : PelvisLocal;
+				TargetRelative += (PelvisLocal - CameraPelvisBaseline) * CameraPelvisInfluence;
 			}
 		}
 
@@ -464,16 +487,8 @@ void AAedirPlayerCharacter::HandleDynamicKickPressed()
 		return;
 	}
 
-	// A dynamic kick throws the whole body into the kick: a lunge forward with the leg, on top of the speed already carried.
-	if (Combat->StartKick())
-	{
-		const FVector Forward = GetActorForwardVector().GetSafeNormal2D();
-		LaunchCharacter(Forward * DynamicKickLungeSpeed + FVector(0.f, 0.f, DynamicKickLiftSpeed), false, false);
-		if (HasAuthority() && Stats)
-		{
-			Stats->ConsumeStamina(DynamicKickExtraStamina);
-		}
-	}
+	// The kick stays where the body stands: the leg lifts slowly, the knee comes up to the belly and the foot snaps out.
+	Combat->StartKick();
 }
 
 void AAedirPlayerCharacter::HandleKickPressed()
@@ -800,6 +815,98 @@ void AAedirPlayerCharacter::DebugBody()
 void AAedirPlayerCharacter::DevHelp()
 {
 	RunDevCommand(TEXT("DevHelp"), FString(), false);
+}
+
+void AAedirPlayerCharacter::SetStat(const FString& StatName, float Value)
+{
+	RunDevCommand(TEXT("SetStat"), FString::Printf(TEXT("%s %f"), *StatName, Value), true);
+}
+
+void AAedirPlayerCharacter::ShowStats()
+{
+	RunDevCommand(TEXT("Stats"), FString(), false);
+}
+
+void AAedirPlayerCharacter::Push(float Strength)
+{
+	RunDevCommand(TEXT("Push"), FString::Printf(TEXT("%f"), Strength), true);
+}
+
+void AAedirPlayerCharacter::Knockdown()
+{
+	RunDevCommand(TEXT("Knockdown"), FString(), true);
+}
+
+void AAedirPlayerCharacter::FallTest(float HeightCm)
+{
+	RunDevCommand(TEXT("FallTest"), FString::Printf(TEXT("%f"), HeightCm), true);
+}
+
+void AAedirPlayerCharacter::ToggleConsole()
+{
+	if (ConsoleWidget.IsValid())
+	{
+		CloseConsole();
+		return;
+	}
+
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	if (!PlayerController || !IsLocallyControlled() || !GEngine || !GEngine->GameViewport)
+	{
+		return;
+	}
+
+	ConsoleWidget = SNew(SAedirConsole)
+		.OnCommand(FAedirConsoleCommand::CreateLambda([this](const FString& Command)
+		{
+			if (APlayerController* Controller = Cast<APlayerController>(GetController()))
+			{
+				const FString Output = Controller->ConsoleCommand(Command, false);
+				if (!Output.IsEmpty())
+				{
+					ConsoleWidget->AddLogLine(Output);
+				}
+			}
+		}))
+		.OnClose(FSimpleDelegate::CreateUObject(this, &AAedirPlayerCharacter::CloseConsole));
+	GEngine->GameViewport->AddViewportWidgetContent(ConsoleWidget.ToSharedRef(), 90);
+
+	ConsoleReportHandle = UAedirDevTools::OnReported().AddLambda([this](const FString& Message)
+	{
+		if (ConsoleWidget.IsValid())
+		{
+			ConsoleWidget->AddLogLine(Message, FLinearColor(0.6f, 1.f, 0.7f, 1.f));
+		}
+	});
+
+	FInputModeGameAndUI InputMode;
+	InputMode.SetWidgetToFocus(ConsoleWidget);
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	InputMode.SetHideCursorDuringCapture(false);
+	PlayerController->SetInputMode(InputMode);
+	PlayerController->SetShowMouseCursor(true);
+	ConsoleWidget->FocusInput();
+}
+
+void AAedirPlayerCharacter::CloseConsole()
+{
+	if (!ConsoleWidget.IsValid())
+	{
+		return;
+	}
+
+	UAedirDevTools::OnReported().Remove(ConsoleReportHandle);
+	if (GEngine && GEngine->GameViewport)
+	{
+		GEngine->GameViewport->RemoveViewportWidgetContent(ConsoleWidget.ToSharedRef());
+	}
+	ConsoleWidget.Reset();
+
+	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		PlayerController->SetShowMouseCursor(false);
+		PlayerController->SetInputMode(FInputModeGameOnly());
+	}
 }
 
 void AAedirPlayerCharacter::RunDevCommand(const FString& Command, const FString& Args, bool bRunOnServer)

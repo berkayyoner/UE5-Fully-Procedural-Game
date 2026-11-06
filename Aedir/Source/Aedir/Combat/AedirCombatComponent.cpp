@@ -73,6 +73,7 @@ namespace
 	constexpr float AedirGuardInwardCm = 8.f;
 	constexpr float AedirGuardRaiseCm = 14.f;
 	constexpr float AedirArmSideHoldGain = 3.f;
+	constexpr float AedirArmThrowReachShare = 1.f;
 	constexpr float AedirGuardHeightPerDegree = 0.45f;
 	constexpr float AedirArmDominanceMargin = 0.1f;
 	constexpr float AedirArmGuardKeepShare = 0.15f;
@@ -110,21 +111,23 @@ namespace
 	constexpr float AedirShoveStrengthJoules = 1.8f;
 	constexpr float AedirShoveMinStaminaScale = 0.5f;
 
-	constexpr float AedirKickDuration = 0.5f;
-	constexpr float AedirKickStrikeStart = 0.18f;
-	constexpr float AedirKickStrikeEnd = 0.32f;
+	// A slow chamber (knee up to the belly), then a snapping extension.
+	constexpr float AedirKickDuration = 1.2f;
+	constexpr float AedirKickStrikeStart = 0.6f;
+	constexpr float AedirKickStrikeEnd = 0.8f;
 	constexpr float AedirKickHitRadius = 14.f;
 	constexpr float AedirKickMassKg = 8.f;
 	constexpr float AedirKickEnergyScale = 0.8f;
 	constexpr float AedirKickMaxFootSpeed = 500.f;
-	constexpr float AedirKickRecoilBalance = 0.12f;
+	constexpr float AedirKickRecoilBalance = 0.04f;
 	constexpr float AedirKickMinBalance = 0.4f;
-	constexpr float AedirKickPoseRiseSeconds = 0.08f;
-	constexpr float AedirKickPoseFallSeconds = 0.15f;
-	constexpr float AedirKickChamberTime = 0.25f;
-	constexpr float AedirKickExtendTime = 0.5f;
-	constexpr float AedirKickChamberBehindCm = 35.f;
-	constexpr float AedirKickChamberRightCm = 20.f;
+	constexpr float AedirKickPoseRiseSeconds = 0.3f;
+	constexpr float AedirKickPoseFallSeconds = 0.35f;
+	constexpr float AedirKickChamberTime = 0.5f;
+	constexpr float AedirKickExtendTime = 0.68f;
+	constexpr float AedirKickChamberAheadCm = 20.f;
+	constexpr float AedirKickChamberRightCm = 6.f;
+	constexpr float AedirKickChamberBelowHipCm = -40.f;
 	constexpr float AedirKickExtendCm = 85.f;
 	constexpr float AedirKickGroundBelowHipCm = 90.f;
 	constexpr float AedirKickExtendHeightCm = 55.f;
@@ -864,7 +867,8 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 	const double CameraPitch = FRotator::NormalizeAxis(Creature->GetControlRotation().Pitch);
 	const FVector AimDirection = FRotator(CameraPitch + Arm.AimOffsetDeg.Y + AedirArmHeadHeightPitchDegrees * CentreShare, Yaw, 0.0).Vector();
 	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
-	const float Extension = FMath::Clamp(Arm.Extension, 0.f, 1.f);
+	// A quick throw reaches all the way out whatever the wheel set; the slower the mouse the more the wheel setting counts.
+	const float Extension = FMath::Lerp(FMath::Clamp(Arm.Extension, 0.f, 1.f), 1.f, Arm.PunchBlend * AedirArmThrowReachShare);
 	// Pulled outwards the elbow breaks and the hand travels an arc beside the body; centred the arm reaches straight ahead.
 	const float OutwardSign = Hand == EAedirHand::Right ? 1.f : -1.f;
 	const float OutwardAlpha = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign / AedirArmOutwardYawLimit, 0.f, 1.f);
@@ -1671,7 +1675,8 @@ FVector UAedirCombatComponent::EvaluateKickArc(const FVector& Start, const FVect
 	}
 
 	const FVector Right = FVector::CrossProduct(FVector::UpVector, Ahead);
-	const FVector Chamber = Hip - Ahead * AedirKickChamberBehindCm + Right * AedirKickChamberRightCm;
+	// The chamber: the knee is drawn up towards the belly, the foot hanging just in front of and below the hip.
+	const FVector Chamber = Hip + Ahead * AedirKickChamberAheadCm + Right * AedirKickChamberRightCm + FVector(0.f, 0.f, AedirKickChamberBelowHipCm);
 	const FVector Extension = Hip + Ahead * AedirKickExtendCm + FVector(0.f, 0.f, AedirKickExtendHeightCm - AedirKickGroundBelowHipCm);
 	const float T = FMath::Clamp(T01, 0.f, 1.f);
 

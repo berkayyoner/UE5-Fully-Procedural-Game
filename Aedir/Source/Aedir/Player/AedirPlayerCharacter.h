@@ -34,15 +34,9 @@ public:
 	// Height of the camera boom pivot above the capsule centre while standing.
 	float CameraBoomBaseZ = 60.f;
 
-	// C: a kick with a forward lunge. Lunge speed, lift and the stamina paid on top of the kick.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float DynamicKickLungeSpeed = 420.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float DynamicKickLiftSpeed = 90.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float DynamicKickExtraStamina = 8.f;
+	// Drops a few catalog items in front of the player at the start, in non-shipping builds, so grab and inventory can be tested.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Dev")
+	bool bSpawnTestItemsOnStart = true;
 
 	// How quickly the camera pivot follows the body, how much of the pelvis height motion it takes over, and the ragdoll follow settings.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
@@ -58,7 +52,7 @@ public:
 	float CameraRagdollRaiseCm = 45.f;
 
 	FVector CameraRelative = FVector::ZeroVector;
-	float CameraPelvisBaseline = 0.f;
+	FVector CameraPelvisBaseline = FVector::ZeroVector;
 	bool bCameraStateInitialized = false;
 
 	// Share of the mouse movement that still turns the camera while a guard is held.
@@ -97,6 +91,7 @@ public:
 	float MaxViewPitch = 80.f;
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
@@ -155,6 +150,27 @@ public:
 	UFUNCTION(Exec)
 	void DevHelp();
 
+	// SetStat Strength 80: change a stat and watch how the body reacts.
+	UFUNCTION(Exec)
+	void SetStat(const FString& StatName, float Value);
+
+	UFUNCTION(Exec)
+	void ShowStats();
+
+	// Push 0.5: shove the balance forward, 1 and above knocks the body down.
+	UFUNCTION(Exec)
+	void Push(float Strength);
+
+	UFUNCTION(Exec)
+	void Knockdown();
+
+	// FallTest 300: lift the body by that many cm and let it fall.
+	UFUNCTION(Exec)
+	void FallTest(float HeightCm);
+
+	// Opens or closes the lower left console. Bound to the key under Esc.
+	void ToggleConsole();
+
 	bool IsDebugBodyEnabled() const { return bDebugBody; }
 	void SetDebugBodyEnabled(bool bEnabled) { bDebugBody = bEnabled; }
 
@@ -173,6 +189,10 @@ private:
 
 	void EnsureStarterQuest();
 	void UpdateTutorialObjectives();
+
+	TSharedPtr<class SAedirConsole> ConsoleWidget;
+	FDelegateHandle ConsoleReportHandle;
+	void CloseConsole();
 
 	FTimerHandle CharacterCreationTimer;
 	bool bTutorialRotationCaptured = false;

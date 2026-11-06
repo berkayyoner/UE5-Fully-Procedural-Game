@@ -128,6 +128,9 @@ void UAedirBalanceComponent::BeginPlay()
 	BodyMesh->SetAllBodiesBelowSimulatePhysics(PelvisBoneName, true, true);
 	BodyMesh->SetAllBodiesPhysicsBlendWeight(1.f);
 	BodyMesh->SetNotifyRigidBodyCollision(true);
+	// The simulated limbs of a standing body pass through loose physics objects, so stepping on one does not fling it;
+	// the capsule still pushes and blocks them, and a ragdoll collides with them again.
+	BodyMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Overlap);
 	BodyMesh->OnComponentHit.AddDynamic(this, &UAedirBalanceComponent::OnMeshHit);
 
 	BodyCapsule->SetNotifyRigidBodyCollision(true);
@@ -592,7 +595,10 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	const float MoveSpeed = CharacterOwner->GetVelocity().Size2D();
 	SupportMargin += FMath::Clamp(MoveSpeed / ComBalanceMovingSpeedRef, 0.f, 1.f) * ComBalanceMovingAllowanceCm;
 	// Any ordinary locomotion cannot topple a balanced body, the recovery step is for pushes and stumbles only.
-	if (MoveSpeed > 20.f && StaggerSeconds <= 0.f)
+	// A kick is a controlled one-leg stance, so it neither loses balance nor asks for a catching step.
+	const UAedirCombatComponent* KickCombat = CharacterOwner->FindComponentByClass<UAedirCombatComponent>();
+	const bool bKicking = KickCombat && KickCombat->IsKicking();
+	if ((MoveSpeed > 20.f || bKicking) && StaggerSeconds <= 0.f)
 	{
 		SupportMargin = FMath::Max(SupportMargin, 0.f);
 	}
@@ -913,6 +919,7 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	}
 
 	UpdateMotors(0.f, true);
+	BodyMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bRagdoll ? ECR_Block : ECR_Overlap);
 
 	UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
 	FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName);

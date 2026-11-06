@@ -115,6 +115,11 @@ UAedirCharacterMovementComponent::UAedirCharacterMovementComponent()
 	JumpZVelocity = 420.f;
 	AirControl = 0.25f;
 	// Soft acceleration and braking give the body weight: a walk takes about half a second to reach speed.
+	// Walking into a physics object nudges it instead of launching it.
+	PushForceFactor = 120000.f;
+	TouchForceFactor = 0.25f;
+	StandingDownwardForceScale = 0.f;
+
 	// Ground friction steers the velocity towards the input direction, so it stays high; the soft stop comes from the separate braking friction.
 	bUseSeparateBrakingFriction = true;
 	BrakingFrictionFactor = 1.f;

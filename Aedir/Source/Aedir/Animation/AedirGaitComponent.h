@@ -414,7 +414,7 @@ public:
 
 	// Share of the stride the landing point lies ahead of the hip, in a walk and at a full run.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float StepLandingShareWalk = 0.2f;
+	float StepLandingShareWalk = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float StepLandingShareRun = 0.2f;
@@ -433,7 +433,7 @@ public:
 
 	// A planted foot further than this share of the stride from under its hip takes an early step. A normal step drifts about 0.35.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxPlantedDriftStrideFraction = 0.6f;
+	float MaxPlantedDriftStrideFraction = 0.5f;
 
 	// Pause between two stumble steps unless the fall is urgent.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Recovery")

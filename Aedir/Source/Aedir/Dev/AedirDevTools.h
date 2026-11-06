@@ -6,6 +6,8 @@
 
 class AAedirPlayerCharacter;
 
+DECLARE_MULTICAST_DELEGATE_OneParam(FAedirDevReported, const FString&);
+
 // Developer console commands used by the player character wrappers. Implemented in non-shipping builds only.
 UCLASS()
 class AEDIR_API UAedirDevTools : public UObject
@@ -30,4 +32,12 @@ public:
 	static void BloodTest(AAedirPlayerCharacter* Player, const FString& Args);
 	static void DebugBody(AAedirPlayerCharacter* Player, const FString& Args);
 	static void Help(AAedirPlayerCharacter* Player, const FString& Args);
+	static void SetStat(AAedirPlayerCharacter* Player, const FString& Args);
+	static void PrintStats(AAedirPlayerCharacter* Player, const FString& Args);
+	static void Push(AAedirPlayerCharacter* Player, const FString& Args);
+	static void Knockdown(AAedirPlayerCharacter* Player, const FString& Args);
+	static void FallTest(AAedirPlayerCharacter* Player, const FString& Args);
+
+	// Every dev command report is also sent here, so the in-game console can show it.
+	static FAedirDevReported& OnReported();
 };

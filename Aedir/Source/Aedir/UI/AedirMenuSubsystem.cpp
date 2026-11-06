@@ -136,7 +136,7 @@ void UAedirMenuSubsystem::BeginUIMode(APlayerController* PlayerController, const
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
 	InputMode.SetHideCursorDuringCapture(false);
 	PlayerController->SetInputMode(InputMode);
-	PlayerController->SetShowMouseCursor(false);
+	PlayerController->SetShowMouseCursor(true);
 
 	UWorld* World = GetWorld();
 	if (World && World->GetNetMode() == NM_Standalone)
@@ -157,6 +157,7 @@ void UAedirMenuSubsystem::RemoveUIWidget(const TSharedRef<SWidget>& ClosingWidge
 	APlayerController* PlayerController = LocalPlayer ? LocalPlayer->GetPlayerController(LocalPlayer->GetWorld()) : nullptr;
 	if (PlayerController)
 	{
+		PlayerController->SetShowMouseCursor(false);
 		PlayerController->SetInputMode(FInputModeGameOnly());
 	}
 

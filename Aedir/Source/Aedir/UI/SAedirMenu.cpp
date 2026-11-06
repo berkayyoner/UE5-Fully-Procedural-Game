@@ -424,10 +424,20 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 		.AutoWidth()
 		.Padding(FMargin(14.f, 0.f))
 		[
-			SNew(STextBlock)
-			.Text_Lambda([this, Index]() { return GetTabText(Index); })
-			.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
-			.ColorAndOpacity_Lambda([this, Index]() { return FSlateColor(GetTabColor(Index)); })
+			SNew(SBorder)
+			.BorderImage(FStyleDefaults::GetNoBrush())
+			.Padding(FMargin(2.f))
+			.OnMouseButtonDown_Lambda([this, Index](const FGeometry&, const FPointerEvent&)
+			{
+				SetCategory(Index);
+				return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
+			})
+			[
+				SNew(STextBlock)
+				.Text_Lambda([this, Index]() { return GetTabText(Index); })
+				.Font(FCoreStyle::GetDefaultFontStyle("Bold", 12))
+				.ColorAndOpacity_Lambda([this, Index]() { return FSlateColor(GetTabColor(Index)); })
+			]
 		];
 	}
 
@@ -523,6 +533,12 @@ void SAedirMenu::SetCategory(int32 NewCategory)
 	CurrentCategory = ((NewCategory % Count) + Count) % Count;
 	SelectedRow = 0;
 	RefreshView(true);
+}
+
+FReply SAedirMenu::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	// A click anywhere on the menu keeps the keyboard focus here, so Tab can still close it.
+	return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 }
 
 FReply SAedirMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
@@ -774,6 +790,20 @@ void SAedirMenu::RebuildList()
 		TSharedRef<SBorder> RowBorder = SNew(SBorder)
 		.BorderImage(WhiteBrush)
 		.BorderBackgroundColor_Lambda([this, Index]() { return FSlateColor(GetRowBackground(Index)); })
+		.OnMouseButtonDown_Lambda([this, Index](const FGeometry&, const FPointerEvent&)
+		{
+			// A click selects a row, a second click on the selected row uses it.
+			if (SelectedRow == Index)
+			{
+				ActivateSelected();
+			}
+			else
+			{
+				SelectedRow = Index;
+				RefreshView(true);
+			}
+			return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
+		})
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()

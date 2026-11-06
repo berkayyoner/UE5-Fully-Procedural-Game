@@ -11,6 +11,8 @@
 namespace
 {
 	constexpr float AedirKneePoleDistance = 100.f;
+	constexpr float AedirLegMinReachShare = 0.38f;
+	constexpr float AedirLegMaxReachShare = 0.995f;
 	constexpr float AedirWristFollowShare = 0.25f;
 	constexpr float AedirClavicleFollowShare = 0.25f;
 	constexpr float AedirReachAlphaThreshold = 0.001f;
@@ -400,7 +402,17 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, const FB
 	const FVector JointPosition = TibiaTransform.GetLocation();
 	const FVector EndPosition = FootTransform.GetLocation();
 
-	const FVector Effector = MeshToWorld.InverseTransformPosition(FootWorld);
+	// The foot target stays inside the reach of the leg: never stretched past straight, never folded tighter than the knee can bend.
+	const float LegLength = static_cast<float>((JointPosition - RootPosition).Size() + (EndPosition - JointPosition).Size());
+	FVector Effector = MeshToWorld.InverseTransformPosition(FootWorld);
+	const FVector ToEffector = Effector - RootPosition;
+	const float EffectorDistance = static_cast<float>(ToEffector.Size());
+	if (EffectorDistance > KINDA_SMALL_NUMBER)
+	{
+		const float ClampedDistance = FMath::Clamp(EffectorDistance, LegLength * AedirLegMinReachShare, LegLength * AedirLegMaxReachShare);
+		Effector = RootPosition + ToEffector * (ClampedDistance / EffectorDistance);
+	}
+
 	// Knee pole in front of the creature so the knee bends forward.
 	const FVector JointTarget = Effector + ForwardMesh * AedirKneePoleDistance;
 

@@ -34,13 +34,14 @@ bool FAedirMeleeKickArcTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Arc starts at the foot"), UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.f).Equals(Start, 0.01f));
 	TestTrue(TEXT("Arc returns to the foot"), UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 1.f).Equals(Start, 0.01f));
 
-	const FVector Extension = UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.5f);
+	// The extension is reached at 0.68 of the kick, after the slow chamber at 0.5.
+	const FVector Extension = UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.68f);
 	TestTrue(TEXT("Full extension is 85 cm ahead of the hip"), FMath::IsNearlyEqual(Extension.X, 85.f, 0.01f) && FMath::IsNearlyEqual(Extension.Y, 0.f, 0.01f));
 	TestTrue(TEXT("Full extension is 55 cm above the ground reference"), FMath::IsNearlyEqual(Extension.Z, 55.f, 0.01f));
 
-	const FVector Chamber = UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.25f);
-	TestTrue(TEXT("Chamber is at hip height"), FMath::IsNearlyEqual(Chamber.Z, Hip.Z, 0.01f));
-	TestTrue(TEXT("Chamber is behind the hip"), Chamber.X < Hip.X);
+	const FVector Chamber = UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.5f);
+	TestTrue(TEXT("Chamber hangs below the hip, the knee drawn up to the belly"), Chamber.Z < Hip.Z && Chamber.Z > Hip.Z - 60.f);
+	TestTrue(TEXT("Chamber is just in front of the hip"), Chamber.X > Hip.X && Chamber.X < Hip.X + 40.f);
 	TestTrue(TEXT("Chamber is to the right of the hip"), Chamber.Y > Hip.Y);
 
 	return true;

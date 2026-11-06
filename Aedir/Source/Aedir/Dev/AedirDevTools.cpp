@@ -1,6 +1,12 @@
 #include "Dev/AedirDevTools.h"
 #include "UI/AedirJournalSubsystem.h"
 
+FAedirDevReported& UAedirDevTools::OnReported()
+{
+	static FAedirDevReported Delegate;
+	return Delegate;
+}
+
 #if !UE_BUILD_SHIPPING
 
 #include "Aedir.h"
@@ -16,6 +22,7 @@
 #include "Items/AedirCatalogItem.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemCatalog.h"
+#include "Physics/AedirBalanceComponent.h"
 #include "Player/AedirPlayerCharacter.h"
 #include "UObject/Class.h"
 #include "Weather/AedirWeatherManager.h"
@@ -27,6 +34,7 @@ namespace
 {
 	constexpr float DevToolsSpawnForwardCm = 160.f;
 	constexpr float DevToolsSpawnUpCm = 80.f;
+	constexpr float DevToolsSpawnSpreadCm = 45.f;
 	constexpr float DevToolsEnemyDistanceCm = 450.f;
 	constexpr float DevToolsEnemySpacingCm = 120.f;
 	constexpr float DevToolsWoundEnergyJoules = 60.f;
@@ -39,6 +47,7 @@ namespace
 	void DevToolsReport(const FString& Message)
 	{
 		UE_LOG(LogAedir, Display, TEXT("[Dev] %s"), *Message);
+		UAedirDevTools::OnReported().Broadcast(Message);
 
 		if (GEngine)
 		{
@@ -159,6 +168,26 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		Help(Player, Args);
 	}
+	else if (Command == TEXT("SetStat"))
+	{
+		SetStat(Player, Args);
+	}
+	else if (Command == TEXT("Stats"))
+	{
+		PrintStats(Player, Args);
+	}
+	else if (Command == TEXT("Push"))
+	{
+		Push(Player, Args);
+	}
+	else if (Command == TEXT("Knockdown"))
+	{
+		Knockdown(Player, Args);
+	}
+	else if (Command == TEXT("FallTest"))
+	{
+		FallTest(Player, Args);
+	}
 	else
 	{
 		DevToolsReport(FString::Printf(TEXT("Unknown dev command %s"), *Command));
@@ -182,7 +211,11 @@ void UAedirDevTools::SpawnItem(AAedirPlayerCharacter* Player, const FString& Arg
 		return;
 	}
 
-	const FVector Location = Player->GetActorLocation() + Player->GetActorForwardVector() * DevToolsSpawnForwardCm + FVector(0.f, 0.f, DevToolsSpawnUpCm);
+	// Items spawned one after the other are spread sideways, so they do not land inside each other.
+	static int32 SpawnCounter = 0;
+	const float SideOffset = static_cast<float>((SpawnCounter++ % 5) - 2) * DevToolsSpawnSpreadCm;
+	const FVector Location = Player->GetActorLocation() + Player->GetActorForwardVector() * DevToolsSpawnForwardCm
+		+ Player->GetActorRightVector() * SideOffset + FVector(0.f, 0.f, DevToolsSpawnUpCm);
 	AAedirCatalogItem* Item = AAedirCatalogItem::SpawnCatalogItem(World, Id, FTransform(DevToolsFlatYaw(Player), Location));
 	if (!Item)
 	{
@@ -516,7 +549,103 @@ void UAedirDevTools::Help(AAedirPlayerCharacter* Player, const FString& Args)
 	DevToolsReport(TEXT("  Wound <Bruise|Cut|Puncture> [bone=upperarm_l]"));
 	DevToolsReport(TEXT("  BloodTest: blood spray in front of the player"));
 	DevToolsReport(TEXT("  DebugBody: toggle centre of mass, support margin and hand drawing"));
+	DevToolsReport(TEXT("  SetStat <Strength|Athletism|Health|Stamina|Mana> <value>: change a stat to see how the body reacts"));
+	DevToolsReport(TEXT("  Stats: print the player's stats"));
+	DevToolsReport(TEXT("  Push <strength 0-1>: shove the player's balance forward, 1 is a knockdown push"));
+	DevToolsReport(TEXT("  Knockdown: drop the player to the ground"));
+	DevToolsReport(TEXT("  FallTest <height cm>: lift the player and let them fall"));
 	DevToolsReport(TEXT("  DevHelp: this list"));
+}
+
+void UAedirDevTools::SetStat(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	UAedirStatsComponent* Stats = Player->Stats.Get();
+	if (Tokens.Num() < 2 || !Stats)
+	{
+		DevToolsReport(TEXT("Usage: SetStat <Strength|Athletism|Health|Stamina|Mana> <value>"));
+		return;
+	}
+
+	const float Value = FCString::Atof(*Tokens[1]);
+	if (DevToolsIsToken(Tokens[0], TEXT("Strength")))
+	{
+		Stats->SetStrength(Value);
+	}
+	else if (DevToolsIsToken(Tokens[0], TEXT("Athletism")))
+	{
+		Stats->SetAthletism(Value);
+	}
+	else if (DevToolsIsToken(Tokens[0], TEXT("Health")))
+	{
+		const float Delta = Value - Stats->GetHealth();
+		if (Delta > 0.f)
+		{
+			Stats->Heal(Delta);
+		}
+		else
+		{
+			Stats->ApplyDamage(-Delta);
+		}
+	}
+	else if (DevToolsIsToken(Tokens[0], TEXT("Stamina")))
+	{
+		const float Delta = Stats->GetStamina() - Value;
+		if (Delta > 0.f)
+		{
+			Stats->ConsumeStamina(Delta);
+		}
+	}
+	else if (DevToolsIsToken(Tokens[0], TEXT("Mana")))
+	{
+		DevToolsReport(TEXT("Mana can only be refilled with Heal."));
+		return;
+	}
+	else
+	{
+		DevToolsReport(FString::Printf(TEXT("Unknown stat %s"), *Tokens[0]));
+		return;
+	}
+
+	PrintStats(Player, FString());
+}
+
+void UAedirDevTools::PrintStats(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	const UAedirStatsComponent* Stats = Player->Stats.Get();
+	if (!Stats)
+	{
+		return;
+	}
+
+	DevToolsReport(FString::Printf(TEXT("Strength %.0f  Athletism %.0f  Health %.0f/%.0f  Stamina %.0f/%.0f  Magicka %.0f/%.0f"),
+		Stats->Strength, Stats->Athletism, Stats->GetHealth(), Stats->GetMaxHealth(), Stats->GetStamina(), Stats->GetMaxStamina(), Stats->GetMana(), Stats->GetMaxMana()));
+}
+
+void UAedirDevTools::Push(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	const float Strength = Args.IsEmpty() ? 0.5f : FMath::Clamp(FCString::Atof(*Args), 0.f, 1.f);
+	if (Player->Balance)
+	{
+		Player->Balance->ApplyBalanceImpact(Player->GetActorForwardVector(), Strength);
+		DevToolsReport(FString::Printf(TEXT("Pushed with %.2f. Balance %.2f"), Strength, Player->Balance->GetBalance()));
+	}
+}
+
+void UAedirDevTools::Knockdown(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	if (Player->Balance)
+	{
+		Player->Balance->ApplyBalanceImpact(Player->GetActorForwardVector(), 2.f);
+		DevToolsReport(TEXT("Knocked down"));
+	}
+}
+
+void UAedirDevTools::FallTest(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	const float Height = Args.IsEmpty() ? 300.f : FMath::Clamp(FCString::Atof(*Args), 20.f, 5000.f);
+	Player->SetActorLocation(Player->GetActorLocation() + FVector(0.f, 0.f, Height), false, nullptr, ETeleportType::TeleportPhysics);
+	DevToolsReport(FString::Printf(TEXT("Dropping from %.0f cm"), Height));
 }
 
 #endif
