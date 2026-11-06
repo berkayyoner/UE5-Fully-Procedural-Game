@@ -383,7 +383,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float RunLowering = -HipRunLoweringCm * RunBlend;
 	// A walk is already a clear pelvis motion, so the gait terms start at 70% of their size and not at zero.
 	const float GaitIntensity = bMoving ? FMath::Lerp(0.7f, 1.f, SpeedAlpha) : 0.f;
-	const float Bounce = HipBounceCm * FMath::Sin(2.f * UE_PI * Phase * AedirMovingBounceFrequency) * GaitIntensity;
+	// The pelvis only ever sinks below its standing height, deepest while both feet are down, so no foot is lifted off the ground by it.
+	const float Bounce = -HipBounceCm * (0.5f + 0.5f * FMath::Cos(2.f * UE_PI * Phase * AedirMovingBounceFrequency)) * GaitIntensity;
 	GaitState.HipOffsetZ = DynamicHipOffset + RunLowering + Bounce;
 
 	// The interaction component smooths its outputs itself, so the reach values are applied directly each frame.
@@ -408,11 +409,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	}
 	else if (AirFallSpeed > 0.f)
 	{
+		// The landing speed becomes a downward velocity of the pelvis, which a spring-damper then turns into a visible sink and recovery.
 		const float AthleticsAbsorb = 1.f - 0.5f * FMath::Clamp(Athletism / 100.f, 0.f, 1.f);
-		LandingDipCm = FMath::Min(AirFallSpeed / 900.f, 1.f) * LandingDipMaxCm * ActorScale * AthleticsAbsorb;
+		LandingDipVelocity += FMath::Min(AirFallSpeed, 1200.f) * LandingDipKick * AthleticsAbsorb * ActorScale;
 		AirFallSpeed = 0.f;
 	}
-	LandingDipCm = FMath::FInterpTo(LandingDipCm, 0.f, DeltaTime, LandingDipRecoverSpeed);
+	const float DipAcceleration = -LandingDipStiffness * LandingDipCm - LandingDipDamping * LandingDipVelocity;
+	LandingDipVelocity += DipAcceleration * DeltaTime;
+	LandingDipCm = FMath::Clamp(LandingDipCm + LandingDipVelocity * DeltaTime, 0.f,LandingDipMaxCm * ActorScale);
 	GaitState.HipOffsetZ -= LandingDipCm;
 
 	FVector LeftReachTarget = FVector::ZeroVector;

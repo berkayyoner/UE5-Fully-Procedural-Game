@@ -113,6 +113,8 @@ namespace
 		Lines.Add(Line);
 	}
 
+	void MenuAddCharacterStats(const UAedirStatsComponent* Stats, TArray<FAedirMenuLine>& Lines);
+
 	void MenuBuildInventoryDetail(const AAedirCreature* Pawn, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines)
 	{
 		const UAedirInteractionComponent* Interaction = Pawn ? Pawn->Interaction.Get() : nullptr;
@@ -152,6 +154,8 @@ namespace
 		}
 
 		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
+		MenuAddCharacterStats(Pawn ? Pawn->Stats.Get() : nullptr, Lines);
+		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
 		const float Carried = Pawn ? Pawn->GetCarriedWeight() : 0.f;
 		const float Capacity = Pawn ? Pawn->GetCarryCapacity() : 0.f;
 		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Carry Weight: %s / %.0f"), *UAedirJournalSubsystem::FormatWeight(Carried), Capacity));
@@ -179,6 +183,34 @@ namespace
 		MenuAddLine(Lines, EAedirMenuLineKind::Body, MenuSchoolDescription(School));
 	}
 
+	// Overall level: every 25 skill points above the starting values raise it by one.
+	int32 MenuCharacterLevel(const UAedirStatsComponent* Stats)
+	{
+		float Total = 0.f;
+		for (int32 Index = 0; Index < static_cast<int32>(EAedirSkill::Count); ++Index)
+		{
+			Total += Stats->GetSkill(static_cast<EAedirSkill>(Index));
+		}
+		return 1 + FMath::FloorToInt(Total / 25.f);
+	}
+
+	void MenuAddCharacterStats(const UAedirStatsComponent* Stats, TArray<FAedirMenuLine>& Lines)
+	{
+		MenuAddLine(Lines, EAedirMenuLineKind::Heading, TEXT("Character"));
+		if (!Stats)
+		{
+			MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("No stat data."));
+			return;
+		}
+
+		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Level: %d"), MenuCharacterLevel(Stats)));
+		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Strength: %.0f"), Stats->Strength));
+		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Athletism: %.0f"), Stats->Athletism));
+		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Health: %d / %d"), FMath::RoundToInt(Stats->GetHealth()), FMath::RoundToInt(Stats->GetMaxHealth())));
+		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Magicka: %d / %d"), FMath::RoundToInt(Stats->GetMana()), FMath::RoundToInt(Stats->GetMaxMana())));
+		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Stamina: %d / %d"), FMath::RoundToInt(Stats->GetStamina()), FMath::RoundToInt(Stats->GetMaxStamina())));
+	}
+
 	void MenuBuildSkillsDetail(const AAedirCreature* Pawn, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines)
 	{
 		if (!Selected)
@@ -190,24 +222,14 @@ namespace
 		const UAedirStatsComponent* Stats = Pawn ? Pawn->Stats.Get() : nullptr;
 		const float SkillValue = Stats ? Stats->GetSkill(static_cast<EAedirSkill>(Selected->Index)) : 0.f;
 
+		// The character stats come first so they are always on screen.
+		MenuAddCharacterStats(Stats, Lines);
+		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
+
 		MenuAddLine(Lines, EAedirMenuLineKind::Title, Selected->Name);
 		MenuAddLine(Lines, EAedirMenuLineKind::Value, FString::Printf(TEXT("%d"), FMath::FloorToInt(SkillValue)));
 		MenuAddLine(Lines, EAedirMenuLineKind::Heading, FString::Printf(TEXT("Rank: %s"), *UAedirJournalSubsystem::GetSkillRankName(SkillValue).ToString()));
 		MenuAddLine(Lines, EAedirMenuLineKind::Progress, FString());
-		MenuAddLine(Lines, EAedirMenuLineKind::Spacer, FString());
-
-		MenuAddLine(Lines, EAedirMenuLineKind::Heading, TEXT("Stats"));
-		if (!Stats)
-		{
-			MenuAddLine(Lines, EAedirMenuLineKind::Dim, TEXT("No stat data."));
-			return;
-		}
-
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Health: %d / %d"), FMath::RoundToInt(Stats->GetHealth()), FMath::RoundToInt(Stats->GetMaxHealth())));
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Mana (Magicka): %d / %d"), FMath::RoundToInt(Stats->GetMana()), FMath::RoundToInt(Stats->GetMaxMana())));
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Stamina: %d / %d"), FMath::RoundToInt(Stats->GetStamina()), FMath::RoundToInt(Stats->GetMaxStamina())));
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Strength: %.0f"), Stats->Strength));
-		MenuAddLine(Lines, EAedirMenuLineKind::Text, FString::Printf(TEXT("Athletism: %.0f"), Stats->Athletism));
 	}
 
 	void MenuBuildMapDetail(const AAedirCreature* Pawn, const FAedirMenuRow* Selected, TArray<FAedirMenuLine>& Lines)

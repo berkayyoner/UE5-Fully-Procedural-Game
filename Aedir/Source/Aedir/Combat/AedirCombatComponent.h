@@ -90,6 +90,10 @@ struct FAedirArmDynamics
 	FVector2D AimOffsetDeg = FVector2D::ZeroVector;
 	float Extension = 0.5f;
 
+	// Smoothed mouse speed in counts per second, and how far the arm follows the aim (1) instead of holding the guard in front of the face (0).
+	float MouseSpeed = 0.f;
+	float PunchBlend = 0.f;
+
 	bool bScriptedControl = false;
 	FVector ScriptedTargetWorld = FVector::ZeroVector;
 

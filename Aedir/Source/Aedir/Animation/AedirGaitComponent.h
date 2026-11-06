@@ -270,7 +270,7 @@ public:
 	float SwingFractionWalk = 0.47f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float SwingFractionRun = 0.55f;
+	float SwingFractionRun = 0.46f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float BaseStepHeightCm = 8.f;
@@ -315,7 +315,7 @@ public:
 	float HipRunLoweringCm = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float HipBounceCm = 2.5f;
+	float HipBounceCm = 4.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HipDynamicMinCm = -40.f;
@@ -409,7 +409,7 @@ public:
 	float StepLandingShareWalk = 0.2f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float StepLandingShareRun = 0.32f;
+	float StepLandingShareRun = 0.2f;
 
 	// While side-stepping the crossing foot is placed this far in front and the leading foot this far behind.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
@@ -435,9 +435,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
 	float LandingDipMaxCm = 38.f;
 
-	// How fast the pelvis springs back up after a landing.
+	// Landing spring: share of the landing speed that becomes pelvis sink speed, spring stiffness and damping.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
-	float LandingDipRecoverSpeed = 3.f;
+	float LandingDipKick = 0.9f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
+	float LandingDipStiffness = 260.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
+	float LandingDipDamping = 20.f;
 
 	// 0 standing, 1 fully crouched. Lags the instant capsule change so the pelvis and camera lower gradually.
 	float GetCrouchAlpha() const { return CrouchAlpha; }
@@ -642,6 +648,7 @@ private:
 	float SettleCooldownRemaining = 0.f;
 	float AirFallSpeed = 0.f;
 	float LandingDipCm = 0.f;
+	float LandingDipVelocity = 0.f;
 	bool bRecoverySwinging[2] = { false, false };
 	float RecoverySwingElapsed[2] = { 0.f, 0.f };
 	float RecoverySwingDuration[2] = { 0.f, 0.f };

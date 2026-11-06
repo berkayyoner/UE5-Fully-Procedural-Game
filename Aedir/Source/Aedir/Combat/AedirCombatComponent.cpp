@@ -64,6 +64,16 @@ namespace
 	constexpr float AedirArmOutwardYawLimit = 80.f;
 	constexpr float AedirArmAcrossYawLimit = 0.f;
 	constexpr float AedirArmConvergeYawDegrees = 9.f;
+	constexpr float AedirArmMouseSpeedSmoothing = 10.f;
+	constexpr float AedirArmGuardSpeedLow = 350.f;
+	constexpr float AedirArmGuardSpeedHigh = 1400.f;
+	constexpr float AedirArmPunchRiseSpeed = 14.f;
+	constexpr float AedirArmPunchFallSpeed = 3.5f;
+	constexpr float AedirGuardForwardCm = 38.f;
+	constexpr float AedirGuardInwardCm = 8.f;
+	constexpr float AedirGuardRaiseCm = 14.f;
+	constexpr float AedirArmDominanceMargin = 0.1f;
+	constexpr float AedirArmGuardKeepShare = 0.15f;
 	constexpr float AedirArmHeadHeightPitchDegrees = 6.f;
 	constexpr float AedirArmAimPitchMin = -70.f;
 	constexpr float AedirArmAimPitchMax = 85.f;
@@ -282,6 +292,12 @@ void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaT
 	{
 		return;
 	}
+
+	// A quick mouse movement throws the arm out along the aim; a slow one pulls it back to the guard in front of the face.
+	const float RawSpeed = static_cast<float>(MouseDeltaThisFrame.Size()) / DeltaTime;
+	Arm.MouseSpeed = FMath::FInterpTo(Arm.MouseSpeed, RawSpeed, DeltaTime, AedirArmMouseSpeedSmoothing);
+	const float PunchTarget = FMath::Clamp((Arm.MouseSpeed - AedirArmGuardSpeedLow) / (AedirArmGuardSpeedHigh - AedirArmGuardSpeedLow), 0.f, 1.f);
+	Arm.PunchBlend = FMath::FInterpTo(Arm.PunchBlend, PunchTarget, DeltaTime, PunchTarget > Arm.PunchBlend ? AedirArmPunchRiseSpeed : AedirArmPunchFallSpeed);
 
 	// Mouse Y input is positive when the mouse moves up, so moving the mouse up raises the arm.
 	// Outwards the arm sweeps a 90 degree arc, across the body it only reaches a little past the centre line.
@@ -853,7 +869,31 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 	const float ElbowBendScale = FMath::Lerp(1.f, 0.5f, OutwardAlpha);
 	const float Reach = ElbowBendScale * FMath::Lerp(AedirArmReachMinScale, 1.f, Extension) * (SwingReach + GetEffectiveWeaponLength(Hand)) * Scale;
 
-	return Arm.ShoulderWorld + AimDirection * Reach;
+	const FVector AimTarget = Arm.ShoulderWorld + AimDirection * Reach;
+	if (!Creature->IsLocallyControlled() || !Creature->IsPlayerControlled())
+	{
+		return AimTarget;
+	}
+
+	// While the other arm is the one being thrown out, this arm stays at the face as the guard.
+	float PunchShare = Arm.PunchBlend;
+	const EAedirHand OtherHand = Hand == EAedirHand::Right ? EAedirHand::Left : EAedirHand::Right;
+	if (IsGuardActive(OtherHand))
+	{
+		const FAedirArmDynamics& Other = GetArm(OtherHand);
+		const float OtherSign = OtherHand == EAedirHand::Right ? 1.f : -1.f;
+		const float OtherOutward = FMath::Clamp(Other.AimOffsetDeg.X * OtherSign / AedirArmOutwardYawLimit, 0.f, 1.f);
+		if (OtherOutward > OutwardAlpha + AedirArmDominanceMargin)
+		{
+			PunchShare *= AedirArmGuardKeepShare;
+		}
+	}
+
+	// The guard fist sits in front of the face, a little inside its own shoulder.
+	const float GuardSide = Hand == EAedirHand::Right ? 1.f : -1.f;
+	const FVector GuardLocal(AedirGuardForwardCm * Scale, GuardSide * AedirGuardInwardCm * Scale, (AedirShoulderHeight + AedirGuardRaiseCm) * Scale);
+	const FVector GuardTarget = Creature->GetActorTransform().TransformPositionNoScale(GuardLocal);
+	return FMath::Lerp(GuardTarget, AimTarget, PunchShare);
 }
 
 FVector UAedirCombatComponent::ComputeArmTip(EAedirHand Hand, const FAedirArmDynamics& Arm) const
