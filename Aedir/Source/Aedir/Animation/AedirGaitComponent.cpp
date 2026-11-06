@@ -189,7 +189,22 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		bFeetInitialized = true;
 	}
 
-	if (bRecovering && !bRecoverySwinging[0] && !bRecoverySwinging[1])
+	RecoveryCooldownRemaining = FMath::Max(RecoveryCooldownRemaining - DeltaTime, 0.f);
+
+	// A planted foot the body has walked away from steps early instead of stretching the leg towards a target it cannot reach.
+	if (bMoving && !bKicking && !bRecoverySwinging[0] && !bRecoverySwinging[1])
+	{
+		for (int32 Foot = 0; Foot < 2; ++Foot)
+		{
+			if (!bSwinging[Foot] && (PlantedContact[Foot] - LandingLocation[Foot]).Size2D() > StrideLength * MaxPlantedDriftStrideFraction)
+			{
+				BeginRecoverySwing(Foot, LandingLocation[Foot], StrideLength, 0.f, BottomZ);
+				break;
+			}
+		}
+	}
+
+	if (bRecovering && !bRecoverySwinging[0] && !bRecoverySwinging[1] && (RecoveryCooldownRemaining <= 0.f || RecoveryUrgency > 0.7f))
 	{
 		// The free foot furthest towards the fall direction takes the catching step.
 		int32 RecoveryFoot = INDEX_NONE;
@@ -213,6 +228,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		{
 			const FVector CatchWorld = BalanceComponent->GetCenterOfMassWorld() + RecoveryDirection * RecoveryStepLandingCm;
 			BeginRecoverySwing(RecoveryFoot, CatchWorld, StrideLength * 0.5f * RecoveryStepMaxStrideMultiplier, RecoveryUrgency, BottomZ);
+			RecoveryCooldownRemaining = RecoveryStepCooldownSeconds;
 		}
 	}
 
@@ -364,6 +380,23 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	CrouchAlpha = FMath::FInterpTo(CrouchAlpha, CreatureOwner->bIsCrouched ? 1.f : 0.f, DeltaTime, 3.5f);
 	GaitState.HipOffsetZ -= CrouchDropCm * CrouchAlpha;
 
+	// Jump wind-up: the body sinks before the push-off. Landing: the pelvis absorbs the fall and springs back, less so for athletic bodies.
+	const float WindupAlpha = MovementComponent->GetJumpWindupAlpha();
+	GaitState.HipOffsetZ -= JumpWindupDipCm * ActorScale * FMath::Sin(WindupAlpha * UE_HALF_PI);
+	const bool bAirborne = MovementComponent->IsFalling();
+	if (bAirborne)
+	{
+		AirFallSpeed = FMath::Max(AirFallSpeed, -static_cast<float>(Velocity.Z));
+	}
+	else if (AirFallSpeed > 0.f)
+	{
+		const float AthleticsAbsorb = 1.f - 0.5f * FMath::Clamp(Athletism / 100.f, 0.f, 1.f);
+		LandingDipCm = FMath::Min(AirFallSpeed / 900.f, 1.f) * LandingDipMaxCm * ActorScale * AthleticsAbsorb;
+		AirFallSpeed = 0.f;
+	}
+	LandingDipCm = FMath::FInterpTo(LandingDipCm, 0.f, DeltaTime, LandingDipRecoverSpeed);
+	GaitState.HipOffsetZ -= LandingDipCm;
+
 	FVector LeftReachTarget = FVector::ZeroVector;
 	FVector RightReachTarget = FVector::ZeroVector;
 	float LeftReachAlpha = 0.f;
@@ -411,11 +444,13 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	ArmBlend = FMath::FInterpTo(ArmBlend, bMoving ? 1.f : 0.f, DeltaTime, ArmBlendInterpSpeed);
 	const float DirectionalArmScale = FMath::Lerp(1.f, ArmSideScale, SideAlpha) * FMath::Lerp(1.f, ArmBackScale, BackAlpha);
-	const float ArmAmplitude = FMath::Lerp(MaxArmSwingWalkDegrees, MaxArmSwingRunDegrees, SpeedAlpha) * DirectionalArmScale * ArmBlend;
+	const float ArmAmplitude = FMath::Lerp(MaxArmSwingWalkDegrees, MaxArmSwingRunDegrees, SpeedAlpha * SpeedAlpha) * DirectionalArmScale * ArmBlend;
 	GaitState.ArmSwingLeft = FMath::Sin(2.f * UE_PI * (Phase + 0.5f)) * ArmAmplitude;
 	GaitState.ArmSwingRight = FMath::Sin(2.f * UE_PI * Phase) * ArmAmplitude;
 	GaitState.ArmSwingLeft *= 1.f - LeftReachAlpha;
 	GaitState.ArmSwingRight *= 1.f - RightReachAlpha;
+	const float BalanceNow = BalanceComponent ? BalanceComponent->GetBalance() : 1.f;
+	GaitState.ArmBalanceSpread = FMath::FInterpTo(GaitState.ArmBalanceSpread, FMath::Clamp((0.85f - BalanceNow) / 0.5f, 0.f, 1.f), DeltaTime, 10.f);
 	GaitState.LeftArmReachAlpha = LeftReachAlpha;
 	GaitState.RightArmReachAlpha = RightReachAlpha;
 	GaitState.LeftReachTargetWorld = LeftReachTarget;
@@ -423,7 +458,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.FistAlphaLeft = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Left), 0.f, 1.f) : 0.f;
 	GaitState.FistAlphaRight = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Right), 0.f, 1.f) : 0.f;
 	// Loose arms hang straight while standing; the elbows start to break with the walking and running speed.
-	GaitState.ElbowBend = FMath::Lerp(ElbowBendWalkDegrees, ElbowBendRunDegrees, SpeedAlpha) * ArmBlend;
+	GaitState.ElbowBend = FMath::Lerp(ElbowBendWalkDegrees, ElbowBendRunDegrees, SpeedAlpha * SpeedAlpha) * ArmBlend;
 	GaitState.KneeBend = FMath::Max(Lift[0], Lift[1]) * KneeBendMaxDegrees + ReachLowerAlpha * KneeBendMaxDegrees;
 	GaitState.KneeBend += StanceKneeBendDegrees * StanceAlpha;
 

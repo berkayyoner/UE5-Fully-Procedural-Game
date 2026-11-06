@@ -20,6 +20,7 @@ namespace
 	constexpr float AedirLegInjuryRecoveryPenalty = 0.5f;
 	constexpr float AedirLeanInterpSpeed = 8.f;
 	constexpr float AedirSafeLandingSpeed = 900.f;
+	constexpr float AedirUntrainedSafeLandingSpeed = 520.f;
 	constexpr float AedirAthletismRecoveryScale = 100.f;
 	constexpr float AedirAthletismDamageScale = 200.f;
 	constexpr float AedirWalkableNormalZ = 0.5f;
@@ -238,13 +239,18 @@ void UAedirBalanceComponent::HandleLanded(float LandingSpeed)
 		ApplyBalanceImpact(GetOwner()->GetActorForwardVector(), Loss);
 	}
 
-	if (LandingSpeed > AedirSafeLandingSpeed)
+	if (UAedirStatsComponent* StatsComponent = FindStats())
 	{
-		if (UAedirStatsComponent* StatsComponent = FindStats())
+		// A trained body absorbs more of a fall: the safe speed rises with athletism, an untrained one crumples at about 1.4 m.
+		const float Athletism = StatsComponent->Athletism;
+		const float SafeSpeed = FMath::Lerp(AedirUntrainedSafeLandingSpeed, AedirSafeLandingSpeed, FMath::Clamp(Athletism / AedirAthletismRecoveryScale, 0.f, 1.f));
+		if (LandingSpeed > SafeSpeed)
 		{
-			const float Athletism = StatsComponent->Athletism;
 			const float ReflexScale = 1.f - ComBalanceReflexFallDamageReduction * ReflexAlpha;
-			StatsComponent->ApplyDamage((LandingSpeed - AedirSafeLandingSpeed) * FallDamagePerSpeed * (1.f - Athletism / AedirAthletismDamageScale) * ReflexScale);
+			StatsComponent->ApplyDamage((LandingSpeed - SafeSpeed) * FallDamagePerSpeed * (1.f - Athletism / AedirAthletismDamageScale) * ReflexScale);
+			// Past the safe speed the legs give way and the body slams into the ground.
+			const float CrumpleLoss = FMath::Clamp((LandingSpeed - SafeSpeed) / (SafeSpeed * 0.3f), 0.5f, 1.f);
+			ApplyBalanceImpact(GetOwner()->GetActorForwardVector(), CrumpleLoss);
 		}
 	}
 }

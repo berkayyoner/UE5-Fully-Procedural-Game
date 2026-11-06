@@ -59,13 +59,13 @@ public:
 	bool bWantsFightStance = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float RotationRateMoving = 360.f;
+	float RotationRateMoving = 170.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float BodyLagYawMoving = 4.f;
+	float BodyLagYawMoving = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float MaxBodyHeadYawWhileMoving = 35.f;
+	float MaxBodyHeadYawWhileMoving = 80.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float StandingLookYawLimit = 70.f;
@@ -75,6 +75,16 @@ public:
 
 	UPROPERTY(VisibleInstanceOnly, BlueprintReadOnly, Category="Aedir|Movement")
 	bool bTurningInPlace = false;
+
+	// Seconds the body crouches down before the legs push off.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float JumpWindupSeconds = 0.2f;
+
+	// Starts the crouch before a jump; the jump itself fires when the wind-up ends. Returns false when a jump cannot start now.
+	bool BeginJumpWindup();
+
+	// 0 when no jump is winding up, rising to 1 at the push-off.
+	float GetJumpWindupAlpha() const;
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void PhysicsRotation(float DeltaTime) override;
@@ -109,6 +119,7 @@ private:
 	void SetBodyYaw(float NewYaw);
 	void UpdateSurfaceFriction();
 
+	float JumpWindupRemaining = 0.f;
 	float BaseGroundFriction = 8.f;
 	float BaseBrakingDecelerationWalking = 1400.f;
 	float BaseMaxAcceleration = 1400.f;

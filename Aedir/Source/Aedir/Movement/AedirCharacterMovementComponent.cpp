@@ -115,9 +115,9 @@ UAedirCharacterMovementComponent::UAedirCharacterMovementComponent()
 	JumpZVelocity = 420.f;
 	AirControl = 0.25f;
 	// Soft acceleration and braking give the body weight: a walk takes about half a second to reach speed.
-	BaseGroundFriction = 4.f;
-	BaseBrakingDecelerationWalking = 520.f;
-	BaseMaxAcceleration = 480.f;
+	BaseGroundFriction = 1.2f;
+	BaseBrakingDecelerationWalking = 160.f;
+	BaseMaxAcceleration = 240.f;
 
 	GroundFriction = BaseGroundFriction;
 	BrakingDecelerationWalking = BaseBrakingDecelerationWalking;
@@ -129,6 +129,16 @@ void UAedirCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick
 	UpdateSurfaceFriction();
 
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (JumpWindupRemaining > 0.f)
+	{
+		JumpWindupRemaining -= DeltaTime;
+		if (JumpWindupRemaining <= 0.f && GetCharacterOwner())
+		{
+			JumpWindupRemaining = 0.f;
+			GetCharacterOwner()->Jump();
+		}
+	}
 
 	const ACharacter* Character = GetCharacterOwner();
 	UAedirStatsComponent* Stats = GetOwnerStats();
@@ -146,6 +156,28 @@ void UAedirCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick
 	{
 		bWantsToRun = false;
 	}
+}
+
+bool UAedirCharacterMovementComponent::BeginJumpWindup()
+{
+	const UAedirStatsComponent* Stats = GetOwnerStats();
+	if (JumpWindupRemaining > 0.f || !IsMovingOnGround() || (Stats && Stats->GetStamina() < MinStaminaToJump))
+	{
+		return false;
+	}
+
+	JumpWindupRemaining = FMath::Max(JumpWindupSeconds, KINDA_SMALL_NUMBER);
+	return true;
+}
+
+float UAedirCharacterMovementComponent::GetJumpWindupAlpha() const
+{
+	if (JumpWindupRemaining <= 0.f)
+	{
+		return 0.f;
+	}
+
+	return FMath::Clamp(1.f - JumpWindupRemaining / FMath::Max(JumpWindupSeconds, KINDA_SMALL_NUMBER), 0.f, 1.f);
 }
 
 void UAedirCharacterMovementComponent::PhysicsRotation(float DeltaTime)

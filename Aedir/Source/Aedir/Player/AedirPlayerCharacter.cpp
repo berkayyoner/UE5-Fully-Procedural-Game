@@ -364,9 +364,9 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 		const float Time = GetWorld()->GetTimeSeconds();
 		const FVector2D MouseLean = FVector2D(PendingMouseDelta.X, PendingMouseDelta.Y).GetClampedToMaxSize(30.f) * 0.03f;
 		const FRotator Sway(
-			(FMath::Sin(Time * 1.3f) * 0.35f - MouseLean.Y) * FightCameraAlpha,
-			(FMath::Sin(Time * 0.9f + 1.f) * 0.45f + MouseLean.X * 0.5f) * FightCameraAlpha,
-			(FMath::Sin(Time * 1.1f + 2.f) * 0.5f + MouseLean.X) * FightCameraAlpha);
+			(FMath::Sin(Time * 1.3f) * 0.12f - MouseLean.Y * 0.4f) * FightCameraAlpha,
+			(FMath::Sin(Time * 0.9f + 1.f) * 0.15f + MouseLean.X * 0.2f) * FightCameraAlpha,
+			(FMath::Sin(Time * 1.1f + 2.f) * 0.15f + MouseLean.X * 0.4f) * FightCameraAlpha);
 		FightCameraSway = FMath::RInterpTo(FightCameraSway, Sway, DeltaSeconds, 6.f);
 		FollowCamera->SetRelativeRotation(FightCameraSway);
 	}

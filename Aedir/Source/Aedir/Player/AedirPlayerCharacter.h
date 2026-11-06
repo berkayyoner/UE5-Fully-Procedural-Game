@@ -36,7 +36,7 @@ public:
 
 	// Share of the mouse movement that still turns the camera while a guard is held.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	float FightCameraMouseScale = 0.03f;
+	float FightCameraMouseScale = 0.015f;
 
 	// Blend of the subtle fight-stance camera drift, 0 outside the stance.
 	float FightCameraAlpha = 0.f;

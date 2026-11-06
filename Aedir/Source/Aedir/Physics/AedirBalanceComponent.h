@@ -69,7 +69,7 @@ public:
 	float FallSpeedBalanceThreshold = 600.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float FallDamagePerSpeed = 0.08f;
+	float FallDamagePerSpeed = 0.15f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float ImpactBalanceScale = 0.0005f;

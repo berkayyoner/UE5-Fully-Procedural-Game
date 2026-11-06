@@ -193,6 +193,15 @@ void AAedirCreature::StartJump()
 		return;
 	}
 
+	// A jump starts with a short crouch; the movement component fires the jump once it is over.
+	if (UAedirCharacterMovementComponent* AedirMovement = Cast<UAedirCharacterMovementComponent>(GetCharacterMovement()))
+	{
+		if (AedirMovement->BeginJumpWindup())
+		{
+			return;
+		}
+	}
+
 	Jump();
 }
 

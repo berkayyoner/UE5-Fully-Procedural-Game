@@ -281,12 +281,12 @@ void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaT
 		return;
 	}
 
-	// Raw MouseY is positive when the mouse moves down, so moving the mouse up raises the arm.
+	// Mouse Y input is positive when the mouse moves up, so moving the mouse up raises the arm.
 	// Outwards the arm sweeps a 90 degree arc, across the body it only reaches a little past the centre line.
 	const float OutwardSign = Hand == EAedirHand::Right ? 1.f : -1.f;
 	const float OutwardYaw = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign + MouseDeltaThisFrame.X * OutwardSign * AimSensitivity, -AedirArmAcrossYawLimit, AedirArmOutwardYawLimit);
 	Arm.AimOffsetDeg.X = OutwardYaw * OutwardSign;
-	Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y - MouseDeltaThisFrame.Y * AimSensitivity, AedirArmAimPitchMin, AedirArmAimPitchMax);
+	Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y + MouseDeltaThisFrame.Y * AimSensitivity, AedirArmAimPitchMin, AedirArmAimPitchMax);
 }
 
 void UAedirCombatComponent::AddExtensionInput(EAedirHand Hand, float WheelDelta)
@@ -837,7 +837,9 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 	}
 
 	const double Yaw = Creature->GetActorRotation().Yaw + Arm.AimOffsetDeg.X;
-	const FVector AimDirection = FRotator(Arm.AimOffsetDeg.Y, Yaw, 0.0).Vector();
+	// Height is relative to where the camera looks, so a punch aimed at the screen centre hits what the crosshair shows.
+	const double CameraPitch = FRotator::NormalizeAxis(Creature->GetControlRotation().Pitch);
+	const FVector AimDirection = FRotator(CameraPitch + Arm.AimOffsetDeg.Y, Yaw, 0.0).Vector();
 	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
 	const float Extension = FMath::Clamp(Arm.Extension, 0.f, 1.f);
 	// Pulled outwards the elbow breaks and the hand travels an arc beside the body; centred the arm reaches straight ahead.

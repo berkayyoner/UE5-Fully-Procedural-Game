@@ -61,6 +61,10 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float ArmSwingRight = 0.f;
 
+	// 0..1, rises as balance is lost: the arms spread out to help the body catch itself.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float ArmBalanceSpread = 0.f;
+
 	// Elbow flexion in degrees.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float ElbowBend = 0.f;
@@ -242,10 +246,10 @@ public:
 	FName RightFootBoneName = FName(TEXT("foot_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float StrideWalkCm = 140.f;
+	float StrideWalkCm = 105.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float StrideRunCm = 230.f;
+	float StrideRunCm = 175.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float SideStrideScale = 0.6f;
@@ -366,10 +370,10 @@ public:
 	FVector GuardHandOffsetRight = FVector(30.f, 16.f, 50.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxArmSwingWalkDegrees = 35.f;
+	float MaxArmSwingWalkDegrees = 12.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxArmSwingRunDegrees = 55.f;
+	float MaxArmSwingRunDegrees = 42.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ArmSideScale = 0.4f;
@@ -381,10 +385,10 @@ public:
 	float ArmBlendInterpSpeed = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ElbowBendWalkDegrees = 14.f;
+	float ElbowBendWalkDegrees = 5.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ElbowBendRunDegrees = 70.f;
+	float ElbowBendRunDegrees = 55.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float KneeBendMaxDegrees = 40.f;
@@ -395,6 +399,26 @@ public:
 	// Roll of the torso towards the side the body is travelling to, scaled by speed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MoveDirectionLeanRollDegrees = 7.f;
+
+	// A planted foot further than this share of the stride from its home takes an early step.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float MaxPlantedDriftStrideFraction = 0.55f;
+
+	// Pause between two stumble steps unless the fall is urgent.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Recovery")
+	float RecoveryStepCooldownSeconds = 0.5f;
+
+	// How far the pelvis sinks in the wind-up of a jump.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
+	float JumpWindupDipCm = 24.f;
+
+	// Pelvis sink at a 900 cm/s landing for an untrained body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
+	float LandingDipMaxCm = 38.f;
+
+	// How fast the pelvis springs back up after a landing.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Jump")
+	float LandingDipRecoverSpeed = 5.f;
 
 	// 0 standing, 1 fully crouched. Lags the instant capsule change so the pelvis and camera lower gradually.
 	float GetCrouchAlpha() const { return CrouchAlpha; }
@@ -595,6 +619,9 @@ private:
 
 	// Stumble step state per foot. A recovery swing lands on RecoveryLandingWorld instead of the phase-driven landing.
 	float CrouchAlpha = 0.f;
+	float RecoveryCooldownRemaining = 0.f;
+	float AirFallSpeed = 0.f;
+	float LandingDipCm = 0.f;
 	bool bRecoverySwinging[2] = { false, false };
 	float RecoverySwingElapsed[2] = { 0.f, 0.f };
 	float RecoverySwingDuration[2] = { 0.f, 0.f };

@@ -40,8 +40,8 @@ private:
 	TArray<FName> LeftFingerBoneNames;
 	TArray<FName> RightFingerBoneNames;
 	FVector FistCurlAxis = FVector::UpVector;
-	float FistCurlSignLeft = 1.f;
-	float FistCurlSignRight = 1.f;
+	float FistCurlSignLeft = -1.f;
+	float FistCurlSignRight = -1.f;
 
 	// Copied from the gait component in PreUpdate.
 	float ArmRestAdductionLeft = 0.f;
@@ -86,10 +86,10 @@ public:
 
 	// Mirrors the curl direction per hand, since the mirrored rig flips the local axis.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Fist")
-	float FistCurlSignLeft = 1.f;
+	float FistCurlSignLeft = -1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Fist")
-	float FistCurlSignRight = 1.f;
+	float FistCurlSignRight = -1.f;
 
 protected:
 	virtual void NativeInitializeAnimation() override;
