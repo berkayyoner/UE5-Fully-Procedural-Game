@@ -521,7 +521,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	// While walking the stance foot takes the weight and the pelvis rolls towards it. Phase is positive while the right foot is in stance.
 	const float StanceSide = FMath::Sin(2.f * UE_PI * Phase);
-	const float GaitLateral = StanceSide * WalkWeightShiftLateralCm * GaitIntensity * Alive;
+	// The sideways hip shift is subtle in a walk (about 40%) and reaches full size only when running.
+	const float LateralIntensity = bMoving ? FMath::Lerp(0.3f, 1.f, SpeedAlpha * SpeedAlpha) : 0.f;
+	const float GaitLateral = StanceSide * WalkWeightShiftLateralCm * LateralIntensity * Alive;
 	const float GaitRoll = -StanceSide * WalkWeightShiftRollDegrees * GaitIntensity * Alive;
 
 	GaitState.HipLateralOffset = IdleLateral + GaitLateral;

@@ -41,3 +41,4 @@ Early-step drift is measured from under the hip instead of the forward landing p
 Step targets halved ahead of the hip, stronger pelvis bob/yaw/lateral shift while walking, centred fists converge inwards to head height (editor build ok, 60/60 tests, not played).
 Walking pelvis rotation moved from yaw to roll (X axis): yaw swing 0, roll 6 degrees (builds, tests ok, not played).
 Pelvis gait roll is cancelled fully at the lowest spine bone so the upper body stays still (editor build ok, 60/60 tests, not played).
+Lateral hip shift is about 40 percent of full size in a walk and full only when running (builds, not played).
