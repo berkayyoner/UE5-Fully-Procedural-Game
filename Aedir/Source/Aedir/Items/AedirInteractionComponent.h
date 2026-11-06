@@ -115,6 +115,12 @@ public:
 	// True while a hand is on its way to the belt.
 	bool IsHolsterMoving() const;
 
+	// How the wrist turns an item on its way to the belt.
+	bool GetHolsterAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutShare) const;
+
+	// True while the other hand is coming to take the weapon this hand holds.
+	bool IsPassingHeld(EAedirHand Hand) const;
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Interaction")
 	EAedirHandState GetHandState(EAedirHand Hand) const;
 
@@ -281,6 +287,7 @@ private:
 
 	// The hand goes to the belt first, and the item changes place when it gets there.
 	void BeginHolsterMotion(EAedirHand Hand);
+	void StartHolsterPath(EAedirHand Hand);
 	void UpdateHolsterMotion(EAedirHand Hand, float DeltaTime);
 	int32 FindFreeWaistIndex(EAedirHand Hand) const;
 	int32 FindDrawWaistIndex(EAedirHand Hand) const;
@@ -291,6 +298,7 @@ private:
 	enum class EAedirHolsterMotion : uint8 { None, Store, Draw };
 	EAedirHolsterMotion HolsterMotion[2] = { EAedirHolsterMotion::None, EAedirHolsterMotion::None };
 	float HolsterElapsed[2] = { 0.f, 0.f };
+	FVector HolsterStartLocal[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	int32 HolsterWaistIndex[2] = { INDEX_NONE, INDEX_NONE };
 
 	// The hand is reaching for a weapon in the other hand, to take it over.

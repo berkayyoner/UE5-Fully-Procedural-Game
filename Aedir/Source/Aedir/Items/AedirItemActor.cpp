@@ -291,6 +291,18 @@ void AAedirItemActor::SetHighlighted(bool bNewHighlighted)
 	}
 }
 
+float AAedirItemActor::GetHoldRadiusCm() const
+{
+	if (!Mesh || !Mesh->GetStaticMesh())
+	{
+		return 0.f;
+	}
+
+	// From the mesh itself: the box around a turned item in the world is larger than the item.
+	const FVector Extent = Mesh->GetStaticMesh()->GetBounds().BoxExtent * Mesh->GetComponentScale().GetAbs();
+	return static_cast<float>(FMath::Max(Extent.X, Extent.Y));
+}
+
 FVector AAedirItemActor::GetBoundsCenterWorld() const
 {
 	if (!Mesh)

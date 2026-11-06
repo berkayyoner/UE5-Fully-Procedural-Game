@@ -13,8 +13,8 @@
 namespace
 {
 	constexpr float AedirObjectPalmShare = 0.55f;
-	constexpr float AedirObjectContactDownShare = 0.35f;
-	constexpr float AedirObjectPalmClearanceCm = 1.f;
+	constexpr float AedirObjectContactDownShare = 0.6f;
+	constexpr float AedirObjectPalmClearanceCm = 2.5f;
 	constexpr float AedirKneePoleDistance = 100.f;
 	constexpr float AedirKneePoleDropDistance = 30.f;
 	constexpr float AedirLegMinReachShare = 0.3f;
@@ -32,6 +32,12 @@ namespace
 	constexpr float AedirElbowGuardOutShare = 0.3f;
 	constexpr float AedirElbowGuardDropShare = 1.8f;
 	constexpr float AedirElbowOutGain = 2.5f;
+	// A hand above the shoulder bends its elbow out to the side and a little forward.
+	constexpr float AedirElbowRaiseRangeCm = 25.f;
+	constexpr float AedirElbowRaisedOutCm = 60.f;
+	constexpr float AedirElbowRaisedForwardCm = 18.f;
+	// The handle crosses the palm, so it never lies closer to the line of the forearm than this.
+	constexpr float AedirWristMinBladeDegrees = 28.f;
 	constexpr float AedirFistAlphaThreshold = 0.001f;
 	constexpr int32 AedirFingerCount = 5;
 	constexpr int32 AedirFingerJointCount = 3;
@@ -171,8 +177,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh);
 	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh);
 
-	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha);
-	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha);
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha);
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha);
 
 	if (GaitData.ObjectAlpha > AedirReachAlphaThreshold)
 	{
@@ -183,13 +189,16 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	const bool bGripLeft = GaitData.GripSecondaryHand == static_cast<int32>(EAedirHand::Left);
 	ApplyGripHand(CSPose, RefCSPose, Bones, bGripLeft ? LeftOutwardMesh : RightOutwardMesh, DownMesh, ArmForwardMesh);
 
+	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
+	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"));
+
 	// Fingers are children of the final hand pose, so they are curled after the arm IK.
 	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
 	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
 
 	const FVector ForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
-	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, GaitData.LeftFootWorld, GaitData.LeftFootRot, ForwardMesh, GaitData.LeftFootLift);
-	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.RightFemur, BoneNameSet.RightTibia, BoneNameSet.RightFoot, GaitData.RightFootWorld, GaitData.RightFootRot, ForwardMesh, GaitData.RightFootLift);
+	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, GaitData.LeftFootWorld, GaitData.LeftFootRot, ForwardMesh, GaitData.LeftFootLift, GaitData.KickLeftLeg ? GaitData.KickSoleAlpha : 0.f);
+	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.RightFemur, BoneNameSet.RightTibia, BoneNameSet.RightFoot, GaitData.RightFootWorld, GaitData.RightFootRot, ForwardMesh, GaitData.RightFootLift, GaitData.KickLeftLeg ? 0.f : GaitData.KickSoleAlpha);
 
 	FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(CSPose, Output.Pose);
 	Output.Pose.NormalizeRotations();
@@ -364,7 +373,11 @@ void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, con
 	// goes, the further out the elbow is allowed.
 	const float ElbowOutShare = FMath::Lerp(AedirElbowGuardOutShare, 1.f, FMath::Clamp(Sideways * AedirElbowOutGain, 0.f, 1.f));
 	const float ElbowDropShare = FMath::Lerp(AedirElbowGuardDropShare, 1.f, FMath::Clamp(Sideways * AedirElbowOutGain, 0.f, 1.f));
-	const FVector JointTarget = Effector + OutwardMesh * (AedirElbowOutwardDistance * ElbowOutShare) + DownMesh * (AedirElbowDropDistance * ElbowDropShare) - ForwardMesh * (AedirElbowBackDistance * Sideways);
+	const FVector LowJointTarget = Effector + OutwardMesh * (AedirElbowOutwardDistance * ElbowOutShare) + DownMesh * (AedirElbowDropDistance * ElbowDropShare) - ForwardMesh * (AedirElbowBackDistance * Sideways);
+	// Over the shoulder a pole below the hand would lie on the line of the arm and flip the elbow, so the raised elbow has its own.
+	const float RaisedShare = FMath::SmoothStep(0.f, 1.f, static_cast<float>(-FVector::DotProduct(Effector - RootPosition, DownMesh)) / AedirElbowRaiseRangeCm);
+	const FVector RaisedJointTarget = (RootPosition + Effector) * 0.5 + OutwardMesh * AedirElbowRaisedOutCm + ForwardMesh * AedirElbowRaisedForwardCm;
+	const FVector JointTarget = FMath::Lerp(LowJointTarget, RaisedJointTarget, RaisedShare);
 
 	FVector SolvedJointPosition;
 	FVector SolvedEndPosition;
@@ -419,32 +432,93 @@ void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, cons
 	}
 }
 
-void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha) const
+void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha) const
 {
 	if (Alpha <= AedirReachAlphaThreshold)
 	{
 		return;
 	}
 
+	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
 	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);
 	const FCompactPoseBoneIndex Index = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("index_01%s"), Suffix)));
 	const FCompactPoseBoneIndex Pinky = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("pinky_01%s"), Suffix)));
-	if (!Hand.IsValid() || !Index.IsValid() || !Pinky.IsValid())
+	const FCompactPoseBoneIndex Middle = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("middle_01%s"), Suffix)));
+	if (!Radius.IsValid() || !Hand.IsValid() || !Index.IsValid() || !Pinky.IsValid() || !Middle.IsValid())
 	{
 		return;
 	}
 
-	// The blade runs across the knuckles. The wrist turns the shortest way to bring that line onto the wanted direction.
-	const FQuat RefHandRotation = RefCSPose.GetComponentSpaceTransform(Hand).GetRotation();
+	const FTransform RefHand = RefCSPose.GetComponentSpaceTransform(Hand);
+	const FQuat RefHandInverse = RefHand.GetRotation().Inverse();
 	const FVector RefKnuckles = RefCSPose.GetComponentSpaceTransform(Index).GetLocation() - RefCSPose.GetComponentSpaceTransform(Pinky).GetLocation();
-	const FVector KnucklesInHand = RefHandRotation.Inverse().RotateVector(RefKnuckles.GetSafeNormal());
+	const FVector RefToMiddle = RefCSPose.GetComponentSpaceTransform(Middle).GetLocation() - RefHand.GetLocation();
+	const FQuat ClosedHandInverse = FRotationMatrix::MakeFromXY(RefHandInverse.RotateVector(RefKnuckles), RefHandInverse.RotateVector(RefToMiddle)).ToQuat().Inverse();
 
 	FTransform HandTransform = CSPose.GetComponentSpaceTransform(Hand);
-	const FVector KnucklesNow = HandTransform.GetRotation().RotateVector(KnucklesInHand);
-	const FVector Target = MeshToWorld.InverseTransformVectorNoScale(DirectionWorld).GetSafeNormal();
-	const FQuat Turn = FQuat::Slerp(FQuat::Identity, SafeDeltaRotation(KnucklesNow, Target), FMath::Clamp(Alpha, 0.f, 1.f));
-	HandTransform.SetRotation((Turn * HandTransform.GetRotation()).GetNormalized());
+	const FVector Forearm = (HandTransform.GetLocation() - CSPose.GetComponentSpaceTransform(Radius).GetLocation()).GetSafeNormal();
+	FVector Blade = MeshToWorld.InverseTransformVectorNoScale(DirectionWorld).GetSafeNormal();
+
+	// The handle crosses the palm: the wrist bends only so far, and a blade pointing along the forearm stops short of its line.
+	const double Along = FVector::DotProduct(Blade, Forearm);
+	const double LimitCos = FMath::Cos(FMath::DegreesToRadians(AedirWristMinBladeDegrees));
+	if (FMath::Abs(Along) > LimitCos)
+	{
+		FVector Across = FVector::VectorPlaneProject(Blade, Forearm);
+		if (Across.IsNearlyZero(0.01))
+		{
+			Across = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector), Forearm);
+		}
+		Blade = Forearm * (Along > 0.0 ? LimitCos : -LimitCos) + Across.GetSafeNormal() * FMath::Sin(FMath::DegreesToRadians(AedirWristMinBladeDegrees));
+	}
+
+	// The blade runs across the knuckles and the fingers run on from the forearm, so a change of direction comes from the arm.
+	const FQuat HandRotation = FRotationMatrix::MakeFromXY(Blade, FVector::VectorPlaneProject(Forearm, Blade)).ToQuat() * ClosedHandInverse;
+	HandTransform.SetRotation(FQuat::Slerp(HandTransform.GetRotation(), HandRotation, FMath::Clamp(Alpha, 0.f, 1.f)).GetNormalized());
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
+}
+
+void FAedirProceduralAnimProxy::ApplyForearmTwist(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix) const
+{
+	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
+	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);
+	if (!Radius.IsValid() || !Hand.IsValid())
+	{
+		return;
+	}
+
+	// A forearm turns along its whole length, not at the wrist. The twist bones take the turn of the hand, more of it the nearer they are to the hand.
+	const FTransform RadiusTransform = CSPose.GetComponentSpaceTransform(Radius);
+	const FVector ToHand = CSPose.GetComponentSpaceTransform(Hand).GetLocation() - RadiusTransform.GetLocation();
+	const double Length = ToHand.Size();
+	if (Length < 1.0)
+	{
+		return;
+	}
+
+	const FVector Axis = ToHand / Length;
+	const FQuat RestHandInForearm = RefCSPose.GetComponentSpaceTransform(Radius).GetRotation().Inverse() * RefCSPose.GetComponentSpaceTransform(Hand).GetRotation();
+	const FQuat HandTurn = CSPose.GetComponentSpaceTransform(Hand).GetRotation() * (RadiusTransform.GetRotation() * RestHandInForearm).Inverse();
+	FQuat Swing;
+	FQuat Twist;
+	HandTurn.ToSwingTwist(Axis, Swing, Twist);
+	if (Twist.W < 0.0)
+	{
+		Twist = -Twist;
+	}
+
+	const TCHAR* const TwistNames[] = { TEXT("lowerarm_twist_01"), TEXT("lowerarm_twist_02") };
+	for (const TCHAR* TwistName : TwistNames)
+	{
+		const FCompactPoseBoneIndex TwistBone = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("%s%s"), TwistName, Suffix)));
+		if (TwistBone.IsValid())
+		{
+			FTransform TwistTransform = CSPose.GetComponentSpaceTransform(TwistBone);
+			const float Share = FMath::Clamp(static_cast<float>(FVector::DotProduct(TwistTransform.GetLocation() - RadiusTransform.GetLocation(), Axis) / Length), 0.f, 1.f);
+			TwistTransform.SetRotation((FQuat::Slerp(FQuat::Identity, Twist, Share) * TwistTransform.GetRotation()).GetNormalized());
+			CSPose.SetComponentSpaceTransform(TwistBone, TwistTransform);
+		}
+	}
 }
 
 void FAedirProceduralAnimProxy::ApplyObjectHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, bool bLeft, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const
@@ -562,7 +636,7 @@ void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCS
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
 }
 
-void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift) const
+void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift, float KickSoleAlpha) const
 {
 	const FCompactPoseBoneIndex Femur = ResolveCompactBone(Bones, FemurName);
 	const FCompactPoseBoneIndex Tibia = ResolveCompactBone(Bones, TibiaName);
@@ -628,7 +702,15 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<
 	const FQuat FlatFootRotation = FootTiltMesh * RefCSPose.GetComponentSpaceTransform(Foot).GetRotation();
 	const FQuat ShinFootRotation = TibiaDelta * FemurDelta * FootTransform.GetRotation();
 	const float LooseAlpha = FMath::Max(FMath::Clamp(FootLift * AedirFootLooseGain, 0.f, 1.f), HeelAlpha);
-	NewFoot.SetRotation(FQuat::Slerp(FlatFootRotation, ShinFootRotation, LooseAlpha).GetNormalized());
+	FQuat FootRotation = FQuat::Slerp(FlatFootRotation, ShinFootRotation, LooseAlpha);
+	// A kick lands on the sole: the flat foot turned toes up until its underside faces the target.
+	if (KickSoleAlpha > AedirReachAlphaThreshold)
+	{
+		const FVector SoleDirection = MeshToWorld.InverseTransformVectorNoScale(GaitData.KickSoleDirWorld);
+		const FQuat SoleRotation = SafeDeltaRotation(DownMeshDirection, SoleDirection) * RefCSPose.GetComponentSpaceTransform(Foot).GetRotation();
+		FootRotation = FQuat::Slerp(FootRotation, SoleRotation, FMath::Clamp(KickSoleAlpha, 0.f, 1.f));
+	}
+	NewFoot.SetRotation(FootRotation.GetNormalized());
 	CSPose.SetComponentSpaceTransform(Foot, NewFoot);
 }
 

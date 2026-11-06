@@ -75,6 +75,13 @@ struct AEDIR_API FAedirKickNetState
 	// Foot world location at the start of the kick. The foot returns here at the end of the arc.
 	UPROPERTY()
 	FVector_NetQuantize StartWorld = FVector::ZeroVector;
+
+	// Where the camera looked when the kick started.
+	UPROPERTY()
+	FVector_NetQuantizeNormal Direction = FVector::ForwardVector;
+
+	UPROPERTY()
+	float LiftCm = 0.f;
 };
 
 // Local simulation state of one arm. Not replicated; the server copy is published through FAedirArmNetState.
@@ -180,11 +187,11 @@ public:
 
 	// Spring stiffness of an unloaded arm in 1/s^2. Scaled down by weight, low strength, low stamina and injury.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")
-	float ArmStiffnessBase = 3200.f;
+	float ArmStiffnessBase = 5000.f;
 
 	// Maximum hand acceleration in cm/s^2 for a healthy, fresh, average-strength arm.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")
-	float MaxArmAcceleration = 26000.f;
+	float MaxArmAcceleration = 42000.f;
 
 	// Mass of the arm itself in kg, added to the held item weight.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")
@@ -308,6 +315,15 @@ public:
 	// A big object in both hands: where its middle is, how big it is, and how far the hands have come to it.
 	bool GetObjectCarry(FVector& OutCenterWorld, float& OutRadiusCm, float& OutAlpha) const;
 
+	// Holds a kick at that share of its length, for a look at the pose. Below zero lets it run.
+	void DevHoldKick(float Share);
+
+	// How far the spine turns with a weapon pulled to the side.
+	float GetSwingTwistDegrees() const;
+
+	// Puts the blade of that hand there at once, when it takes over a weapon from elsewhere.
+	void SetWeaponDirNow(EAedirHand Hand, const FVector& DirectionWorld);
+
 	// Local player only. Mouse wheel steps change how far the arm reaches, 0..1.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat")
 	void AddExtensionInput(EAedirHand Hand, float WheelDelta);
@@ -374,6 +390,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Combat|Kick")
 	bool GetKickPose(bool& bOutLeftLeg, FVector& OutFootTargetWorld, float& OutAlpha) const;
 
+	// Where the sole of the kicking foot faces, and how far the foot has turned to it.
+	bool GetKickSole(FVector& OutDirectionWorld, float& OutAlpha) const;
+
 	// Pure helpers used by the impact model and by tests.
 	static float ComputeImpactEnergy(float MassKg, float SpeedCmPerSec);
 	static EAedirBodyZone ClassifyBodyZone(FName BoneName);
@@ -385,7 +404,7 @@ public:
 	static float ComputeShoveEnergy(float Strength, float StaminaFraction);
 
 	// Foot target of the kick arc. T01 is 0 at the start, 0.25 at the chamber, 0.5 at the full extension and 1 back at the start.
-	static FVector EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01);
+	static FVector EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm = 0.f);
 
 private:
 	bool IsAuthoritative() const;
@@ -487,12 +506,19 @@ private:
 	void UpdateObjectCarry();
 	float GetSecondaryGripLocalCm(const AAedirItemActor* Item) const;
 	FVector ComputeHalfSwordDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
+	float GetHalfSwordForwardDegrees(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
+	FVector ComputeCarriedDir(EAedirHand Hand) const;
+	float GetFightShare() const;
+	static FCollisionObjectQueryParams GetHeldBlockObjects();
+	bool SweepHeldBlade(const AAedirItemActor* Item, const FVector& HandWorld, const FVector& Direction, float LengthCm, FHitResult& OutHit) const;
+	void ResolveHeldCollision(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& PrevHand, const FVector& PrevDir, float DeltaTime);
 	FVector ComputeHalfSwordHand(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
 	FVector ComputeObjectCenter(const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
 	FVector ComputeWeaponTargetDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	void UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);
 
 	bool bThrustMode = false;
+	float DevKickHoldShare = -1.f;
 	float HalfSwordAlpha = 0.f;
 	bool bHalfSwordWantedLast = false;
 	bool bObjectGripLast = false;

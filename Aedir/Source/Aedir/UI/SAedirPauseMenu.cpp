@@ -40,6 +40,7 @@ namespace
 		Back,
 		NewSave,
 		NoSaves,
+		Resume,
 		// Rows of the save lists use this plus their index in the save list.
 		FirstSaveRow = 100,
 		// Rows of the settings pages use this plus their option index.
@@ -296,7 +297,7 @@ void SAedirPauseMenu::SetTab(int32 NewTab)
 void SAedirPauseMenu::GoToPage(EAedirPausePage NewPage)
 {
 	// Coming back to the main page, the cursor returns to the row that opened the page.
-	const int32 ReturnRow = Page == EAedirPausePage::SaveList ? 1 : (Page == EAedirPausePage::LoadList ? 2 : (Page == EAedirPausePage::Settings ? 3 : 0));
+	const int32 ReturnRow = Page == EAedirPausePage::SaveList ? 2 : (Page == EAedirPausePage::LoadList ? 3 : (Page == EAedirPausePage::Settings ? 4 : 0));
 	const int32 ReturnSettingsRow = Page == EAedirPausePage::SettingsAudio ? 1 : (Page == EAedirPausePage::SettingsGameplay ? 2 : 0);
 	CurrentTab = static_cast<int32>(EAedirPauseTab::Options);
 	Page = NewPage;
@@ -432,6 +433,7 @@ TArray<FAedirMenuRow> SAedirPauseMenu::BuildRows() const
 	switch (Page)
 	{
 	case EAedirPausePage::Main:
+		Result.Add(PauseMakeRow(TEXT("Resume"), EPauseAction::Resume));
 		Result.Add(PauseMakeRow(TEXT("Quick Save"), EPauseAction::QuickSave));
 		Result.Add(PauseMakeRow(TEXT("Save"), EPauseAction::Save));
 		Result.Add(PauseMakeRow(TEXT("Load"), EPauseAction::Load));
@@ -549,6 +551,10 @@ TArray<FAedirMenuLine> SAedirPauseMenu::BuildDetailLines(const TArray<FAedirMenu
 
 	switch (static_cast<EPauseAction>(Selected->Index))
 	{
+	case EPauseAction::Resume:
+		PauseAddHeader(Result, Selected->Name);
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Closes this menu and goes back to the game."));
+		break;
 	case EPauseAction::QuickSave:
 		PauseAddHeader(Result, Selected->Name);
 		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Saves the world right now to the quick slot."));
@@ -753,6 +759,9 @@ void SAedirPauseMenu::Activate(int32 Action)
 
 	switch (static_cast<EPauseAction>(Action))
 	{
+	case EPauseAction::Resume:
+		CloseDelegate.ExecuteIfBound();
+		break;
 	case EPauseAction::QuickSave:
 		QuickSave();
 		break;

@@ -152,6 +152,9 @@ public:
 	// Client-local visual only.
 	void SetHighlighted(bool bNewHighlighted);
 
+	// How far the sides of a big object lie from its middle.
+	float GetHoldRadiusCm() const;
+
 	FVector GetBoundsCenterWorld() const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Item")

@@ -14,6 +14,7 @@
 
 namespace
 {
+	constexpr float AedirSwingTwistInterpSpeed = 9.f;
 	constexpr float AedirRestPhaseMin = 0.4f;
 	constexpr float AedirRestPhaseMax = 0.5f;
 	constexpr float AedirRestCatchUpCyclesPerSecond = 2.f;
@@ -540,7 +541,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineLeanPitch += KickSpineLeanDegrees * KickAlpha;
 	const float TwistTarget = FMath::Clamp(LookYaw * SpineTwistScale, -SpineTwistLimitDegrees, SpineTwistLimitDegrees);
 	SmoothedSpineTwist = FMath::FInterpTo(SmoothedSpineTwist, TwistTarget, DeltaTime, LookInterpSpeed);
-	GaitState.SpineTwistYaw = SmoothedSpineTwist + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f);
+	SmoothedSwingTwist = FMath::FInterpTo(SmoothedSwingTwist, Combat ? Combat->GetSwingTwistDegrees() : 0.f, DeltaTime, AedirSwingTwistInterpSpeed);
+	GaitState.SpineTwistYaw = SmoothedSpineTwist + SmoothedSwingTwist + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f);
 
 	const FRotator HeadTarget(
 		LookPitch * HeadPitchShare,
@@ -579,9 +581,12 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	};
 	ReadWeaponAim(EAedirHand::Left, GaitState.LeftWeaponDirWorld, GaitState.LeftWeaponAimAlpha);
 	ReadWeaponAim(EAedirHand::Right, GaitState.RightWeaponDirWorld, GaitState.RightWeaponAimAlpha);
+	GaitState.KickLeftLeg = bKickLeftLeg;
+	GaitState.KickSoleAlpha = 0.f;
 	GaitState.ObjectAlpha = 0.f;
 	if (Combat)
 	{
+		Combat->GetKickSole(GaitState.KickSoleDirWorld, GaitState.KickSoleAlpha);
 		Combat->GetObjectCarry(GaitState.ObjectCenterWorld, GaitState.ObjectRadiusCm, GaitState.ObjectAlpha);
 	}
 	EAedirHand GripSecondary = EAedirHand::Left;

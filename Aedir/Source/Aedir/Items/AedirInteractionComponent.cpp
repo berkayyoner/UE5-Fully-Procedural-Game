@@ -1,6 +1,7 @@
 #include "AedirInteractionComponent.h"
 
 #include "Aedir.h"
+#include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -34,10 +35,20 @@ namespace
 	constexpr float ReachMaxHipSideCm = 22.f;
 	constexpr float ReachMaxTwistDegrees = 50.f;
 	constexpr float ReachLeanStepDegrees = 5.f;
-	constexpr float HolsterHandSeconds = 0.68f;
-	constexpr float HolsterHandMinSeconds = 0.5f;
-	constexpr float HolsterBlendInSeconds = 0.35f;
-	constexpr float HolsterHandArriveCm = 12.f;
+	constexpr float HolsterHandSeconds = 0.85f;
+	constexpr float HolsterBlendInSeconds = 0.3f;
+	// The arm goes down in front of the belly, not straight through the body.
+	constexpr float HolsterFrontForwardCm = 34.f;
+	constexpr float HolsterFrontSideCm = 8.f;
+	constexpr float HolsterFrontUpCm = 6.f;
+	constexpr float HolsterAimStart = 0.2f;
+	constexpr float HolsterAimEnd = 0.85f;
+	// Passing a weapon: both hands come together before the chest and the other hand takes it there.
+	constexpr float PassHandSeconds = 1.05f;
+	constexpr float PassGiveUpSeconds = 1.5f;
+	constexpr float PassBlendInSeconds = 0.55f;
+	constexpr float PassMeetForwardCm = 32.f;
+	constexpr float PassMeetUpCm = 18.f;
 	constexpr float WaistSlotRadiusCm = 22.f;
 	constexpr float WaistSlotUpCm = -4.f;
 	constexpr float WaistSlotYawDegrees[3] = { 95.f, 130.f, 160.f };
@@ -56,6 +67,12 @@ namespace
 	EAedirHand GetOtherHand(EAedirHand Hand)
 	{
 		return Hand == EAedirHand::Left ? EAedirHand::Right : EAedirHand::Left;
+	}
+
+	float HolsterSmoothStep(float Alpha)
+	{
+		const float Clamped = FMath::Clamp(Alpha, 0.f, 1.f);
+		return Clamped * Clamped * (3.f - 2.f * Clamped);
 	}
 
 	bool RequiresBothHands(const AAedirItemActor* Item)
@@ -158,7 +175,9 @@ void UAedirInteractionComponent::StartReach(EAedirHand Hand)
 		return;
 	}
 
-	StartReachForItem(Hand, FindBestItem());
+	// With nothing else in reach, the free hand joins the other one on a weapon made for two hands.
+	AAedirItemActor* Target = FindBestItem();
+	StartReachForItem(Hand, !Target && OtherHeld && OtherHeld->bTwoHanded ? OtherHeld : Target);
 }
 
 void UAedirInteractionComponent::StartReachForItem(EAedirHand Hand, AAedirItemActor* Item)
@@ -309,7 +328,7 @@ void UAedirInteractionComponent::DrawWaistSlot(EAedirHand Hand, int32 SlotIndex)
 	const int32 Index = static_cast<int32>(Hand);
 	HolsterWaistIndex[Index] = SlotIndex;
 	HolsterMotion[Index] = EAedirHolsterMotion::Draw;
-	HolsterElapsed[Index] = 0.f;
+	StartHolsterPath(Hand);
 }
 
 bool UAedirInteractionComponent::IsHolsterMoving() const
@@ -336,7 +355,44 @@ void UAedirInteractionComponent::BeginHolsterMotion(EAedirHand Hand)
 		HolsterWaistIndex[Index] = FindDrawWaistIndex(Hand);
 		HolsterMotion[Index] = HolsterWaistIndex[Index] != INDEX_NONE ? EAedirHolsterMotion::Draw : EAedirHolsterMotion::None;
 	}
+	StartHolsterPath(Hand);
+}
+
+void UAedirInteractionComponent::StartHolsterPath(EAedirHand Hand)
+{
+	const int32 Index = static_cast<int32>(Hand);
 	HolsterElapsed[Index] = 0.f;
+	if (const AAedirCreature* Creature = GetCreature())
+	{
+		HolsterStartLocal[Index] = Creature->GetActorTransform().InverseTransformPositionNoScale(GetHandWorld(Hand));
+	}
+}
+
+bool UAedirInteractionComponent::GetHolsterAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutShare) const
+{
+	const int32 Index = static_cast<int32>(Hand);
+	const AAedirItemActor* Item = HolsterMotion[Index] == EAedirHolsterMotion::Store ? GetHeldItem(Hand) : nullptr;
+	const AAedirCreature* Creature = GetCreature();
+	const USkeletalMeshComponent* BodyMesh = Creature ? Creature->GetMesh() : nullptr;
+	if (!Item || !BodyMesh)
+	{
+		return false;
+	}
+
+	FVector SlotOnBone;
+	FQuat RotationOnBone;
+	float PivotCm = 0.f;
+	GetWaistSlot(HolsterWaistIndex[Index], Item, SlotOnBone, RotationOnBone, PivotCm);
+	OutDirectionWorld = BodyMesh->GetSocketTransform(WaistBone).TransformVectorNoScale(RotationOnBone.GetAxisX());
+	OutShare = HolsterSmoothStep((HolsterElapsed[Index] / HolsterHandSeconds - HolsterAimStart) / (HolsterAimEnd - HolsterAimStart));
+	return true;
+}
+
+bool UAedirInteractionComponent::IsPassingHeld(EAedirHand Hand) const
+{
+	const FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
+	const AAedirItemActor* Item = GetHeldItem(Hand);
+	return Item && !Item->bTwoHanded && Item->ItemClass == EAedirItemClass::Weapon && Other.State == EAedirHandState::Reaching && Other.Item.Get() == Item;
 }
 
 void UAedirInteractionComponent::UpdateHolsterMotion(EAedirHand Hand, float DeltaTime)
@@ -357,9 +413,7 @@ void UAedirInteractionComponent::UpdateHolsterMotion(EAedirHand Hand, float Delt
 	}
 
 	HolsterElapsed[Index] += DeltaTime;
-	const FVector Target = GetWaistSlotWorld(HolsterWaistIndex[Index], Item);
-	const bool bArrived = HolsterElapsed[Index] >= HolsterHandSeconds || (HolsterElapsed[Index] > HolsterHandMinSeconds && FVector::Dist(GetHandWorld(Hand), Target) < HolsterHandArriveCm);
-	if (!bArrived)
+	if (HolsterElapsed[Index] < HolsterHandSeconds)
 	{
 		return;
 	}
@@ -585,7 +639,7 @@ void UAedirInteractionComponent::BeginReach(EAedirHand Hand, AAedirItemActor* It
 		return;
 	}
 
-	if (!bOtherOnThisItem)
+	if (!bOtherOnThisItem || bJoiningOtherHand)
 	{
 		ReachLeadHand = Hand;
 	}
@@ -620,8 +674,9 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 
 	// Both hands close on the item if it needs them or if both are already on their way to it.
 	const bool bOtherOnThisItem = Other.State == EAedirHandState::Reaching && Other.Item.Get() == Item;
+	const bool bOtherHolds = Other.State == EAedirHandState::Holding && Other.Item.Get() == Item;
 	const bool bBothHands = RequiresBothHands(Item) || bOtherOnThisItem;
-	if (!CanLift(Item) || (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle && !bOtherOnThisItem))
+	if (!CanLift(Item) || (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle && !bOtherOnThisItem && !bOtherHolds))
 	{
 		ResetSlot(Slot);
 		return;
@@ -633,6 +688,10 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 		bReachingToTakeOver[HandIndex] = false;
 		ResetSlot(Other);
 		Item->AttachToCreatureHand(Creature, Hand);
+		if (Creature->Combat)
+		{
+			Creature->Combat->SetWeaponDirNow(Hand, Item->GetActorForwardVector());
+		}
 		Slot.State = EAedirHandState::Holding;
 		Slot.Item = Item;
 		Slot.ReachElapsed = 0.f;
@@ -708,7 +767,10 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 		Slot.ReachHandWorld += ToItem.GetSafeNormal() * Step;
 	}
 
-	if (FVector::Dist(GetHandWorld(Hand), ItemCenter) < GrabDistance)
+	// A pass takes its time, and happens once the hands have met.
+	const bool bPassing = IsPassingHeld(GetOtherHand(Hand));
+	const bool bClose = FVector::Dist(GetHandWorld(Hand), ItemCenter) < GrabDistance;
+	if (bPassing ? (Slot.ReachElapsed >= PassGiveUpSeconds || (bClose && Slot.ReachElapsed >= PassHandSeconds)) : bClose)
 	{
 		GrabItem(Hand, Item);
 		return;
@@ -733,9 +795,12 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 		const bool bCarryingObject = Slot.State == EAedirHandState::Holding && Slot.Item && Slot.Item->ItemClass == EAedirItemClass::Object
 			&& GetSlot(GetOtherHand(Hand)).State == EAedirHandState::Holding && GetSlot(GetOtherHand(Hand)).Item == Slot.Item;
 		const bool bHolsterMotion = HolsterMotion[Index] != EAedirHolsterMotion::None;
-		if (Slot.State == EAedirHandState::Reaching || bCarryingObject || bHolsterMotion)
+		const bool bPassGiver = IsPassingHeld(Hand);
+		const bool bPassTaker = IsPassingHeld(GetOtherHand(Hand));
+		if (Slot.State == EAedirHandState::Reaching || bCarryingObject || bHolsterMotion || bPassGiver)
 		{
-			ReachBlend[Index] = FMath::Min(1.f, ReachBlend[Index] + DeltaTime / (bHolsterMotion ? HolsterBlendInSeconds : ReachBlendInSeconds));
+			const float BlendIn = bPassGiver || bPassTaker ? PassBlendInSeconds : (bHolsterMotion ? HolsterBlendInSeconds : ReachBlendInSeconds);
+			ReachBlend[Index] = FMath::Min(1.f, ReachBlend[Index] + DeltaTime / BlendIn);
 		}
 		else
 		{
@@ -745,7 +810,19 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 		if (bHolsterMotion)
 		{
 			const AAedirItemActor* HolsterItem = HolsterMotion[Index] == EAedirHolsterMotion::Store ? Slot.Item.Get() : (WaistItems.IsValidIndex(HolsterWaistIndex[Index]) ? WaistItems[HolsterWaistIndex[Index]].Get() : nullptr);
-			ReachTargetCache[Index] = GetWaistSlotWorld(HolsterWaistIndex[Index], HolsterItem);
+			const AAedirCreature* Creature = GetCreature();
+			const FVector SlotWorld = GetWaistSlotWorld(HolsterWaistIndex[Index], HolsterItem);
+			const FTransform ActorTransform = Creature ? Creature->GetActorTransform() : FTransform::Identity;
+			const float SlotSide = HolsterWaistIndex[Index] < WaistSlotsPerSide ? -1.f : 1.f;
+			const FVector Front = ActorTransform.TransformPositionNoScale(FVector(HolsterFrontForwardCm, SlotSide * HolsterFrontSideCm, HolsterFrontUpCm));
+			const float T = HolsterSmoothStep(HolsterElapsed[Index] / HolsterHandSeconds);
+			const FVector Start = ActorTransform.TransformPositionNoScale(HolsterStartLocal[Index]);
+			ReachTargetCache[Index] = FMath::Lerp(FMath::Lerp(Start, Front, T), FMath::Lerp(Front, SlotWorld, T), T);
+		}
+		else if (bPassGiver)
+		{
+			const AAedirCreature* Creature = GetCreature();
+			ReachTargetCache[Index] = Creature ? Creature->GetActorTransform().TransformPositionNoScale(FVector(PassMeetForwardCm, 0.f, PassMeetUpCm)) : ReachTargetCache[Index];
 		}
 		else if (Slot.Item)
 		{
@@ -815,7 +892,7 @@ void UAedirInteractionComponent::UpdatePelvisLower(float DeltaTime)
 		{
 			const EAedirHand Hand = static_cast<EAedirHand>(Index);
 			const FAedirHandSlot& Slot = GetSlot(Hand);
-			if (Slot.State != EAedirHandState::Reaching || !Slot.Item)
+			if (Slot.State != EAedirHandState::Reaching || !Slot.Item || IsPassingHeld(GetOtherHand(Hand)))
 			{
 				continue;
 			}
@@ -856,9 +933,8 @@ FVector UAedirInteractionComponent::GetReachTargetWorld(EAedirHand Hand, const A
 	if (Item->ItemClass == EAedirItemClass::Object)
 	{
 		// The hand goes to the near surface of the object, or to its far side when the other hand already has it.
-		const FVector Extent = Item->GetComponentsBoundingBox(true).GetExtent();
 		// The hand bone is the wrist, so it stops short of the surface for the palm to lie on it, not in it.
-		const float Radius = static_cast<float>(FMath::Max(Extent.X, Extent.Y)) * BigObjectHandSpanShare + BigObjectHandClearanceCm;
+		const float Radius = Item->GetHoldRadiusCm() * BigObjectHandSpanShare + BigObjectHandClearanceCm;
 		const FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
 		if (Other.Item.Get() == Item)
 		{
@@ -1010,7 +1086,12 @@ void UAedirInteractionComponent::DrawFromWaist(EAedirHand Hand, AAedirCreature* 
 		LastStoredWaistIndex[Side] = INDEX_NONE;
 	}
 
+	const FVector HangingDir = Item->GetActorForwardVector();
 	Item->AttachToCreatureHand(Creature, Hand);
+	if (Creature->Combat)
+	{
+		Creature->Combat->SetWeaponDirNow(Hand, HangingDir);
+	}
 
 	Slot.State = EAedirHandState::Holding;
 	Slot.Item = Item;

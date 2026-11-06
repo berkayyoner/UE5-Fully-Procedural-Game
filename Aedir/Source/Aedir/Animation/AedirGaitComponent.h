@@ -83,6 +83,16 @@ struct AEDIR_API FAedirGaitState
 	float ObjectRadiusCm = 0.f;
 	float ObjectAlpha = 0.f;
 
+	// The sole of a kicking foot faces this way.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	FVector KickSoleDirWorld = FVector::ForwardVector;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float KickSoleAlpha = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	bool KickLeftLeg = false;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float LeftWeaponAimAlpha = 0.f;
 
@@ -718,6 +728,7 @@ private:
 	float ArmBlend = 0.f;
 	float DynamicHipOffset = 0.f;
 	float SmoothedSpineTwist = 0.f;
+	float SmoothedSwingTwist = 0.f;
 	bool bFeetInitialized = false;
 
 	// Seconds of motion time that drive the idle sway and the weight shift.

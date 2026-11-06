@@ -1,5 +1,8 @@
 #include "AedirPlayerCharacter.h"
 
+#include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+
 #include "Settings/AedirSettingsSubsystem.h"
 #include "Engine/GameInstance.h"
 #include "Camera/CameraComponent.h"
@@ -963,6 +966,33 @@ void AAedirPlayerCharacter::DropHand(int32 RightHand)
 	if (Interaction)
 	{
 		Interaction->DropHeld(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
+	}
+}
+
+void AAedirPlayerCharacter::KickNow(float HoldShare)
+{
+	if (Combat)
+	{
+		Combat->DevHoldKick(HoldShare);
+		Combat->StartKick();
+	}
+}
+
+void AAedirPlayerCharacter::HandKey(int32 RightHand)
+{
+	HandleHandPressed(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
+}
+
+void AAedirPlayerCharacter::PlaceBlock(float Forward, float Right, float Up, float SizeCm)
+{
+	// A fixed block in front of the body, for trying what a held item does against something that does not give way.
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (AStaticMeshActor* Block = Cube ? GetWorld()->SpawnActor<AStaticMeshActor>(GetActorTransform().TransformPositionNoScale(FVector(Forward, Right, Up)), GetActorRotation()) : nullptr)
+	{
+		Block->SetMobility(EComponentMobility::Movable);
+		Block->GetStaticMeshComponent()->SetStaticMesh(Cube);
+		Block->SetActorScale3D(FVector(SizeCm / 100.f));
+		Block->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("BlockAll"));
 	}
 }
 

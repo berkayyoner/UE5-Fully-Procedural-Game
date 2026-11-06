@@ -202,6 +202,15 @@ public:
 	void PassHand();
 
 	UFUNCTION(Exec)
+	void KickNow(float HoldShare);
+
+	UFUNCTION(Exec)
+	void HandKey(int32 RightHand);
+
+	UFUNCTION(Exec)
+	void PlaceBlock(float Forward, float Right, float Up, float SizeCm);
+
+	UFUNCTION(Exec)
 	void DrawSlot(int32 RightHand, int32 Slot);
 
 	UFUNCTION(Exec)
