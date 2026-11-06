@@ -115,7 +115,11 @@ UAedirCharacterMovementComponent::UAedirCharacterMovementComponent()
 	JumpZVelocity = 420.f;
 	AirControl = 0.25f;
 	// Soft acceleration and braking give the body weight: a walk takes about half a second to reach speed.
-	BaseGroundFriction = 1.2f;
+	// Ground friction steers the velocity towards the input direction, so it stays high; the soft stop comes from the separate braking friction.
+	bUseSeparateBrakingFriction = true;
+	BrakingFrictionFactor = 1.f;
+	BrakingFriction = 1.2f;
+	BaseGroundFriction = 8.f;
 	BaseBrakingDecelerationWalking = 160.f;
 	BaseMaxAcceleration = 240.f;
 
@@ -399,8 +403,9 @@ void UAedirCharacterMovementComponent::UpdateSurfaceFriction()
 	const float Slipperiness = Footsteps ? Footsteps->GetSurfaceSlipperiness() : 0.f;
 
 	GroundFriction = FMath::Lerp(BaseGroundFriction, 1.2f, Slipperiness);
-	BrakingDecelerationWalking = FMath::Lerp(BaseBrakingDecelerationWalking, 150.f, Slipperiness);
-	MaxAcceleration = FMath::Lerp(BaseMaxAcceleration, 600.f, Slipperiness);
+	BrakingDecelerationWalking = FMath::Lerp(BaseBrakingDecelerationWalking, 40.f, Slipperiness);
+	BrakingFriction = FMath::Lerp(1.2f, 0.15f, Slipperiness);
+	MaxAcceleration = FMath::Lerp(BaseMaxAcceleration, 110.f, Slipperiness);
 }
 
 float UAedirCharacterMovementComponent::GetCarryRatio() const

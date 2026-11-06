@@ -59,13 +59,13 @@ public:
 	bool bWantsFightStance = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float RotationRateMoving = 170.f;
+	float RotationRateMoving = 360.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float BodyLagYawMoving = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float MaxBodyHeadYawWhileMoving = 80.f;
+	float MaxBodyHeadYawWhileMoving = 60.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float StandingLookYawLimit = 70.f;
