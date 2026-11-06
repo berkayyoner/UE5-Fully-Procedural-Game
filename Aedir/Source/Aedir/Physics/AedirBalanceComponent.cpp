@@ -57,6 +57,7 @@ namespace
 	constexpr float ComBalanceFullLossMarginCm = 12.f;
 	constexpr float ComBalanceMaxLossPerSecond = 0.9f;
 	constexpr float ComBalanceRecoveryMarginCm = -8.f;
+	constexpr float ComBalanceSteadyBalance = 0.9f;
 	constexpr float ComBalanceMovingSpeedRef = 300.f;
 	constexpr float ComBalanceMovingAllowanceCm = 30.f;
 	constexpr float ComBalanceReflexRangeCm = 220.f;
@@ -404,6 +405,12 @@ bool UAedirBalanceComponent::IsCenterOfMassOutsideSupport() const
 bool UAedirBalanceComponent::GetRecoveryStepRequest(FVector& OutDirectionWorld, float& OutUrgency) const
 {
 	if (bIsRagdoll || !bSupportGrounded || SupportMargin >= ComBalanceRecoveryMarginCm || ComOffsetDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	// A body that is steady and unhurt never reaches with a foot, however the sampled centre of mass sits.
+	if (Balance > ComBalanceSteadyBalance && StaggerSeconds <= 0.f)
 	{
 		return false;
 	}
@@ -1144,7 +1151,7 @@ void UAedirBalanceComponent::UpdateLegBlend(float DeltaTime)
 	LegPhysicsBlend = FMath::FInterpTo(LegPhysicsBlend, bPhysical ? 1.f : 0.f, DeltaTime, 8.f);
 
 	// The spine and head follow the pose too; a simulated torso lags behind a quickly turning pelvis and swings the wrong way.
-	for (const int32 GroupIndex : { 0, 3, 4 })
+	for (const int32 GroupIndex : { 0, 1, 2, 3, 4 })
 	{
 		for (const FName& BoneName : MotorGroupBones[GroupIndex])
 		{

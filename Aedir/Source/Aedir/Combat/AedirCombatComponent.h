@@ -173,11 +173,11 @@ public:
 
 	// Spring stiffness of an unloaded arm in 1/s^2. Scaled down by weight, low strength, low stamina and injury.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")
-	float ArmStiffnessBase = 2200.f;
+	float ArmStiffnessBase = 3200.f;
 
 	// Maximum hand acceleration in cm/s^2 for a healthy, fresh, average-strength arm.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")
-	float MaxArmAcceleration = 18000.f;
+	float MaxArmAcceleration = 26000.f;
 
 	// Mass of the arm itself in kg, added to the held item weight.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")

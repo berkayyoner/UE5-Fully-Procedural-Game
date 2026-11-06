@@ -167,9 +167,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		// Foot 1 is the right foot. The lead foot moves forward, the rear foot back by half as much.
 		const bool bLeadFoot = (Foot == 1) == bRightLead;
 		const float StanceForwardCm = StanceLeadForwardCm * (bLeadFoot ? 1.f : -0.5f);
-		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * ActorScale) + ActorForward2D * StanceForwardCm;
+		// Side-stepping: the foot on the far side crosses in front of the leading foot, which stays behind, so the feet never collide.
+		const float StrafeSign = LocalDirection.Y < 0.f ? -1.f : 1.f;
+		const float StrafeStaggerCm = bMoving ? -Side * StrafeSign * StrafeFootStaggerCm * SideAlpha * ActorScale : 0.f;
+		const float StrafeWidthScale = 1.f + (bMoving ? StrafeFootWidenShare * SideAlpha : 0.f);
+		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * StrafeWidthScale * ActorScale) + ActorForward2D * (StanceForwardCm + StrafeStaggerCm);
 		HomeLocation[Foot] = HomeXY;
-		const FVector LandingXY = HomeXY +(bMoving ? MoveDirection * (StrideLength * 0.15f) : FVector::ZeroVector);
+		const float LandingShare = FMath::Lerp(StepLandingShareWalk, StepLandingShareRun, SpeedAlpha * SpeedAlpha);
+		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * (StrideLength * LandingShare) : FVector::ZeroVector);
 
 		SampleGround(LandingXY, BottomZ, LandingLocation[Foot], LandingNormal[Foot]);
 

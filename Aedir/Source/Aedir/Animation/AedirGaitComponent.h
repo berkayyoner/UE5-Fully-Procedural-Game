@@ -267,7 +267,7 @@ public:
 	float TurnStepCyclesPerSecond = 1.4f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float SwingFractionWalk = 0.4f;
+	float SwingFractionWalk = 0.47f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float SwingFractionRun = 0.55f;
@@ -403,6 +403,21 @@ public:
 	// Roll of the torso towards the side the body is travelling to, scaled by speed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MoveDirectionLeanRollDegrees = 7.f;
+
+	// Share of the stride the landing point lies ahead of the hip, in a walk and at a full run.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float StepLandingShareWalk = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float StepLandingShareRun = 0.32f;
+
+	// While side-stepping the crossing foot is placed this far in front and the leading foot this far behind.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float StrafeFootStaggerCm = 14.f;
+
+	// Extra foot spacing while side-stepping, as a share of the normal hip width.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float StrafeFootWidenShare = 0.5f;
 
 	// A planted foot further than this share of the stride from under its hip takes an early step. A normal step drifts about 0.35.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")

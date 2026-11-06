@@ -44,3 +44,4 @@ Pelvis gait roll is cancelled fully at the lowest spine bone so the upper body s
 Lateral hip shift is about 40 percent of full size in a walk and full only when running (builds, not played).
 Slower jump wind-up and landing spring, settle steps only at rest with a cooldown, slower walk and acceleration, pelvis sinks to the lower foot on steps, bodies and ragdolls no longer hurt creatures that walk into them (editor build ok, 60/60 tests, not played).
 Run speed slightly lower, wider run stride (250 cm), object impacts only hurt at knee height and above (game target compiles; editor build and tests pending, not played).
+Faster punches, shorter stance lingering, longer run landing, staggered wider side-steps, arms pose-driven while balanced, no stumble steps for a steady body (editor build ok, 60/60 tests, not played).
