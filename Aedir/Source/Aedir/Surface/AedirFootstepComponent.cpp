@@ -1,5 +1,6 @@
 #include "Surface/AedirFootstepComponent.h"
 
+#include "Settings/AedirSettingsSubsystem.h"
 #include "Animation/AedirGaitComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/DecalComponent.h"
@@ -177,7 +178,7 @@ void UAedirFootstepComponent::PlayFootEffects(const UAedirPhysicalMaterial* Mate
 	const FSoftObjectPath& SoundPath = bUseWetSound ? Material->WetFootstepSound.ToSoftObjectPath() : Material->FootstepSound.ToSoftObjectPath();
 	if (USoundBase* Sound = Cast<USoundBase>(ResolveAsset(SoundPath)))
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, Sound, Location, Volume);
+		UGameplayStatics::PlaySoundAtLocation(this, Sound, Location, Volume * UAedirSettingsSubsystem::GetValues().FootstepVolume);
 	}
 
 	if (UNiagaraSystem* ParticleSystem = Cast<UNiagaraSystem>(ResolveAsset(Material->FootstepParticle.ToSoftObjectPath())))

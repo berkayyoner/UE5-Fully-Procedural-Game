@@ -1,5 +1,7 @@
 #include "AedirPlayerCharacter.h"
 
+#include "Settings/AedirSettingsSubsystem.h"
+#include "Engine/GameInstance.h"
 #include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Combat/AedirCombatComponent.h"
@@ -112,6 +114,14 @@ void AAedirPlayerCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	// The camera settings of the code win over values stored on the boom in older blueprints.
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UAedirSettingsSubsystem* Settings = GameInstance->GetSubsystem<UAedirSettingsSubsystem>())
+		{
+			Settings->ApplyWhenWorldReady();
+		}
+	}
+
 	CameraZoomTargetCm = FMath::Clamp(ThirdPersonArmLength, CameraZoomMinCm, CameraZoomMaxCm);
 	if (CameraBoom)
 	{
@@ -301,17 +311,21 @@ void AAedirPlayerCharacter::HandleMouseX(float Value)
 {
 	// While a guard is held the mouse mostly moves the arm; the camera still follows a few percent of it.
 	const bool bFighting = Combat && Combat->IsInFightStance();
-	AddControllerYawInput(bFighting ? Value * FightCameraMouseScale : Value);
+	const FAedirGameplaySettings& Settings = UAedirSettingsSubsystem::GetValues();
+	const float CameraValue = Value * Settings.MouseSensitivity;
+	AddControllerYawInput(bFighting ? CameraValue * FightCameraMouseScale : CameraValue);
 
-	PendingMouseDelta.X += Value;
+	PendingMouseDelta.X += Value * Settings.WeaponSensitivity;
 }
 
 void AAedirPlayerCharacter::HandleMouseY(float Value)
 {
 	const bool bFighting = Combat && Combat->IsInFightStance();
-	AddControllerPitchInput(bFighting ? -Value * FightCameraMouseScale : -Value);
+	const FAedirGameplaySettings& Settings = UAedirSettingsSubsystem::GetValues();
+	const float CameraValue = (Settings.bInvertMouseY ? Value : -Value) * Settings.MouseSensitivity;
+	AddControllerPitchInput(bFighting ? CameraValue * FightCameraMouseScale : CameraValue);
 
-	PendingMouseDelta.Y += Value;
+	PendingMouseDelta.Y += Value * Settings.WeaponSensitivity;
 }
 
 void AAedirPlayerCharacter::HandleMouseWheel(float Value)
@@ -431,7 +445,7 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 				// Horizontally too: sway, lean and step shifts of the pelvis move the pivot a little.
 				const FVector PelvisLocal = GetActorTransform().InverseTransformPositionNoScale(PelvisWorld);
 				CameraPelvisBaseline = bCameraStateInitialized ? FMath::VInterpTo(CameraPelvisBaseline, PelvisLocal, DeltaSeconds, 0.6f) : PelvisLocal;
-				TargetRelative += (PelvisLocal - CameraPelvisBaseline) * CameraPelvisInfluence;
+				TargetRelative += (PelvisLocal - CameraPelvisBaseline) * CameraPelvisInfluence * UAedirSettingsSubsystem::GetValues().CameraBodyMotion;
 			}
 		}
 
@@ -442,6 +456,8 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 
 	if (FollowCamera)
 	{
+		FollowCamera->SetFieldOfView(UAedirSettingsSubsystem::GetValues().FieldOfView);
+
 		// The fight camera is locked in aim but never dead still: breathing drift plus a lean into the mouse movement.
 		const bool bFighting = Combat && Combat->IsInFightStance();
 		FightCameraAlpha = FMath::FInterpTo(FightCameraAlpha, bFighting ? 1.f : 0.f, DeltaSeconds, 4.f);
@@ -553,6 +569,12 @@ void AAedirPlayerCharacter::HandleKickPressed()
 	if (Interaction && Combat->IsTwoHandGrip() && Interaction->GetHeldItem(EAedirHand::Left) && Interaction->GetHeldItem(EAedirHand::Left) == Interaction->GetHeldItem(EAedirHand::Right))
 	{
 		Interaction->SwapGripOrder();
+		return;
+	}
+
+	// With one weapon and a free hand X passes it over.
+	if (Interaction && !Combat->IsTwoHandGrip() && Interaction->PassToOtherHand())
+	{
 		return;
 	}
 
@@ -941,6 +963,14 @@ void AAedirPlayerCharacter::DropHand(int32 RightHand)
 	if (Interaction)
 	{
 		Interaction->DropHeld(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
+	}
+}
+
+void AAedirPlayerCharacter::PassHand()
+{
+	if (Interaction)
+	{
+		Interaction->PassToOtherHand();
 	}
 }
 

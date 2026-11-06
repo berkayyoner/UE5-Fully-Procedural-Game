@@ -1,5 +1,6 @@
 #include "Weather/AedirWeatherEffectsComponent.h"
 
+#include "Settings/AedirSettingsSubsystem.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/AudioComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -221,12 +222,12 @@ void UAedirWeatherEffectsComponent::UpdateAudio(const FAedirWeatherProfile& Prof
 
 	if (RainAudio)
 	{
-		RainAudio->SetVolumeMultiplier(RainAudioVolume);
+		RainAudio->SetVolumeMultiplier(RainAudioVolume * UAedirSettingsSubsystem::GetValues().WeatherVolume);
 	}
 
 	if (WindAudio)
 	{
-		WindAudio->SetVolumeMultiplier(WindAudioVolume);
+		WindAudio->SetVolumeMultiplier(WindAudioVolume * UAedirSettingsSubsystem::GetValues().WeatherVolume);
 	}
 }
 

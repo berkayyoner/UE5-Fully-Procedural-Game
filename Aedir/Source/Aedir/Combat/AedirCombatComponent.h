@@ -302,8 +302,11 @@ public:
 	// The second hand of a two-hand grip: which hand it is and where it closes on the weapon, in the space of the hand that carries the weapon.
 	bool GetSecondaryGrip(EAedirHand& OutHand, FVector& OutPointInPrimaryHand, FVector& OutBladeInPrimaryHand, float& OutAlpha) const;
 
-	// True while the right mouse button holds a two-handed weapon with one hand up on its blade.
+	// True while the right mouse button holds a weapon with the second hand up on its blade.
 	bool IsHalfSwording() const;
+
+	// A big object in both hands: where its middle is, how big it is, and how far the hands have come to it.
+	bool GetObjectCarry(FVector& OutCenterWorld, float& OutRadiusCm, float& OutAlpha) const;
 
 	// Local player only. Mouse wheel steps change how far the arm reaches, 0..1.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat")
@@ -477,13 +480,22 @@ private:
 	bool IsWeaponStance(EAedirHand Hand) const;
 	// Both hands stay on a two-handed weapon also with no button held, except while a hand goes to the belt.
 	bool IsGripHeld() const;
+	bool IsObjectGrip() const;
+	// Long enough for a second hand on it: not knives.
+	static bool CanHalfSword(const AAedirItemActor* Item);
 	void UpdateGrip(float DeltaTime);
+	void UpdateObjectCarry();
 	float GetSecondaryGripLocalCm(const AAedirItemActor* Item) const;
+	FVector ComputeHalfSwordDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
+	FVector ComputeHalfSwordHand(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
+	FVector ComputeObjectCenter(const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
 	FVector ComputeWeaponTargetDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	void UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);
 
 	bool bThrustMode = false;
 	float HalfSwordAlpha = 0.f;
+	bool bHalfSwordWantedLast = false;
+	bool bObjectGripLast = false;
 	float SecondaryGripBlend = 0.f;
 	EAedirHand LastGripHand = EAedirHand::Right;
 

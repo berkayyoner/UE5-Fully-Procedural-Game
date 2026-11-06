@@ -22,7 +22,10 @@ enum class EAedirPausePage : uint8
 	Main,
 	Settings,
 	SaveList,
-	LoadList
+	LoadList,
+	SettingsGraphics,
+	SettingsAudio,
+	SettingsGameplay
 };
 
 // Esc menu: an Options tab with save, load, settings and quit, and a Journal tab with the quest list.
@@ -69,8 +72,9 @@ private:
 
 	void QuickSave();
 	void SaveToNewSlot();
-	void CycleUpscaler();
-	void CycleQuality();
+	bool IsOptionPage() const;
+	void GoBack();
+	void StepSelectedOption(int32 Delta);
 
 	void AskConfirm(EConfirm Kind, const FString& Slot);
 	void AnswerConfirm(bool bYes);

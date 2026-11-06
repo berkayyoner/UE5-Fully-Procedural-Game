@@ -779,6 +779,20 @@ FReply SAedirMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKey
 void SAedirMenu::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+
+	if (PendingBeltSlot != INDEX_NONE)
+	{
+		const int32 Slot = PendingBeltSlot;
+		PendingBeltSlot = INDEX_NONE;
+		const AAedirCreature* Pawn = Creature.Get();
+		CloseDelegate.ExecuteIfBound();
+		if (Pawn && Pawn->Interaction)
+		{
+			Pawn->Interaction->DrawWaistSlot(PendingBeltHand, Slot);
+		}
+		return;
+	}
+
 	RefreshView(false);
 }
 
@@ -1020,15 +1034,25 @@ void SAedirMenu::ActivateSelected(bool bFromClick)
 		}
 		else
 		{
-			// From the keyboard a belt item goes to a free hand, the one on its own side first.
-			const EAedirHand Near = Row.Index < 3 ? EAedirHand::Left : EAedirHand::Right;
+			// From the keyboard a belt item goes to a free hand, the one that wears items on this hip first.
+			const EAedirHand Near = Row.Index < 3 ? EAedirHand::Right : EAedirHand::Left;
 			const EAedirHand Far = Near == EAedirHand::Left ? EAedirHand::Right : EAedirHand::Left;
-			Interaction->DrawWaistSlot(Interaction->GetHandState(Near) == EAedirHandState::Idle ? Near : Far, Row.Index);
+			RequestBeltDraw(Interaction->CanDrawWaistSlot(Near, Row.Index) ? Near : Far, Row.Index);
 		}
 		break;
 	}
 	default:
 		break;
+	}
+}
+
+void SAedirMenu::RequestBeltDraw(EAedirHand Hand, int32 Slot)
+{
+	const AAedirCreature* Pawn = Creature.Get();
+	if (Pawn && Pawn->Interaction && Pawn->Interaction->CanDrawWaistSlot(Hand, Slot))
+	{
+		PendingBeltHand = Hand;
+		PendingBeltSlot = Slot;
 	}
 }
 
@@ -1074,7 +1098,7 @@ void SAedirMenu::HandleRowClick(int32 Index, const FGeometry& RowGeometry, const
 		if (Pawn && Pawn->Interaction && (Button == EKeys::LeftMouseButton || Button == EKeys::RightMouseButton))
 		{
 			SelectedRow = Index;
-			Pawn->Interaction->DrawWaistSlot(Button == EKeys::LeftMouseButton ? EAedirHand::Right : EAedirHand::Left, Rows[Index].Index);
+			RequestBeltDraw(Button == EKeys::LeftMouseButton ? EAedirHand::Right : EAedirHand::Left, Rows[Index].Index);
 			RefreshView(false);
 			return;
 		}

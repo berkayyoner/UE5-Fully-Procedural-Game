@@ -106,6 +106,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void DrawWaistSlot(EAedirHand Hand, int32 SlotIndex);
 
+	// True if that hand can take the item of that belt slot now.
+	bool CanDrawWaistSlot(EAedirHand Hand, int32 SlotIndex) const;
+
+	// A one-handed weapon goes to the empty other hand, which reaches for it first. False if there is nothing to pass.
+	bool PassToOtherHand();
+
 	// True while a hand is on its way to the belt.
 	bool IsHolsterMoving() const;
 
@@ -240,6 +246,9 @@ private:
 	void ServerDrawWaistSlot(EAedirHand Hand, int32 SlotIndex);
 
 	UFUNCTION(Server, Reliable)
+	void ServerPassToOtherHand();
+
+	UFUNCTION(Server, Reliable)
 	void ServerAddToBackpack(AAedirItemActor* Item);
 
 	UFUNCTION(Server, Reliable)
@@ -284,8 +293,8 @@ private:
 	float HolsterElapsed[2] = { 0.f, 0.f };
 	int32 HolsterWaistIndex[2] = { INDEX_NONE, INDEX_NONE };
 
-	// Where each hand took hold of a big object, in the object's own space.
-	FVector ObjectGripLocal[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	// The hand is reaching for a weapon in the other hand, to take it over.
+	bool bReachingToTakeOver[2] = { false, false };
 	float HoldStrainSeconds = 0.f;
 	int32 LastStoredWaistIndex[2] = { INDEX_NONE, INDEX_NONE };
 };

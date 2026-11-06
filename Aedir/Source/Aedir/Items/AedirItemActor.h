@@ -134,6 +134,9 @@ public:
 	// Server only.
 	void Detach(const FVector& ThrowVelocity);
 
+	// Server only. A big object in both hands hangs on neither of them: it follows the body and the hands stay on its surface.
+	void AttachCarried(AAedirCreature* Creature);
+
 	// Takes the item in a hand exactly where the hand touches it, for big objects with no handle.
 	void AttachToHandInPlace(AAedirCreature* Creature, EAedirHand Hand);
 

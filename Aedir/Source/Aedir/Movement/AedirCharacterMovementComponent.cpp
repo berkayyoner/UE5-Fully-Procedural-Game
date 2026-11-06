@@ -117,7 +117,9 @@ UAedirCharacterMovementComponent::UAedirCharacterMovementComponent()
 	AirControl = 0.25f;
 	// Soft acceleration and braking give the body weight: a walk takes about half a second to reach speed.
 	// Walking into a physics object nudges it instead of launching it.
-	PushForceFactor = 120000.f;
+	// The first touch is an impulse and the push a force, not scaled by mass, so a light item moves more than a boulder but neither flies.
+	InitialPushForceFactor = 60.f;
+	PushForceFactor = 1500.f;
 	TouchForceFactor = 0.25f;
 	StandingDownwardForceScale = 0.f;
 

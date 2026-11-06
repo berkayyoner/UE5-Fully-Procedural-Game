@@ -78,6 +78,11 @@ struct AEDIR_API FAedirGaitState
 	FVector GripBladeInPrimaryHand = FVector::ForwardVector;
 	float GripAlpha = 0.f;
 
+	// A big object in both hands: both palms lie on its sides.
+	FVector ObjectCenterWorld = FVector::ZeroVector;
+	float ObjectRadiusCm = 0.f;
+	float ObjectAlpha = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float LeftWeaponAimAlpha = 0.f;
 

@@ -199,6 +199,9 @@ public:
 	void DropHand(int32 RightHand);
 
 	UFUNCTION(Exec)
+	void PassHand();
+
+	UFUNCTION(Exec)
 	void DrawSlot(int32 RightHand, int32 Slot);
 
 	UFUNCTION(Exec)

@@ -4,7 +4,7 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
-#include "Graphics/AedirUpscalerSubsystem.h"
+#include "Settings/AedirSettingsSubsystem.h"
 #include "InputCoreTypes.h"
 #include "Input/Events.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -21,7 +21,6 @@
 namespace
 {
 	const TCHAR* const PauseTabNames[] = { TEXT("OPTIONS"), TEXT("JOURNAL") };
-	const TCHAR* const PauseQualityNames[] = { TEXT("Native"), TEXT("Quality"), TEXT("Balanced"), TEXT("Performance"), TEXT("Ultra Performance") };
 	constexpr float PauseRowFontSize = 18.f;
 	constexpr float PauseSaveRowFontSize = 15.f;
 	constexpr float PauseConfirmHalfHeight = 104.f;
@@ -35,14 +34,22 @@ namespace
 		Load,
 		Settings,
 		Quit,
-		Upscaler,
-		Quality,
+		SettingsGraphics,
+		SettingsAudio,
+		SettingsGameplay,
 		Back,
 		NewSave,
 		NoSaves,
 		// Rows of the save lists use this plus their index in the save list.
-		FirstSaveRow = 100
+		FirstSaveRow = 100,
+		// Rows of the settings pages use this plus their option index.
+		FirstOptionRow = 5000
 	};
+
+	EAedirSettingsPage PauseGetSettingsPage(EAedirPausePage Page)
+	{
+		return Page == EAedirPausePage::SettingsAudio ? EAedirSettingsPage::Audio : (Page == EAedirPausePage::SettingsGameplay ? EAedirSettingsPage::Gameplay : EAedirSettingsPage::Graphics);
+	}
 
 	void PauseAddLine(TArray<FAedirMenuLine>& Lines, EAedirMenuLineKind Kind, const FString& Content)
 	{
@@ -67,10 +74,10 @@ namespace
 		return Row;
 	}
 
-	UAedirUpscalerSubsystem* PauseGetUpscaler(const UWorld* World)
+	UAedirSettingsSubsystem* PauseGetSettings(const UWorld* World)
 	{
 		UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-		return GameInstance ? GameInstance->GetSubsystem<UAedirUpscalerSubsystem>() : nullptr;
+		return GameInstance ? GameInstance->GetSubsystem<UAedirSettingsSubsystem>() : nullptr;
 	}
 
 	UAedirSaveSubsystem* PauseGetSaves(const UWorld* World)
@@ -290,14 +297,36 @@ void SAedirPauseMenu::GoToPage(EAedirPausePage NewPage)
 {
 	// Coming back to the main page, the cursor returns to the row that opened the page.
 	const int32 ReturnRow = Page == EAedirPausePage::SaveList ? 1 : (Page == EAedirPausePage::LoadList ? 2 : (Page == EAedirPausePage::Settings ? 3 : 0));
+	const int32 ReturnSettingsRow = Page == EAedirPausePage::SettingsAudio ? 1 : (Page == EAedirPausePage::SettingsGameplay ? 2 : 0);
 	CurrentTab = static_cast<int32>(EAedirPauseTab::Options);
 	Page = NewPage;
-	SelectedRow = NewPage == EAedirPausePage::Main ? ReturnRow : 0;
+	SelectedRow = NewPage == EAedirPausePage::Main ? ReturnRow : (NewPage == EAedirPausePage::Settings ? ReturnSettingsRow : 0);
 	if (Page == EAedirPausePage::SaveList || Page == EAedirPausePage::LoadList)
 	{
 		RefreshSaveEntries();
 	}
 	RefreshView(true);
+}
+
+bool SAedirPauseMenu::IsOptionPage() const
+{
+	return Page == EAedirPausePage::SettingsGraphics || Page == EAedirPausePage::SettingsAudio || Page == EAedirPausePage::SettingsGameplay;
+}
+
+void SAedirPauseMenu::GoBack()
+{
+	GoToPage(IsOptionPage() ? EAedirPausePage::Settings : EAedirPausePage::Main);
+}
+
+void SAedirPauseMenu::StepSelectedOption(int32 Delta)
+{
+	UAedirSettingsSubsystem* Settings = PauseGetSettings(World.Get());
+	const int32 OptionIndex = Rows.IsValidIndex(SelectedRow) ? Rows[SelectedRow].Index - static_cast<int32>(EPauseAction::FirstOptionRow) : INDEX_NONE;
+	if (Settings && OptionIndex >= 0)
+	{
+		Settings->StepOption(OptionIndex, Delta);
+		RefreshView(true);
+	}
 }
 
 void SAedirPauseMenu::RefreshSaveEntries()
@@ -339,7 +368,12 @@ FReply SAedirPauseMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& 
 
 	if (Key == EKeys::Escape && Page != EAedirPausePage::Main)
 	{
-		GoToPage(EAedirPausePage::Main);
+		GoBack();
+		return FReply::Handled();
+	}
+	if (IsOptionPage() && (Key == EKeys::A || Key == EKeys::Left || Key == EKeys::D || Key == EKeys::Right))
+	{
+		StepSelectedOption(Key == EKeys::A || Key == EKeys::Left ? -1 : 1);
 		return FReply::Handled();
 	}
 	if (Key == EKeys::Escape || Key == EKeys::Tab)
@@ -405,15 +439,24 @@ TArray<FAedirMenuRow> SAedirPauseMenu::BuildRows() const
 		Result.Add(PauseMakeRow(TEXT("Quit"), EPauseAction::Quit));
 		break;
 	case EAedirPausePage::Settings:
-	{
-		const UAedirUpscalerSubsystem* Upscaler = PauseGetUpscaler(World.Get());
-		const FString UpscalerName = Upscaler ? Upscaler->GetUpscalerDisplayName(Upscaler->GetCurrentUpscaler()).ToString() : FString(TEXT("n/a"));
-		const int32 Quality = Upscaler ? static_cast<int32>(Upscaler->GetCurrentQuality()) : 0;
-		Result.Add(PauseMakeRow(TEXT("Upscaler"), EPauseAction::Upscaler, UpscalerName));
-		Result.Add(PauseMakeRow(TEXT("Upscaler quality"), EPauseAction::Quality, PauseQualityNames[FMath::Clamp(Quality, 0, static_cast<int32>(UE_ARRAY_COUNT(PauseQualityNames)) - 1)]));
+		Result.Add(PauseMakeRow(TEXT("Graphics"), EPauseAction::SettingsGraphics));
+		Result.Add(PauseMakeRow(TEXT("Audio"), EPauseAction::SettingsAudio));
+		Result.Add(PauseMakeRow(TEXT("Gameplay"), EPauseAction::SettingsGameplay));
 		Result.Add(PauseMakeRow(TEXT("Back"), EPauseAction::Back));
 		break;
-	}
+	case EAedirPausePage::SettingsGraphics:
+	case EAedirPausePage::SettingsAudio:
+	case EAedirPausePage::SettingsGameplay:
+		if (const UAedirSettingsSubsystem* Settings = PauseGetSettings(World.Get()))
+		{
+			for (const int32 OptionIndex : Settings->GetPageOptions(PauseGetSettingsPage(Page)))
+			{
+				const FAedirSettingOption* Option = Settings->GetOption(OptionIndex);
+				Result.Add(PauseMakeRow(*Option->Name, static_cast<EPauseAction>(static_cast<int32>(EPauseAction::FirstOptionRow) + OptionIndex), Settings->GetValueText(OptionIndex)));
+			}
+		}
+		Result.Add(PauseMakeRow(TEXT("Back"), EPauseAction::Back));
+		break;
 	case EAedirPausePage::SaveList:
 	case EAedirPausePage::LoadList:
 		if (Page == EAedirPausePage::SaveList)
@@ -468,6 +511,19 @@ TArray<FAedirMenuLine> SAedirPauseMenu::BuildDetailLines(const TArray<FAedirMenu
 		return Result;
 	}
 
+	if (Selected->Index >= static_cast<int32>(EPauseAction::FirstOptionRow))
+	{
+		const UAedirSettingsSubsystem* Settings = PauseGetSettings(World.Get());
+		const FAedirSettingOption* Option = Settings ? Settings->GetOption(Selected->Index - static_cast<int32>(EPauseAction::FirstOptionRow)) : nullptr;
+		if (Option)
+		{
+			PauseAddHeader(Result, Option->Name);
+			PauseAddLine(Result, EAedirMenuLineKind::Body, Option->Description);
+			PauseAddLine(Result, EAedirMenuLineKind::Dim, TEXT("Applies at once and is kept for the next start."));
+		}
+		return Result;
+	}
+
 	const int32 EntryIndex = Selected->Index - static_cast<int32>(EPauseAction::FirstSaveRow);
 	if (SaveEntries.IsValidIndex(EntryIndex))
 	{
@@ -510,16 +566,23 @@ TArray<FAedirMenuLine> SAedirPauseMenu::BuildDetailLines(const TArray<FAedirMenu
 		break;
 	case EPauseAction::Settings:
 		PauseAddHeader(Result, Selected->Name);
-		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Upscaler and its quality level."));
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Graphics, audio and gameplay options."));
+		break;
+	case EPauseAction::SettingsGraphics:
+		PauseAddHeader(Result, Selected->Name);
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Monitor, resolution, frame rate, all quality levels, effects and the physics rate."));
+		break;
+	case EPauseAction::SettingsAudio:
+		PauseAddHeader(Result, Selected->Name);
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Master volume, footsteps, weather and sound in the background."));
+		break;
+	case EPauseAction::SettingsGameplay:
+		PauseAddHeader(Result, Selected->Name);
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Mouse, camera and what the screen shows."));
 		break;
 	case EPauseAction::Quit:
 		PauseAddHeader(Result, Selected->Name);
 		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Leaves the game after a confirmation."));
-		break;
-	case EPauseAction::Upscaler:
-	case EPauseAction::Quality:
-		PauseAddHeader(Result, Selected->Name);
-		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Press Enter to switch to the next option. The change applies immediately."));
 		break;
 	case EPauseAction::NewSave:
 		PauseAddHeader(Result, Selected->Name);
@@ -590,6 +653,11 @@ void SAedirPauseMenu::RebuildList()
 			if (MouseEvent.GetEffectingButton() == EKeys::RightMouseButton)
 			{
 				SelectedRow = Index;
+				if (IsOptionPage())
+				{
+					StepSelectedOption(-1);
+					return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
+				}
 				AskDeleteSelected();
 				return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 			}
@@ -671,6 +739,12 @@ void SAedirPauseMenu::ActivateSelected()
 
 void SAedirPauseMenu::Activate(int32 Action)
 {
+	if (Action >= static_cast<int32>(EPauseAction::FirstOptionRow))
+	{
+		StepSelectedOption(1);
+		return;
+	}
+
 	if (const FAedirSaveInfo* Entry = SaveEntries.IsValidIndex(Action - static_cast<int32>(EPauseAction::FirstSaveRow)) ? &SaveEntries[Action - static_cast<int32>(EPauseAction::FirstSaveRow)] : nullptr)
 	{
 		ActivateSaveRow(*Entry);
@@ -694,14 +768,17 @@ void SAedirPauseMenu::Activate(int32 Action)
 	case EPauseAction::Quit:
 		AskConfirm(EConfirm::Quit, FString());
 		break;
-	case EPauseAction::Upscaler:
-		CycleUpscaler();
+	case EPauseAction::SettingsGraphics:
+		GoToPage(EAedirPausePage::SettingsGraphics);
 		break;
-	case EPauseAction::Quality:
-		CycleQuality();
+	case EPauseAction::SettingsAudio:
+		GoToPage(EAedirPausePage::SettingsAudio);
+		break;
+	case EPauseAction::SettingsGameplay:
+		GoToPage(EAedirPausePage::SettingsGameplay);
 		break;
 	case EPauseAction::Back:
-		GoToPage(EAedirPausePage::Main);
+		GoBack();
 		break;
 	case EPauseAction::NewSave:
 		SaveToNewSlot();
@@ -823,6 +900,10 @@ FText SAedirPauseMenu::GetHintText() const
 	{
 		return FText::FromString(TEXT("[W/S] SELECT     [ENTER] CONFIRM     [DEL / RMB] DELETE     [ESC] BACK"));
 	}
+	if (IsOptionPage())
+	{
+		return FText::FromString(TEXT("[W/S] SELECT     [A/D] CHANGE     [LMB / RMB] NEXT / PREVIOUS     [ESC] BACK"));
+	}
 	if (Page != EAedirPausePage::Main)
 	{
 		return FText::FromString(TEXT("[W/S] SELECT     [ENTER] CONFIRM     [ESC] BACK"));
@@ -839,6 +920,9 @@ FText SAedirPauseMenu::GetTitleText() const
 	switch (Page)
 	{
 	case EAedirPausePage::Settings: return FText::FromString(TEXT("SETTINGS"));
+	case EAedirPausePage::SettingsGraphics: return FText::FromString(TEXT("GRAPHICS"));
+	case EAedirPausePage::SettingsAudio: return FText::FromString(TEXT("AUDIO"));
+	case EAedirPausePage::SettingsGameplay: return FText::FromString(TEXT("GAMEPLAY"));
 	case EAedirPausePage::SaveList: return FText::FromString(TEXT("SAVE"));
 	case EAedirPausePage::LoadList: return FText::FromString(TEXT("LOAD"));
 	default: break;
@@ -871,43 +955,6 @@ void SAedirPauseMenu::SaveToNewSlot()
 	const FString Slot = Saves ? Saves->SaveToNewSlot() : FString();
 	Notify(Slot.IsEmpty() ? TEXT("Save failed") : FString::Printf(TEXT("Saved as %s"), *AedirSaveSlots::MakeDisplayName(Slot)));
 	RefreshSaveEntries();
-	RefreshView(true);
-}
-
-void SAedirPauseMenu::CycleUpscaler()
-{
-	UAedirUpscalerSubsystem* Upscaler = PauseGetUpscaler(World.Get());
-	if (!Upscaler)
-	{
-		return;
-	}
-
-	const TArray<EAedirUpscaler> Available = Upscaler->GetAvailableUpscalers();
-	if (Available.Num() == 0)
-	{
-		return;
-	}
-
-	const int32 Current = Available.IndexOfByKey(Upscaler->GetCurrentUpscaler());
-	const EAedirUpscaler Next = Available[(Current + 1) % Available.Num()];
-	if (!Upscaler->SetUpscaler(Next, Upscaler->GetCurrentQuality()))
-	{
-		Notify(TEXT("Upscaler not available"));
-	}
-	RefreshView(true);
-}
-
-void SAedirPauseMenu::CycleQuality()
-{
-	UAedirUpscalerSubsystem* Upscaler = PauseGetUpscaler(World.Get());
-	if (!Upscaler)
-	{
-		return;
-	}
-
-	const int32 Count = static_cast<int32>(UE_ARRAY_COUNT(PauseQualityNames));
-	const EAedirUpscalerQuality Next = static_cast<EAedirUpscalerQuality>((static_cast<int32>(Upscaler->GetCurrentQuality()) + 1) % Count);
-	Upscaler->SetUpscaler(Upscaler->GetCurrentUpscaler(), Next);
 	RefreshView(true);
 }
 

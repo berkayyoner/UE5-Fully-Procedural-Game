@@ -1,5 +1,6 @@
 #include "HUD/AedirHUD.h"
 
+#include "Settings/AedirSettingsSubsystem.h"
 #include "HUD/AedirMarkerSubsystem.h"
 #include "CanvasTypes.h"
 #include "Camera/PlayerCameraManager.h"
@@ -185,8 +186,15 @@ void AAedirHUD::DrawHUD()
 		return;
 	}
 
-	DrawCompass(Pawn);
-	DrawBars(DeltaSeconds, Stats);
+	const FAedirGameplaySettings& Shown = UAedirSettingsSubsystem::GetValues();
+	if (Shown.bShowCompass)
+	{
+		DrawCompass(Pawn);
+	}
+	if (Shown.bShowBars)
+	{
+		DrawBars(DeltaSeconds, Stats);
+	}
 	DrawSkillNotifications();
 	DrawPrompt(Creature);
 

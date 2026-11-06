@@ -579,6 +579,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	};
 	ReadWeaponAim(EAedirHand::Left, GaitState.LeftWeaponDirWorld, GaitState.LeftWeaponAimAlpha);
 	ReadWeaponAim(EAedirHand::Right, GaitState.RightWeaponDirWorld, GaitState.RightWeaponAimAlpha);
+	GaitState.ObjectAlpha = 0.f;
+	if (Combat)
+	{
+		Combat->GetObjectCarry(GaitState.ObjectCenterWorld, GaitState.ObjectRadiusCm, GaitState.ObjectAlpha);
+	}
 	EAedirHand GripSecondary = EAedirHand::Left;
 	GaitState.GripSecondaryHand = -1;
 	if (Combat && Combat->GetSecondaryGrip(GripSecondary, GaitState.GripPointInPrimaryHand, GaitState.GripBladeInPrimaryHand, GaitState.GripAlpha))

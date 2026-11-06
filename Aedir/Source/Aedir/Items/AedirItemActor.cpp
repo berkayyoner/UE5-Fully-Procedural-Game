@@ -24,8 +24,8 @@ namespace
 	constexpr double ReleaseGraceSeconds = 1.5;
 	// An item let go inside the capsule is pushed out of it gently, not shot away.
 	constexpr float ItemMaxDepenetrationSpeed = 80.f;
-	constexpr float ItemLinearDamping = 0.15f;
-	constexpr float ItemAngularDamping = 0.8f;
+	constexpr float ItemLinearDamping = 0.6f;
+	constexpr float ItemAngularDamping = 2.f;
 }
 
 AAedirItemActor::AAedirItemActor()
@@ -117,6 +117,14 @@ void AAedirItemActor::AttachToHandInPlace(AAedirCreature* Creature, EAedirHand H
 	Holder = Creature;
 	HeldHand = Hand;
 	bHolstered = false;
+}
+
+void AAedirItemActor::AttachCarried(AAedirCreature* Creature)
+{
+	if (HasAuthority() && Creature)
+	{
+		AttachToComponent(Creature->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+	}
 }
 
 bool AAedirItemActor::WasJustReleasedBy(const AActor* Creature) const

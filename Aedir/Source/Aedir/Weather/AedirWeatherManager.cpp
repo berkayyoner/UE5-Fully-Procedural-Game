@@ -1,5 +1,6 @@
 #include "Weather/AedirWeatherManager.h"
 
+#include "Settings/AedirSettingsSubsystem.h"
 #include "Aedir.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Components/DirectionalLightComponent.h"
@@ -468,7 +469,7 @@ void AAedirWeatherManager::PlayThunderAt(FVector StrikeLocation)
 {
 	if (USoundBase* Thunder = GetDefault<UAedirWeatherSettings>()->ThunderSound.LoadSynchronous())
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, Thunder, StrikeLocation);
+		UGameplayStatics::PlaySoundAtLocation(this, Thunder, StrikeLocation, UAedirSettingsSubsystem::GetValues().WeatherVolume);
 	}
 }
 
