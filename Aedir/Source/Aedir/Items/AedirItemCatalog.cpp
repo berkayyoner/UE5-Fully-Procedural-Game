@@ -142,6 +142,11 @@ namespace
 		SetBlade(TEXT("Sword"), TEXT("/Game/Atris_swords/Meshes/SM_Sword1h.SM_Sword1h"), 128.f, -12.f);
 		SetBlade(TEXT("ShortSword"), TEXT("/Game/Atris_swords/Meshes/SM_Sword1e.SM_Sword1e"), 86.f, -6.8f);
 		SetBlade(TEXT("BattleAxe"), TEXT("/Game/Atris_axes/Meshes/SM_axe5.SM_axe5"), 80.f, 0.f, true);
+		SetBlade(TEXT("Dagger"), TEXT("/Game/Weapon_Pack/Mesh/Weapons/Weapons_Kit/SM_Dagger_1.SM_Dagger_1"), 44.f, -6.f, true);
+		SetBlade(TEXT("Mace"), TEXT("/Game/Weapon_Pack/Mesh/Weapons/Weapons_Kit/SM_Mace.SM_Mace"), 65.f, 0.f, true);
+		SetBlade(TEXT("Warhammer"), TEXT("/Game/Weapon_Pack/Mesh/Weapons/Weapons_Kit/SM_GreatHammer.SM_GreatHammer"), 90.f, 0.f, true);
+		SetBlade(TEXT("Spear"), TEXT("/Game/Weapon_Pack/Mesh/Weapons/Weapons_Kit/SM_Spear.SM_Spear"), 180.f, 0.f, true);
+		SetBlade(TEXT("Halberd"), TEXT("/Game/Weapon_Pack/Mesh/Weapons/Weapons_Kit/SM_GreatAxe.SM_GreatAxe"), 175.f, 0.f, true);
 
 		SetGrip(TEXT("Dagger"), -21.f, 8.f, true);
 		SetGrip(TEXT("ShortSword"), -42.f, 8.f, true);
