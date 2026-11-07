@@ -129,8 +129,8 @@ namespace
 	constexpr float AedirSwingStrengthMassShare = 0.25f;
 	// With a button held the blade stands up in front of the body. The first half of the mouse travel takes the hands to the side with the point slowly following them.
 	constexpr float AedirWeaponFightPitch = 52.f;
-	constexpr float AedirWeaponOpenStart = 0.5f;
-	constexpr float AedirWeaponTipOutYaw = 28.f;
+	constexpr float AedirWeaponOpenStart = 0.22f;
+	constexpr float AedirWeaponTipOutYaw = 36.f;
 	constexpr float AedirWeaponMidPitch = 40.f;
 	// The hand travels a wide arc around the body: out to the side first, then back and up beside the shoulder.
 	constexpr float AedirSwingMidYaw = 50.f;
@@ -285,6 +285,8 @@ namespace
 	// A graze does little of what a weapon can do; the full damage takes a blow with this much energy behind it.
 	constexpr float AedirImpactFullFlatJoules = 120.f;
 	constexpr float AedirImpactMaxHealthShare = 0.6f;
+	constexpr float AedirAIRestStaminaShare = 0.15f;
+	constexpr float AedirImpactMaxSpeed = 5000.f;
 	// How fast a caught blade has to have been going to tear itself out of the hand.
 	constexpr float AedirWrenchSpeedBase = 2600.f;
 	constexpr float AedirWrenchSpeedPerStrength = 12.f;
@@ -711,6 +713,10 @@ float UAedirCombatComponent::GetFistAlpha(EAedirHand Hand) const
 	if (HeldItem)
 	{
 		return HeldItem->ItemClass == EAedirItemClass::Object ? AedirObjectFistAlpha : 1.f;
+	}
+	if (Creature && Creature->Interaction && Creature->Interaction->IsGrabbingBody(Hand))
+	{
+		return 1.f;
 	}
 
 	return GuardAlpha[HandIndex(Hand)];
@@ -2453,7 +2459,8 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 			}
 
 			const float RelativeSpeed = FMath::Max(0.f, static_cast<float>(FVector::DotProduct(TipVelocity - Victim->GetVelocity(), -Hit.ImpactNormal)));
-			if (RelativeSpeed < MinImpactSpeed)
+			// Faster than any arm can move is a body that was just put somewhere else, not a blow.
+			if (RelativeSpeed < MinImpactSpeed || RelativeSpeed > AedirImpactMaxSpeed)
 			{
 				continue;
 			}
@@ -2809,7 +2816,16 @@ bool UAedirCombatComponent::UpdateAIWeaponStrike(EAedirHand Hand, float Distance
 	{
 	case 0:
 		Arm.PunchBlend = 0.f;
-		if (Distance <= Reach && AIStrikeTimer >= AIAttackInterval)
+		// Out of breath it keeps its guard up and gives ground until it has the wind for another blow.
+		if (Creature->Stats && Creature->Stats->GetStamina() < FMath::Max(SwingStaminaCost * ComputeWeightFactor(Hand), Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare))
+		{
+			Arm.AimOffsetDeg = FVector2D(0.f, 10.f);
+			if (Distance < Reach)
+			{
+				Creature->AddMovementInput(Creature->GetActorForwardVector(), -0.5f);
+			}
+		}
+		else if (Distance <= Reach && AIStrikeTimer >= AIAttackInterval)
 		{
 			const int32 Style = FMath::RandRange(0, 2);
 			const float Side = FMath::RandBool() ? 1.f : -1.f;

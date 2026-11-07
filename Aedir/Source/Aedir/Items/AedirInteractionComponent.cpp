@@ -141,6 +141,7 @@ void UAedirInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 		UpdateReach(EAedirHand::Left, DeltaTime);
 		UpdateReach(EAedirHand::Right, DeltaTime);
 		UpdateObjectStrain(DeltaTime);
+		UpdateBodyGrabs(DeltaTime);
 	}
 
 	UpdateHolsterMotion(EAedirHand::Left, DeltaTime);
@@ -182,7 +183,21 @@ void UAedirInteractionComponent::StartReach(EAedirHand Hand)
 		return;
 	}
 
+	// A hand on a body lets go.
+	if (IsGrabbingBody(Hand))
+	{
+		ReleaseBodyGrab(Hand);
+		return;
+	}
+
 	if (State != EAedirHandState::Idle)
+	{
+		return;
+	}
+
+	// Looking at a body, the hand goes for it before anything lying about.
+	FVector AimedBody;
+	if (FindAimedBody(AimedBody) && TryGrabBody(Hand, &AimedBody))
 	{
 		return;
 	}
@@ -197,6 +212,11 @@ void UAedirInteractionComponent::StartReach(EAedirHand Hand)
 
 	// With nothing else in reach, the free hand joins the other one on a weapon made for two hands.
 	AAedirItemActor* Target = FindBestItem();
+	// With no item to take, the hand takes hold of a body or a piece of one.
+	if (!Target && !(OtherHeld && OtherHeld->bTwoHanded) && TryGrabBody(Hand))
+	{
+		return;
+	}
 	StartReachForItem(Hand, !Target && OtherHeld && OtherHeld->bTwoHanded ? OtherHeld : Target);
 }
 
@@ -853,6 +873,12 @@ AAedirItemActor* UAedirInteractionComponent::GetHighlightedItem() const
 bool UAedirInteractionComponent::GetReachPose(EAedirHand Hand, FVector& OutTargetWorld, float& OutAlpha) const
 {
 	const int32 Index = static_cast<int32>(Hand);
+	// A hand on a body stays reached out to where it holds it.
+	if (GetBodyGrabPoint(Hand, OutTargetWorld))
+	{
+		OutAlpha = 1.f;
+		return true;
+	}
 	OutTargetWorld = ReachTargetCache[Index];
 	OutAlpha = ReachBlend[Index];
 	return OutAlpha > KINDA_SMALL_NUMBER;

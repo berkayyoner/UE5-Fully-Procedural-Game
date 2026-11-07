@@ -1,4 +1,7 @@
-#include "AedirBalanceComponent.h"
+﻿#include "AedirBalanceComponent.h"
+
+#include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 
 #include "Combat/AedirCombatComponent.h"
 #include "Items/AedirInteractionComponent.h"
@@ -51,8 +54,13 @@ namespace
 	constexpr float HitReactionKnockdownExtraSeconds = 0.8f;
 	// The blow moves the part it lands on, not the whole body through the air.
 	constexpr float GrippedArmMotorShare = 0.3f;
-	constexpr float HitReactionBoneImpulseScale = 0.1f;
-	constexpr float HitReactionBoneImpulseMax = 5000.f;
+	TAutoConsoleVariable<float> CVarAedirArmDamping(TEXT("aedir.ArmDamping"), 1.f, TEXT("Scale of the arm muscles' damping."));
+	constexpr float HitReactionBoneImpulseScale = 0.22f;
+	constexpr float HitReactionBoneImpulseMax = 9000.f;
+	// Part of a blow goes on into the trunk, which turns away from it; the one who takes it feels it in the eyes as well.
+	constexpr float HitReactionTrunkShare = 0.5f;
+	constexpr float HitReactionViewDegreesPerJoule = 0.04f;
+	constexpr float HitReactionViewMaxDegrees = 6.f;
 	// How much of its usual recovery a stumbling body manages while it tries to get its feet back under it.
 	constexpr float StumbleCatchShare = 0.75f;
 	constexpr float StumbleCatchTiredShare = 0.35f;
@@ -310,6 +318,18 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	{
 		const float ImpulseSize = FMath::Min(Impact.MassKg * Impact.RelativeSpeed * HitReactionBoneImpulseScale, HitReactionBoneImpulseMax);
 		MulticastBoneImpulse(Impact.Bone, Impact.Direction * ImpulseSize, Impact.Location);
+		if (BodyMesh->GetBodyInstance(TEXT("spine_03")) && Impact.Bone != TEXT("spine_03"))
+		{
+			MulticastBoneImpulse(TEXT("spine_03"), Impact.Direction * (ImpulseSize * HitReactionTrunkShare), Impact.Location);
+		}
+	}
+
+	// The head is knocked the way the blow went.
+	if (APlayerController* Viewer = Cast<APlayerController>(CharacterOwner->GetController()))
+	{
+		const float Kick = FMath::Min(Impact.EnergyJoules * HitReactionViewDegreesPerJoule, HitReactionViewMaxDegrees);
+		const FVector Local = CharacterOwner->GetActorTransform().InverseTransformVectorNoScale(Impact.Direction);
+		Viewer->SetControlRotation(Viewer->GetControlRotation() + FRotator(static_cast<float>(Local.Z - Local.X * 0.5) * Kick, static_cast<float>(Local.Y) * Kick, 0.f));
 	}
 
 	const UWorld* World = GetWorld();
@@ -1386,9 +1406,9 @@ void UAedirBalanceComponent::ApplyMotorGroup(int32 GroupIndex, float Strength)
 		FPhysicalAnimationData Data;
 		Data.bIsLocalSimulation = bLoose;
 		Data.OrientationStrength = Motor.OrientationStrength * Strength;
-		Data.AngularVelocityStrength = Motor.AngularVelocityStrength * Strength;
+		Data.AngularVelocityStrength = Motor.AngularVelocityStrength * Strength * (GroupIndex == 1 || GroupIndex == 2 ? CVarAedirArmDamping.GetValueOnGameThread() : 1.f);
 		Data.PositionStrength = bLoose ? 0.f : Motor.PositionStrength * Strength;
-		Data.VelocityStrength = bLoose ? 0.f : Motor.VelocityStrength * Strength;
+		Data.VelocityStrength = bLoose ? 0.f : Motor.VelocityStrength * Strength * (GroupIndex == 1 || GroupIndex == 2 ? CVarAedirArmDamping.GetValueOnGameThread() : 1.f);
 		Data.MaxLinearForce = Motor.MaxLinearForce;
 		Data.MaxAngularForce = Motor.MaxAngularForce;
 		MotorComponent->ApplyPhysicalAnimationSettings(BoneName, Data);

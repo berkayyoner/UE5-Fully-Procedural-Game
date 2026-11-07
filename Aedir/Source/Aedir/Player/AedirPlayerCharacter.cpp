@@ -1319,7 +1319,13 @@ void AAedirPlayerCharacter::SwingTrace(int32 RightHand, float Seconds)
 		const auto FootLine = [&](const TCHAR* Foot, const TCHAR* Ball) { return Body.InverseTransformVectorNoScale(BodyMesh->GetBoneLocation(Ball) - BodyMesh->GetBoneLocation(Foot)).GetSafeNormal(); };
 		const FVector FootL = FootLine(TEXT("foot_l"), TEXT("ball_l"));
 		const FVector FootR = FootLine(TEXT("foot_r"), TEXT("ball_r"));
-		UE_LOG(LogTemp, Display, TEXT("[Swing] %.3f %.4f %.1f %.1f %.2f %.2f %.2f %.4f %.4f %.4f %.3f %.3f %.3f %.3f %.3f %.3f"), *Elapsed, Delta, Pose.X, Pose.Y, HandLocal.X, HandLocal.Y, HandLocal.Z, Blade.X, Blade.Y, Blade.Z, FootL.X, FootL.Y, FootL.Z, FootR.X, FootR.Y, FootR.Z);
+		FVector Meant = FVector::ZeroVector;
+		float MeantAlpha = 0.f;
+		if (Combat && Combat->GetWeaponAim(Hand, Meant, MeantAlpha))
+		{
+			Meant = Body.InverseTransformVectorNoScale(Meant);
+		}
+		UE_LOG(LogTemp, Display, TEXT("[Swing] %.3f %.4f %.1f %.1f %.2f %.2f %.2f %.4f %.4f %.4f %.3f %.3f %.3f %.3f %.3f %.3f %.4f %.4f %.4f"), *Elapsed, Delta, Pose.X, Pose.Y, HandLocal.X, HandLocal.Y, HandLocal.Z, Blade.X, Blade.Y, Blade.Z, FootL.X, FootL.Y, FootL.Z, FootR.X, FootR.Y, FootR.Z, Meant.X, Meant.Y, Meant.Z);
 		if (*Elapsed >= Seconds)
 		{
 			GetWorldTimerManager().ClearTimer(*Timer);
@@ -1852,6 +1858,14 @@ void AAedirPlayerCharacter::MeshSheet(const FString& Folder)
 		Actor->GetStaticMeshComponent()->SetStaticMesh(Model);
 		UE_LOG(LogTemp, Display, TEXT("[Model] %s size %s center %s tris %d material %s"), *Model->GetName(), *Box.GetSize().ToCompactString(), *Box.GetCenter().ToCompactString(), Model->GetNumTriangles(0), *GetNameSafe(Model->GetMaterial(0)));
 		Where += Step;
+	}
+}
+
+void AAedirPlayerCharacter::LookTo(float Yaw, float Pitch)
+{
+	if (AController* MyController = GetController())
+	{
+		MyController->SetControlRotation(FRotator(Pitch, GetActorRotation().Yaw + Yaw, 0.f));
 	}
 }
 

@@ -337,6 +337,10 @@ public:
 	UFUNCTION(Exec)
 	void GuardKey(int32 RightHand, int32 Down);
 
+	// Turns the view to a yaw from the body's facing and a pitch.
+	UFUNCTION(Exec)
+	void LookTo(float Yaw, float Pitch);
+
 	// MeshSheet /Game/Pack/Meshes: stands every model of a folder in a row with its name over it and logs its size, for choosing from a pack.
 	UFUNCTION(Exec)
 	void MeshSheet(const FString& Folder);

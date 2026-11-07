@@ -667,16 +667,30 @@ void AAedirHUD::DrawLookTarget(const AAedirCreature* Creature)
 		const float TextHeight = MeasureText(Name, Font).Y;
 		AedirUIStyle::DrawText(*Canvas, Name, Font, FVector2f(CenterX, Top), Ivory, EAedirTextAlign::Center, 1.f);
 
-		const float Fraction = Npc->Stats ? FMath::Clamp(Npc->Stats->GetHealth() / FMath::Max(Npc->Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
-		const float HalfWidth = HudTargetBarWidth * 0.5f * Scale;
-		const float HalfHeight = FMath::Max(HudTargetBarHeight * 0.5f * Scale, 1.f);
-		const FVector2f Center(CenterX, Top + TextHeight + HudTargetBarGap * Scale + HalfHeight);
-		FAedirUIMesh Mesh(1.f);
-		AddTaperedBar(Mesh, Center, HalfWidth, HalfHeight, HalfHeight * 2.f, FLinearColor(0.f, 0.f, 0.f, 0.5f), FLinearColor(0.f, 0.f, 0.f, 0.72f), FLinearColor(0.f, 0.f, 0.f, 0.5f));
-		if (Fraction > 0.f)
+		// Under it, thinner, how much breath and magicka it has left: a tired foe is one to press.
+		const UAedirStatsComponent* NpcStats = Npc->Stats.Get();
+		const auto Share = [](float Value, float Max) { return FMath::Clamp(Value / FMath::Max(Max, 1.f), 0.f, 1.f); };
+		struct FTargetBar { float Fraction; float HeightShare; FLinearColor Color; };
+		const FTargetBar Bars[] =
 		{
-			const FLinearColor Red(0.52f, 0.03f, 0.02f);
-			AddTaperedBar(Mesh, Center, HalfWidth * Fraction, FMath::Max(HalfHeight - 0.5f * Scale, 0.5f), HalfHeight * 2.f, FLinearColor(0.2f, 0.01f, 0.01f), Red, FLinearColor(0.2f, 0.01f, 0.01f));
+			{ NpcStats ? Share(NpcStats->GetHealth(), NpcStats->GetMaxHealth()) : 0.f, 1.f, FLinearColor(0.52f, 0.03f, 0.02f) },
+			{ NpcStats ? Share(NpcStats->GetStamina(), NpcStats->GetMaxStamina()) : 0.f, 0.6f, FLinearColor(0.12f, 0.42f, 0.1f) },
+			{ NpcStats ? Share(NpcStats->GetMana(), NpcStats->GetMaxMana()) : 0.f, 0.6f, FLinearColor(0.08f, 0.2f, 0.55f) },
+		};
+		const float HalfWidth = HudTargetBarWidth * 0.5f * Scale;
+		float Y = Top + TextHeight + HudTargetBarGap * Scale;
+		FAedirUIMesh Mesh(1.f);
+		for (const FTargetBar& Bar : Bars)
+		{
+			const float HalfHeight = FMath::Max(HudTargetBarHeight * 0.5f * Bar.HeightShare * Scale, 1.f);
+			const FVector2f Center(CenterX, Y + HalfHeight);
+			AddTaperedBar(Mesh, Center, HalfWidth, HalfHeight, HalfHeight * 2.f, FLinearColor(0.f, 0.f, 0.f, 0.5f), FLinearColor(0.f, 0.f, 0.f, 0.72f), FLinearColor(0.f, 0.f, 0.f, 0.5f));
+			if (Bar.Fraction > 0.f)
+			{
+				const FLinearColor Dark = Bar.Color * 0.4f;
+				AddTaperedBar(Mesh, Center, HalfWidth * Bar.Fraction, FMath::Max(HalfHeight - 0.5f * Scale, 0.5f), HalfHeight * 2.f, Dark, Bar.Color, Dark);
+			}
+			Y += HalfHeight * 2.f + 2.f * Scale;
 		}
 		DrawMesh(*Canvas->Canvas, Mesh);
 		return;

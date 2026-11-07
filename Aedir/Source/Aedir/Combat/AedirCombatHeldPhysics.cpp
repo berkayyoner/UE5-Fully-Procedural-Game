@@ -14,6 +14,7 @@
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarAedirHeldWeight(TEXT("aedir.HeldWeight"), 1, TEXT("Let the weight of a held weapon pull on the hand."));
 	TAutoConsoleVariable<int32> CVarAedirGripJoint(TEXT("aedir.GripJoint"), 1, TEXT("Hold the second hand on a weapon with a physical joint."));
 
 	// A held weapon is not part of the arm: its weight and the force it takes to swing it pull on the hand that holds it.
@@ -40,7 +41,7 @@ void UAedirCombatComponent::UpdateHeldWeight(float DeltaTime)
 {
 	USkeletalMeshComponent* Body = Creature ? Creature->GetMesh() : nullptr;
 	const UAedirInteractionComponent* Interaction = Creature ? Creature->Interaction.Get() : nullptr;
-	if (!Body || !Interaction || DeltaTime <= KINDA_SMALL_NUMBER)
+	if (!Body || !Interaction || DeltaTime <= KINDA_SMALL_NUMBER || CVarAedirHeldWeight.GetValueOnGameThread() == 0)
 	{
 		return;
 	}
@@ -73,7 +74,8 @@ void UAedirCombatComponent::UpdateHeldWeight(float DeltaTime)
 			continue;
 		}
 
-		const FVector Velocity = (Center - State.LastCenter) / DeltaTime;
+		// How the arm means to move it, not how the body happened to wobble this frame: reading the wobble back would feed it.
+		const FVector Velocity = GetArm(Hand).HandVelocity;
 		const FVector Accel = State.bHasVelocity ? (Velocity - State.LastVelocity) / DeltaTime : FVector::ZeroVector;
 		State.Accel = FMath::Lerp(State.Accel, Accel.GetClampedToMaxSize(HeldMaxAccel), 1.f - FMath::Exp(-HeldAccelSmoothing * DeltaTime));
 		State.LastCenter = Center;

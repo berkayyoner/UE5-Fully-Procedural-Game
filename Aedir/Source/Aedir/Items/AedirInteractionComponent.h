@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "CoreMinimal.h"
 #include "Combat/AedirCombatTypes.h"
@@ -38,6 +38,18 @@ struct FAedirReachPosture
 	// Sideways shift of the pelvis and twist of the spine towards an item off to the side. Positive is to the right.
 	float HipSideCm = 0.f;
 	float TwistDegrees = 0.f;
+};
+
+class UPrimitiveComponent;
+
+// A hand closed on a body or a piece of one, held to it by a spring.
+struct FAedirBodyGrab
+{
+	TWeakObjectPtr<class UPhysicsConstraintComponent> Joint;
+	TWeakObjectPtr<UPrimitiveComponent> Target;
+	FName Bone = NAME_None;
+	FVector LocalPoint = FVector::ZeroVector;
+	float TearSeconds = 0.f;
 };
 
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
@@ -82,6 +94,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void StartReach(EAedirHand Hand);
+
+	// A free hand takes hold of the nearest body or loose part of one in front of it, living, dead or cut off. False when there is none.
+	bool TryGrabBody(EAedirHand Hand, const FVector* AimedPoint = nullptr);
+
+	// Where the eyes meet a body or a piece of one within reach, if they do.
+	bool FindAimedBody(FVector& OutPoint) const;
+	void ReleaseBodyGrab(EAedirHand Hand);
+	bool IsGrabbingBody(EAedirHand Hand) const;
+	bool GetBodyGrabPoint(EAedirHand Hand, FVector& OutWorld) const;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void StartReachForItem(EAedirHand Hand, AAedirItemActor* Item);
@@ -236,6 +257,9 @@ public:
 	TArray<TObjectPtr<AAedirItemActor>> Backpack;
 
 private:
+	void UpdateBodyGrabs(float DeltaTime);
+	FAedirBodyGrab BodyGrabs[2];
+
 	void BeginReach(EAedirHand Hand, AAedirItemActor* Item);
 	void GrabItem(EAedirHand Hand, AAedirItemActor* Item);
 	void UpdateReach(EAedirHand Hand, float DeltaTime);
