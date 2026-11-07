@@ -330,6 +330,9 @@ public:
 	UFUNCTION(Exec)
 	void ConOpen();
 
+	UFUNCTION(Exec)
+	void PrecipInfo();
+
 	// MeshSheet /Game/Pack/Meshes: stands every model of a folder in a row with its name over it and logs its size, for choosing from a pack.
 	UFUNCTION(Exec)
 	void MeshSheet(const FString& Folder);

@@ -65,6 +65,7 @@ namespace
 		UMaterial* Material = ContentNewMaterial(TEXT("M_AedirScanned"), ToSave);
 		Material->bUsedWithNanite = true;
 		Material->bUsedWithStaticLighting = true;
+		Material->bUsedWithSkeletalMesh = true;
 		UMaterialExpressionTextureSampleParameter2D* Base = ContentTexture(Material, TEXT("BaseColor"), TEXT("/Engine/EngineMaterials/DefaultWhiteGrid.DefaultWhiteGrid"), SAMPLERTYPE_Color, -300);
 		UMaterialExpressionTextureSampleParameter2D* Normal = ContentTexture(Material, TEXT("Normal"), TEXT("/Engine/EngineMaterials/DefaultNormal.DefaultNormal"), SAMPLERTYPE_Normal, 0);
 		UMaterialExpressionTextureSampleParameter2D* Masks = ContentTexture(Material, TEXT("Masks"), TEXT("/Engine/EngineMaterials/DefaultWhiteGrid.DefaultWhiteGrid"), SAMPLERTYPE_Color, 300);
@@ -134,6 +135,48 @@ namespace
 		UMaterialEditingLibrary::RecompileMaterial(Material);
 		Material->MarkPackageDirty();
 		UE_LOG(LogAedirEditor, Display, TEXT("Built M_Footprint."));
+	}
+
+	// A drop or a flake: a soft spot on a plane, stretched by the game as far as it likes. Colour and strength are set by the game.
+	void ContentBuildPrecip(TArray<UPackage*>& ToSave)
+	{
+		UMaterial* Material = ContentNewMaterial(TEXT("M_AedirPrecip"), ToSave);
+		Material->BlendMode = BLEND_Translucent;
+		Material->SetShadingModel(MSM_Unlit);
+		Material->TwoSided = true;
+		Material->bUsedWithInstancedStaticMeshes = true;
+
+		UMaterialExpressionTextureCoordinate* Coord = ContentNode<UMaterialExpressionTextureCoordinate>(Material, -1000, 0);
+		UMaterialExpressionConstant* Half = ContentNode<UMaterialExpressionConstant>(Material, -1000, 200);
+		Half->R = 0.5f;
+		UMaterialExpressionSubtract* Centered = ContentNode<UMaterialExpressionSubtract>(Material, -800, 100);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Coord, TEXT(""), Centered, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Half, TEXT(""), Centered, TEXT("B"));
+		UMaterialExpressionConstant* Grow = ContentNode<UMaterialExpressionConstant>(Material, -800, 300);
+		Grow->R = 2.f;
+		UMaterialExpressionMultiply* Scaled = ContentNode<UMaterialExpressionMultiply>(Material, -600, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Centered, TEXT(""), Scaled, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Grow, TEXT(""), Scaled, TEXT("B"));
+		UMaterialExpressionLength* Length = ContentNode<UMaterialExpressionLength>(Material, -400, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Scaled, TEXT(""), Length, TEXT(""));
+		UMaterialExpressionOneMinus* Inside = ContentNode<UMaterialExpressionOneMinus>(Material, -250, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Length, TEXT(""), Inside, TEXT(""));
+		UMaterialExpressionSaturate* Shape = ContentNode<UMaterialExpressionSaturate>(Material, -100, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Inside, TEXT(""), Shape, TEXT(""));
+		UMaterialExpressionScalarParameter* Strength = ContentNode<UMaterialExpressionScalarParameter>(Material, -100, 350);
+		Strength->ParameterName = TEXT("Strength");
+		Strength->DefaultValue = 0.5f;
+		UMaterialExpressionMultiply* Opacity = ContentNode<UMaterialExpressionMultiply>(Material, 100, 250);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Shape, TEXT(""), Opacity, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Strength, TEXT(""), Opacity, TEXT("B"));
+		UMaterialEditingLibrary::ConnectMaterialProperty(Opacity, TEXT(""), MP_Opacity);
+		UMaterialExpressionVectorParameter* Color = ContentNode<UMaterialExpressionVectorParameter>(Material, 100, 0);
+		Color->ParameterName = TEXT("Color");
+		Color->DefaultValue = FLinearColor(0.6f, 0.65f, 0.7f);
+		UMaterialEditingLibrary::ConnectMaterialProperty(Color, TEXT(""), MP_EmissiveColor);
+		UMaterialEditingLibrary::RecompileMaterial(Material);
+		Material->MarkPackageDirty();
+		UE_LOG(LogAedirEditor, Display, TEXT("Built M_AedirPrecip."));
 	}
 
 	// The inside of a cut.
@@ -225,6 +268,14 @@ UAedirContentCommandlet::UAedirContentCommandlet()
 int32 UAedirContentCommandlet::Main(const FString& Params)
 {
 	TArray<UPackage*> ToSave;
+	// -Only=Precip builds that one alone and leaves everything else as it is.
+	FString Only;
+	if (FParse::Value(*Params, TEXT("Only="), Only) && Only == TEXT("Precip"))
+	{
+		ContentBuildPrecip(ToSave);
+		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
+	ContentBuildPrecip(ToSave);
 	ContentBuildScanned(ToSave);
 	ContentBuildFootprint(ToSave);
 	ContentBuildFlesh(ToSave);

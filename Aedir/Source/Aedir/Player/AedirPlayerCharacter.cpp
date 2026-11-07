@@ -32,6 +32,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/StaticMeshActor.h"
 #include "Game/AedirEntities.h"
+#include "Weather/AedirPrecipitationSubsystem.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "Graphics/AedirFoliageSubsystem.h"
@@ -1851,6 +1852,14 @@ void AAedirPlayerCharacter::MeshSheet(const FString& Folder)
 		Actor->GetStaticMeshComponent()->SetStaticMesh(Model);
 		UE_LOG(LogTemp, Display, TEXT("[Model] %s size %s center %s tris %d material %s"), *Model->GetName(), *Box.GetSize().ToCompactString(), *Box.GetCenter().ToCompactString(), Model->GetNumTriangles(0), *GetNameSafe(Model->GetMaterial(0)));
 		Where += Step;
+	}
+}
+
+void AAedirPlayerCharacter::PrecipInfo()
+{
+	if (const UAedirPrecipitationSubsystem* Precip = GetWorld()->GetSubsystem<UAedirPrecipitationSubsystem>())
+	{
+		UE_LOG(LogTemp, Display, TEXT("[Precip] rain %d snow %d"), Precip->GetActiveRain(), Precip->GetActiveSnow());
 	}
 }
 
