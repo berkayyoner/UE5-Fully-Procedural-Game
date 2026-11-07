@@ -88,3 +88,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Every step is heard and leaves a print: a foot counts as down once it has been up, however slowly it settles; prints are shaped like a left or right sole and no longer land on legs.
 - Rain has a sound of its own, made from noise by Scripts/MakeWeatherSounds.py and imported with -run=AedirContent -Only=Sounds; wind and thunder keep theirs.
 - Talking is as in Skyrim: the view turns to the NPC, everyone else and the sky hold still, the NPC turns to face you and its head drifts and nods as it speaks; topics stand right of centre between gold rules, its words as a subtitle below.
+- Realistic Nanite meadow grass in a denser meadow; footsteps from Essential Footsteps SFX by surface, snow, wetness and gait, with the Footstep VFX pack's dust, snow and water at each step.

@@ -1,4 +1,4 @@
-#include "Game/AedirWorldDirector.h"
+﻿#include "Game/AedirWorldDirector.h"
 
 #include "Engine/CollisionProfile.h"
 
@@ -25,7 +25,7 @@ namespace
 	const TCHAR* const DirectorGreenMaterial = TEXT("MI_ThirdPersonColWay");
 	constexpr float DirectorTraceHeightCm = 2000.f;
 	constexpr float DirectorMeadowHalfCm = 1700.f;
-	constexpr float DirectorMeadowDensity = 9.f;
+	constexpr float DirectorMeadowDensity = 24.f;
 	constexpr int32 DirectorMeadowSeed = 4711;
 	constexpr float DirectorTreesInnerCm = 500.f;
 	constexpr float DirectorTreesOuterCm = 1800.f;

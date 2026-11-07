@@ -54,6 +54,13 @@ private:
 	float FootWetness[2] = { 0.f, 0.f };
 	float PreviousLift[2] = { 0.f, 0.f };
 
+	// Whether the step being made is a landing from a fall or a jump.
+	bool bStepIsLanding = false;
+
+	// A footstep cue of the sound library by surface family and gait, and a footstep effect by name. Null when there is none.
+	static class USoundBase* FindStepSound(const FString& Family, const TCHAR* Gait);
+	static class UNiagaraSystem* FindStepEffect(const TCHAR* Name);
+
 	// Whether each foot has been lifted since it last came down.
 	bool bFootRaised[2] = { false, false };
 	float SurfaceQueryTimer = 0.1f;

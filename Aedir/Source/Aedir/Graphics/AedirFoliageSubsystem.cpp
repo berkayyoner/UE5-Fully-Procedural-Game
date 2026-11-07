@@ -37,6 +37,7 @@ namespace
 	constexpr int32 FoliageMaxBend = 3;
 	constexpr float FoliageBendDistance = 70.f;
 	constexpr float FoliageWindFollow = 0.4f;
+	const TCHAR* const FoliageNaniteGrassRoot = TEXT("/Game/OWD_Nanite_Base_Grass/Meshes/");
 	constexpr float FoliageGrassMinCm = 14.f;
 	constexpr float FoliageGrassMaxCm = 34.f;
 	constexpr float FoliageFlowerMinCm = 22.f;
@@ -164,10 +165,35 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 		return;
 	}
 
-	// Meshes are numbered by kind, then by size and variation.
+	// The scanned Nanite grass when it is there: single tufts of three kinds and denser clusters, every size and variation.
 	TArray<UStaticMesh*> Grasses;
 	TArray<UStaticMesh*> Flowers;
-	for (int32 Kind = 1; Kind <= 2; ++Kind)
+	for (int32 Kind = 1; Kind <= 3; ++Kind)
+	{
+		for (int32 Size = 1; Size <= 5; ++Size)
+		{
+			for (const TCHAR* Variant : { TEXT("a"), TEXT("b"), TEXT("c") })
+			{
+				const FString Name = FString::Printf(TEXT("SM_Grass_%02d_%d%s"), Kind, Size, Variant);
+				if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("%sGrass_%02d/%s.%s"), FoliageNaniteGrassRoot, Kind, *Name, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
+				{
+					Grasses.Add(Mesh);
+				}
+			}
+		}
+		for (const TCHAR* Variant : { TEXT("a"), TEXT("b"), TEXT("c") })
+		{
+			const FString Name = FString::Printf(TEXT("SM_GrassCL_%02d%s"), Kind, Variant);
+			if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("%sGrass_Cluster/%s.%s"), FoliageNaniteGrassRoot, *Name, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
+			{
+				Grasses.Add(Mesh);
+			}
+		}
+	}
+
+	// Otherwise the stylised pack, whose meshes are numbered by kind, then by size and variation.
+	const bool bStylised = Grasses.IsEmpty();
+	for (int32 Kind = 1; Kind <= 2 && bStylised; ++Kind)
 	{
 		for (int32 Size = 1; Size <= 3; ++Size)
 		{

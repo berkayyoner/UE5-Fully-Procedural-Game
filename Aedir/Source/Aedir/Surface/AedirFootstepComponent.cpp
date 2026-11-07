@@ -34,9 +34,10 @@ namespace
 	constexpr float AedirStepHalfLengthCm = 14.f;
 	constexpr float AedirStepForwardCm = 8.f;
 	constexpr float AedirStepLifeSeconds = 45.f;
-	constexpr float AedirStepDustSpeed = 380.f;
-	constexpr float AedirStepDustScale = 0.18f;
-	constexpr float AedirStepDustSeconds = 0.25f;
+	constexpr float AedirStepRunSpeed = 380.f;
+	constexpr float AedirStepSnowShare = 0.3f;
+	constexpr float AedirStepEffectWalkScale = 0.35f;
+	constexpr float AedirStepEffectRunScale = 0.6f;
 	constexpr float AedirFootGroundOffsetCm = 10.f;
 	constexpr float AedirSurfaceQueryInterval = 0.1f;
 	constexpr float AedirPlantLiftHigh = 0.15f;
@@ -123,6 +124,7 @@ void UAedirFootstepComponent::TickComponent(float DeltaTime, ELevelTick TickType
 		}
 		if (bPlanted)
 		{
+			bStepIsLanding = bLanded;
 			ProcessFootPlant(FootIndex, FootWorld[FootIndex], Speed2D, bLanded ? AedirLandingVolumeMultiplier : 1.f);
 		}
 
@@ -268,38 +270,66 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 		}
 	}
 
-	// What the ground sounds like, when the surface has no set of its own.
+	// What the ground sounds like, when the surface has no set of its own: boots on dirt, stone or wood, crunching in snow,
+	// sloshing when wet; a walk, a run or a landing.
 	const EPhysicalSurface Surface = Physical ? Physical->SurfaceType.GetValue() : SurfaceType_Default;
 	const UAedirPhysicalMaterial* Own = Cast<UAedirPhysicalMaterial>(Physical);
+	const UAedirSurfaceSubsystem* Ground = GetSurfaceSubsystem();
+	const float Snow = Ground ? Ground->GetSnow(Point) : 0.f;
+	const bool bSnow = Snow > AedirStepSnowShare;
+	const bool bWet = !bSnow && SurfaceWetness > AedirWetSoundThreshold;
 	if (!Own || Own->FootstepSound.IsNull())
 	{
-		struct FStepSounds { const TCHAR* Family; int32 Count; };
-		static const FStepSounds Sets[] = { { TEXT("Dirt"), 6 }, { TEXT("Grass"), 13 }, { TEXT("Cobbles"), 7 }, { TEXT("Wood"), 9 } };
-		const FStepSounds& Set = Sets[FMath::Clamp(static_cast<int32>(Surface), 0, 3)];
-		const FString Name = FString::Printf(TEXT("sfx_Foley_Fts_%s_%02d"), Set.Family, FMath::RandRange(1, Set.Count));
-		if (USoundBase* Sound = LoadObject<USoundBase>(nullptr, *FString::Printf(TEXT("/Game/Audio/_Content/SFX/Footsteps/wav/%s.%s"), *Name, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
+		static const TCHAR* const Families[] = { TEXT("Dirt/Footstep_Dirt_Boots"), TEXT("Leaves/Footstep_FootstepLeaves_Boots"), TEXT("Concrete/Footstep_Concrete_Boots"), TEXT("Wood/Footstep_Wood_Boots") };
+		const FString Family = bSnow ? TEXT("Snow/Footstep_Snow") : bWet ? TEXT("Slush/Footstep_Slush_Boots") : Families[FMath::Clamp(static_cast<int32>(Surface), 0, 3)];
+		const TCHAR* Gait = bStepIsLanding ? TEXT("Land") : Speed2D > AedirStepRunSpeed ? TEXT("Run") : TEXT("Walk");
+		if (USoundBase* Sound = FindStepSound(Family, Gait))
 		{
 			UGameplayStatics::PlaySoundAtLocation(this, Sound, Point, Volume * UAedirSettingsSubsystem::GetValues().FootstepVolume);
 		}
 	}
 
-	// A run kicks up the dry ground.
-	if (Speed2D > AedirStepDustSpeed && SurfaceWetness < AedirDecalWetSurfaceThreshold)
+	// The ground the foot came down on gives a little: dust and bits of dirt, a spray of snow or of water. Faster steps throw more.
+	const TCHAR* SystemName = bSnow ? TEXT("PSN_SnowLight_Surface") : bWet ? TEXT("PSN_WaterLight_Surface") : Surface == SurfaceType1 ? TEXT("PSN_Grass_Surface") : TEXT("PSN_Dirt_Surface");
+	if (UNiagaraSystem* System = FindStepEffect(SystemName))
 	{
-		static TWeakObjectPtr<UNiagaraSystem> Dust;
-		if (!Dust.IsValid())
+		const float Scale = FMath::Lerp(AedirStepEffectWalkScale, AedirStepEffectRunScale, FMath::Clamp(Speed2D / AedirStepRunSpeed, 0.f, 1.f)) * (bStepIsLanding ? 1.5f : 1.f);
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, System, Point, FRotationMatrix::MakeFromZ(Normal).Rotator(), FVector(Scale));
+	}
+}
+
+USoundBase* UAedirFootstepComponent::FindStepSound(const FString& Family, const TCHAR* Gait)
+{
+	// The cues are numbered by how many takes they shuffle, so the first number that exists is the one.
+	const FString Key = Family + Gait;
+	static TMap<FString, TWeakObjectPtr<USoundBase>> Found;
+	if (const TWeakObjectPtr<USoundBase>* Known = Found.Find(Key); Known && Known->IsValid())
+	{
+		return Known->Get();
+	}
+	const FString Base = FPaths::GetCleanFilename(Family);
+	for (int32 Takes = 1; Takes <= 8; ++Takes)
+	{
+		const FString Name = FString::Printf(TEXT("%s_%s_%d_Cue"), *Base, Gait, Takes);
+		if (USoundBase* Sound = LoadObject<USoundBase>(nullptr, *FString::Printf(TEXT("/Game/Essential_Foosteps_SK/CUE/%s/%s.%s"), *FPaths::GetPath(Family), *Name, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
 		{
-			Dust = LoadObject<UNiagaraSystem>(nullptr, TEXT("/Game/Effects/NS_WellSmoke.NS_WellSmoke"), nullptr, LOAD_NoWarn | LOAD_Quiet);
-		}
-		if (UNiagaraSystem* System = Dust.Get())
-		{
-			if (UNiagaraComponent* Puff = UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, System, Point, FRotator::ZeroRotator, FVector(AedirStepDustScale)))
-			{
-				FTimerHandle StopPuff;
-				World->GetTimerManager().SetTimer(StopPuff, FTimerDelegate::CreateWeakLambda(Puff, [Puff]() { Puff->Deactivate(); }), AedirStepDustSeconds, false);
-			}
+			Found.Add(Key, Sound);
+			return Sound;
 		}
 	}
+	return nullptr;
+}
+
+UNiagaraSystem* UAedirFootstepComponent::FindStepEffect(const TCHAR* Name)
+{
+	static TMap<FString, TWeakObjectPtr<UNiagaraSystem>> Found;
+	if (const TWeakObjectPtr<UNiagaraSystem>* Known = Found.Find(Name); Known && Known->IsValid())
+	{
+		return Known->Get();
+	}
+	UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, *FString::Printf(TEXT("/Game/A_Surface_Footstep/Niagara_FX/ParticleSystems/%s.%s"), Name, Name), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	Found.Add(Name, System);
+	return System;
 }
 
 void UAedirFootstepComponent::PlayFootEffects(const UAedirPhysicalMaterial* Material, const FVector& Location, const FVector& Normal, float Speed2D, float Volume, bool bWetFootstep, bool bLeaveDecal)
