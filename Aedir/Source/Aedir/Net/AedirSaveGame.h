@@ -125,6 +125,13 @@ struct AEDIR_API FAedirNpcSave
 
 	UPROPERTY()
 	TArray<int32> RelationValues;
+
+	UPROPERTY()
+	TArray<FName> Gear;
+
+	// Saves from before people could pick things up have no gear to give back.
+	UPROPERTY()
+	bool bGearSaved = false;
 };
 
 UCLASS(BlueprintType)

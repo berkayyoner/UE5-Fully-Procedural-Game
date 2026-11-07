@@ -106,6 +106,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void DrawWaistSlot(EAedirHand Hand, int32 SlotIndex);
 
+	// The belt slot of the weapon to draw first, the one put away last if it is still there. INDEX_NONE without a weapon on the belt.
+	int32 FindWaistWeaponSlot() const;
+
 	// True if that hand can take the item of that belt slot now.
 	bool CanDrawWaistSlot(EAedirHand Hand, int32 SlotIndex) const;
 

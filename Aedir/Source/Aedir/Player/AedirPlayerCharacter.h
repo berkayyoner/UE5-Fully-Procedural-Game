@@ -249,6 +249,39 @@ public:
 	AAedirCreature* FindLookTarget(float MaxDistance) const;
 	void RequestNpcAction(AAedirNpc* Npc, EAedirNpcAction Action);
 
+	// The follower waiting to be shown where to go, and what the player is pointing out to them: a spot, and the item lying there if any.
+	AAedirNpc* GetPointingNpc() const { return PointingNpc.Get(); }
+	bool FindPointTarget(FVector& OutWhere, AAedirItemActor*& OutItem) const;
+
+	UFUNCTION(Exec)
+	void PointTest(float Yaw, float Pitch);
+
+	UFUNCTION(Exec)
+	void PointItemTest(const FString& Id);
+
+	UFUNCTION(Exec)
+	void AimOnlyItem(const FString& Id);
+
+	// Looks at a person and presses the talk key, or only looks with Press 0.
+	UFUNCTION(Exec)
+	void LookNpcTest(const FString& Name, int32 Press);
+
+	UFUNCTION(Exec)
+	void GearInfo();
+
+	// NpcDropTest Marra Mace 500: lays a catalog item that far in front of a person.
+	UFUNCTION(Exec)
+	void NpcDropTest(const FString& Name, const FString& Id, float Forward);
+
+	UFUNCTION(Exec)
+	void NpcRemoveTest(const FString& Name);
+
+	UFUNCTION(Exec)
+	void NpcDisarmTest(const FString& Name);
+
+	UFUNCTION(Exec)
+	void NpcBringTest(const FString& Name, float Forward);
+
 	UFUNCTION(Exec)
 	void PassHand();
 
@@ -336,6 +369,12 @@ private:
 	void HandleLeftHolsterPressed();
 	void HandleRightHolsterPressed();
 	void HandleShovePressed();
+	TWeakObjectPtr<AAedirNpc> PointingNpc;
+	void AimForTest(TWeakObjectPtr<AActor> Target, bool bPress);
+	bool bPressThenShot = false;
+
+	UFUNCTION(Server, Reliable)
+	void ServerSendNpc(AAedirNpc* Npc, const FVector& Where, AAedirItemActor* Item);
 	void HandleKickPressed();
 	void HandleThrustPressed();
 	void HandleThrustReleased();

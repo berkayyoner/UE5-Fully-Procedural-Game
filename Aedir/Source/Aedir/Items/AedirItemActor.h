@@ -56,6 +56,9 @@ public:
 	// Spears, staves and the like: held with the lower hand beside the waist.
 	bool bPolearm = false;
 
+	// Spears, staves and big objects are too long to hang from a belt.
+	bool FitsOnBelt() const { return ItemClass != EAedirItemClass::Object && !bPolearm; }
+
 	// Grip point along the long axis of the item, used when the item is held in the closed hand.
 	float GripLocalCm = 0.f;
 	float GripSpanCm = 13.f;

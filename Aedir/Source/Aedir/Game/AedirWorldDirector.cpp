@@ -88,7 +88,10 @@ namespace
 		{
 			if (AAedirCatalogItem* Weapon = AAedirCatalogItem::SpawnCatalogItem(World, FName(WeaponId), FTransform(Npc->GetActorLocation() + FVector(0.f, 0.f, 80.f))))
 			{
-				Npc->Interaction->EquipImmediate(EAedirHand::Right, Weapon);
+				if (!Npc->Interaction->HolsterImmediate(0, Weapon))
+				{
+					Npc->Interaction->EquipImmediate(EAedirHand::Right, Weapon);
+				}
 			}
 		}
 		UE_LOG(LogAedir, Log, TEXT("Placed %s on a ramp at %s, facing %.0f"), *Name.ToString(), *Ground.ToString(), Yaw);

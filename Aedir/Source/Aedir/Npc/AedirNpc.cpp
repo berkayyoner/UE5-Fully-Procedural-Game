@@ -1,10 +1,14 @@
 #include "Npc/AedirNpc.h"
 
+#include "Aedir.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "Items/AedirCatalogItem.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemActor.h"
+#include "Items/AedirItemCatalog.h"
 #include "Net/AedirSaveSubsystem.h"
 #include "Net/UnrealNetwork.h"
 #include "Physics/AedirBalanceComponent.h"
@@ -29,6 +33,17 @@ namespace
 	constexpr int32 NpcFollowsFrom = -20;
 	constexpr float NpcComplimentSeconds = 120.f;
 	constexpr float NpcHealOnHelp = 25.f;
+	constexpr float NpcSheatheCalmSeconds = 4.f;
+	constexpr float NpcItemSearchSeconds = 1.f;
+	constexpr float NpcItemSightCm = 1500.f;
+	constexpr float NpcItemSightCosine = 0.15f;
+	constexpr float NpcItemNearbyCm = 200.f;
+	constexpr double NpcItemGiveUpSeconds = 60.0;
+	constexpr float NpcFetchReachCm = 70.f;
+	constexpr float NpcGoToStopCm = 80.f;
+	constexpr float NpcWayStuckSeconds = 8.f;
+	constexpr float NpcWayProgressCm = 40.f;
+	constexpr int32 NpcFetchReachTries = 2;
 
 	const TCHAR* const NpcRumours[] = {
 		TEXT("At noon the moons cross and the light goes thin. The old folk still shut their doors until it passes."),
@@ -105,9 +120,394 @@ void AAedirNpc::Tick(float DeltaSeconds)
 	}
 
 	UpdateNeeds(DeltaSeconds);
-	if (!Combat || !Combat->HasAITarget())
+	UpdateWeaponReadiness(DeltaSeconds);
+	if (Combat && Combat->HasAITarget())
+	{
+		return;
+	}
+
+	UpdateItemSearch(DeltaSeconds);
+	if (FetchItem)
+	{
+		UpdateFetch(DeltaSeconds);
+	}
+	else
 	{
 		UpdateOrders(DeltaSeconds);
+	}
+}
+
+void AAedirNpc::UpdateWeaponReadiness(float DeltaSeconds)
+{
+	if (!Interaction || Interaction->IsHolsterMoving())
+	{
+		return;
+	}
+
+	// A blade comes out at the first sign of trouble, and goes back to the belt when things have been quiet for a while.
+	AAedirItemActor* Left = Interaction->GetHeldItem(EAedirHand::Left);
+	AAedirItemActor* Right = Interaction->GetHeldItem(EAedirHand::Right);
+	if (Combat && Combat->HasAITarget())
+	{
+		CalmSeconds = 0.f;
+		const bool bArmed = (Left && Left->ItemClass == EAedirItemClass::Weapon) || (Right && Right->ItemClass == EAedirItemClass::Weapon);
+		const int32 Slot = bArmed ? INDEX_NONE : Interaction->FindWaistWeaponSlot();
+		if (Slot != INDEX_NONE && Interaction->CanDrawWaistSlot(EAedirHand::Right, Slot))
+		{
+			Interaction->DrawWaistSlot(EAedirHand::Right, Slot);
+		}
+		return;
+	}
+
+	CalmSeconds += DeltaSeconds;
+	if (CalmSeconds < NpcSheatheCalmSeconds)
+	{
+		return;
+	}
+	if (Right && Right->ItemClass == EAedirItemClass::Weapon && Right->FitsOnBelt())
+	{
+		Interaction->HolsterToWaist(EAedirHand::Right);
+	}
+	else if (Left && Left->ItemClass == EAedirItemClass::Weapon && Left->FitsOnBelt())
+	{
+		Interaction->HolsterToWaist(EAedirHand::Left);
+	}
+}
+
+bool AAedirNpc::HasWeapon() const
+{
+	if (!Interaction)
+	{
+		return false;
+	}
+	const AAedirItemActor* Left = Interaction->GetHeldItem(EAedirHand::Left);
+	const AAedirItemActor* Right = Interaction->GetHeldItem(EAedirHand::Right);
+	return (Left && Left->ItemClass == EAedirItemClass::Weapon) || (Right && Right->ItemClass == EAedirItemClass::Weapon) || Interaction->FindWaistWeaponSlot() != INDEX_NONE;
+}
+
+bool AAedirNpc::LacksItem(const AAedirItemActor* Item) const
+{
+	if (!Item || !Interaction)
+	{
+		return false;
+	}
+	if (Item->ItemClass == EAedirItemClass::Weapon)
+	{
+		return !HasWeapon();
+	}
+	return Item->ItemClass == EAedirItemClass::Armor && Interaction->GetWornArmorProtection(Item->ArmorZone) <= 0.f;
+}
+
+bool AAedirNpc::CanSeeItem(const AAedirItemActor* Item) const
+{
+	const FVector Center = Item->GetBoundsCenterWorld();
+	const FVector ToItem = Center - GetActorLocation();
+	if (ToItem.SizeSquared2D() > FMath::Square(NpcItemNearbyCm) && FVector::DotProduct(ToItem.GetSafeNormal2D(), GetActorForwardVector()) < NpcItemSightCosine)
+	{
+		return false;
+	}
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirNpcItemSight), false, this);
+	Params.AddIgnoredActor(Item);
+	return !GetWorld()->LineTraceTestByChannel(GetPawnViewLocation(), Center, ECC_Visibility, Params);
+}
+
+void AAedirNpc::UpdateItemSearch(float DeltaSeconds)
+{
+	// A person without a weapon or with a bare head picks up what they see lying about, unless told to stay put or already going for something.
+	ItemSearchTimer -= DeltaSeconds;
+	if (ItemSearchTimer > 0.f || FetchItem || !Interaction || (Order != EAedirNpcOrder::Routine && Order != EAedirNpcOrder::Following))
+	{
+		return;
+	}
+	ItemSearchTimer = NpcItemSearchSeconds;
+
+	const double Now = GetWorld()->GetTimeSeconds();
+	AAedirItemActor* Best = nullptr;
+	double BestDistance = FMath::Square(static_cast<double>(NpcItemSightCm));
+	for (TActorIterator<AAedirItemActor> It(GetWorld()); It; ++It)
+	{
+		AAedirItemActor* Item = *It;
+		const double* GivenUpAt = ItemsGivenUp.Find(Item);
+		const double Distance = FVector::DistSquared(Item->GetActorLocation(), GetActorLocation());
+		if (Distance < BestDistance && AAedirItemActor::IsPickable(Item) && LacksItem(Item) && (!GivenUpAt || Now > *GivenUpAt + NpcItemGiveUpSeconds) && CanSeeItem(Item))
+		{
+			Best = Item;
+			BestDistance = Distance;
+		}
+	}
+	if (Best)
+	{
+		FetchItem = Best;
+		bFetchOrdered = false;
+		FetchReaches = 0;
+		BestWayDistance = BIG_NUMBER;
+		WayStuckSeconds = 0.f;
+	}
+}
+
+bool AAedirNpc::IsStuckOnTheWay(float DistanceLeft, float DeltaSeconds)
+{
+	if (DistanceLeft < BestWayDistance - NpcWayProgressCm)
+	{
+		BestWayDistance = DistanceLeft;
+		WayStuckSeconds = 0.f;
+		return false;
+	}
+	WayStuckSeconds += DeltaSeconds;
+	return WayStuckSeconds >= NpcWayStuckSeconds;
+}
+
+void AAedirNpc::UpdateFetch(float DeltaSeconds)
+{
+	AAedirItemActor* Item = FetchItem.Get();
+	if (!IsValid(Item) || !Interaction)
+	{
+		GiveUpFetch();
+		return;
+	}
+	if (Item->Holder == this)
+	{
+		FinishFetch(Item);
+		return;
+	}
+	if (!AAedirItemActor::IsPickable(Item))
+	{
+		GiveUpFetch();
+		return;
+	}
+
+	const FVector ItemLocation = Item->GetBoundsCenterWorld();
+	const float Distance = static_cast<float>(FVector::Dist2D(ItemLocation, GetActorLocation()));
+	if (Distance > NpcFetchReachCm)
+	{
+		if (IsStuckOnTheWay(Distance, DeltaSeconds))
+		{
+			// Sent there by someone, they find a way round the way a follower catches up. Left to themselves they forget about it.
+			if (!bFetchOrdered)
+			{
+				GiveUpFetch();
+				return;
+			}
+			TeleportTo(ItemLocation + FVector(0.0, 0.0, GetSimpleCollisionHalfHeight()), GetActorRotation(), false, false);
+			BestWayDistance = BIG_NUMBER;
+			WayStuckSeconds = 0.f;
+			return;
+		}
+		SetWantsToRun(Distance > NpcFollowRunCm);
+		WalkTowards(ItemLocation, DeltaSeconds, NpcTurnSpeed);
+		return;
+	}
+
+	SetWantsToRun(false);
+	TurnBodyTo(static_cast<float>((ItemLocation - GetActorLocation()).Rotation().Yaw), DeltaSeconds, NpcTurnSpeed);
+	if (Interaction->IsHolsterMoving() || Interaction->GetHandState(EAedirHand::Left) == EAedirHandState::Reaching || Interaction->GetHandState(EAedirHand::Right) == EAedirHandState::Reaching)
+	{
+		return;
+	}
+
+	// Hands free first. What fits on the belt goes there, and a long shaft is dropped for another weapon or held in one hand for anything else.
+	for (const EAedirHand Hand : { EAedirHand::Right, EAedirHand::Left })
+	{
+		const AAedirItemActor* Held = Interaction->GetHeldItem(Hand);
+		if (Held && Held->FitsOnBelt())
+		{
+			Interaction->HolsterToWaist(Hand);
+			return;
+		}
+	}
+	if (const AAedirItemActor* Shaft = Interaction->GetHeldItem(EAedirHand::Right))
+	{
+		if (Item->ItemClass == EAedirItemClass::Weapon || Item->bTwoHanded)
+		{
+			Interaction->DropHeld(EAedirHand::Left);
+			Interaction->DropHeld(EAedirHand::Right);
+		}
+		else if (Interaction->GetHeldItem(EAedirHand::Left) == Shaft)
+		{
+			Interaction->DropHeld(EAedirHand::Left);
+		}
+	}
+	const EAedirHand FreeHand = Interaction->GetHeldItem(EAedirHand::Right) ? EAedirHand::Left : EAedirHand::Right;
+	if (Interaction->GetHeldItem(FreeHand))
+	{
+		GiveUpFetch();
+		return;
+	}
+
+	// A hand that cannot get to it after all is helped along, so that nobody stands bowing over an item for ever.
+	if (FetchReaches >= NpcFetchReachTries)
+	{
+		if (!Interaction->EquipImmediate(FreeHand, Item))
+		{
+			GiveUpFetch();
+		}
+		return;
+	}
+	++FetchReaches;
+	UE_LOG(LogAedir, Log, TEXT("%s reaches for %s, try %d"), *NpcName.ToString(), *Item->ItemName.ToString(), FetchReaches);
+	Interaction->StartReachForItem(FreeHand, Item);
+}
+
+void AAedirNpc::FinishFetch(AAedirItemActor* Item)
+{
+	ClearFetch();
+	if (Item->ItemClass == EAedirItemClass::Armor)
+	{
+		Item->Use(this);
+	}
+	else if (Item->ItemClass != EAedirItemClass::Weapon && Interaction)
+	{
+		Interaction->AddToBackpack(Item);
+	}
+
+	// The hand that let go of a long shaft goes back to it.
+	if (Interaction)
+	{
+		AAedirItemActor* Right = Interaction->GetHeldItem(EAedirHand::Right);
+		if (Right && Right->bTwoHanded && Interaction->GetHandState(EAedirHand::Left) == EAedirHandState::Idle)
+		{
+			Interaction->StartReachForItem(EAedirHand::Left, Right);
+		}
+	}
+}
+
+void AAedirNpc::GiveUpFetch()
+{
+	if (FetchItem)
+	{
+		UE_LOG(LogAedir, Log, TEXT("%s gives up on %s at %.0f cm, %d reaches, stuck %.1f s"), *NpcName.ToString(), *FetchItem->ItemName.ToString(), FVector::Dist2D(FetchItem->GetActorLocation(), GetActorLocation()), FetchReaches, WayStuckSeconds);
+		ItemsGivenUp.Add(FetchItem.Get(), GetWorld()->GetTimeSeconds());
+	}
+	ClearFetch();
+}
+
+void AAedirNpc::ClearFetch()
+{
+	if (Interaction)
+	{
+		Interaction->CancelReach(EAedirHand::Left);
+		Interaction->CancelReach(EAedirHand::Right);
+	}
+	FetchItem = nullptr;
+	bFetchOrdered = false;
+	SetWantsToRun(false);
+	BestLeaderDistance = BIG_NUMBER;
+	NoProgressSeconds = 0.f;
+}
+
+bool AAedirNpc::TakesOrdersFrom(const AAedirPlayerCharacter* Player) const
+{
+	return Player && Role_Npc == EAedirNpcRole::Follower && GetRelationship(UAedirSaveSubsystem::MakePlayerKey(Cast<APlayerController>(Player->GetController()))) >= NpcFollowsFrom && CanTalkTo(Player);
+}
+
+void AAedirNpc::OrderGoTo(AAedirPlayerCharacter* Player, const FVector& Where)
+{
+	if (!HasAuthority() || !TakesOrdersFrom(Player))
+	{
+		return;
+	}
+	ClearFetch();
+	Leader = Player;
+	Order = EAedirNpcOrder::GoingTo;
+	GoToGoal = Where;
+	BestWayDistance = BIG_NUMBER;
+	WayStuckSeconds = 0.f;
+}
+
+void AAedirNpc::OrderFetch(AAedirPlayerCharacter* Player, AAedirItemActor* Item)
+{
+	if (!HasAuthority() || !TakesOrdersFrom(Player) || !AAedirItemActor::IsPickable(Item))
+	{
+		return;
+	}
+	ClearFetch();
+	Leader = Player;
+	Order = EAedirNpcOrder::Following;
+	FetchItem = Item;
+	bFetchOrdered = true;
+	FetchReaches = 0;
+	BestWayDistance = BIG_NUMBER;
+	WayStuckSeconds = 0.f;
+}
+
+void AAedirNpc::CollectGear(TArray<FName>& OutGear) const
+{
+	if (!Interaction)
+	{
+		return;
+	}
+	TArray<AAedirItemActor*> Items = Interaction->GetWaistItemsCopy();
+	Items.Add(Interaction->GetHeldItem(EAedirHand::Right));
+	Items.AddUnique(Interaction->GetHeldItem(EAedirHand::Left));
+	Items.Append(Interaction->GetBackpackItemsCopy());
+	for (const TObjectPtr<AAedirItemActor>& Worn : Interaction->WornItems)
+	{
+		Items.Add(Worn.Get());
+	}
+	for (const AAedirItemActor* Item : Items)
+	{
+		if (const AAedirCatalogItem* Catalog = Cast<AAedirCatalogItem>(Item))
+		{
+			OutGear.Add(Catalog->CatalogId);
+		}
+	}
+}
+
+void AAedirNpc::RestoreGear(const TArray<FName>& Gear)
+{
+	if (!Interaction)
+	{
+		return;
+	}
+
+	TArray<AAedirItemActor*> Old = Interaction->GetWaistItemsCopy();
+	Old.AddUnique(Interaction->GetHeldItem(EAedirHand::Right));
+	Old.AddUnique(Interaction->GetHeldItem(EAedirHand::Left));
+	Old.Append(Interaction->GetBackpackItemsCopy());
+	for (const TObjectPtr<AAedirItemActor>& Worn : Interaction->WornItems)
+	{
+		Old.Add(Worn.Get());
+		if (Worn && Combat)
+		{
+			Combat->SetArmorProtection(Worn->ArmorZone, 0.f);
+		}
+	}
+	Interaction->ReleaseAllItems();
+	Interaction->WornItems.Reset();
+	for (AAedirItemActor* Item : Old)
+	{
+		if (IsValid(Item))
+		{
+			Item->Destroy();
+		}
+	}
+
+	int32 NextSlot = 0;
+	const FTransform AtHand(GetActorLocation() + FVector(0.f, 0.f, 80.f));
+	for (const FName& Id : Gear)
+	{
+		AAedirCatalogItem* Item = AAedirCatalogItem::SpawnCatalogItem(GetWorld(), Id, AtHand);
+		if (!Item)
+		{
+			continue;
+		}
+		if (Item->ItemClass == EAedirItemClass::Armor)
+		{
+			Item->Use(this);
+		}
+		else if (Item->ItemClass == EAedirItemClass::Weapon)
+		{
+			if (!Interaction->HolsterImmediate(NextSlot, Item))
+			{
+				Interaction->EquipImmediate(EAedirHand::Right, Item);
+			}
+			++NextSlot;
+		}
+		else if (Interaction->EquipImmediate(EAedirHand::Right, Item))
+		{
+			Interaction->AddToBackpack(Item);
+		}
 	}
 }
 
@@ -169,6 +569,26 @@ void AAedirNpc::UpdateOrders(float DeltaSeconds)
 {
 	switch (Order)
 	{
+	case EAedirNpcOrder::GoingTo:
+	{
+		const float Left = static_cast<float>(FVector::Dist2D(GetActorLocation(), GoToGoal));
+		if (IsStuckOnTheWay(Left, DeltaSeconds))
+		{
+			TeleportTo(GoToGoal + FVector(0.0, 0.0, GetSimpleCollisionHalfHeight()), GetActorRotation(), false, false);
+			Order = EAedirNpcOrder::Waiting;
+		}
+		else if (Left <= NpcGoToStopCm)
+		{
+			SetWantsToRun(false);
+			Order = EAedirNpcOrder::Waiting;
+		}
+		else
+		{
+			FollowTo(GoToGoal, NpcGoToStopCm, NpcFollowRunCm, DeltaSeconds);
+		}
+		break;
+	}
+
 	case EAedirNpcOrder::Following:
 		if (IsValid(Leader))
 		{
@@ -274,7 +694,11 @@ void AAedirNpc::BuildTopics(const AAedirPlayerCharacter* Player, TArray<FAedirDi
 				? Add(NSLOCTEXT("AedirNpc", "Follow", "Follow me."), NSLOCTEXT("AedirNpc", "FollowYes", "Lead on. I'll watch your back."), EAedirNpcAction::Follow, true)
 				: Add(NSLOCTEXT("AedirNpc", "Follow", "Follow me."), NSLOCTEXT("AedirNpc", "FollowNo", "After what you did? Walk alone."));
 		}
-		if (Order == EAedirNpcOrder::Following)
+		if (Standing >= NpcFollowsFrom)
+		{
+			Add(NSLOCTEXT("AedirNpc", "GoThere", "Go over there."), NSLOCTEXT("AedirNpc", "GoThereYes", "Show me where."), EAedirNpcAction::GoThere, true);
+		}
+		if (Order == EAedirNpcOrder::Following || Order == EAedirNpcOrder::GoingTo)
 		{
 			Add(NSLOCTEXT("AedirNpc", "Stay", "Stay here."), NSLOCTEXT("AedirNpc", "StayYes", "Right. I won't move from this spot."), EAedirNpcAction::Stay, true);
 		}
@@ -337,6 +761,7 @@ void AAedirNpc::PerformAction(AAedirPlayerCharacter* Player, EAedirNpcAction Act
 	case EAedirNpcAction::Follow:
 		if (Role_Npc == EAedirNpcRole::Follower && GetRelationship(Key) >= NpcFollowsFrom)
 		{
+			ClearFetch();
 			Order = EAedirNpcOrder::Following;
 			Leader = Player;
 		}
@@ -345,6 +770,7 @@ void AAedirNpc::PerformAction(AAedirPlayerCharacter* Player, EAedirNpcAction Act
 	case EAedirNpcAction::Stay:
 		if (Role_Npc == EAedirNpcRole::Follower)
 		{
+			ClearFetch();
 			Order = EAedirNpcOrder::Waiting;
 		}
 		break;
@@ -352,6 +778,7 @@ void AAedirNpc::PerformAction(AAedirPlayerCharacter* Player, EAedirNpcAction Act
 	case EAedirNpcAction::PartWays:
 		if (Role_Npc == EAedirNpcRole::Follower)
 		{
+			ClearFetch();
 			Order = EAedirNpcOrder::Routine;
 			Leader = nullptr;
 		}

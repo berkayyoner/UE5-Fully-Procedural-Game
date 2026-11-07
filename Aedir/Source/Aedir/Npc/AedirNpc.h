@@ -4,6 +4,7 @@
 #include "Creature/AedirCreature.h"
 #include "AedirNpc.generated.h"
 
+class AAedirItemActor;
 class AAedirPlayerCharacter;
 
 UENUM(BlueprintType)
@@ -19,7 +20,8 @@ enum class EAedirNpcOrder : uint8
 {
 	Routine,
 	Following,
-	Waiting
+	Waiting,
+	GoingTo
 };
 
 UENUM(BlueprintType)
@@ -32,7 +34,8 @@ enum class EAedirNpcAction : uint8
 	Compliment,
 	Threaten,
 	GiveHeld,
-	AskHelp
+	AskHelp,
+	GoThere
 };
 
 // What one player has done to this person so far, from -100 to 100.
@@ -101,6 +104,18 @@ public:
 	void PerformAction(AAedirPlayerCharacter* Player, EAedirNpcAction Action);
 	void OnAttackedBy(AAedirCreature* Attacker);
 
+	bool TakesOrdersFrom(const AAedirPlayerCharacter* Player) const;
+
+	// Server only. Goes to the spot and waits there until told to follow again.
+	void OrderGoTo(AAedirPlayerCharacter* Player, const FVector& Where);
+
+	// Server only. Goes for the item, takes it and puts it on, then follows again.
+	void OrderFetch(AAedirPlayerCharacter* Player, AAedirItemActor* Item);
+
+	// Server only. What they carry and wear, by catalog id, and the same gear given back to them after a load.
+	void CollectGear(TArray<FName>& OutGear) const;
+	void RestoreGear(const TArray<FName>& Gear);
+
 	void SetHome(const FVector& Location, float Yaw);
 	const FVector& GetHomeLocation() const { return HomeLocation; }
 	float GetHomeYaw() const { return HomeYaw; }
@@ -109,6 +124,16 @@ private:
 	void UpdateOrders(float DeltaSeconds);
 	void UpdateNeeds(float DeltaSeconds);
 	void FollowTo(const FVector& Where, float StopDistance, float RunDistance, float DeltaSeconds);
+	void UpdateWeaponReadiness(float DeltaSeconds);
+	void UpdateItemSearch(float DeltaSeconds);
+	void UpdateFetch(float DeltaSeconds);
+	void FinishFetch(AAedirItemActor* Item);
+	void GiveUpFetch();
+	void ClearFetch();
+	bool HasWeapon() const;
+	bool LacksItem(const AAedirItemActor* Item) const;
+	bool CanSeeItem(const AAedirItemActor* Item) const;
+	bool IsStuckOnTheWay(float DistanceLeft, float DeltaSeconds);
 	FText PickRumour(const FString& PlayerKey) const;
 
 	FVector HomeLocation = FVector::ZeroVector;
@@ -117,4 +142,16 @@ private:
 	float NextComplimentTime = 0.f;
 	float BestLeaderDistance = BIG_NUMBER;
 	float NoProgressSeconds = 0.f;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AAedirItemActor> FetchItem;
+
+	bool bFetchOrdered = false;
+	int32 FetchReaches = 0;
+	FVector GoToGoal = FVector::ZeroVector;
+	float BestWayDistance = BIG_NUMBER;
+	float WayStuckSeconds = 0.f;
+	float CalmSeconds = 0.f;
+	float ItemSearchTimer = 0.f;
+	TMap<TWeakObjectPtr<AAedirItemActor>, double> ItemsGivenUp;
 };

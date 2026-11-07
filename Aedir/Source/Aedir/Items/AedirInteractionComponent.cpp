@@ -309,6 +309,30 @@ void UAedirInteractionComponent::HolsterToWaist(EAedirHand Hand)
 	BeginHolsterMotion(Hand);
 }
 
+int32 UAedirInteractionComponent::FindWaistWeaponSlot() const
+{
+	const auto IsWeaponAt = [this](int32 Index)
+	{
+		const AAedirItemActor* Item = WaistItems.IsValidIndex(Index) ? WaistItems[Index].Get() : nullptr;
+		return Item && Item->ItemClass == EAedirItemClass::Weapon;
+	};
+	for (const int32 Last : LastStoredWaistIndex)
+	{
+		if (IsWeaponAt(Last))
+		{
+			return Last;
+		}
+	}
+	for (int32 Index = 0; Index < WaistItems.Num(); ++Index)
+	{
+		if (IsWeaponAt(Index))
+		{
+			return Index;
+		}
+	}
+	return INDEX_NONE;
+}
+
 bool UAedirInteractionComponent::CanDrawWaistSlot(EAedirHand Hand, int32 SlotIndex) const
 {
 	const AAedirItemActor* Item = WaistItems.IsValidIndex(SlotIndex) ? WaistItems[SlotIndex].Get() : nullptr;
@@ -349,7 +373,7 @@ void UAedirInteractionComponent::BeginHolsterMotion(EAedirHand Hand)
 	}
 
 	const AAedirItemActor* Held = GetHeldItem(Hand);
-	if (GetHandState(Hand) == EAedirHandState::Holding && Held && Held->ItemClass != EAedirItemClass::Object)
+	if (GetHandState(Hand) == EAedirHandState::Holding && Held && Held->FitsOnBelt())
 	{
 		HolsterWaistIndex[Index] = FindFreeWaistIndex(Hand);
 		HolsterMotion[Index] = HolsterWaistIndex[Index] != INDEX_NONE ? EAedirHolsterMotion::Store : EAedirHolsterMotion::None;
@@ -544,8 +568,7 @@ void UAedirInteractionComponent::GetWaistSlot(int32 WaistIndex, const AAedirItem
 	else if (bWeapon)
 	{
 		LongAxis = FVector::UpVector;
-		// A long shaft hangs by its lower part, so its end stays off the ground.
-		OutPivotCm = Item->bPolearm ? Item->GripLocalCm : -Item->GripLocalCm * 0.5f;
+		OutPivotCm = -Item->GripLocalCm * 0.5f;
 	}
 	// The flat of the item lies against the body, its thin side facing out.
 	const FQuat RotationInBody = FRotationMatrix::MakeFromXZ(LongAxis, Outward).ToQuat();
@@ -1081,7 +1104,7 @@ void UAedirInteractionComponent::UpdateCarriedWeight()
 void UAedirInteractionComponent::StoreHeldToWaist(EAedirHand Hand, AAedirCreature* Creature)
 {
 	AAedirItemActor* Item = GetHeldItem(Hand);
-	if (!Item || Item->ItemClass == EAedirItemClass::Object)
+	if (!Item || !Item->FitsOnBelt())
 	{
 		return;
 	}
@@ -1352,7 +1375,7 @@ bool UAedirInteractionComponent::EquipImmediate(EAedirHand Hand, AAedirItemActor
 bool UAedirInteractionComponent::HolsterImmediate(int32 SlotIndex, AAedirItemActor* Item)
 {
 	AAedirCreature* Creature = GetCreature();
-	if (!IsAuthoritative() || !Creature || !Item || Item->IsHeld() || !WaistItems.IsValidIndex(SlotIndex) || WaistItems[SlotIndex] != nullptr)
+	if (!IsAuthoritative() || !Creature || !Item || Item->IsHeld() || !Item->FitsOnBelt() || !WaistItems.IsValidIndex(SlotIndex) || WaistItems[SlotIndex] != nullptr)
 	{
 		return false;
 	}

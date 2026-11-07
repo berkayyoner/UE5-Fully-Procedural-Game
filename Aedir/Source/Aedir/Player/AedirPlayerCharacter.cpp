@@ -39,6 +39,7 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "Game/AedirGameMode.h"
+#include "Items/AedirCatalogItem.h"
 #include "Items/AedirItemActor.h"
 #include "TimerManager.h"
 #include "UI/AedirJournalSubsystem.h"
@@ -48,6 +49,10 @@
 namespace
 {
 	constexpr float AedirGuestStoreSeconds = 60.f;
+	constexpr float AedirPointRangeCm = 8000.f;
+	constexpr float AedirPointBehindCm = 40.f;
+	constexpr float AedirPointItemWidthCm = 18.f;
+	constexpr float AedirPointItemWidthShare = 0.012f;
 	constexpr float AedirTalkRangeCm = 300.f;
 	constexpr float PlayerCharacterCreationDelaySeconds = 0.8f;
 	constexpr float PlayerTutorialTurnDegrees = 15.f;
@@ -300,8 +305,8 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightHolsterPressed);
 	PlayerInputComponent->BindKey(EKeys::Y, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHolsterPressed);
 
-	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
-	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AAedirPlayerCharacter::HandleTalkPressed);
+	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleTalkPressed);
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &AAedirPlayerCharacter::HandleThrustPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Released, this, &AAedirPlayerCharacter::HandleThrustReleased);
@@ -617,6 +622,19 @@ void AAedirPlayerCharacter::HandleTalkPressed()
 		return;
 	}
 
+	// A follower is waiting to be shown where to go: this press points it out.
+	if (AAedirNpc* Pointing = PointingNpc.Get())
+	{
+		PointingNpc.Reset();
+		FVector Where;
+		AAedirItemActor* Item = nullptr;
+		if (FindPointTarget(Where, Item))
+		{
+			ServerSendNpc(Pointing, Where, Item);
+		}
+		return;
+	}
+
 	AAedirNpc* Npc = Cast<AAedirNpc>(FindLookTarget(AedirTalkRangeCm));
 	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	const ULocalPlayer* Local = PlayerController ? PlayerController->GetLocalPlayer() : nullptr;
@@ -627,8 +645,74 @@ void AAedirPlayerCharacter::HandleTalkPressed()
 	}
 }
 
+bool AAedirPlayerCharacter::FindPointTarget(FVector& OutWhere, AAedirItemActor*& OutItem) const
+{
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	UWorld* World = GetWorld();
+	if (!PlayerController || !World)
+	{
+		return false;
+	}
+
+	FVector Eye;
+	FRotator View;
+	PlayerController->GetPlayerViewPoint(Eye, View);
+	const FVector Direction = View.Vector();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirPointTarget), false, this);
+	Params.AddIgnoredActor(PointingNpc.Get());
+	FHitResult Hit;
+	const bool bHit = World->LineTraceSingleByChannel(Hit, Eye, Eye + Direction * AedirPointRangeCm, ECC_Visibility, Params);
+	const double Limit = bHit ? Hit.Distance + AedirPointBehindCm : AedirPointRangeCm;
+
+	// The item closest to the line of sight, and not behind whatever the line ends on. Big objects are nothing to go and fetch.
+	OutItem = nullptr;
+	double BestOff = UE_BIG_NUMBER;
+	for (TActorIterator<AAedirItemActor> It(World); It; ++It)
+	{
+		const FVector ToItem = It->GetBoundsCenterWorld() - Eye;
+		const double Along = FVector::DotProduct(ToItem, Direction);
+		const double Off = (ToItem - Direction * Along).Size();
+		if (Along > 0.0 && Along <= Limit && Off < AedirPointItemWidthCm + Along * AedirPointItemWidthShare && Off < BestOff && AAedirItemActor::IsPickable(*It) && It->ItemClass != EAedirItemClass::Object)
+		{
+			OutItem = *It;
+			BestOff = Off;
+		}
+	}
+	if (OutItem)
+	{
+		OutWhere = OutItem->GetBoundsCenterWorld();
+		return true;
+	}
+
+	OutWhere = Hit.ImpactPoint;
+	return bHit;
+}
+
+void AAedirPlayerCharacter::ServerSendNpc_Implementation(AAedirNpc* Npc, const FVector& Where, AAedirItemActor* Item)
+{
+	if (!Npc)
+	{
+		return;
+	}
+	if (Item)
+	{
+		Npc->OrderFetch(this, Item);
+	}
+	else
+	{
+		Npc->OrderGoTo(this, Where);
+	}
+}
+
 void AAedirPlayerCharacter::RequestNpcAction(AAedirNpc* Npc, EAedirNpcAction Action)
 {
+	// Showing the way happens on this screen, the order goes out once a place is picked.
+	if (Action == EAedirNpcAction::GoThere)
+	{
+		PointingNpc = Npc;
+		return;
+	}
+
 	if (HasAuthority())
 	{
 		if (Npc)
@@ -860,6 +944,12 @@ void AAedirPlayerCharacter::HandleSkillsPressed()
 
 void AAedirPlayerCharacter::HandlePausePressed()
 {
+	if (PointingNpc.IsValid())
+	{
+		PointingNpc.Reset();
+		return;
+	}
+
 	if (UAedirMenuSubsystem* Menu = GetMenuSubsystem())
 	{
 		Menu->TogglePauseMenu();
@@ -1214,13 +1304,177 @@ void AAedirPlayerCharacter::SwingTrace(int32 RightHand, float Seconds)
 	}), 0.001f, Params);
 }
 
+void AAedirPlayerCharacter::PointTest(float Yaw, float Pitch)
+{
+	if (AController* MyController = GetController())
+	{
+		MyController->SetControlRotation(FRotator(Pitch, GetActorRotation().Yaw + Yaw, 0.f));
+	}
+	FTimerHandle PressTimer;
+	GetWorldTimerManager().SetTimer(PressTimer, this, &AAedirPlayerCharacter::HandleTalkPressed, 0.3f, false);
+}
+
+void AAedirPlayerCharacter::AimForTest(TWeakObjectPtr<AActor> Target, bool bPress)
+{
+	// The camera swings round the body as the view turns, so the aim is taken a few times over.
+	const bool bPressShot = bPressThenShot;
+	TSharedRef<int32> Left = MakeShared<int32>(6);
+	TSharedRef<FTimerHandle> Timer = MakeShared<FTimerHandle>();
+	GetWorldTimerManager().SetTimer(*Timer, FTimerDelegate::CreateWeakLambda(this, [this, Target, bPress, bPressShot, Left, Timer]()
+	{
+		const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+		const AAedirItemActor* Item = Cast<AAedirItemActor>(Target.Get());
+		if (PlayerController && Target.IsValid())
+		{
+			FVector Eye;
+			FRotator View;
+			PlayerController->GetPlayerViewPoint(Eye, View);
+			GetController()->SetControlRotation(((Item ? Item->GetBoundsCenterWorld() : Target->GetActorLocation()) - Eye).Rotation());
+		}
+		if (--*Left <= 0)
+		{
+			GetWorldTimerManager().ClearTimer(*Timer);
+			if (bPress)
+			{
+				HandleTalkPressed();
+				if (bPressShot)
+				{
+					GetController<APlayerController>()->ConsoleCommand(TEXT("shot showui"));
+				}
+			}
+		}
+	}), 0.15f, true);
+}
+
+void AAedirPlayerCharacter::PointItemTest(const FString& Id)
+{
+	for (TActorIterator<AAedirCatalogItem> It(GetWorld()); It; ++It)
+	{
+		if (It->CatalogId == FName(*Id) && AAedirItemActor::IsPickable(*It))
+		{
+			AimForTest(*It, true);
+			return;
+		}
+	}
+}
+
+void AAedirPlayerCharacter::AimOnlyItem(const FString& Id)
+{
+	for (TActorIterator<AAedirCatalogItem> It(GetWorld()); It; ++It)
+	{
+		if (It->CatalogId == FName(*Id) && AAedirItemActor::IsPickable(*It))
+		{
+			AimForTest(*It, false);
+			return;
+		}
+	}
+}
+
+void AAedirPlayerCharacter::LookNpcTest(const FString& Name, int32 Press)
+{
+	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
+	{
+		if (It->NpcName.ToString().Contains(Name))
+		{
+			bPressThenShot = Press == 2;
+			AimForTest(*It, Press != 0);
+			return;
+		}
+	}
+}
+
+void AAedirPlayerCharacter::NpcDropTest(const FString& Name, const FString& Id, float Forward)
+{
+	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
+	{
+		if (It->NpcName.ToString().Contains(Name))
+		{
+			FHitResult Hit;
+			const FVector Over = It->GetActorLocation() + It->GetActorForwardVector() * Forward;
+			const bool bGround = GetWorld()->LineTraceSingleByChannel(Hit, Over + FVector(0.0, 0.0, 300.0), Over - FVector(0.0, 0.0, 1000.0), ECC_Visibility);
+			AAedirCatalogItem::SpawnCatalogItem(GetWorld(), FName(*Id), FTransform((bGround ? Hit.ImpactPoint : Over) + FVector(0.0, 0.0, 30.0)));
+			return;
+		}
+	}
+}
+
+void AAedirPlayerCharacter::NpcRemoveTest(const FString& Name)
+{
+	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
+	{
+		if (It->NpcName.ToString().Contains(Name))
+		{
+			It->Destroy();
+		}
+	}
+}
+
+void AAedirPlayerCharacter::NpcDisarmTest(const FString& Name)
+{
+	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
+	{
+		if (It->NpcName.ToString().Contains(Name))
+		{
+			It->RestoreGear(TArray<FName>());
+		}
+	}
+}
+
+void AAedirPlayerCharacter::NpcBringTest(const FString& Name, float Forward)
+{
+	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
+	{
+		if (It->NpcName.ToString().Contains(Name))
+		{
+			It->TeleportTo(GetActorLocation() + GetActorForwardVector() * Forward, GetActorRotation() + FRotator(0.f, 180.f, 0.f), false, false);
+		}
+	}
+}
+
+void AAedirPlayerCharacter::GearInfo()
+{
+	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
+	{
+		if (!It->Interaction)
+		{
+			continue;
+		}
+		const auto NameOf = [](const AAedirItemActor* Item) { return Item ? Item->ItemName.ToString() : FString(TEXT("-")); };
+		FString Belt;
+		for (const AAedirItemActor* Item : It->Interaction->GetWaistItemsCopy())
+		{
+			if (Item)
+			{
+				Belt += Item->ItemName.ToString() + TEXT(" ");
+			}
+		}
+		FString Worn;
+		for (const TObjectPtr<AAedirItemActor>& Item : It->Interaction->WornItems)
+		{
+			Worn += NameOf(Item.Get()) + TEXT(" ");
+		}
+		for (TActorIterator<AAedirCatalogItem> Loose(GetWorld()); Loose; ++Loose)
+		{
+			if (AAedirItemActor::IsPickable(*Loose) && FVector::Dist(Loose->GetActorLocation(), It->GetActorLocation()) < 2000.0)
+			{
+				FHitResult Hit;
+				FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirGearInfo), false, *It);
+				Params.AddIgnoredActor(*Loose);
+				GetWorld()->LineTraceSingleByChannel(Hit, It->GetPawnViewLocation(), Loose->GetBoundsCenterWorld(), ECC_Visibility, Params);
+				Belt += FString::Printf(TEXT("(near %s %.0f at %s blocked by %s) "), *Loose->CatalogId.ToString(), FVector::Dist(Loose->GetActorLocation(), It->GetActorLocation()), *Loose->GetBoundsCenterWorld().ToCompactString(), *GetNameSafe(Hit.GetActor()));
+			}
+		}
+		UE_LOG(LogTemp, Display, TEXT("[Gear] %s order %d at %s: right %s left %s belt [%s] worn [%s] target %d"), *It->NpcName.ToString(), static_cast<int32>(It->Order), *It->GetActorLocation().ToCompactString(), *NameOf(It->Interaction->GetHeldItem(EAedirHand::Right)), *NameOf(It->Interaction->GetHeldItem(EAedirHand::Left)), *Belt, *Worn, It->Combat && It->Combat->HasAITarget() ? 1 : 0);
+	}
+}
+
 void AAedirPlayerCharacter::TalkTest(const FString& Topic)
 {
 	// Walks up to the nearest person, opens the talk and says what was asked for, without a keyboard.
 	AAedirNpc* Nearest = nullptr;
 	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
 	{
-		if (It->Role_Npc != EAedirNpcRole::Enemy && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())) && (!Topic.StartsWith(TEXT("Follow")) && !Topic.StartsWith(TEXT("Stay")) && !Topic.StartsWith(TEXT("part")) || It->Role_Npc == EAedirNpcRole::Follower))
+		if (It->Role_Npc != EAedirNpcRole::Enemy && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())) && (!Topic.StartsWith(TEXT("Follow")) && !Topic.StartsWith(TEXT("Stay")) && !Topic.StartsWith(TEXT("part")) && !Topic.StartsWith(TEXT("Go")) || It->Role_Npc == EAedirNpcRole::Follower))
 		{
 			Nearest = *It;
 		}

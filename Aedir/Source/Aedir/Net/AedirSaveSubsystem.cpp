@@ -282,7 +282,10 @@ bool UAedirSaveSubsystem::SaveWorld(const FString& Slot)
 		FAedirNpcSave& NpcSave = Save->Npcs.AddDefaulted_GetRef();
 		NpcSave.Name = Npc->NpcName.ToString();
 		NpcSave.Transform = Npc->GetActorTransform();
-		NpcSave.Order = static_cast<uint8>(Npc->Order);
+		// Someone on an errand when the game was saved waits where they got to.
+		NpcSave.Order = static_cast<uint8>(Npc->Order == EAedirNpcOrder::GoingTo ? EAedirNpcOrder::Waiting : Npc->Order);
+		Npc->CollectGear(NpcSave.Gear);
+		NpcSave.bGearSaved = true;
 		if (Npc->Stats)
 		{
 			NpcSave.Health = Npc->Stats->GetHealth();
@@ -471,6 +474,14 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 		}
 		Npc->SetActorTransform(NpcSave->Transform, false, nullptr, ETeleportType::TeleportPhysics);
 		Npc->Order = static_cast<EAedirNpcOrder>(NpcSave->Order);
+		if (Npc->Order == EAedirNpcOrder::Following && Creatures.IsValidIndex(0))
+		{
+			Npc->Leader = Creatures[0];
+		}
+		if (NpcSave->bGearSaved)
+		{
+			Npc->RestoreGear(NpcSave->Gear);
+		}
 		Npc->Relationships.Reset();
 		for (int32 Index = 0; Index < NpcSave->RelationKeys.Num() && Index < NpcSave->RelationValues.Num(); ++Index)
 		{

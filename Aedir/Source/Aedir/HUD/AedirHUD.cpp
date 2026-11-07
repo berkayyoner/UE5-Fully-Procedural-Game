@@ -1,5 +1,6 @@
 #include "HUD/AedirHUD.h"
 
+#include "Items/AedirItemActor.h"
 #include "Npc/AedirNpc.h"
 #include "Player/AedirPlayerCharacter.h"
 
@@ -23,6 +24,12 @@
 namespace
 {
 	constexpr float HudLookRangeCm = 1500.f;
+	constexpr float HudPointRadiusCm = 45.f;
+	constexpr float HudPointItemRadiusCm = 30.f;
+	constexpr float HudPointLiftCm = 3.f;
+	constexpr float HudPointPostCm = 60.f;
+	constexpr int32 HudPointRingSteps = 28;
+	constexpr float HudPointTextHeight = 0.62f;
 	constexpr float HudTalkRangeCm = 300.f;
 	constexpr float HudTargetGap = 10.f;
 	constexpr float HudTargetFontSize = 14.f;
@@ -263,6 +270,7 @@ void AAedirHUD::DrawHUD()
 	DrawSkillNotifications();
 	DrawPrompt(Creature);
 	DrawLookTarget(Creature);
+	DrawPointMarker(Creature);
 	DrawNeeds(Stats);
 
 	if (Stats && Stats->IsDead())
@@ -679,8 +687,57 @@ void AAedirHUD::DrawLookTarget(const AAedirCreature* Creature)
 	AedirUIStyle::DrawText(*Canvas, Name, Font, Spot, Ivory, EAedirTextAlign::Center, 1.f);
 	if (Npc->CanTalkTo(Creature) && FVector::Dist(Npc->GetActorLocation(), Creature->GetActorLocation()) <= HudTalkRangeCm)
 	{
-		AedirUIStyle::DrawText(*Canvas, TEXT("[G] Talk"), LightFont(HudTargetFontSize * 0.85f * Scale, 20), Spot + FVector2f(0.f, MeasureText(Name, Font).Y + 2.f * Scale), TextDim, EAedirTextAlign::Center, 1.f);
+		AedirUIStyle::DrawText(*Canvas, TEXT("[F] Talk"), LightFont(HudTargetFontSize * 0.85f * Scale, 20), Spot + FVector2f(0.f, MeasureText(Name, Font).Y + 2.f * Scale), TextDim, EAedirTextAlign::Center, 1.f);
 	}
+}
+
+void AAedirHUD::DrawPointMarker(const AAedirCreature* Creature)
+{
+	const AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(Creature);
+	const AAedirNpc* Npc = Player ? Player->GetPointingNpc() : nullptr;
+	if (!Canvas || !Npc)
+	{
+		return;
+	}
+
+	using namespace AedirUIStyle;
+	const float Scale = ScaleForHeight(static_cast<float>(Canvas->SizeY));
+	FVector Where;
+	AAedirItemActor* Item = nullptr;
+	const bool bFound = Player->FindPointTarget(Where, Item);
+	if (bFound)
+	{
+		// A ring lying on the spot, in the world's own perspective, with a short post standing in it.
+		const FLinearColor Mark(0.95f, 0.78f, 0.36f, 0.95f);
+		const float Radius = Item ? HudPointItemRadiusCm : HudPointRadiusCm;
+		FVector2D Previous = FVector2D::ZeroVector;
+		for (int32 Step = 0; Step <= HudPointRingSteps; ++Step)
+		{
+			const float Angle = UE_TWO_PI * Step / HudPointRingSteps;
+			const FVector Projected = Canvas->Project(Where + FVector(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, HudPointLiftCm));
+			const FVector2D Point(Projected.X, Projected.Y);
+			if (Step > 0 && Projected.Z > 0.0)
+			{
+				Canvas->K2_DrawLine(Previous, Point, 2.f * Scale, Mark);
+			}
+			Previous = Point;
+		}
+		const FVector Foot = Canvas->Project(Where + FVector(0.f, 0.f, HudPointLiftCm));
+		const FVector Top = Canvas->Project(Where + FVector(0.f, 0.f, HudPointPostCm));
+		if (Foot.Z > 0.0 && Top.Z > 0.0)
+		{
+			Canvas->K2_DrawLine(FVector2D(Foot.X, Foot.Y), FVector2D(Top.X, Top.Y), 2.f * Scale, Mark);
+		}
+	}
+
+	const FString Who = Npc->NpcName.ToString();
+	const FString Text = !bFound ? FString::Printf(TEXT("Show %s where to go"), *Who)
+		: Item ? FString::Printf(TEXT("[F] %s, take the %s"), *Who, *Item->ItemName.ToString())
+		: FString::Printf(TEXT("[F] %s, go there"), *Who);
+	const FSlateFontInfo Font = RegularFont(HudTargetFontSize * Scale, 40);
+	const FVector2f Spot(static_cast<float>(Canvas->SizeX) * 0.5f, static_cast<float>(Canvas->SizeY) * HudPointTextHeight);
+	AedirUIStyle::DrawText(*Canvas, Text, Font, Spot, Ivory, EAedirTextAlign::Center, 1.f);
+	AedirUIStyle::DrawText(*Canvas, TEXT("[Esc] Never mind"), LightFont(HudTargetFontSize * 0.85f * Scale, 20), Spot + FVector2f(0.f, MeasureText(Text, Font).Y + 2.f * Scale), TextDim, EAedirTextAlign::Center, 1.f);
 }
 
 void AAedirHUD::DrawNeeds(const UAedirStatsComponent* Stats)

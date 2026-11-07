@@ -72,6 +72,7 @@ private:
 	void DrawBars(float DeltaSeconds, const UAedirStatsComponent* Stats);
 	void DrawPrompt(const AAedirCreature* Creature);
 	void DrawLookTarget(const AAedirCreature* Creature);
+	void DrawPointMarker(const AAedirCreature* Creature);
 	void DrawNeeds(const UAedirStatsComponent* Stats);
 	void DrawDeathOverlay();
 	void DrawFatigue(const UAedirStatsComponent* Stats);
