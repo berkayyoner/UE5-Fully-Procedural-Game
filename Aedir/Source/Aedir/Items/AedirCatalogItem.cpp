@@ -153,15 +153,13 @@ void AAedirCatalogItem::ApplyWornLook()
 	WornMesh->SetupAttachment(Body);
 	WornMesh->RegisterComponent();
 	WornMesh->SetLeaderPoseComponent(Body);
+	// Each section wears the scanned material with the textures named after it.
 	const TArray<FSkeletalMaterial>& Slots = Model->GetMaterials();
 	for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
 	{
-		const FString SlotName = Slots[Slot].MaterialSlotName.ToString() + TEXT(" ") + GetNameSafe(Slots[Slot].MaterialInterface);
-		const bool bShow = Def->WornSections.ContainsByPredicate([&SlotName](const FString& Word) { return SlotName.Contains(Word); });
-		WornMesh->ShowMaterialSection(Slot, 0, bShow, 0);
-		if (!bShow)
+		if (UMaterialInterface* Material = AedirScannedMaterial::Make(WornMesh, Slots[Slot].MaterialSlotName.ToString()))
 		{
-			WornMesh->SetMaterial(Slot, nullptr);
+			WornMesh->SetMaterial(Slot, Material);
 		}
 	}
 	Mesh->SetVisibility(false, false);

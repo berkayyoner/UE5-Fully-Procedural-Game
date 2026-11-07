@@ -17,7 +17,7 @@ namespace
 	constexpr int32 MainMenuMaxSaves = 8;
 	const TCHAR* const MainMenuDefaultAddress = TEXT("127.0.0.1");
 
-	const TCHAR* const MainMenuCredits = TEXT("AEDIR\n\nA game of the two moons.\n\nMade by Berkay Oner.\nBuilt in Unreal Engine.\nScanned models and sound from the Medieval Village sample by Epic Games and Quixel Megascans.");
+	const TCHAR* const MainMenuCredits = TEXT("AEDIR\n\nA game of the two moons.\n\nMade by Berkay Oner.\nBuilt in Unreal Engine.\nScanned models and sound from the Medieval Village sample by Epic Games and Quixel Megascans.\n\nArmour: Free - Male Armour -4- Game Ready by KaanTezcan, CC BY 4.0, cut and fitted to the body of this game.\nSwords and axes: Atris swords and Atris axes by Petr Luchko.\nTrees: Quixel Megaplants. Grass and flowers: Interactive Open World Foliage by Project Nature. Blood: Vefects.");
 }
 
 void SAedirMainMenu::Construct(const FArguments& InArgs)

@@ -67,9 +67,6 @@ struct AEDIR_API FAedirItemDef
 	// Worn armour: a model on the body's own skeleton that moves with it, instead of a shape on one bone.
 	FString WornMeshPath;
 
-	// The model is a whole suit: only the sections whose material has one of these words in its name show for this item.
-	TArray<FString> WornSections;
-
 	// A model longer than the item's blade: its full length and where its middle lies on the item.
 	float ModelLengthCm = 0.f;
 	float ModelCenterCm = 0.f;

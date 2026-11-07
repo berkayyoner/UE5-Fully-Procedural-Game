@@ -76,3 +76,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Moved to Unreal Engine 5.8, NVIDIA upscaler plugins switched off until they exist for it.
 - Norway spruces with real branches around the meadow, swaying on the plugin's wind driven by the weather, with trunks that block the way.
 - Iron helm, cuirass, bracers and greaves worn as sections of the Shadow Knight suit, bending with the body.
+- Male Armour fitted to the mannequin by sweeping its arms along the bones and taking weights from the body's skin, worn as cuirass and bracers, and credited.
