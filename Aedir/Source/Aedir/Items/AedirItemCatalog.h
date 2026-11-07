@@ -24,6 +24,14 @@ struct AEDIR_API FAedirItemDef
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	float WeightKg = 1.f;
 
+	// A scanned model instead of the built shape, turned so its longest side runs along the item.
+	FString MeshPath;
+
+	// Food and water a use gives, out of 100, and how many uses are in it.
+	float FoodValue = 0.f;
+	float DrinkValue = 0.f;
+	int32 Uses = 1;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	float WeaponLengthCm = 0.f;
 

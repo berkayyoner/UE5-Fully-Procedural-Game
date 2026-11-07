@@ -36,6 +36,10 @@ public:
 
 private:
 	void ProcessFootPlant(int32 FootIndex, const FVector& FootWorld, float Speed2D, float VolumeMultiplier);
+	// Every step tells: a mark in the ground, the sound of what is under it, dust at speed, and blood or water carried along for some steps.
+	void LeaveStepMarks(int32 FootIndex, const FVector& Point, const FVector& Normal, float Speed2D, float Volume, float SurfaceWetness, const UPhysicalMaterial* Physical);
+	float BloodOnFoot[2] = { 0.f, 0.f };
+	float WaterOnFoot[2] = { 0.f, 0.f };
 	void PlayFootEffects(const UAedirPhysicalMaterial* Material, const FVector& Location, const FVector& Normal, float Speed2D, float Volume, bool bWetFootstep, bool bLeaveDecal);
 	void UpdateSurfaceQuery();
 	UAedirSurfaceSubsystem* GetSurfaceSubsystem() const;

@@ -1,5 +1,8 @@
 #include "Net/AedirSaveSubsystem.h"
 
+#include "Items/AedirCatalogItem.h"
+#include "Npc/AedirNpc.h"
+
 #include "Aedir.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
@@ -20,6 +23,7 @@
 
 namespace
 {
+	const TCHAR* const AedirSaveDefaultPlayMap = TEXT("Lvl_ThirdPerson");
 	constexpr int32 SaveSubsystemUserIndex = 0;
 	constexpr float SaveSubsystemRestoreWeatherSeconds = 0.1f;
 	constexpr double SaveSubsystemLocationRadiusCm = 20000.0;
@@ -71,6 +75,8 @@ namespace
 			Result.MaxStamina = Stats->GetMaxStamina();
 			Result.Strength = Stats->Strength;
 			Result.Athletism = Stats->Athletism;
+			Result.Hunger = Stats->GetHunger();
+			Result.Thirst = Stats->GetThirst();
 
 			const int32 SkillCount = static_cast<int32>(EAedirSkill::Count);
 			Result.Skills.SetNumZeroed(SkillCount);
@@ -86,22 +92,36 @@ namespace
 			const AAedirItemActor* RightItem = Interaction->GetHeldItem(EAedirHand::Right);
 
 			// Two-handed items are held by both hands; only the left entry is stored so they are restored once.
+			const auto CatalogIdOf = [](const AAedirItemActor* Item)
+			{
+				const AAedirCatalogItem* Catalog = Cast<AAedirCatalogItem>(Item);
+				return Catalog ? Catalog->CatalogId : FName();
+			};
+			Result.LeftHandId = CatalogIdOf(LeftItem);
+			Result.RightHandId = RightItem != LeftItem ? CatalogIdOf(RightItem) : FName();
 			Result.LeftHandItem = LeftItem ? TSoftClassPtr<AAedirItemActor>(LeftItem->GetClass()) : TSoftClassPtr<AAedirItemActor>();
 			Result.RightHandItem = (RightItem && RightItem != LeftItem) ? TSoftClassPtr<AAedirItemActor>(RightItem->GetClass()) : TSoftClassPtr<AAedirItemActor>();
 
 			const TArray<AAedirItemActor*> WaistItems = Interaction->GetWaistItemsCopy();
 			Result.WaistItems.SetNum(WaistItems.Num());
+			Result.WaistIds.SetNum(WaistItems.Num());
 			for (int32 Index = 0; Index < WaistItems.Num(); ++Index)
 			{
 				Result.WaistItems[Index] = WaistItems[Index] ? TSoftClassPtr<AAedirItemActor>(WaistItems[Index]->GetClass()) : TSoftClassPtr<AAedirItemActor>();
+				Result.WaistIds[Index] = CatalogIdOf(WaistItems[Index]);
 			}
 		}
 
 		return Result;
 	}
 
-	AAedirItemActor* SaveSubsystemSpawnItem(UWorld* World, const TSoftClassPtr<AAedirItemActor>& ItemClass, const FTransform& Transform)
+	AAedirItemActor* SaveSubsystemSpawnItem(UWorld* World, const TSoftClassPtr<AAedirItemActor>& ItemClass, const FTransform& Transform, FName CatalogId = FName())
 	{
+		if (World && !CatalogId.IsNone())
+		{
+			return AAedirCatalogItem::SpawnCatalogItem(World, CatalogId, Transform);
+		}
+
 		UClass* Class = ItemClass.LoadSynchronous();
 		if (!World || !Class || !Class->IsChildOf(AAedirItemActor::StaticClass()))
 		{
@@ -224,7 +244,8 @@ bool UAedirSaveSubsystem::SaveWorld(const FString& Slot)
 	{
 		const APlayerController* PlayerController = Iterator->Get();
 		const AAedirCreature* Creature = PlayerController ? Cast<AAedirCreature>(PlayerController->GetPawn()) : nullptr;
-		if (Creature)
+		// A guest's character belongs to the guest's own save. The story and the world belong to the host's.
+		if (Creature && PlayerController->IsLocalController())
 		{
 			Save->Players.Add(SaveSubsystemMakeCreatureSave(MakePlayerKey(PlayerController), Creature));
 
@@ -248,7 +269,32 @@ bool UAedirSaveSubsystem::SaveWorld(const FString& Slot)
 		FAedirItemSave ItemSave;
 		ItemSave.ItemClass = TSoftClassPtr<AAedirItemActor>(Item->GetClass());
 		ItemSave.Transform = Item->GetActorTransform();
+		if (const AAedirCatalogItem* Catalog = Cast<AAedirCatalogItem>(Item))
+		{
+			ItemSave.CatalogId = Catalog->CatalogId;
+		}
 		Save->LooseItems.Add(ItemSave);
+	}
+
+	for (TActorIterator<AAedirNpc> Iterator(World); Iterator; ++Iterator)
+	{
+		const AAedirNpc* Npc = *Iterator;
+		FAedirNpcSave& NpcSave = Save->Npcs.AddDefaulted_GetRef();
+		NpcSave.Name = Npc->NpcName.ToString();
+		NpcSave.Transform = Npc->GetActorTransform();
+		NpcSave.Order = static_cast<uint8>(Npc->Order);
+		if (Npc->Stats)
+		{
+			NpcSave.Health = Npc->Stats->GetHealth();
+			NpcSave.Hunger = Npc->Stats->GetHunger();
+			NpcSave.Thirst = Npc->Stats->GetThirst();
+			NpcSave.bDead = Npc->Stats->IsDead();
+		}
+		for (const FAedirNpcRelationship& Relation : Npc->Relationships)
+		{
+			NpcSave.RelationKeys.Add(Relation.PlayerKey);
+			NpcSave.RelationValues.Add(Relation.Value);
+		}
 	}
 
 	if (!UGameplayStatics::SaveGameToSlot(Save, Slot, SaveSubsystemUserIndex))
@@ -409,9 +455,36 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 		}
 	}
 
+	for (TActorIterator<AAedirNpc> Iterator(World); Iterator; ++Iterator)
+	{
+		AAedirNpc* Npc = *Iterator;
+		const FString NpcName = Npc->NpcName.ToString();
+		const FAedirNpcSave* NpcSave = Save->Npcs.FindByPredicate([&NpcName](const FAedirNpcSave& Entry) { return Entry.Name == NpcName; });
+		if (!NpcSave)
+		{
+			continue;
+		}
+		if (NpcSave->bDead)
+		{
+			Npc->Destroy();
+			continue;
+		}
+		Npc->SetActorTransform(NpcSave->Transform, false, nullptr, ETeleportType::TeleportPhysics);
+		Npc->Order = static_cast<EAedirNpcOrder>(NpcSave->Order);
+		Npc->Relationships.Reset();
+		for (int32 Index = 0; Index < NpcSave->RelationKeys.Num() && Index < NpcSave->RelationValues.Num(); ++Index)
+		{
+			Npc->ChangeRelationship(NpcSave->RelationKeys[Index], NpcSave->RelationValues[Index]);
+		}
+		if (Npc->Stats)
+		{
+			Npc->Stats->SetNeeds(NpcSave->Hunger, NpcSave->Thirst);
+		}
+	}
+
 	for (const FAedirItemSave& ItemSave : Save->LooseItems)
 	{
-		SaveSubsystemSpawnItem(World, ItemSave.ItemClass, ItemSave.Transform);
+		SaveSubsystemSpawnItem(World, ItemSave.ItemClass, ItemSave.Transform, ItemSave.CatalogId);
 	}
 
 	for (int32 CreatureIndex = 0; CreatureIndex < Creatures.Num(); ++CreatureIndex)
@@ -425,6 +498,7 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 		const FAedirCreatureSave& CreatureSave = Save->Players[Assignment[CreatureIndex]];
 
 		Creature->TeleportTo(CreatureSave.Transform.GetLocation(), CreatureSave.Transform.Rotator(), false, true);
+		ApplyGuestSafeCharacter(Creature, CreatureSave);
 		Creature->SetGroupId(CreatureSave.GroupId);
 		if (!CreatureSave.RaceId.IsNone())
 		{
@@ -454,7 +528,7 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 
 		const FTransform SpawnTransform(FQuat::Identity, Creature->GetActorLocation());
 
-		if (AAedirItemActor* LeftItem = SaveSubsystemSpawnItem(World, CreatureSave.LeftHandItem, SpawnTransform))
+		if (AAedirItemActor* LeftItem = SaveSubsystemSpawnItem(World, CreatureSave.LeftHandItem, SpawnTransform, CreatureSave.LeftHandId))
 		{
 			if (!Interaction->EquipImmediate(EAedirHand::Left, LeftItem))
 			{
@@ -462,7 +536,7 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 			}
 		}
 
-		if (AAedirItemActor* RightItem = SaveSubsystemSpawnItem(World, CreatureSave.RightHandItem, SpawnTransform))
+		if (AAedirItemActor* RightItem = SaveSubsystemSpawnItem(World, CreatureSave.RightHandItem, SpawnTransform, CreatureSave.RightHandId))
 		{
 			if (!Interaction->EquipImmediate(EAedirHand::Right, RightItem))
 			{
@@ -472,7 +546,7 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 
 		for (int32 WaistIndex = 0; WaistIndex < CreatureSave.WaistItems.Num(); ++WaistIndex)
 		{
-			if (AAedirItemActor* WaistItem = SaveSubsystemSpawnItem(World, CreatureSave.WaistItems[WaistIndex], SpawnTransform))
+			if (AAedirItemActor* WaistItem = SaveSubsystemSpawnItem(World, CreatureSave.WaistItems[WaistIndex], SpawnTransform, CreatureSave.WaistIds.IsValidIndex(WaistIndex) ? CreatureSave.WaistIds[WaistIndex] : FName()))
 			{
 				if (!Interaction->HolsterImmediate(WaistIndex, WaistItem))
 				{
@@ -576,6 +650,92 @@ void UAedirSaveSubsystem::StopAutosave()
 	if (UWorld* World = GetWorld())
 	{
 		World->GetTimerManager().ClearTimer(AutosaveTimerHandle);
+	}
+}
+
+void UAedirSaveSubsystem::ApplyGuestSafeCharacter(AAedirCreature* Creature, const FAedirCreatureSave& CreatureSave)
+{
+	if (Creature && Creature->Stats)
+	{
+		Creature->Stats->SetNeeds(CreatureSave.Hunger, CreatureSave.Thirst);
+	}
+}
+
+bool UAedirSaveSubsystem::StoreGuestCharacter(const FString& Slot, const APlayerController* PlayerController)
+{
+	// The guest's slot keeps its own world and story. Only the character in it moves on.
+	const AAedirCreature* Creature = PlayerController ? Cast<AAedirCreature>(PlayerController->GetPawn()) : nullptr;
+	if (Slot.IsEmpty() || !Creature)
+	{
+		return false;
+	}
+
+	UAedirSaveGame* Save = Cast<UAedirSaveGame>(UGameplayStatics::LoadGameFromSlot(Slot, SaveSubsystemUserIndex));
+	if (!Save)
+	{
+		Save = Cast<UAedirSaveGame>(UGameplayStatics::CreateSaveGameObject(UAedirSaveGame::StaticClass()));
+		Save->MapName = AedirSaveDefaultPlayMap;
+		Save->Timestamp = FDateTime::UtcNow();
+	}
+
+	FAedirCreatureSave Character = SaveSubsystemMakeCreatureSave(MakePlayerKey(PlayerController), Creature);
+	if (!Save->Players.IsEmpty())
+	{
+		Character.Transform = Save->Players[0].Transform;
+		Save->Players[0] = Character;
+	}
+	else
+	{
+		Save->Players.Add(Character);
+	}
+	return UGameplayStatics::SaveGameToSlot(Save, Slot, SaveSubsystemUserIndex);
+}
+
+void UAedirSaveSubsystem::GetCharacterOfSlot(const FString& Slot, FAedirCreatureSave& OutCharacter, bool& bOutFound) const
+{
+	bOutFound = false;
+	if (const UAedirSaveGame* Save = Cast<UAedirSaveGame>(UGameplayStatics::LoadGameFromSlot(Slot, SaveSubsystemUserIndex)); Save && !Save->Players.IsEmpty())
+	{
+		OutCharacter = Save->Players[0];
+		bOutFound = true;
+	}
+}
+
+void UAedirSaveSubsystem::ApplyCharacter(AAedirCreature* Creature, const FAedirCreatureSave& Character)
+{
+	UWorld* World = GetWorld();
+	if (!World || !Creature || !Creature->Stats || !Creature->Interaction)
+	{
+		return;
+	}
+
+	// The body in the host's world becomes the guest's own, without moving it from where the host's world put it.
+	if (!Character.RaceId.IsNone())
+	{
+		Creature->SetRace(Character.RaceId);
+	}
+	UAedirStatsComponent* Stats = Creature->Stats.Get();
+	Stats->ApplySavedState(Character.Health, Character.MaxHealth, Character.Mana, Character.MaxMana, Character.Stamina, Character.MaxStamina, Character.Strength, Character.Athletism, Character.Skills);
+	Stats->SetNeeds(Character.Hunger, Character.Thirst);
+
+	const FTransform SpawnTransform = Creature->GetActorTransform();
+	if (AAedirItemActor* Left = SaveSubsystemSpawnItem(World, Character.LeftHandItem, SpawnTransform, Character.LeftHandId))
+	{
+		Creature->Interaction->EquipImmediate(EAedirHand::Left, Left);
+	}
+	if (AAedirItemActor* Right = SaveSubsystemSpawnItem(World, Character.RightHandItem, SpawnTransform, Character.RightHandId))
+	{
+		Creature->Interaction->EquipImmediate(EAedirHand::Right, Right);
+	}
+	for (int32 Index = 0; Index < Character.WaistIds.Num(); ++Index)
+	{
+		if (!Character.WaistIds[Index].IsNone())
+		{
+			if (AAedirItemActor* Waist = SaveSubsystemSpawnItem(World, TSoftClassPtr<AAedirItemActor>(), SpawnTransform, Character.WaistIds[Index]))
+			{
+				Creature->Interaction->HolsterImmediate(Index, Waist);
+			}
+		}
 	}
 }
 

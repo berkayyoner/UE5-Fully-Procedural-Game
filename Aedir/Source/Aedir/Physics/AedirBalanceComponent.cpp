@@ -19,7 +19,7 @@
 
 namespace
 {
-	constexpr int32 AedirFirstLegMotorGroup = 3;
+	constexpr float AedirPhysicsRescaleStep = 0.005f;
 	constexpr float AedirLegInjuryRecoveryPenalty = 0.5f;
 	constexpr float AedirLeanInterpSpeed = 8.f;
 	constexpr float AedirSafeLandingSpeed = 900.f;
@@ -180,6 +180,14 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	if (!CharacterOwner || !BodyMesh || !BodyCapsule)
 	{
 		return;
+	}
+
+	// Joints are laid out at the scale the physics was made at, and a race or growing strength changes that: the limbs would stay their old length.
+	const float MeshScale = static_cast<float>(BodyMesh->GetComponentScale().X);
+	if (!bIsRagdoll && !FMath::IsNearlyEqual(MeshScale, PhysicsShapeScale, AedirPhysicsRescaleStep))
+	{
+		PhysicsShapeScale = MeshScale;
+		ReshapeBodyPhysics();
 	}
 
 	// The muscles pull towards the pose, so they start once a body spawned in mid-game has one.
@@ -870,11 +878,11 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	const UWorld* World = GetWorld();
 	const double Now = World ? World->GetTimeSeconds() : 0.0;
 
-	if (!bIsRagdoll && (bDead || TimeBelowThreshold >= FallDelaySeconds))
+	if (!bIsRagdoll && (bDead || bLegLost || TimeBelowThreshold >= FallDelaySeconds))
 	{
 		EnterRagdoll(MinRagdollSeconds);
 	}
-	else if (bIsRagdoll && !bDead && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds)
+	else if (bIsRagdoll && !bDead && !bLegLost && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds)
 	{
 		bIsRagdoll = false;
 		SetBalance(GetUpBalanceThreshold);
@@ -1023,15 +1031,37 @@ void UAedirBalanceComponent::ApplyBodyContacts(bool bRagdoll)
 	}
 }
 
+void UAedirBalanceComponent::ReshapeBodyPhysics()
+{
+	BodyMesh->RecreatePhysicsState();
+	BodyMesh->SetAllBodiesBelowSimulatePhysics(PelvisBoneName, true, true);
+	BodyMesh->SetAllBodiesPhysicsBlendWeight(1.f);
+	ApplyBodyContacts(false);
+	LooseJointLimits.Reset();
+	ApplyJointLimits(false);
+	ApplyLegPhysics(false);
+	if (FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName))
+	{
+		Pelvis->SetInstanceSimulatePhysics(false);
+	}
+	if (MotorComponent)
+	{
+		MotorComponent->SetSkeletalMeshComponent(BodyMesh);
+		UpdateMotors(0.f, true);
+	}
+}
+
 void UAedirBalanceComponent::ApplyLegPhysics(bool bRagdoll)
 {
-	// The feet have to be exactly where the steps put them, so a body on its feet stands on legs of the pose. From the pelvis up it is all muscle, and when it falls all of it is.
+	// The legs stay physical. A body on its feet carries their weight through the pose, so they do not sag out of the steps, and only when it falls does gravity have them.
 	if (BodyMesh)
 	{
 		for (const FName& Thigh : { FName(TEXT("thigh_l")), FName(TEXT("thigh_r")) })
 		{
-			BodyMesh->SetAllBodiesBelowSimulatePhysics(Thigh, bRagdoll, true);
-			BodyMesh->SetAllBodiesBelowPhysicsBlendWeight(Thigh, bRagdoll ? 1.f : 0.f, false, true);
+			BodyMesh->ForEachBodyBelow(Thigh, true, false, [bRagdoll](FBodyInstance* Body)
+			{
+				Body->SetEnableGravity(bRagdoll);
+			});
 		}
 	}
 }
@@ -1297,18 +1327,16 @@ void UAedirBalanceComponent::UpdateLegBlend(float DeltaTime)
 		return;
 	}
 
-	// The body is physical, held to the pose by its muscles, and on its feet the legs are the pose itself.
+	// The whole body is physical, held to the pose by its muscles.
 	LegPhysicsBlend = 1.f;
 	ArmPhysicsBlend = 1.f;
-	const UAedirStatsComponent* Stats = FindStats();
-	const bool bLoose = bIsRagdoll || (Stats && Stats->IsDead());
 	for (int32 GroupIndex = 0; GroupIndex < UE_ARRAY_COUNT(MotorGroupBones); ++GroupIndex)
 	{
 		for (const FName& BoneName : MotorGroupBones[GroupIndex])
 		{
 			if (FBodyInstance* Body = BodyMesh->GetBodyInstance(BoneName))
 			{
-				Body->PhysicsBlendWeight = GroupIndex >= AedirFirstLegMotorGroup && !bLoose ? 0.f : 1.f;
+				Body->PhysicsBlendWeight = 1.f;
 			}
 		}
 	}

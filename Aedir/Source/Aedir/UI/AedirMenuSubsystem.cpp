@@ -1,5 +1,9 @@
 #include "UI/AedirMenuSubsystem.h"
 
+#include "Player/AedirPlayerCharacter.h"
+#include "UI/SAedirDialogue.h"
+#include "UI/SAedirMainMenu.h"
+
 #include "Creature/AedirCreature.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
@@ -173,6 +177,76 @@ void UAedirMenuSubsystem::OpenMap()
 	}
 }
 
+void UAedirMenuSubsystem::OpenDialogue(AAedirNpc* Npc)
+{
+	APlayerController* PlayerController = PrepareToOpen();
+	if (!PlayerController || !Npc)
+	{
+		return;
+	}
+
+	AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(PlayerController->GetPawn());
+	DialogueWidget = SNew(SAedirDialogue)
+		.Npc(TWeakObjectPtr<AAedirNpc>(Npc))
+		.Player(TWeakObjectPtr<AAedirPlayerCharacter>(Player))
+		.OnClose(FSimpleDelegate::CreateUObject(this, &UAedirMenuSubsystem::CloseMenu));
+	GEngine->GameViewport->AddViewportWidgetContent(DialogueWidget.ToSharedRef(), MenuZOrder);
+
+	BeginUIMode(PlayerController, DialogueWidget.ToSharedRef());
+
+	if (Player)
+	{
+		Player->MoveLocal(FVector2D::ZeroVector);
+	}
+}
+
+void UAedirMenuSubsystem::OpenMainMenu()
+{
+	const ULocalPlayer* Local = GetLocalPlayer();
+	APlayerController* PlayerController = Local ? Local->GetPlayerController(GetWorld()) : nullptr;
+	if (!PlayerController || !GEngine || !GEngine->GameViewport)
+	{
+		return;
+	}
+
+	MainMenuWidget = SNew(SAedirMainMenu)
+		.World(TWeakObjectPtr<UWorld>(PlayerController->GetWorld()))
+		.OnSettings(FSimpleDelegate::CreateUObject(this, &UAedirMenuSubsystem::OpenMainMenuSettings));
+	GEngine->GameViewport->AddViewportWidgetContent(MainMenuWidget.ToSharedRef(), MenuZOrder - 1);
+
+	FInputModeUIOnly InputMode;
+	InputMode.SetWidgetToFocus(MainMenuWidget.ToSharedRef());
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	PlayerController->SetInputMode(InputMode);
+	PlayerController->SetShowMouseCursor(true);
+}
+
+void UAedirMenuSubsystem::CloseMainMenu()
+{
+	if (MainMenuWidget.IsValid() && GEngine && GEngine->GameViewport)
+	{
+		GEngine->GameViewport->RemoveViewportWidgetContent(MainMenuWidget.ToSharedRef());
+	}
+	MainMenuWidget.Reset();
+}
+
+void UAedirMenuSubsystem::ChooseMainMenuRow(const FString& Name)
+{
+	if (MainMenuWidget.IsValid())
+	{
+		MainMenuWidget->ChooseRowNamed(Name);
+	}
+}
+
+void UAedirMenuSubsystem::OpenMainMenuSettings()
+{
+	OpenPauseMenu(0);
+	if (PauseWidget.IsValid())
+	{
+		PauseWidget->OpenSettingsOnly();
+	}
+}
+
 void UAedirMenuSubsystem::CloseMenu()
 {
 	if (MenuWidget.IsValid())
@@ -183,6 +257,16 @@ void UAedirMenuSubsystem::CloseMenu()
 	}
 	CloseRadialMenu();
 	ClosePauseMenu();
+	if (MainMenuWidget.IsValid())
+	{
+		MainMenuWidget->Refocus();
+	}
+	if (DialogueWidget.IsValid())
+	{
+		const TSharedRef<SAedirDialogue> ClosingDialogue = DialogueWidget.ToSharedRef();
+		DialogueWidget.Reset();
+		RemoveUIWidget(ClosingDialogue);
+	}
 	CloseMap();
 }
 

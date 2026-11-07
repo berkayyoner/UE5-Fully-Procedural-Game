@@ -14,6 +14,8 @@
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemActor.h"
 #include "Net/UnrealNetwork.h"
+#include "Npc/AedirNpc.h"
+#include "Npc/AedirTrainingDummy.h"
 #include "Physics/AedirBalanceComponent.h"
 #include "Wounds/AedirWoundComponent.h"
 
@@ -246,7 +248,10 @@ namespace
 	constexpr float AedirHalfSwordYawLimit = 100.f;
 	constexpr float AedirHalfSwordPitchMin = -45.f;
 	constexpr float AedirHalfSwordPitchMax = 75.f;
-	constexpr float AedirHalfSwordBladeShare = 0.36f;
+	// The hands lie well apart on the weapon, a long one more so, as far as both arms still reach.
+	constexpr float AedirHalfSwordHandsApartShare = 0.6f;
+	constexpr float AedirHalfSwordHandsApartMinCm = 42.f;
+	constexpr float AedirHalfSwordHandsApartMaxCm = 58.f;
 	constexpr float AedirHalfSwordMinLengthCm = 45.f;
 	constexpr float AedirHalfSwordSlideSeconds = 0.32f;
 	constexpr float AedirHalfSwordHopCm = 8.f;
@@ -328,6 +333,17 @@ namespace
 	constexpr float AedirKickGroundBelowHipCm = 90.f;
 	constexpr float AedirKickExtendHeightCm = 55.f;
 
+	// A fight starts some way off: first the stance, then closing to the length of the arm and the weapon, then the blow.
+	constexpr float AedirAIArmReachCm = 62.f;
+	constexpr float AedirAIWeaponReachShare = 0.85f;
+	constexpr float AedirAIStanceExtraCm = 280.f;
+	constexpr float AedirAICloseInShare = 0.9f;
+	constexpr float AedirAIBackOffShare = 0.45f;
+	constexpr float AedirAIRunBeyondCm = 500.f;
+	constexpr float AedirAIWindupSeconds = 0.4f;
+	constexpr float AedirAIStrikeSeconds = 0.35f;
+	constexpr float AedirAIRecoverSeconds = 0.35f;
+	constexpr float AedirAIGrudgeSeconds = 25.f;
 	constexpr float AedirAIContactRange = 110.f;
 	constexpr float AedirAIShoveChance = 0.12f;
 	constexpr float AedirAIKickChance = 0.08f;
@@ -937,7 +953,7 @@ void UAedirCombatComponent::UpdateGrip(float DeltaTime)
 
 	SecondaryGripBlend = FMath::FInterpConstantTo(SecondaryGripBlend, IsGripHeld() && !bRagdoll ? 1.f : 0.f, DeltaTime, 1.f / AedirSecondaryGripBlendSeconds);
 
-	const bool bHalfSwordWanted = bTwoHandGrip && bLeftGuard && CanHalfSword(Item) && !IsPolearm(Item) && IsGripHeld() && (bBothOnItem || PrimaryHand == EAedirHand::Right);
+	const bool bHalfSwordWanted = bTwoHandGrip && bLeftGuard && CanHalfSword(Item) && IsGripHeld() && (bBothOnItem || PrimaryHand == EAedirHand::Right);
 	HalfSwordAlpha = FMath::FInterpConstantTo(HalfSwordAlpha, bHalfSwordWanted ? 1.f : 0.f, DeltaTime, 1.f / AedirHalfSwordSlideSeconds);
 
 	// The mouse means something else in this hold, so it starts from the middle.
@@ -1002,7 +1018,7 @@ void UAedirCombatComponent::UpdateGrip(float DeltaTime)
 float UAedirCombatComponent::GetSecondaryGripLocalCm(const AAedirItemActor* Item) const
 {
 	// The upper hand slides from the handle up onto the blade; the carrying hand stays on the handle.
-	const float BladeCm = Item->GripLocalCm + Item->GetWeaponLength() * AedirHalfSwordBladeShare;
+	const float BladeCm = Item->GripLocalCm + FMath::Clamp(Item->GetWeaponLength() * AedirHalfSwordHandsApartShare, AedirHalfSwordHandsApartMinCm, AedirHalfSwordHandsApartMaxCm);
 	return FMath::Lerp(Item->GripLocalCm + Item->GripSpanCm, BladeCm, CombatSmoothStep01(HalfSwordAlpha));
 }
 
@@ -2350,6 +2366,18 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 		}
 
 		UPrimitiveComponent* HitComponent = Hit.GetComponent();
+		if (AAedirTrainingDummy* Dummy = Cast<AAedirTrainingDummy>(HitActor))
+		{
+			const float DummySpeed = static_cast<float>(TipVelocity.Size());
+			if (DummySpeed >= MinImpactSpeed)
+			{
+				RegisterImpact(Hand, Dummy, Now);
+				Dummy->ReceiveStrike(HitComponent, Hit.ImpactPoint, TipVelocity, Arm.WeaponDir, ComputeImpactEnergy(MassEff, DummySpeed), HeldItem && HeldItem->GetDamageType() == EAedirDamageType::Slash);
+				Arm.HandVelocity *= AedirImpactRecoilScale;
+			}
+			continue;
+		}
+
 		if (!HitComponent || !HitComponent->IsSimulatingPhysics())
 		{
 			continue;
@@ -2398,8 +2426,18 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		Impact.RelativeSpeed = RelativeSpeed;
 		Victim->Balance->ApplyHitReaction(Impact);
 	}
+	if (AAedirNpc* VictimNpc = Cast<AAedirNpc>(Victim))
+	{
+		VictimNpc->OnAttackedBy(Creature);
+	}
 	UE_LOG(LogAedir, Log, TEXT("Impact: %s hit %s on %s, %.0f cm/s, %.1f kg, %.0f J, %.1f damage, balance %.2f, down %d"), *Creature->GetName(), *Victim->GetName(), *Bone.ToString(), RelativeSpeed, MassEff, Energy, AppliedDamage,
 		Victim->Balance ? Victim->Balance->GetBalance() : 1.f, Victim->Balance && Victim->Balance->IsRagdoll() ? 1 : 0);
+
+	if (Victim->Wounds && DamageType == EAedirDamageType::Slash)
+	{
+		const FVector CutNormal = FVector::CrossProduct(TipVelocity.GetSafeNormal(), Arm.WeaponDir).GetSafeNormal();
+		Victim->Wounds->TrySever(Bone, Hit.ImpactPoint, CutNormal, TipVelocity, Energy, VictimZoneProtection);
+	}
 
 	if (Victim->Wounds)
 	{
@@ -2498,42 +2536,66 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		return;
 	}
 
-	if (!IsGuardActive(EAedirHand::Left))
-	{
-		SetGuardInternal(EAedirHand::Left, true);
-	}
-
-	if (!IsGuardActive(EAedirHand::Right))
-	{
-		SetGuardInternal(EAedirHand::Right, true);
-	}
-
 	const FVector OwnerLocation = Creature->GetActorLocation();
 	const FVector TargetLocation = AITarget->GetActorLocation();
-	const float Distance = static_cast<float>(FVector::Dist(OwnerLocation, TargetLocation));
+	const float Distance = static_cast<float>(FVector::Dist2D(OwnerLocation, TargetLocation));
 
-	if (AController* Controller = Creature->GetController())
+	const float FacingYaw = static_cast<float>((TargetLocation - OwnerLocation).Rotation().Yaw);
+
+	const EAedirHand WeaponHand = GetAIWeaponHand();
+	const AAedirItemActor* Weapon = GetHeldItem(WeaponHand);
+	const bool bArmed = Weapon && Weapon->ItemClass == EAedirItemClass::Weapon;
+	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
+	const float Reach = (AedirAIArmReachCm + (bArmed ? Weapon->GetWeaponLength() * AedirAIWeaponReachShare : 0.f)) * Scale;
+
+	// Too far off for a fight yet: just get there, hands down.
+	if (Distance > Reach + AedirAIStanceExtraCm * Scale)
 	{
-		const FRotator Desired = (TargetLocation - OwnerLocation).Rotation();
-		Controller->SetControlRotation(FMath::RInterpConstantTo(Controller->GetControlRotation(), Desired, DeltaTime, AedirAITurnSpeed));
+		CancelSwing(EAedirHand::Left);
+		CancelSwing(EAedirHand::Right);
+		SetGuardInternal(EAedirHand::Left, false);
+		SetGuardInternal(EAedirHand::Right, false);
+		AIStrikePhase = 0;
+		AIAttackTimer = 0.f;
+		Creature->SetWantsToRun(Distance > AedirAIRunBeyondCm);
+		Creature->WalkTowards(TargetLocation, DeltaTime, AedirAITurnSpeed);
+		return;
 	}
 
-	if (Distance > AIAttackRange)
+	Creature->SetWantsToRun(false);
+	// A weapon in the stance takes one button, the second would change the hold. Fists both come up.
+	if (!IsGuardActive(WeaponHand))
 	{
-		bAIApproaching = true;
+		SetGuardInternal(WeaponHand, true);
+	}
+	const EAedirHand OtherHand = WeaponHand == EAedirHand::Left ? EAedirHand::Right : EAedirHand::Left;
+	if (IsGuardActive(OtherHand) == bArmed)
+	{
+		SetGuardInternal(OtherHand, !bArmed);
 	}
 
-	if (bAIApproaching && Distance <= AIApproachSpeedStopDistance)
+	if (Distance > Reach * AedirAICloseInShare)
 	{
-		bAIApproaching = false;
+		Creature->WalkTowards(TargetLocation, DeltaTime, AedirAITurnSpeed);
+	}
+	else
+	{
+		Creature->TurnBodyTo(FacingYaw, DeltaTime, AedirAITurnSpeed);
+		if (Distance < Reach * AedirAIBackOffShare && bArmed)
+		{
+			Creature->AddMovementInput(Creature->GetActorForwardVector(), -0.6f);
+		}
 	}
 
-	if (bAIApproaching)
+	if (bArmed)
 	{
-		Creature->MoveLocal(FVector2D(0.f, 1.f));
+		if (UpdateAIWeaponStrike(WeaponHand, Distance, Reach, DeltaTime))
+		{
+			return;
+		}
 	}
 
-	if (Distance > AIAttackRange)
+	if (Distance > Reach)
 	{
 		AIAttackTimer = 0.f;
 		return;
@@ -2577,6 +2639,83 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	}
 }
 
+EAedirHand UAedirCombatComponent::GetAIWeaponHand() const
+{
+	const AAedirItemActor* Left = GetHeldItem(EAedirHand::Left);
+	const AAedirItemActor* Right = GetHeldItem(EAedirHand::Right);
+	if (Right && Right->ItemClass == EAedirItemClass::Weapon)
+	{
+		return EAedirHand::Right;
+	}
+	return Left && Left->ItemClass == EAedirItemClass::Weapon ? EAedirHand::Left : EAedirHand::Right;
+}
+
+bool UAedirCombatComponent::UpdateAIWeaponStrike(EAedirHand Hand, float Distance, float Reach, float DeltaTime)
+{
+	// A blow is the same arm the player moves: drawn back to one side or overhead, then thrown across to the other.
+	FAedirArmDynamics& Arm = GetArm(Hand);
+	AIStrikeTimer += DeltaTime;
+	switch (AIStrikePhase)
+	{
+	case 0:
+		Arm.PunchBlend = 0.f;
+		if (Distance <= Reach && AIStrikeTimer >= AIAttackInterval)
+		{
+			const int32 Style = FMath::RandRange(0, 2);
+			const float Side = FMath::RandBool() ? 1.f : -1.f;
+			Arm.AimOffsetDeg = Style == 2 ? FVector2D(0.f, AedirWeaponRaiseFullDegrees) : FVector2D(Side * 85.f, 15.f);
+			AIStrikeEnd = Style == 2 ? FVector2D(0.f, -25.f) : FVector2D(-Side * 70.f, 0.f);
+			AIStrikePhase = 1;
+			AIStrikeTimer = 0.f;
+		}
+		else if (Distance > Reach)
+		{
+			Arm.AimOffsetDeg = FVector2D(0.f, 10.f);
+		}
+		break;
+
+	case 1:
+		if (AIStrikeTimer >= AedirAIWindupSeconds)
+		{
+			Arm.AimOffsetDeg = AIStrikeEnd;
+			Arm.PunchBlend = 1.f;
+			AIStrikePhase = 2;
+			AIStrikeTimer = 0.f;
+		}
+		break;
+
+	case 2:
+		if (AIStrikeTimer >= AedirAIStrikeSeconds)
+		{
+			Arm.AimOffsetDeg = FVector2D(0.f, 10.f);
+			Arm.PunchBlend = 0.f;
+			AIStrikePhase = 3;
+			AIStrikeTimer = 0.f;
+		}
+		break;
+
+	default:
+		if (AIStrikeTimer >= AedirAIRecoverSeconds)
+		{
+			AIStrikePhase = 0;
+			AIStrikeTimer = 0.f;
+		}
+		break;
+	}
+	return true;
+}
+
+void UAedirCombatComponent::SetAIGrudge(AAedirCreature* Attacker)
+{
+	if (Attacker && Attacker != Creature && !Creature->IsPlayerControlled())
+	{
+		AIGrudge = Attacker;
+		AIGrudgeUntil = GetWorld()->GetTimeSeconds() + AedirAIGrudgeSeconds;
+		AITarget = Attacker;
+		AILastSeenTime = GetWorld()->GetTimeSeconds();
+	}
+}
+
 void UAedirCombatComponent::UpdateAITarget(double Now)
 {
 	UWorld* World = GetWorld();
@@ -2608,7 +2747,8 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 			continue;
 		}
 
-		if (Groups->GetRelation(Creature->GroupId, Candidate->GroupId) != EAedirRelation::Enemy || !CanSeeTarget(Candidate))
+		const bool bGrudge = Candidate == AIGrudge && Now < AIGrudgeUntil;
+		if ((Groups->GetRelation(Creature->GroupId, Candidate->GroupId) != EAedirRelation::Enemy && !bGrudge) || !CanSeeTarget(Candidate))
 		{
 			continue;
 		}
@@ -2628,7 +2768,8 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 		return;
 	}
 
-	if (AITarget && (!IsValid(AITarget) || (AITarget->Stats && AITarget->Stats->IsDead()) || Now - AILastSeenTime > AedirAIMemorySeconds))
+	const double Memory = AITarget == AIGrudge && Now < AIGrudgeUntil ? static_cast<double>(AedirAIGrudgeSeconds) : static_cast<double>(AedirAIMemorySeconds);
+	if (AITarget && (!IsValid(AITarget) || (AITarget->Stats && AITarget->Stats->IsDead()) || Now - AILastSeenTime > Memory))
 	{
 		AITarget = nullptr;
 	}

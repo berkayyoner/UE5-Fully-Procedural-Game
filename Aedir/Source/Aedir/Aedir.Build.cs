@@ -17,6 +17,7 @@ public class Aedir : ModuleRules
 			"EnhancedInput",
 			"PhysicsCore",
 			"Niagara",
+			"ProceduralMeshComponent",
 			"DeveloperSettings",
 			"NetCore",
 			"Slate",

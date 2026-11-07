@@ -215,6 +215,18 @@ void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Di
 	}
 }
 
+bool UAedirBloodSubsystem::IsBloodAt(const FVector& Location, float RadiusCm)
+{
+	for (const TWeakObjectPtr<UDecalComponent>& Splat : Splats)
+	{
+		if (const UDecalComponent* Decal = Splat.Get(); Decal && FVector::DistSquared(Decal->GetComponentLocation(), Location) < FMath::Square(RadiusCm + Decal->DecalSize.Y))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void UAedirBloodSubsystem::SpawnSplat(const FVector& Location, const FVector& Normal, float Scale)
 {
 	UWorld* World = GetWorld();

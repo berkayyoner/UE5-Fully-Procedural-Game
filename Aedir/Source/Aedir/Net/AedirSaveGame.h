@@ -52,6 +52,22 @@ struct AEDIR_API FAedirCreatureSave
 	FName RaceId;
 
 	UPROPERTY()
+	float Hunger = 100.f;
+
+	UPROPERTY()
+	float Thirst = 100.f;
+
+	// Catalog items are all one class, told apart by their id.
+	UPROPERTY()
+	FName LeftHandId;
+
+	UPROPERTY()
+	FName RightHandId;
+
+	UPROPERTY()
+	TArray<FName> WaistIds;
+
+	UPROPERTY()
 	TSoftClassPtr<AAedirItemActor> LeftHandItem;
 
 	UPROPERTY()
@@ -72,6 +88,43 @@ struct AEDIR_API FAedirItemSave
 
 	UPROPERTY()
 	FTransform Transform = FTransform::Identity;
+
+	UPROPERTY()
+	FName CatalogId;
+};
+
+// A person of the world, as far as the story needs to remember them.
+USTRUCT()
+struct AEDIR_API FAedirNpcSave
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	FString Name;
+
+	UPROPERTY()
+	FTransform Transform = FTransform::Identity;
+
+	UPROPERTY()
+	uint8 Order = 0;
+
+	UPROPERTY()
+	float Health = 100.f;
+
+	UPROPERTY()
+	float Hunger = 100.f;
+
+	UPROPERTY()
+	float Thirst = 100.f;
+
+	UPROPERTY()
+	bool bDead = false;
+
+	UPROPERTY()
+	TArray<FString> RelationKeys;
+
+	UPROPERTY()
+	TArray<int32> RelationValues;
 };
 
 UCLASS(BlueprintType)
@@ -108,6 +161,9 @@ public:
 
 	UPROPERTY()
 	TArray<FAedirCreatureSave> Players;
+
+	UPROPERTY()
+	TArray<FAedirNpcSave> Npcs;
 
 	UPROPERTY()
 	TArray<FAedirItemSave> LooseItems;

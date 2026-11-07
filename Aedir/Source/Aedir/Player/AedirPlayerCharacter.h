@@ -2,6 +2,8 @@
 
 #include "CoreMinimal.h"
 #include "Creature/AedirCreature.h"
+#include "Net/AedirSaveGame.h"
+#include "Npc/AedirNpc.h"
 #include "Engine/TimerHandle.h"
 #include "Items/AedirItemTypes.h"
 #include "AedirPlayerCharacter.generated.h"
@@ -109,6 +111,17 @@ public:
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 
 	// Server only. Applies the chosen race and posts the starter quest.
+	void HandleTalkPressed();
+	void SendGuestCharacter();
+	void StoreGuestCharacterNow();
+	FTimerHandle GuestStoreTimer;
+
+	UFUNCTION(Server, Reliable)
+	void ServerBringCharacter(const FAedirCreatureSave& Character);
+
+	UFUNCTION(Server, Reliable)
+	void ServerNpcAction(AAedirNpc* Npc, EAedirNpcAction Action);
+
 	UFUNCTION(Server, Reliable)
 	void ServerChooseRace(FName ChosenRaceId);
 
@@ -206,6 +219,35 @@ public:
 
 	UFUNCTION(Exec)
 	void SwingTrace(int32 RightHand, float Seconds);
+
+	UFUNCTION(Exec)
+	void TalkTest(const FString& Topic);
+
+	UFUNCTION(Exec)
+	void NeedsInfo();
+
+	UFUNCTION(Exec)
+	void DecalTest();
+
+	UFUNCTION(Exec)
+	void SaveNow(const FString& Slot);
+
+	UFUNCTION(Exec)
+	void GuestSaveNow();
+
+	// Parts a limb of the nearest person, or cuts the training pell, as a heavy blade would.
+	UFUNCTION(Exec)
+	void CutTest(const FString& Bone);
+
+	UFUNCTION(Exec)
+	void DummyCutTest(const FString& PartName);
+
+	UFUNCTION(Exec)
+	void AssetCheck(const FString& Paths);
+
+	// The living creature in the middle of the view, if any.
+	AAedirCreature* FindLookTarget(float MaxDistance) const;
+	void RequestNpcAction(AAedirNpc* Npc, EAedirNpcAction Action);
 
 	UFUNCTION(Exec)
 	void PassHand();

@@ -1,4 +1,10 @@
 #include "Surface/AedirFootstepComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "NiagaraComponent.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "TimerManager.h"
+#include "Wounds/AedirBloodSubsystem.h"
 
 #include "Settings/AedirSettingsSubsystem.h"
 #include "Animation/AedirGaitComponent.h"
@@ -20,6 +26,17 @@
 
 namespace
 {
+	constexpr float AedirStepBloodRadiusCm = 12.f;
+	constexpr float AedirStepBloodReachCm = 30.f;
+	constexpr float AedirStepCarryShare = 0.78f;
+	constexpr float AedirStepDirtStrength = 0.6f;
+	constexpr float AedirStepHalfWidthCm = 6.f;
+	constexpr float AedirStepHalfLengthCm = 14.f;
+	constexpr float AedirStepForwardCm = 8.f;
+	constexpr float AedirStepLifeSeconds = 45.f;
+	constexpr float AedirStepDustSpeed = 380.f;
+	constexpr float AedirStepDustScale = 0.18f;
+	constexpr float AedirStepDustSeconds = 0.25f;
 	constexpr float AedirFootGroundOffsetCm = 10.f;
 	constexpr float AedirSurfaceQueryInterval = 0.1f;
 	constexpr float AedirPlantLiftHigh = 0.15f;
@@ -157,7 +174,14 @@ void UAedirFootstepComponent::ProcessFootPlant(int32 FootIndex, const FVector& F
 
 	OnFootstep.Broadcast(Point, Material, Volume);
 
-	if (!Material || World->GetNetMode() == NM_DedicatedServer)
+	if (World->GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+
+	LeaveStepMarks(FootIndex, Point, Normal, Speed2D, Volume, SurfaceWetness, bHit ? Hit.PhysMaterial.Get() : nullptr);
+
+	if (!Material)
 	{
 		return;
 	}
@@ -165,6 +189,106 @@ void UAedirFootstepComponent::ProcessFootPlant(int32 FootIndex, const FVector& F
 	const bool bWetFootstep = SurfaceWetness > AedirWetSoundThreshold;
 	const bool bLeaveDecal = SurfaceWetness > AedirDecalWetSurfaceThreshold || Foot > AedirDecalFootWetThreshold;
 	PlayFootEffects(Material, Point, Normal, Speed2D, Volume, bWetFootstep, bLeaveDecal);
+}
+
+void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Point, const FVector& Normal, float Speed2D, float Volume, float SurfaceWetness, const UPhysicalMaterial* Physical)
+{
+	UWorld* World = GetWorld();
+	const int32 Foot = FMath::Clamp(FootIndex, 0, 1);
+
+	// Stepping in it wets the sole, and each step leaves less of it.
+	UAedirBloodSubsystem* Blood = World->GetSubsystem<UAedirBloodSubsystem>();
+	if (Blood && Blood->IsBloodAt(Point, AedirStepBloodRadiusCm + AedirStepBloodReachCm))
+	{
+		BloodOnFoot[Foot] = 1.f;
+	}
+	if (SurfaceWetness > AedirDecalWetSurfaceThreshold)
+	{
+		WaterOnFoot[Foot] = 1.f;
+	}
+
+	FLinearColor Color(0.06f, 0.045f, 0.03f);
+	float Strength = AedirStepDirtStrength;
+	float Roughness = 0.95f;
+	if (BloodOnFoot[Foot] > 0.02f)
+	{
+		Color = FLinearColor(0.2f, 0.006f, 0.006f);
+		Strength = FMath::Lerp(0.2f, 0.95f, BloodOnFoot[Foot]);
+		Roughness = 0.35f;
+		BloodOnFoot[Foot] *= AedirStepCarryShare;
+	}
+	else if (WaterOnFoot[Foot] > 0.02f)
+	{
+		Color = FLinearColor(0.02f, 0.02f, 0.022f);
+		Strength = FMath::Lerp(0.15f, 0.6f, WaterOnFoot[Foot]);
+		Roughness = 0.12f;
+		WaterOnFoot[Foot] *= AedirStepCarryShare;
+	}
+
+	// The plant is told from the foot in the air, so the print finds its ground for itself.
+	FVector PrintPoint = Point;
+	FVector PrintNormal = Normal;
+	FHitResult GroundHit;
+	FCollisionQueryParams GroundParams(SCENE_QUERY_STAT(AedirStepPrint), false, CreatureOwner);
+	if (World->LineTraceSingleByChannel(GroundHit, Point + FVector(0.f, 0.f, 60.f), Point - FVector(0.f, 0.f, 120.f), ECC_Visibility, GroundParams))
+	{
+		PrintPoint = GroundHit.ImpactPoint;
+		PrintNormal = GroundHit.ImpactNormal;
+	}
+
+	static TWeakObjectPtr<UMaterialInterface> StepMaterial;
+	if (!StepMaterial.IsValid())
+	{
+		StepMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Aedir/Materials/M_Footprint.M_Footprint"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	}
+	if (UMaterialInterface* Base = StepMaterial.Get())
+	{
+		const FVector Forward = FVector::VectorPlaneProject(CreatureOwner->GetActorForwardVector(), PrintNormal).GetSafeNormal();
+		const float Scale = static_cast<float>(CreatureOwner->GetActorScale3D().Z);
+		if (UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(this, Base, FVector(14.f, AedirStepHalfWidthCm, AedirStepHalfLengthCm) * Scale, PrintPoint + Forward * (AedirStepForwardCm * Scale), FRotationMatrix::MakeFromXZ(-PrintNormal, Forward).Rotator(), AedirStepLifeSeconds))
+		{
+			Decal->SetFadeScreenSize(0.f);
+			if (UMaterialInstanceDynamic* Print = Decal->CreateDynamicMaterialInstance())
+			{
+				Print->SetVectorParameterValue(TEXT("Color"), Color);
+				Print->SetScalarParameterValue(TEXT("Strength"), Strength);
+				Print->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+			}
+		}
+	}
+
+	// What the ground sounds like, when the surface has no set of its own.
+	const EPhysicalSurface Surface = Physical ? Physical->SurfaceType.GetValue() : SurfaceType_Default;
+	const UAedirPhysicalMaterial* Own = Cast<UAedirPhysicalMaterial>(Physical);
+	if (!Own || Own->FootstepSound.IsNull())
+	{
+		struct FStepSounds { const TCHAR* Family; int32 Count; };
+		static const FStepSounds Sets[] = { { TEXT("Dirt"), 6 }, { TEXT("Grass"), 13 }, { TEXT("Cobbles"), 7 }, { TEXT("Wood"), 9 } };
+		const FStepSounds& Set = Sets[FMath::Clamp(static_cast<int32>(Surface), 0, 3)];
+		const FString Name = FString::Printf(TEXT("sfx_Foley_Fts_%s_%02d"), Set.Family, FMath::RandRange(1, Set.Count));
+		if (USoundBase* Sound = LoadObject<USoundBase>(nullptr, *FString::Printf(TEXT("/Game/Audio/_Content/SFX/Footsteps/wav/%s.%s"), *Name, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
+		{
+			UGameplayStatics::PlaySoundAtLocation(this, Sound, Point, Volume * UAedirSettingsSubsystem::GetValues().FootstepVolume);
+		}
+	}
+
+	// A run kicks up the dry ground.
+	if (Speed2D > AedirStepDustSpeed && SurfaceWetness < AedirDecalWetSurfaceThreshold)
+	{
+		static TWeakObjectPtr<UNiagaraSystem> Dust;
+		if (!Dust.IsValid())
+		{
+			Dust = LoadObject<UNiagaraSystem>(nullptr, TEXT("/Game/Effects/NS_WellSmoke.NS_WellSmoke"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+		}
+		if (UNiagaraSystem* System = Dust.Get())
+		{
+			if (UNiagaraComponent* Puff = UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, System, Point, FRotator::ZeroRotator, FVector(AedirStepDustScale)))
+			{
+				FTimerHandle StopPuff;
+				World->GetTimerManager().SetTimer(StopPuff, FTimerDelegate::CreateWeakLambda(Puff, [Puff]() { Puff->Deactivate(); }), AedirStepDustSeconds, false);
+			}
+		}
+	}
 }
 
 void UAedirFootstepComponent::PlayFootEffects(const UAedirPhysicalMaterial* Material, const FVector& Location, const FVector& Normal, float Speed2D, float Volume, bool bWetFootstep, bool bLeaveDecal)

@@ -15,6 +15,10 @@ enum class EAedirRadialOption : uint8;
 
 // Owns the Tab selector, the category menu, the Esc pause menu, the map and the character creation widgets for one local player.
 // Only one of them is open at a time, opening another closes the previous one.
+class AAedirNpc;
+class SAedirDialogue;
+class SAedirMainMenu;
+
 UCLASS()
 class AEDIR_API UAedirMenuSubsystem : public ULocalPlayerSubsystem
 {
@@ -40,6 +44,11 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Menu")
 	void OpenMap();
+
+	void OpenDialogue(AAedirNpc* Npc);
+	void OpenMainMenu();
+	void CloseMainMenu();
+	void ChooseMainMenuRow(const FString& Name);
 
 	// True while the selector, category menu, pause menu or map is open.
 	UFUNCTION(BlueprintPure, Category="Aedir|Menu")
@@ -78,6 +87,9 @@ private:
 	TSharedPtr<SAedirRadialMenu> RadialWidget;
 	TSharedPtr<SAedirPauseMenu> PauseWidget;
 	TSharedPtr<SAedirMap> MapWidget;
+	TSharedPtr<SAedirDialogue> DialogueWidget;
+	TSharedPtr<SAedirMainMenu> MainMenuWidget;
+	void OpenMainMenuSettings();
 	TSharedPtr<SAedirCharacterCreation> CreationWidget;
 	bool bPausedByMenu = false;
 };

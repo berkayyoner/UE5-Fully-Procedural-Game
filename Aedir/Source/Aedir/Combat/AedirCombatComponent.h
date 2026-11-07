@@ -342,6 +342,8 @@ public:
 
 	// How far the spine turns with a weapon pulled to the side.
 	float GetSwingTwistDegrees() const;
+	bool HasAITarget() const { return AITarget != nullptr; }
+	void SetAIGrudge(AAedirCreature* Attacker);
 	float GetPunchLeanDegrees() const;
 
 	// Puts the blade of that hand there at once, when it takes over a weapon from elsewhere.
@@ -546,6 +548,16 @@ private:
 	FVector ComputeObjectCenter(const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
 	FVector ComputeWeaponTargetDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	void UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);
+
+	EAedirHand GetAIWeaponHand() const;
+	bool UpdateAIWeaponStrike(EAedirHand Hand, float Distance, float Reach, float DeltaTime);
+
+	UPROPERTY(Transient)
+	TObjectPtr<AAedirCreature> AIGrudge;
+	double AIGrudgeUntil = 0.0;
+	int32 AIStrikePhase = 0;
+	float AIStrikeTimer = 0.f;
+	FVector2D AIStrikeEnd = FVector2D::ZeroVector;
 
 	bool bThrustMode = false;
 	float DevKickHoldShare = -1.f;

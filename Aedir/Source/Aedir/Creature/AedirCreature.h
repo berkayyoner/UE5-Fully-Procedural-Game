@@ -93,6 +93,19 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
 	void MoveLocal(FVector2D Input);
+
+	// For creatures nobody plays: walks towards a place, around walls and drops, turning the body.
+	void WalkTowards(const FVector& Goal, float DeltaSeconds, float TurnDegreesPerSecond);
+	void TurnBodyTo(float Yaw, float DeltaSeconds, float TurnDegreesPerSecond);
+
+private:
+	// Stuck on the way somewhere: goes off to one side for a moment.
+	FVector WalkCheckLocation = FVector::ZeroVector;
+	float WalkCheckTimer = 0.f;
+	float WalkDetourSeconds = 0.f;
+	float WalkDetourYaw = 0.f;
+
+public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
 	void SetWantsToRun(bool bWantsToRun);
 

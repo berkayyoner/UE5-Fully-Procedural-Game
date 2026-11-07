@@ -50,6 +50,7 @@ public:
 	void SpawnDrop(const FVector& Location, const FVector& Velocity);
 	void SpawnSpray(const FVector& Location, const FVector& Direction, float Severity, EAedirWoundType Type);
 	void SpawnSplat(const FVector& Location, const FVector& Normal, float Scale);
+	bool IsBloodAt(const FVector& Location, float RadiusCm);
 
 private:
 	UMaterialInterface* GetDropMaterial();

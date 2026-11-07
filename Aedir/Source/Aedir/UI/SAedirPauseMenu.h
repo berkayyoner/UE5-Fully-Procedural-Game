@@ -23,6 +23,7 @@ enum class EAedirPausePage : uint8
 	Settings,
 	SaveList,
 	LoadList,
+	Exit,
 	SettingsGraphics,
 	SettingsAudio,
 	SettingsGameplay
@@ -42,6 +43,9 @@ public:
 	void Construct(const FArguments& InArgs);
 
 	void SetTab(int32 NewTab);
+
+	// From the title screen: only the settings, and backing out of them closes the menu.
+	void OpenSettingsOnly();
 	void GoToPage(EAedirPausePage NewPage);
 
 	virtual bool SupportsKeyboardFocus() const override { return true; }
@@ -59,6 +63,7 @@ private:
 		Delete
 	};
 
+	bool bSettingsOnly = false;
 	TArray<FAedirMenuRow> BuildRows() const;
 	TArray<FAedirMenuLine> BuildDetailLines(const TArray<FAedirMenuRow>& NewRows) const;
 	void RefreshView(bool bForce);

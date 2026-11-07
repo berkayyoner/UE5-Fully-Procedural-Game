@@ -1,4 +1,6 @@
 #include "Items/AedirCatalogItem.h"
+#include "Graphics/AedirScannedMaterial.h"
+#include "Creature/AedirStatsComponent.h"
 
 #include "Combat/AedirCombatComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -90,6 +92,23 @@ void AAedirCatalogItem::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& Ou
 
 void AAedirCatalogItem::Use_Implementation(AAedirCreature* User)
 {
+	if (ItemClass == EAedirItemClass::Food)
+	{
+		const FAedirItemDef* Def = UAedirItemCatalog::Find(CatalogId);
+		if (!HasAuthority() || !Def || !User || !User->Stats)
+		{
+			return;
+		}
+
+		User->Stats->AddFood(Def->FoodValue, Def->DrinkValue);
+		OnUsed(User);
+		if (++UsesSpent >= Def->Uses)
+		{
+			Destroy();
+		}
+		return;
+	}
+
 	if (ItemClass != EAedirItemClass::Armor)
 	{
 		Super::Use_Implementation(User);
@@ -151,6 +170,42 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 {
 	ClearDetails();
 
+	if (!Def.MeshPath.IsEmpty())
+	{
+		if (UStaticMesh* Scanned = LoadObject<UStaticMesh>(nullptr, *Def.MeshPath))
+		{
+			// The item's length runs along X and its middle on the root, so grips and belts need not know what the model looks like.
+			const FBox Box = Scanned->GetBoundingBox();
+			const FVector Size = Box.GetSize();
+			FRotator Turn = FRotator::ZeroRotator;
+			double Longest = Size.X;
+			if (Size.Y > Longest) { Longest = Size.Y; Turn = FRotator(0.f, -90.f, 0.f); }
+			if (Size.Z > Longest) { Longest = Size.Z; Turn = FRotator(90.f, 0.f, 0.f); }
+			const double Wanted = Def.WeaponLengthCm > 0.f ? Def.WeaponLengthCm : FMath::Max3(Def.BodyScale.X, Def.BodyScale.Y, Def.BodyScale.Z) * 100.0;
+			const float ModelScale = static_cast<float>(Wanted / FMath::Max(Longest, 1.0));
+			Mesh->SetStaticMesh(GetShapeMesh(EAedirCatalogShape::Cube));
+			Mesh->SetMaterial(0, nullptr);
+			Mesh->SetRelativeScale3D(BodyScale);
+			Mesh->SetVisibility(false, false);
+			if (UStaticMeshComponent* Model = NewObject<UStaticMeshComponent>(this))
+			{
+				Model->SetupAttachment(Mesh);
+				Model->SetAbsolute(false, false, true);
+				Model->SetStaticMesh(Scanned);
+				Model->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				Model->SetWorldScale3D(FVector(ModelScale));
+				Model->SetRelativeRotation(Turn);
+				Model->SetRelativeLocation(Turn.RotateVector(-Box.GetCenter() * ModelScale) / BodyScale);
+				Model->RegisterComponent();
+				AedirScannedMaterial::Apply(Model, AedirScannedMaterial::FolderOfPath(Def.MeshPath));
+				DetailMeshes.Add(Model);
+				return;
+			}
+		}
+		UE_LOG(LogTemp, Warning, TEXT("Item %s: model %s is missing, building its shape instead."), *Def.Id.ToString(), *Def.MeshPath);
+	}
+
+	Mesh->SetVisibility(true, false);
 	Mesh->SetStaticMesh(GetShapeMesh(CatalogItemRootShape(Def.Id)));
 	Mesh->SetMaterial(0, CreateColorMaterial(Def.Color));
 	Mesh->SetRelativeScale3D(BodyScale);

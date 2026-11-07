@@ -1,4 +1,5 @@
 #include "Net/AedirSessionSubsystem.h"
+#include "Net/AedirSaveSubsystem.h"
 
 #include "Aedir.h"
 #include "Engine/Engine.h"
@@ -12,6 +13,19 @@
 
 namespace
 {
+	const FName SessionPlayMap(TEXT("/Game/ThirdPerson/Lvl_ThirdPerson"));
+	const FName SessionMenuMap(TEXT("/Game/Aedir/Maps/Lvl_MainMenu"));
+	constexpr int32 SessionCoopPlayers = 4;
+
+	TArray<FString> SessionExistingSlots(const UAedirSaveSubsystem& Saves)
+	{
+		TArray<FString> Slots;
+		for (const FAedirSaveInfo& Info : Saves.ListSaves())
+		{
+			Slots.Add(Info.Slot);
+		}
+		return Slots;
+	}
 	constexpr float SessionPlayerCountPollInterval = 1.f;
 
 	APlayerController* SessionFindLocalController(const UWorld* World)
@@ -89,6 +103,56 @@ bool UAedirSessionSubsystem::HostGame(FName MapName, int32 MaxPlayers)
 
 	UGameplayStatics::OpenLevel(World, MapName, true, FString::Printf(TEXT("listen?MaxPlayers=%d"), ClampedMaxPlayers));
 	return true;
+}
+
+bool UAedirSessionSubsystem::StartFromSave(const FString& Slot, bool bHost)
+{
+	UWorld* World = GetWorld();
+	UAedirSaveSubsystem* Saves = GetGameInstance()->GetSubsystem<UAedirSaveSubsystem>();
+	if (!World || !Saves)
+	{
+		return false;
+	}
+
+	Saves->SetGuest(false);
+	Saves->SetCurrentSlot(Slot.IsEmpty() ? AedirSaveSlots::NextSlotName(SessionExistingSlots(*Saves)) : Slot);
+	Saves->PendingLoadSlot = Slot;
+	UGameplayStatics::OpenLevel(World, SessionPlayMap, true, bHost ? FString::Printf(TEXT("listen?MaxPlayers=%d"), SessionCoopPlayers) : FString());
+	return true;
+}
+
+bool UAedirSessionSubsystem::JoinWithCharacter(const FString& Address, const FString& CharacterSlot)
+{
+	UAedirSaveSubsystem* Saves = GetGameInstance()->GetSubsystem<UAedirSaveSubsystem>();
+	if (!Saves)
+	{
+		return false;
+	}
+
+	Saves->SetGuest(true);
+	Saves->SetCurrentSlot(CharacterSlot.IsEmpty() ? AedirSaveSlots::NextSlotName(SessionExistingSlots(*Saves)) : CharacterSlot);
+	Saves->PendingLoadSlot.Reset();
+	return JoinGame(Address);
+}
+
+void UAedirSessionSubsystem::ReturnToMainMenu()
+{
+	UWorld* World = GetWorld();
+	UAedirSaveSubsystem* Saves = GetGameInstance()->GetSubsystem<UAedirSaveSubsystem>();
+	if (!World)
+	{
+		return;
+	}
+
+	if (Saves && Saves->IsGuest())
+	{
+		Saves->StoreGuestCharacter(Saves->GetCurrentSlot(), SessionFindLocalController(World));
+	}
+	if (Saves)
+	{
+		Saves->SetGuest(false);
+	}
+	UGameplayStatics::OpenLevel(World, SessionMenuMap, true);
 }
 
 bool UAedirSessionSubsystem::JoinGame(const FString& Address)

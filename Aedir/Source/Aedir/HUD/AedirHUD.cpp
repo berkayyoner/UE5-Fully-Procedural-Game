@@ -1,5 +1,8 @@
 #include "HUD/AedirHUD.h"
 
+#include "Npc/AedirNpc.h"
+#include "Player/AedirPlayerCharacter.h"
+
 #include "Settings/AedirSettingsSubsystem.h"
 #include "HUD/AedirMarkerSubsystem.h"
 #include "CanvasTypes.h"
@@ -19,6 +22,16 @@
 
 namespace
 {
+	constexpr float HudLookRangeCm = 1500.f;
+	constexpr float HudTalkRangeCm = 300.f;
+	constexpr float HudTargetGap = 10.f;
+	constexpr float HudTargetFontSize = 14.f;
+	constexpr float HudTargetBarWidth = 300.f;
+	constexpr float HudTargetBarHeight = 4.f;
+	constexpr float HudTargetBarGap = 3.f;
+	constexpr float HudTargetOverHeadCm = 26.f;
+	constexpr float HudNeedShowBelow = 25.f;
+	constexpr float HudNeedLift = 34.f;
 	constexpr float HudPromptLift = 14.f;
 	constexpr float HudPromptFontSize = 13.f;
 	constexpr float HudBarFullThreshold = 0.999f;
@@ -249,6 +262,8 @@ void AAedirHUD::DrawHUD()
 	}
 	DrawSkillNotifications();
 	DrawPrompt(Creature);
+	DrawLookTarget(Creature);
+	DrawNeeds(Stats);
 
 	if (Stats && Stats->IsDead())
 	{
@@ -612,6 +627,88 @@ void AAedirHUD::DrawPrompt(const AAedirCreature* Creature)
 	const float TextHeight = AedirUIStyle::MeasureText(Name, Font).Y;
 	const FVector2f Position(static_cast<float>(Projected.X), static_cast<float>(Projected.Y) - TextHeight - HudPromptLift * Scale);
 	AedirUIStyle::DrawText(*Canvas, Name, Font, Position, AedirUIStyle::Ivory, EAedirTextAlign::Center, 1.f);
+}
+
+void AAedirHUD::DrawLookTarget(const AAedirCreature* Creature)
+{
+	const AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(Creature);
+	const AAedirCreature* Target = Player ? Player->FindLookTarget(HudLookRangeCm) : nullptr;
+	const AAedirNpc* Npc = Cast<AAedirNpc>(Target);
+	if (!Canvas || !Npc)
+	{
+		return;
+	}
+
+	using namespace AedirUIStyle;
+	const float Scale = ScaleForHeight(static_cast<float>(Canvas->SizeY));
+	const FString Name = Npc->NpcName.ToString();
+
+	// An enemy's name stands under the compass with a thin red line for its life. Nothing tells the number.
+	if (Npc->IsEnemyOf(Creature))
+	{
+		const float CenterX = static_cast<float>(Canvas->SizeX) * 0.5f;
+		const float Top = (CompassTopMargin + CompassHeight + HudTargetGap) * Scale;
+		const FSlateFontInfo Font = RegularFont(HudTargetFontSize * Scale, 40);
+		const float TextHeight = MeasureText(Name, Font).Y;
+		AedirUIStyle::DrawText(*Canvas, Name, Font, FVector2f(CenterX, Top), Ivory, EAedirTextAlign::Center, 1.f);
+
+		const float Fraction = Npc->Stats ? FMath::Clamp(Npc->Stats->GetHealth() / FMath::Max(Npc->Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
+		const float HalfWidth = HudTargetBarWidth * 0.5f * Scale;
+		const float HalfHeight = FMath::Max(HudTargetBarHeight * 0.5f * Scale, 1.f);
+		const FVector2f Center(CenterX, Top + TextHeight + HudTargetBarGap * Scale + HalfHeight);
+		FAedirUIMesh Mesh(1.f);
+		AddTaperedBar(Mesh, Center, HalfWidth, HalfHeight, HalfHeight * 2.f, FLinearColor(0.f, 0.f, 0.f, 0.5f), FLinearColor(0.f, 0.f, 0.f, 0.72f), FLinearColor(0.f, 0.f, 0.f, 0.5f));
+		if (Fraction > 0.f)
+		{
+			const FLinearColor Red(0.52f, 0.03f, 0.02f);
+			AddTaperedBar(Mesh, Center, HalfWidth * Fraction, FMath::Max(HalfHeight - 0.5f * Scale, 0.5f), HalfHeight * 2.f, FLinearColor(0.2f, 0.01f, 0.01f), Red, FLinearColor(0.2f, 0.01f, 0.01f));
+		}
+		DrawMesh(*Canvas->Canvas, Mesh);
+		return;
+	}
+
+	// Anybody else has their name over their head, and the key to talk to them when they are near enough.
+	const FVector Over = Npc->GetActorLocation() + FVector(0.0, 0.0, Npc->GetSimpleCollisionHalfHeight() + HudTargetOverHeadCm);
+	const FVector Projected = Canvas->Project(Over);
+	if (Projected.Z <= 0.0)
+	{
+		return;
+	}
+	const FSlateFontInfo Font = RegularFont(HudTargetFontSize * Scale, 40);
+	const FVector2f Spot(static_cast<float>(Projected.X), static_cast<float>(Projected.Y));
+	AedirUIStyle::DrawText(*Canvas, Name, Font, Spot, Ivory, EAedirTextAlign::Center, 1.f);
+	if (Npc->CanTalkTo(Creature) && FVector::Dist(Npc->GetActorLocation(), Creature->GetActorLocation()) <= HudTalkRangeCm)
+	{
+		AedirUIStyle::DrawText(*Canvas, TEXT("[G] Talk"), LightFont(HudTargetFontSize * 0.85f * Scale, 20), Spot + FVector2f(0.f, MeasureText(Name, Font).Y + 2.f * Scale), TextDim, EAedirTextAlign::Center, 1.f);
+	}
+}
+
+void AAedirHUD::DrawNeeds(const UAedirStatsComponent* Stats)
+{
+	// Hunger and thirst only show when they start to tell, in a word over the middle bar, as a body would notice them.
+	if (!Canvas || !Stats)
+	{
+		return;
+	}
+
+	FString Text;
+	if (Stats->GetThirst() < HudNeedShowBelow)
+	{
+		Text = Stats->GetThirst() <= 0.f ? TEXT("Parched") : TEXT("Thirsty");
+	}
+	if (Stats->GetHunger() < HudNeedShowBelow)
+	{
+		Text += (Text.IsEmpty() ? TEXT("") : TEXT("   ")) + FString(Stats->GetHunger() <= 0.f ? TEXT("Starving") : TEXT("Hungry"));
+	}
+	if (Text.IsEmpty())
+	{
+		return;
+	}
+
+	using namespace AedirUIStyle;
+	const float Scale = ScaleForHeight(static_cast<float>(Canvas->SizeY));
+	const FVector2f Spot(static_cast<float>(Canvas->SizeX) * 0.5f, static_cast<float>(Canvas->SizeY) - (BarBottomMargin + BarHeight + HudNeedLift) * Scale);
+	AedirUIStyle::DrawText(*Canvas, Text, LightFont(HudTargetFontSize * Scale, 40), Spot, Ivory, EAedirTextAlign::Center, 1.f);
 }
 
 void AAedirHUD::DrawDeathOverlay()

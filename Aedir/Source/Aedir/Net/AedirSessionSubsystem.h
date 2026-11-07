@@ -34,6 +34,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Session")
 	bool JoinGame(const FString& Address);
 
+	// From the title screen. An empty slot is a new game. The map comes from the save. When hosts get servers of their own, this and the next are what changes.
+	bool StartFromSave(const FString& Slot, bool bHost);
+	bool JoinWithCharacter(const FString& Address, const FString& CharacterSlot);
+	// Back to the title screen, saving a guest's character on the way.
+	void ReturnToMainMenu();
+
 	UFUNCTION(BlueprintCallable, Category="Aedir|Session")
 	void LeaveGame(FName MenuMap);
 

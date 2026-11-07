@@ -109,6 +109,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
 	float ApplyDamage(float Amount);
 
+	// How full and how watered the body is, 100 to 0. Empty, it weakens and starts to take harm. Server only for changes.
+	void AddFood(float FoodAmount, float DrinkAmount);
+	float GetHunger() const { return Hunger; }
+	float GetThirst() const { return Thirst; }
+	void SetNeeds(float NewHunger, float NewThirst);
+	// How much the lack of food or water tells on the body: 0 fine, 1 starved or parched.
+	float GetNeedShare() const;
+
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
 	void Heal(float Amount);
 
@@ -155,6 +163,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetMaxHealth() const;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
+	float Hunger = 100.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
+	float Thirst = 100.f;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetMana() const;

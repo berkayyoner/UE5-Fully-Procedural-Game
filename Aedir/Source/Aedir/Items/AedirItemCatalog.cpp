@@ -95,6 +95,34 @@ namespace
 				}
 			}
 		};
+		const auto AddFood = [&Definitions](const TCHAR* Id, const TCHAR* Name, float WeightKg, const FLinearColor& Color, const FVector& Scale, float Food, float Drink, int32 Uses, const TCHAR* Mesh)
+		{
+			FAedirItemDef Item = CatalogMakeMisc(Id, Name, EAedirItemClass::Food, WeightKg, Color, Scale);
+			Item.FoodValue = Food;
+			Item.DrinkValue = Drink;
+			Item.Uses = Uses;
+			Item.MeshPath = Mesh;
+			Definitions.Add(Item);
+		};
+		AddFood(TEXT("Bread"), TEXT("Loaf of Bread"), 0.4f, FLinearColor(0.42f, 0.24f, 0.09f), FVector(0.22, 0.12, 0.09), 35.f, 0.f, 1, TEXT(""));
+		AddFood(TEXT("Apple"), TEXT("Apple"), 0.2f, FLinearColor(0.45f, 0.06f, 0.04f), FVector(0.08, 0.08, 0.08), 12.f, 6.f, 1, TEXT(""));
+		AddFood(TEXT("SmokedMeat"), TEXT("Smoked Meat"), 0.5f, FLinearColor(0.24f, 0.08f, 0.05f), FVector(0.2, 0.1, 0.06), 45.f, 0.f, 1, TEXT(""));
+		AddFood(TEXT("WaterJug"), TEXT("Jug of Water"), 2.2f, FLinearColor(0.3f, 0.26f, 0.18f), FVector(0.2, 0.2, 0.3), 0.f, 40.f, 3, TEXT("/Game/Megascans/3D_Assets/JuteJug/SM_JuteJug.SM_JuteJug"));
+		AddFood(TEXT("Carafe"), TEXT("Wooden Carafe"), 1.1f, FLinearColor(0.3f, 0.2f, 0.1f), FVector(0.12, 0.12, 0.26), 0.f, 30.f, 2, TEXT("/Game/Megascans/3D_Assets/OldWoodenCarafe/SM_OldWoodenCarafe.SM_OldWoodenCarafe"));
+
+		const auto SetMesh = [&Definitions](const TCHAR* Id, const TCHAR* Mesh)
+		{
+			for (FAedirItemDef& Item : Definitions)
+			{
+				if (Item.Id == FName(Id))
+				{
+					Item.MeshPath = Mesh;
+				}
+			}
+		};
+		SetMesh(TEXT("BattleAxe"), TEXT("/Game/Megascans/3D_Assets/Axe/SM_Axe.SM_Axe"));
+		SetMesh(TEXT("Warhammer"), TEXT("/Game/Megascans/3D_Assets/OldHammer/SM_OldHammer.SM_OldHammer"));
+
 		SetGrip(TEXT("Dagger"), -21.f, 8.f, true);
 		SetGrip(TEXT("ShortSword"), -42.f, 8.f, true);
 		SetGrip(TEXT("Sword"), -65.f, 9.f, true);

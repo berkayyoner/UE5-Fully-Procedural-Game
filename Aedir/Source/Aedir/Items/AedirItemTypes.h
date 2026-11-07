@@ -11,7 +11,8 @@ enum class EAedirItemClass : uint8
 	Poison,
 	Book,
 	Armor,
-	Object
+	Object,
+	Food
 };
 
 UENUM(BlueprintType)

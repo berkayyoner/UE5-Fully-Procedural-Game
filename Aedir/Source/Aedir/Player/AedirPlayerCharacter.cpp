@@ -1,4 +1,14 @@
 #include "AedirPlayerCharacter.h"
+#include "EngineUtils.h"
+#include "Components/DecalComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Npc/AedirTrainingDummy.h"
+#include "Wounds/AedirWoundComponent.h"
+#include "Engine/Texture.h"
+#include "Materials/Material.h"
+#include "Net/AedirSaveSubsystem.h"
+#include "UI/AedirMenuSubsystem.h"
 
 #include "Engine/StaticMesh.h"
 #include "Engine/StaticMeshActor.h"
@@ -37,6 +47,8 @@
 
 namespace
 {
+	constexpr float AedirGuestStoreSeconds = 60.f;
+	constexpr float AedirTalkRangeCm = 300.f;
 	constexpr float PlayerCharacterCreationDelaySeconds = 0.8f;
 	constexpr float PlayerTutorialTurnDegrees = 15.f;
 
@@ -145,6 +157,8 @@ void AAedirPlayerCharacter::BeginPlay()
 
 	ApplyViewPitchLimits();
 	SetFirstPerson(false);
+
+	SendGuestCharacter();
 
 	if (GetNetMode() != NM_DedicatedServer)
 	{
@@ -287,6 +301,7 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::Y, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHolsterPressed);
 
 	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AAedirPlayerCharacter::HandleTalkPressed);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &AAedirPlayerCharacter::HandleThrustPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Released, this, &AAedirPlayerCharacter::HandleThrustReleased);
@@ -522,6 +537,116 @@ void AAedirPlayerCharacter::HandleRightHolsterPressed()
 	if (Interaction)
 	{
 		Interaction->HolsterToWaist(EAedirHand::Right);
+	}
+}
+
+void AAedirPlayerCharacter::SendGuestCharacter()
+{
+	UAedirSaveSubsystem* Saves = GetGameInstance() ? GetGameInstance()->GetSubsystem<UAedirSaveSubsystem>() : nullptr;
+	if (!Saves || !Saves->IsGuest() || HasAuthority())
+	{
+		return;
+	}
+
+	// Controllers arrive a moment after the body on a guest's machine.
+	FTimerHandle BringTimer;
+	GetWorldTimerManager().SetTimer(BringTimer, FTimerDelegate::CreateWeakLambda(this, [this, Saves]()
+	{
+		if (!IsLocallyControlled())
+		{
+			return;
+		}
+		FAedirCreatureSave Character;
+		bool bFound = false;
+		Saves->GetCharacterOfSlot(Saves->GetCurrentSlot(), Character, bFound);
+		if (bFound)
+		{
+			ServerBringCharacter(Character);
+		}
+		GetWorldTimerManager().SetTimer(GuestStoreTimer, this, &AAedirPlayerCharacter::StoreGuestCharacterNow, AedirGuestStoreSeconds, true);
+	}), 1.f, false);
+}
+
+void AAedirPlayerCharacter::StoreGuestCharacterNow()
+{
+	if (UAedirSaveSubsystem* Saves = GetGameInstance() ? GetGameInstance()->GetSubsystem<UAedirSaveSubsystem>() : nullptr)
+	{
+		Saves->StoreGuestCharacter(Saves->GetCurrentSlot(), Cast<APlayerController>(GetController()));
+	}
+}
+
+void AAedirPlayerCharacter::ServerBringCharacter_Implementation(const FAedirCreatureSave& Character)
+{
+	if (UAedirSaveSubsystem* Saves = GetGameInstance() ? GetGameInstance()->GetSubsystem<UAedirSaveSubsystem>() : nullptr)
+	{
+		Saves->ApplyCharacter(this, Character);
+	}
+}
+
+AAedirCreature* AAedirPlayerCharacter::FindLookTarget(float MaxDistance) const
+{
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	UWorld* World = GetWorld();
+	if (!PlayerController || !World)
+	{
+		return nullptr;
+	}
+
+	FVector Eye;
+	FRotator View;
+	PlayerController->GetPlayerViewPoint(Eye, View);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirLookTarget), false, this);
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_Pawn);
+	FHitResult Hit;
+	// The camera sits behind the shoulder, so the distance counts from the body.
+	const float CameraOffset = static_cast<float>(FVector::Dist(Eye, GetActorLocation()));
+	if (!World->SweepSingleByObjectType(Hit, Eye, Eye + View.Vector() * (MaxDistance + CameraOffset), FQuat::Identity, Objects, FCollisionShape::MakeSphere(22.f), Params))
+	{
+		return nullptr;
+	}
+
+	AAedirCreature* Target = Cast<AAedirCreature>(Hit.GetActor());
+	return Target && Target->Stats && !Target->Stats->IsDead() ? Target : nullptr;
+}
+
+void AAedirPlayerCharacter::HandleTalkPressed()
+{
+	if (IsMenuOpen() || IsCharacterCreationOpen())
+	{
+		return;
+	}
+
+	AAedirNpc* Npc = Cast<AAedirNpc>(FindLookTarget(AedirTalkRangeCm));
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	const ULocalPlayer* Local = PlayerController ? PlayerController->GetLocalPlayer() : nullptr;
+	UAedirMenuSubsystem* Menus = Local ? Local->GetSubsystem<UAedirMenuSubsystem>() : nullptr;
+	if (Npc && Menus && Npc->CanTalkTo(this))
+	{
+		Menus->OpenDialogue(Npc);
+	}
+}
+
+void AAedirPlayerCharacter::RequestNpcAction(AAedirNpc* Npc, EAedirNpcAction Action)
+{
+	if (HasAuthority())
+	{
+		if (Npc)
+		{
+			Npc->PerformAction(this, Action);
+		}
+	}
+	else
+	{
+		ServerNpcAction(Npc, Action);
+	}
+}
+
+void AAedirPlayerCharacter::ServerNpcAction_Implementation(AAedirNpc* Npc, EAedirNpcAction Action)
+{
+	if (Npc && FVector::Dist(Npc->GetActorLocation(), GetActorLocation()) < AedirTalkRangeCm * 2.f)
+	{
+		Npc->PerformAction(this, Action);
 	}
 }
 
@@ -1087,6 +1212,146 @@ void AAedirPlayerCharacter::SwingTrace(int32 RightHand, float Seconds)
 			GetWorldTimerManager().ClearTimer(*Timer);
 		}
 	}), 0.001f, Params);
+}
+
+void AAedirPlayerCharacter::TalkTest(const FString& Topic)
+{
+	// Walks up to the nearest person, opens the talk and says what was asked for, without a keyboard.
+	AAedirNpc* Nearest = nullptr;
+	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
+	{
+		if (It->Role_Npc != EAedirNpcRole::Enemy && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())) && (!Topic.StartsWith(TEXT("Follow")) && !Topic.StartsWith(TEXT("Stay")) && !Topic.StartsWith(TEXT("part")) || It->Role_Npc == EAedirNpcRole::Follower))
+		{
+			Nearest = *It;
+		}
+	}
+	if (!Nearest)
+	{
+		return;
+	}
+	TArray<FAedirDialogueTopic> Topics;
+	Nearest->BuildTopics(this, Topics);
+	FString List;
+	for (const FAedirDialogueTopic& One : Topics)
+	{
+		List += One.Label.ToString() + TEXT(" | ");
+		if (!Topic.IsEmpty() && One.Label.ToString().Contains(Topic))
+		{
+			UE_LOG(LogTemp, Display, TEXT("[Talk] %s says: %s"), *Nearest->NpcName.ToString(), *One.Response.ToString());
+			RequestNpcAction(Nearest, One.Action);
+		}
+	}
+	UE_LOG(LogTemp, Display, TEXT("[Talk] %s (%s), order %d, %s: %s"), *Nearest->NpcName.ToString(), *Nearest->GetStandingText(UAedirSaveSubsystem::MakePlayerKey(Cast<APlayerController>(GetController()))).ToString(), static_cast<int32>(Nearest->Order), *Nearest->GetActorLocation().ToCompactString(), *List);
+}
+
+void AAedirPlayerCharacter::AssetCheck(const FString& Paths)
+{
+	TArray<FString> List;
+	Paths.ParseIntoArray(List, TEXT(","));
+	for (const FString& Path : List)
+	{
+		const UObject* Object = LoadObject<UObject>(nullptr, *Path);
+		const UStaticMesh* Static = Cast<UStaticMesh>(Object);
+		const UMaterialInterface* Material = Static ? Static->GetMaterial(0) : Cast<UMaterialInterface>(Object);
+		const UMaterial* Root = Material ? Material->GetMaterial() : nullptr;
+		UE_LOG(LogTemp, Display, TEXT("[Asset] %s: %s, material %s, root %s"), *Path, Object ? *Object->GetClass()->GetName() : TEXT("MISSING"), *GetNameSafe(Material), *GetPathNameSafe(Root));
+		if (const UMaterialInterface* Master = Cast<UMaterialInterface>(Object))
+		{
+			TArray<FMaterialParameterInfo> Infos;
+			TArray<FGuid> Ids;
+			Master->GetAllTextureParameterInfo(Infos, Ids);
+			FString Names;
+			for (const FMaterialParameterInfo& Info : Infos)
+			{
+				Names += Info.Name.ToString() + TEXT(" ");
+			}
+			UE_LOG(LogTemp, Display, TEXT("[Asset] params: %s domain %d"), *Names, static_cast<int32>(Master->GetMaterial()->MaterialDomain));
+		}
+		if (const UTexture* Texture = Cast<UTexture>(Object))
+		{
+			UE_LOG(LogTemp, Display, TEXT("[Asset] texture virtual %d srgb %d compression %d lodgroup %d"), Texture->VirtualTextureStreaming ? 1 : 0, Texture->SRGB ? 1 : 0, static_cast<int32>(Texture->CompressionSettings), static_cast<int32>(Texture->LODGroup));
+		}
+	}
+}
+
+void AAedirPlayerCharacter::CutTest(const FString& Bone)
+{
+	AAedirNpc* Nearest = nullptr;
+	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
+	{
+		if (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation()))
+		{
+			Nearest = *It;
+		}
+	}
+	if (Nearest && Nearest->Wounds)
+	{
+		const FVector Where = Nearest->GetMesh()->GetBoneLocation(FName(*Bone));
+		const bool bCut = Nearest->Wounds->TrySever(FName(*Bone), Where, FVector(0.3, 0.2, 1.0).GetSafeNormal(), Nearest->GetActorRightVector() * 500.0, 500.f, 0.f);
+		UE_LOG(LogTemp, Display, TEXT("[Cut] %s %s: %d, %s stands at %s"), *Nearest->NpcName.ToString(), *Bone, bCut ? 1 : 0, *Nearest->NpcName.ToString(), *Nearest->GetActorLocation().ToCompactString());
+	}
+}
+
+void AAedirPlayerCharacter::DummyCutTest(const FString& PartName)
+{
+	for (TActorIterator<AAedirTrainingDummy> It(GetWorld()); It; ++It)
+	{
+		TArray<UPrimitiveComponent*> Parts;
+		It->GetComponents<UPrimitiveComponent>(Parts);
+		for (UPrimitiveComponent* Part : Parts)
+		{
+			if (Part->GetName() == PartName)
+			{
+				It->ReceiveStrike(Part, Part->Bounds.Origin, FVector(0.0, 500.0, 0.0), FVector(1.0, 0.0, 0.2).GetSafeNormal(), 200.f, true);
+				UE_LOG(LogTemp, Display, TEXT("[Cut] dummy part %s at %s"), *PartName, *Part->Bounds.Origin.ToCompactString());
+			}
+		}
+	}
+}
+
+void AAedirPlayerCharacter::SaveNow(const FString& Slot)
+{
+	if (UAedirSaveSubsystem* Saves = GetGameInstance()->GetSubsystem<UAedirSaveSubsystem>())
+	{
+		UE_LOG(LogTemp, Display, TEXT("[Save] %s: %d"), *Slot, Saves->SaveWorld(Slot) ? 1 : 0);
+	}
+}
+
+void AAedirPlayerCharacter::GuestSaveNow()
+{
+	StoreGuestCharacterNow();
+	UAedirSaveSubsystem* Saves = GetGameInstance()->GetSubsystem<UAedirSaveSubsystem>();
+	UE_LOG(LogTemp, Display, TEXT("[Save] guest %d into %s, strength %.1f"), Saves && Saves->IsGuest() ? 1 : 0, Saves ? *Saves->GetCurrentSlot() : TEXT(""), Stats ? Stats->Strength : 0.f);
+}
+
+void AAedirPlayerCharacter::DecalTest()
+{
+	FHitResult Hit;
+	const FVector From = GetActorLocation();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirDecalTest), false, this);
+	if (GetWorld()->LineTraceSingleByChannel(Hit, From, From - FVector(0.0, 0.0, 300.0), ECC_Visibility, Params))
+	{
+		UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Aedir/Materials/M_Footprint.M_Footprint"));
+		UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(this, Base, FVector(30.f, 50.f, 90.f), Hit.ImpactPoint + GetActorForwardVector() * 120.f, FRotationMatrix::MakeFromXZ(-Hit.ImpactNormal, GetActorForwardVector()).Rotator(), 60.f);
+		UE_LOG(LogTemp, Display, TEXT("[Decal] on %s receives %d, decal %d material %s"), *GetNameSafe(Hit.GetComponent()), Hit.GetComponent() && Hit.GetComponent()->bReceivesDecals ? 1 : 0, Decal ? 1 : 0, *GetNameSafe(Base));
+		if (UMaterialInstanceDynamic* Print = Decal ? Decal->CreateDynamicMaterialInstance() : nullptr)
+		{
+			Print->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.3f, 0.f, 0.f));
+			Print->SetScalarParameterValue(TEXT("Strength"), 1.f);
+		}
+	}
+}
+
+void AAedirPlayerCharacter::NeedsInfo()
+{
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (It->Stats)
+		{
+			const AAedirNpc* Npc = Cast<AAedirNpc>(*It);
+			UE_LOG(LogTemp, Display, TEXT("[Needs] %s at %s yaw %.0f: health %.0f hunger %.1f thirst %.1f target %d"), Npc ? *Npc->NpcName.ToString() : *It->GetName(), *It->GetActorLocation().ToCompactString(), It->GetActorRotation().Yaw, It->Stats->GetHealth(), It->Stats->GetHunger(), It->Stats->GetThirst(), It->Combat && It->Combat->HasAITarget() ? 1 : 0);
+		}
+	}
 }
 
 void AAedirPlayerCharacter::PassHand()

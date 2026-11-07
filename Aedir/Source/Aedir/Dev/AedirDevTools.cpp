@@ -1,4 +1,5 @@
 #include "Dev/AedirDevTools.h"
+#include "Npc/AedirNpc.h"
 #include "Combat/AedirCombatTypes.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirCreatureTypes.h"
@@ -16,6 +17,7 @@ FAedirDevReported& UAedirDevTools::OnReported()
 int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const FVector& FacePoint, int32 Count, bool bArmed)
 {
 	constexpr float BanditSpacingCm = 120.f;
+	static const TCHAR* const BanditNames[] = { TEXT("Bandit"), TEXT("Bandit Cutthroat"), TEXT("Bandit Marauder"), TEXT("Road Thief") };
 	static const TCHAR* const BanditWeaponIds[] = { TEXT("ShortSword"), TEXT("Mace"), TEXT("BattleAxe"), TEXT("Sword"), TEXT("Club") };
 
 	if (!World)
@@ -36,15 +38,14 @@ int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const F
 		const FVector Location = Center + Right * SideOffset;
 		const FRotator Facing(0.f, (FacePoint - Location).Rotation().Yaw, 0.f);
 
-		AAedirCreature* Enemy = World->SpawnActor<AAedirCreature>(AAedirCreature::StaticClass(), Location, Facing, SpawnParameters);
+		AAedirNpc* Enemy = World->SpawnActor<AAedirNpc>(AAedirNpc::StaticClass(), Location, Facing, SpawnParameters);
 		if (!Enemy)
 		{
 			continue;
 		}
 
 		++Spawned;
-		Enemy->GroupId = FName(TEXT("Bandits"));
-		Enemy->OnGroupIdChanged.Broadcast(Enemy->GroupId);
+		Enemy->InitNpc(EAedirNpcRole::Enemy, FText::FromString(BanditNames[FMath::RandRange(0, UE_ARRAY_COUNT(BanditNames) - 1)]), FText::GetEmpty());
 
 		const FTransform HandTransform(Facing, Location + FVector(0.f, 0.f, 100.f));
 		if (bArmed && Enemy->Interaction)

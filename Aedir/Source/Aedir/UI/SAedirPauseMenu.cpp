@@ -1,5 +1,7 @@
 #include "UI/SAedirPauseMenu.h"
 
+#include "Net/AedirSessionSubsystem.h"
+
 #include "Engine/GameInstance.h"
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
@@ -36,6 +38,8 @@ namespace
 		Load,
 		Settings,
 		Quit,
+		ExitToMenu,
+		ExitToDesktop,
 		SettingsGraphics,
 		SettingsAudio,
 		SettingsGameplay,
@@ -302,6 +306,12 @@ void SAedirPauseMenu::SetTab(int32 NewTab)
 	RefreshView(true);
 }
 
+void SAedirPauseMenu::OpenSettingsOnly()
+{
+	bSettingsOnly = true;
+	GoToPage(EAedirPausePage::Settings);
+}
+
 void SAedirPauseMenu::GoToPage(EAedirPausePage NewPage)
 {
 	// Coming back to the main page, the cursor returns to the row that opened the page.
@@ -325,6 +335,12 @@ bool SAedirPauseMenu::IsOptionPage() const
 
 void SAedirPauseMenu::GoBack()
 {
+	if (bSettingsOnly && Page == EAedirPausePage::Settings)
+	{
+		CloseDelegate.ExecuteIfBound();
+		return;
+	}
+
 	GoToPage(IsOptionPage() ? EAedirPausePage::Settings : EAedirPausePage::Main);
 }
 
@@ -637,7 +653,12 @@ TArray<FAedirMenuRow> SAedirPauseMenu::BuildRows() const
 		Result.Add(PauseMakeRow(TEXT("Save"), EPauseAction::Save));
 		Result.Add(PauseMakeRow(TEXT("Load"), EPauseAction::Load));
 		Result.Add(PauseMakeRow(TEXT("Settings"), EPauseAction::Settings));
-		Result.Add(PauseMakeRow(TEXT("Quit"), EPauseAction::Quit));
+		Result.Add(PauseMakeRow(TEXT("Exit"), EPauseAction::Quit));
+		break;
+	case EAedirPausePage::Exit:
+		Result.Add(PauseMakeRow(TEXT("Main Menu"), EPauseAction::ExitToMenu));
+		Result.Add(PauseMakeRow(TEXT("Desktop"), EPauseAction::ExitToDesktop));
+		Result.Add(PauseMakeRow(TEXT("Cancel"), EPauseAction::Back));
 		break;
 	case EAedirPausePage::Settings:
 		Result.Add(PauseMakeRow(TEXT("Graphics"), EPauseAction::SettingsGraphics));
@@ -787,7 +808,15 @@ TArray<FAedirMenuLine> SAedirPauseMenu::BuildDetailLines(const TArray<FAedirMenu
 		break;
 	case EPauseAction::Quit:
 		PauseAddHeader(Result, Selected->Name);
-		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Leaves the game after a confirmation."));
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Leave this game."));
+		break;
+	case EPauseAction::ExitToMenu:
+		PauseAddHeader(Result, Selected->Name);
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Back to the title screen. What has not been saved is lost."));
+		break;
+	case EPauseAction::ExitToDesktop:
+		PauseAddHeader(Result, Selected->Name);
+		PauseAddLine(Result, EAedirMenuLineKind::Body, TEXT("Closes the game after a confirmation."));
 		break;
 	case EPauseAction::NewSave:
 		PauseAddHeader(Result, Selected->Name);
@@ -996,6 +1025,18 @@ void SAedirPauseMenu::Activate(int32 Action)
 		GoToPage(EAedirPausePage::Settings);
 		break;
 	case EPauseAction::Quit:
+		GoToPage(EAedirPausePage::Exit);
+		break;
+	case EPauseAction::ExitToMenu:
+		if (UWorld* CurrentWorld = World.Get())
+		{
+			if (UAedirSessionSubsystem* Sessions = CurrentWorld->GetGameInstance()->GetSubsystem<UAedirSessionSubsystem>())
+			{
+				Sessions->ReturnToMainMenu();
+			}
+		}
+		break;
+	case EPauseAction::ExitToDesktop:
 		AskConfirm(EConfirm::Quit, FString());
 		break;
 	case EPauseAction::SettingsGraphics:

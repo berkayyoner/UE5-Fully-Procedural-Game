@@ -4,6 +4,7 @@
 #include "FileHelpers.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAdd.h"
+#include "Materials/MaterialExpressionAppendVector.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionConstant2Vector.h"
 #include "Materials/MaterialExpressionConstant3Vector.h"
@@ -164,7 +165,10 @@ namespace
 				Node->OutputMin = OutputMin;
 				Node->OutputMax = OutputMax;
 			}
-			Link(Position, Node, TEXT("Position"));
+			UMaterialExpressionAppendVector* Volume = Make<UMaterialExpressionAppendVector>();
+			Link(Position, Volume, TEXT("A"));
+			Link(Constant(0.f), Volume, TEXT("B"));
+			Link(Volume, Node, TEXT("Position"));
 			return Node;
 		}
 

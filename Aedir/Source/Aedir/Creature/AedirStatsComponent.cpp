@@ -5,6 +5,13 @@
 
 namespace
 {
+	constexpr float StatsHungerSeconds = 2400.f;
+	constexpr float StatsThirstSeconds = 1500.f;
+	constexpr float StatsNeedRunSpeed = 500.f;
+	constexpr float StatsNeedEffortShare = 0.6f;
+	constexpr float StatsNeedFeltBelow = 25.f;
+	constexpr float StatsNeedRegenLoss = 0.6f;
+	constexpr float StatsStarveDamagePerSecond = 0.25f;
 	constexpr float AedirStatMin = 1.f;
 	constexpr float AedirStatMax = 100.f;
 	constexpr float AedirSkillMin = 0.f;
@@ -53,15 +60,29 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 
 	bool bChanged = false;
 
+	// A body at work burns through both faster. Thirst comes first.
+	const AActor* Body = GetOwner();
+	const float Effort = 1.f + FMath::Clamp(static_cast<float>(Body ? Body->GetVelocity().Size2D() : 0.0) / StatsNeedRunSpeed, 0.f, 1.f) * StatsNeedEffortShare;
+	Hunger = FMath::Max(Hunger - DeltaTime * Effort * 100.f / StatsHungerSeconds, 0.f);
+	Thirst = FMath::Max(Thirst - DeltaTime * Effort * 100.f / StatsThirstSeconds, 0.f);
+	if (Hunger <= 0.f || Thirst <= 0.f)
+	{
+		ApplyDamage(StatsStarveDamagePerSecond * DeltaTime);
+		if (bIsDead)
+		{
+			return;
+		}
+	}
+
 	const UWorld* World = GetWorld();
 	if (World && World->GetTimeSeconds() - LastStaminaConsumptionTime >= StaminaRegenDelay)
 	{
-		const float NewStamina = FMath::Min(MaxStamina, Stamina + StaminaRegenPerSecond * DeltaTime);
+		const float NewStamina = FMath::Min(MaxStamina, Stamina + StaminaRegenPerSecond * (1.f - GetNeedShare() * StatsNeedRegenLoss) * DeltaTime);
 		bChanged |= NewStamina != Stamina;
 		Stamina = NewStamina;
 	}
 
-	const float NewHealth = FMath::Min(MaxHealth, Health + HealthRegenPerSecond * DeltaTime);
+	const float NewHealth = FMath::Min(MaxHealth, Health + HealthRegenPerSecond * (1.f - GetNeedShare()) * DeltaTime);
 	bChanged |= NewHealth != Health;
 	Health = NewHealth;
 
@@ -75,9 +96,29 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	}
 }
 
+void UAedirStatsComponent::AddFood(float FoodAmount, float DrinkAmount)
+{
+	Hunger = FMath::Clamp(Hunger + FoodAmount, 0.f, 100.f);
+	Thirst = FMath::Clamp(Thirst + DrinkAmount, 0.f, 100.f);
+}
+
+void UAedirStatsComponent::SetNeeds(float NewHunger, float NewThirst)
+{
+	Hunger = FMath::Clamp(NewHunger, 0.f, 100.f);
+	Thirst = FMath::Clamp(NewThirst, 0.f, 100.f);
+}
+
+float UAedirStatsComponent::GetNeedShare() const
+{
+	return FMath::Clamp(1.f - FMath::Min(Hunger, Thirst) / StatsNeedFeltBelow, 0.f, 1.f);
+}
+
 void UAedirStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+
+	DOREPLIFETIME(UAedirStatsComponent, Hunger);
+	DOREPLIFETIME(UAedirStatsComponent, Thirst);
 
 	DOREPLIFETIME(UAedirStatsComponent, Health);
 	DOREPLIFETIME(UAedirStatsComponent, MaxHealth);

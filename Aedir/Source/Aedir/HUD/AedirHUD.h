@@ -71,6 +71,8 @@ private:
 	void DrawCompass(const APawn* Pawn);
 	void DrawBars(float DeltaSeconds, const UAedirStatsComponent* Stats);
 	void DrawPrompt(const AAedirCreature* Creature);
+	void DrawLookTarget(const AAedirCreature* Creature);
+	void DrawNeeds(const UAedirStatsComponent* Stats);
 	void DrawDeathOverlay();
 	void DrawFatigue(const UAedirStatsComponent* Stats);
 	float FatigueShown = 0.f;

@@ -69,6 +69,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Wounds")
 	bool IsBleeding() const;
 
+	// Server only. A cut hard enough parts the limb at the joint it landed on. Says whether it did.
+	bool TrySever(FName HitBone, const FVector& PlanePoint, const FVector& PlaneNormal, const FVector& Push, float EnergyJoules, float ArmorProtection);
+	bool IsSevered(FName Bone) const { return SeveredBones.Contains(Bone); }
+
+	// A bandage: the worst of the open wounds stop running. Server only.
+	void StopBleedingSome();
+
 private:
 	bool IsAuthoritative() const;
 	bool IsDedicatedServer() const;
@@ -85,6 +92,19 @@ private:
 
 	UFUNCTION()
 	void OnRep_Wounds();
+
+	UFUNCTION(NetMulticast, Reliable)
+	void MulticastSever(FName Bone, FVector PlanePoint, FVector PlaneNormal, FVector Push);
+
+	UPROPERTY()
+	TSet<FName> SeveredBones;
+
+	// Blood running from an open artery comes in beats, and what falls from a lying body gathers under it.
+	float SeverBleedPerSecond = 0.f;
+	float PulseTimer = 0.f;
+	float PoolTimer = 0.f;
+	float PoolSize = 1.f;
+	void UpdateArterialBleeding(float DeltaTime);
 
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastWoundSpray(FVector Location, FVector Direction, float Severity, EAedirWoundType Type);

@@ -8,6 +8,9 @@
 class APlayerController;
 
 // One entry of the save list.
+class AAedirCreature;
+struct FAedirCreatureSave;
+
 USTRUCT(BlueprintType)
 struct AEDIR_API FAedirSaveInfo
 {
@@ -69,6 +72,7 @@ class AEDIR_API UAedirSaveSubsystem : public UGameInstanceSubsystem
 	GENERATED_BODY()
 
 public:
+	static FString MakePlayerKey(const APlayerController* PlayerController);
 	virtual void Deinitialize() override;
 
 	// Server or standalone only.
@@ -78,6 +82,19 @@ public:
 	// Server or standalone only. Fails when the saved map differs from the current level.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Save")
 	bool LoadWorld(const FString& Slot);
+
+	// Which save this play belongs to. The host writes the world back to it, a guest only the character.
+	void SetCurrentSlot(const FString& Slot) { CurrentSlot = Slot; }
+	const FString& GetCurrentSlot() const { return CurrentSlot; }
+	void SetGuest(bool bNewGuest) { bGuest = bNewGuest; }
+	bool IsGuest() const { return bGuest; }
+
+	// A guest: the character of this play goes into its own save, and nothing else does.
+	bool StoreGuestCharacter(const FString& Slot, const APlayerController* PlayerController);
+	void GetCharacterOfSlot(const FString& Slot, FAedirCreatureSave& OutCharacter, bool& bOutFound) const;
+	// Server only: gives a body the character a guest brought along.
+	void ApplyCharacter(AAedirCreature* Creature, const FAedirCreatureSave& Character);
+	FString PendingLoadSlot;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Save")
 	bool DoesSaveExist(const FString& Slot) const;
@@ -104,7 +121,9 @@ public:
 	void StopAutosave();
 
 private:
-	static FString MakePlayerKey(const APlayerController* PlayerController);
+	static void ApplyGuestSafeCharacter(AAedirCreature* Creature, const FAedirCreatureSave& CreatureSave);
+	FString CurrentSlot;
+	bool bGuest = false;
 	static TArray<FString> FindSlotsOnDisk();
 	void AutosaveTick();
 

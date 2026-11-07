@@ -22,3 +22,10 @@ Aedir/Build/
 *.log
 # Third-party upscaler plugins (large binaries, install locally under Aedir/Plugins)
 Aedir/Plugins/
+
+# Imported from the Medieval Village sample, restored from the launcher vault, too large for this repository.
+Aedir/Content/Megascans/
+Aedir/Content/Audio/
+Aedir/Content/Effects/
+Aedir/Content/Materials/
+Aedir/Content/MSPresets/

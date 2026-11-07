@@ -19,6 +19,15 @@
 #include "Surface/AedirFootstepComponent.h"
 #include "Wounds/AedirWoundComponent.h"
 
+namespace
+{
+	constexpr float AedirWalkProbeCm = 110.f;
+	constexpr float AedirWalkCheckSeconds = 0.8f;
+	constexpr float AedirWalkStuckCm = 25.f;
+	constexpr float AedirWalkDetourSeconds = 1.4f;
+	constexpr float AedirWalkMaxDropCm = 200.f;
+}
+
 AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer.SetDefaultSubobjectClass<UAedirCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
@@ -163,6 +172,51 @@ void AAedirCreature::MoveLocal(FVector2D Input)
 
 	AddMovementInput(YawMatrix.GetUnitAxis(EAxis::X), static_cast<float>(Input.Y));
 	AddMovementInput(YawMatrix.GetUnitAxis(EAxis::Y), static_cast<float>(Input.X));
+}
+
+void AAedirCreature::TurnBodyTo(float Yaw, float DeltaSeconds, float TurnDegreesPerSecond)
+{
+	SetActorRotation(FMath::RInterpConstantTo(FRotator(0.f, GetActorRotation().Yaw, 0.f), FRotator(0.f, Yaw, 0.f), DeltaSeconds, TurnDegreesPerSecond));
+}
+
+void AAedirCreature::WalkTowards(const FVector& Goal, float DeltaSeconds, float TurnDegreesPerSecond)
+{
+	const FVector From = GetActorLocation();
+	WalkCheckTimer += DeltaSeconds;
+	if (WalkCheckTimer >= AedirWalkCheckSeconds)
+	{
+		if (FVector::DistSquared2D(From, WalkCheckLocation) < AedirWalkStuckCm * AedirWalkStuckCm && WalkDetourSeconds <= 0.f)
+		{
+			WalkDetourSeconds = AedirWalkDetourSeconds;
+			WalkDetourYaw = FMath::RandBool() ? 90.f : -90.f;
+		}
+		WalkCheckLocation = From;
+		WalkCheckTimer = 0.f;
+	}
+	WalkDetourSeconds = FMath::Max(WalkDetourSeconds - DeltaSeconds, 0.f);
+
+	const float GoalYaw = static_cast<float>((Goal - From).Rotation().Yaw) + (WalkDetourSeconds > 0.f ? WalkDetourYaw : 0.f);
+	const float FeetZ = static_cast<float>(From.Z) - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirWalkProbe), false, this);
+	UWorld* World = GetWorld();
+
+	// The first way that is near the wanted one and has ground under it and nothing in front of it.
+	float WalkYaw = GoalYaw;
+	for (const float Offset : { 0.f, 35.f, -35.f, 70.f, -70.f, 110.f, -110.f, 150.f, -150.f })
+	{
+		const FVector Way = FRotator(0.f, GoalYaw + Offset, 0.f).Vector();
+		const FVector Ahead = From + Way * AedirWalkProbeCm;
+		FHitResult Hit;
+		const bool bWall = World->LineTraceSingleByChannel(Hit, From, Ahead, ECC_Visibility, Params);
+		const bool bGround = World->LineTraceSingleByChannel(Hit, Ahead, FVector(Ahead.X, Ahead.Y, FeetZ - AedirWalkMaxDropCm), ECC_Visibility, Params);
+		if (!bWall && bGround)
+		{
+			WalkYaw = GoalYaw + Offset;
+			AddMovementInput(Way, 1.f);
+			break;
+		}
+	}
+	TurnBodyTo(WalkYaw, DeltaSeconds, TurnDegreesPerSecond);
 }
 
 void AAedirCreature::SetWantsToRun(bool bWantsToRun)

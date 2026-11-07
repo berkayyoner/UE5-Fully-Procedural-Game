@@ -1,5 +1,10 @@
 #include "Wounds/AedirWoundComponent.h"
 
+#include "Creature/AedirCreature.h"
+#include "Items/AedirInteractionComponent.h"
+#include "Physics/AedirBalanceComponent.h"
+#include "Wounds/AedirSever.h"
+
 #include "Aedir.h"
 #include "Components/DecalComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -16,6 +21,12 @@
 
 namespace
 {
+	constexpr float AedirWoundPulseSeconds = 0.8f;
+	constexpr int32 AedirWoundPulseDrops = 5;
+	constexpr float AedirWoundPoolSeconds = 1.5f;
+	constexpr float AedirWoundPoolGrowth = 0.25f;
+	constexpr float AedirWoundPoolMax = 5.f;
+	constexpr double AedirWoundBandageSeconds = 60.0;
 	constexpr float WoundTickIntervalSeconds = 0.25f;
 	constexpr int32 WoundMaxCount = 24;
 	constexpr float WoundMergeDistance = 8.f;
@@ -149,6 +160,8 @@ void UAedirWoundComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	{
 		UpdateBleeding(DeltaTime);
 	}
+
+	UpdateArterialBleeding(DeltaTime);
 
 	if (!IsDedicatedServer())
 	{
@@ -338,6 +351,126 @@ int32 UAedirWoundComponent::GetWoundCount() const
 float UAedirWoundComponent::GetTotalBleedRate() const
 {
 	return ComputeTotalBleedRate(GetWoundServerTime());
+}
+
+bool UAedirWoundComponent::TrySever(FName HitBone, const FVector& PlanePoint, const FVector& PlaneNormal, const FVector& Push, float EnergyJoules, float ArmorProtection)
+{
+	const FName Bone = AedirSever::FindSeverBone(HitBone);
+	if (Bone.IsNone() || SeveredBones.Contains(Bone) || !IsAuthoritative())
+	{
+		return false;
+	}
+
+	// Armour turns most of an edge. A limb already hurt gives way sooner.
+	const float Needed = AedirSever::GetSeverJoules(Bone) / FMath::Max(1.f - ArmorProtection, 0.1f);
+	if (EnergyJoules < Needed)
+	{
+		return false;
+	}
+
+	SeveredBones.Add(Bone);
+	MulticastSever(Bone, PlanePoint, PlaneNormal, Push);
+
+	AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
+	if (!Creature)
+	{
+		return true;
+	}
+
+	const FString Name = Bone.ToString();
+	SeverBleedPerSecond += Name.StartsWith(TEXT("neck")) ? 100.f : (Name.StartsWith(TEXT("thigh")) || Name.StartsWith(TEXT("upperarm")) ? 5.f : 2.5f);
+	if (Name.StartsWith(TEXT("neck")) && Creature->Stats)
+	{
+		Creature->Stats->ApplyDamage(Creature->Stats->GetHealth() + 1.f);
+	}
+	else if (Name.Contains(TEXT("arm")) || Name.StartsWith(TEXT("hand")))
+	{
+		// What that hand held falls with it.
+		if (Creature->Interaction)
+		{
+			Creature->Interaction->DropHeld(Name.EndsWith(TEXT("_l")) ? EAedirHand::Left : EAedirHand::Right);
+		}
+	}
+	else if (Creature->Balance)
+	{
+		// Nobody stands on what is no longer there.
+		Creature->Balance->ApplyBalanceImpact(Push.GetSafeNormal(), 2.f);
+		Creature->Balance->SetLegLost();
+	}
+	UE_LOG(LogAedir, Log, TEXT("%s lost %s to a %.0f J cut"), *Creature->GetName(), *Bone.ToString(), EnergyJoules);
+	return true;
+}
+
+void UAedirWoundComponent::MulticastSever_Implementation(FName Bone, FVector PlanePoint, FVector PlaneNormal, FVector Push)
+{
+	SeveredBones.Add(Bone);
+	const ACharacter* Character = Cast<ACharacter>(GetOwner());
+	if (Character && Character->GetNetMode() != NM_DedicatedServer)
+	{
+		AedirSever::CutLimb(Character->GetMesh(), Bone, PlanePoint, PlaneNormal, Push);
+	}
+}
+
+void UAedirWoundComponent::UpdateArterialBleeding(float DeltaTime)
+{
+	const AActor* Owner = GetOwner();
+	UAedirStatsComponent* Stats = Owner ? Owner->FindComponentByClass<UAedirStatsComponent>() : nullptr;
+	const bool bDead = Stats && Stats->IsDead();
+	if (Stats && !bDead && SeverBleedPerSecond > 0.f && IsAuthoritative())
+	{
+		Stats->ApplyDamage(SeverBleedPerSecond * DeltaTime);
+	}
+
+	const ACharacter* Character = Cast<ACharacter>(Owner);
+	UWorld* World = GetWorld();
+	UAedirBloodSubsystem* Blood = World ? World->GetSubsystem<UAedirBloodSubsystem>() : nullptr;
+	const float Total = GetTotalBleedRate() + SeverBleedPerSecond;
+	if (!Character || !Blood || Total <= 0.f || IsDedicatedServer())
+	{
+		return;
+	}
+
+	// A heart still beating throws it out in beats from each parted limb.
+	PulseTimer -= DeltaTime;
+	if (!bDead && PulseTimer <= 0.f && !SeveredBones.IsEmpty())
+	{
+		PulseTimer = AedirWoundPulseSeconds;
+		for (const FName& Bone : SeveredBones)
+		{
+			const FName Parent = Character->GetMesh()->GetParentBone(Bone);
+			const FVector From = Character->GetMesh()->GetBoneLocation(Bone);
+			const FVector Out = (From - Character->GetMesh()->GetBoneLocation(Parent)).GetSafeNormal();
+			for (int32 Drop = 0; Drop < AedirWoundPulseDrops; ++Drop)
+			{
+				Blood->SpawnDrop(From, Out * FMath::FRandRange(110.f, 260.f) + FMath::VRand() * 35.f);
+			}
+		}
+	}
+
+	// A body lying still bleeds into a slowly spreading pool.
+	PoolTimer -= DeltaTime;
+	if (PoolTimer <= 0.f && Owner->GetVelocity().SizeSquared() < 400.0)
+	{
+		PoolTimer = AedirWoundPoolSeconds;
+		const FVector Body = Character->GetMesh()->GetBoneLocation(TEXT("pelvis"));
+		FHitResult Hit;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirBloodPool), false, Owner);
+		if (World->LineTraceSingleByChannel(Hit, Body, Body - FVector(0.f, 0.f, 200.f), ECC_Visibility, Params))
+		{
+			PoolSize = FMath::Min(PoolSize + AedirWoundPoolGrowth * FMath::Min(Total, 3.f), AedirWoundPoolMax);
+			Blood->SpawnSplat(Hit.ImpactPoint + FVector(FMath::FRandRange(-8.f, 8.f), FMath::FRandRange(-8.f, 8.f), 0.f), Hit.ImpactNormal, PoolSize);
+		}
+	}
+}
+
+void UAedirWoundComponent::StopBleedingSome()
+{
+	SeverBleedPerSecond *= 0.25f;
+	// As far along as a wound that has had a minute to clot.
+	for (FAedirWound& Wound : ActiveWounds)
+	{
+		Wound.StartServerTime -= AedirWoundBandageSeconds;
+	}
 }
 
 bool UAedirWoundComponent::IsBleeding() const

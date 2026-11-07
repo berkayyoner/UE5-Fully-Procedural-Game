@@ -43,6 +43,7 @@ private:
 	void OnRep_CatalogId();
 
 	void ApplyDefinition();
+	int32 UsesSpent = 0;
 	void BuildVisual(const FAedirItemDef& Def);
 	void BuildDetails(FName Id);
 	void AddDetail(EAedirCatalogShape Shape, const FVector& CenterCm, const FVector& SizeCm, const FRotator& Rotation, const FLinearColor& Color);

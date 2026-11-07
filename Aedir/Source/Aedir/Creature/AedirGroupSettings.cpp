@@ -19,7 +19,7 @@ UAedirGroupSettings::UAedirGroupSettings()
 
 	if (Groups.IsEmpty())
 	{
-		Groups = { FName(TEXT("Heroes")), FName(TEXT("Bandits")), FName(TEXT("Wildlife")), FName(TEXT("Guards")) };
+		Groups = { FName(TEXT("Heroes")), FName(TEXT("Bandits")), FName(TEXT("Wildlife")), FName(TEXT("Guards")), FName(TEXT("Villagers")) };
 		Relations =
 		{
 			GroupSettingsMakeRelation(TEXT("Heroes"), TEXT("Bandits"), EAedirRelation::Enemy),

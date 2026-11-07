@@ -102,13 +102,13 @@ public:
 	FAedirBoneMotor HandMotor = { 12000.f, 1200.f, 12000.f, 1200.f, 0.f, 0.f };
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
-	FAedirBoneMotor ThighMotor = { 14000.f, 1400.f, 14000.f, 1400.f, 0.f, 0.f };
+	FAedirBoneMotor ThighMotor = { 30000.f, 3000.f, 30000.f, 3000.f, 0.f, 0.f };
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
-	FAedirBoneMotor CalfMotor = { 14000.f, 1400.f, 14000.f, 1400.f, 0.f, 0.f };
+	FAedirBoneMotor CalfMotor = { 40000.f, 4000.f, 40000.f, 4000.f, 0.f, 0.f };
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
-	FAedirBoneMotor FootMotor = { 14000.f, 1400.f, 14000.f, 1400.f, 0.f, 0.f };
+	FAedirBoneMotor FootMotor = { 60000.f, 6000.f, 60000.f, 6000.f, 0.f, 0.f };
 
 	// The hit a loose body gets on top of its faint muscles.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
@@ -196,6 +196,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	float GetBalance() const;
 
+	// A leg is gone: this body does not get up again.
+	void SetLegLost() { bLegLost = true; }
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	bool IsRagdoll() const;
 
@@ -251,6 +254,9 @@ private:
 	void ApplyRagdollPhysics(bool bRagdoll);
 	void ApplyBodyContacts(bool bRagdoll);
 	void ApplyLegPhysics(bool bRagdoll);
+	bool bLegLost = false;
+	void ReshapeBodyPhysics();
+	float PhysicsShapeScale = 0.f;
 	void ApplyJointLimits(bool bRagdoll);
 	TArray<FConstraintProfileProperties> LooseJointLimits;
 	FTransform MeshRestRelative = FTransform::Identity;
