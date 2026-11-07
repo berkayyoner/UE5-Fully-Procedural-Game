@@ -21,7 +21,7 @@ namespace
 	constexpr float ConsoleSpawnUpCm = 60.f;
 	constexpr float ConsoleLethalDamage = 1.0e6f;
 
-	const TCHAR* const ConsoleVerbs[] = { TEXT("help"), TEXT("player.additem"), TEXT("additem"), TEXT("player.removeitem"), TEXT("removeitem"), TEXT("spawn"), TEXT("placeatme"), TEXT("player.placeatme"), TEXT("enable"), TEXT("disable"), TEXT("delete"), TEXT("markfordelete"), TEXT("prid"), TEXT("kill"), TEXT("moveto"), TEXT("player.moveto"), TEXT("getpos"), TEXT("setscale"), TEXT("player.setav"), TEXT("player.getav"), TEXT("tgm"), TEXT("sw"), TEXT("showinventory"), TEXT("player.showinventory") };
+	const TCHAR* const ConsoleVerbs[] = { TEXT("help"), TEXT("player.additem"), TEXT("additem"), TEXT("player.removeitem"), TEXT("removeitem"), TEXT("spawn"), TEXT("placeatme"), TEXT("player.placeatme"), TEXT("enable"), TEXT("disable"), TEXT("delete"), TEXT("markfordelete"), TEXT("prid"), TEXT("kill"), TEXT("moveto"), TEXT("player.moveto"), TEXT("getpos"), TEXT("setscale"), TEXT("player.setav"), TEXT("player.getav"), TEXT("tgm"), TEXT("sw"), TEXT("setweather"), TEXT("showinventory"), TEXT("player.showinventory") };
 	const TCHAR* const ConsoleRefVerbs[] = { TEXT("enable"), TEXT("disable"), TEXT("delete"), TEXT("markfordelete"), TEXT("kill"), TEXT("moveto"), TEXT("player.moveto"), TEXT("getpos"), TEXT("setscale") };
 
 	void ConsoleReport(const FString& Message)
@@ -232,7 +232,7 @@ namespace
 		const FString Filter = Words.IsValidIndex(1) ? Words[1] : FString();
 		if (Filter.IsEmpty())
 		{
-			ConsoleReport(TEXT("player.additem, player.removeitem, spawn, enable, disable, delete, prid, moveto, kill, getpos, setscale, player.setav, player.getav, tgm, sw, showinventory. Click something to select it; a click elsewhere clears it. help <word> lists base ids."));
+			ConsoleReport(TEXT("player.additem, player.removeitem, spawn, enable, disable, delete, prid, moveto, kill, getpos, setscale, player.setav, player.getav, tgm, setweather, showinventory. Click something to select it; a click elsewhere clears it. help <word> lists base ids."));
 		}
 		for (const FName& Name : AedirEntities::GetAllBaseNames())
 		{
@@ -429,7 +429,7 @@ void AedirConsoleCommands::Run(AAedirPlayerCharacter* Player, const FString& Lin
 	{
 		UAedirDevTools::God(Player, FString());
 	}
-	else if (Verb == TEXT("sw"))
+	else if (Verb == TEXT("sw") || Verb == TEXT("setweather"))
 	{
 		UAedirDevTools::SetWeather(Player, Words.IsValidIndex(1) ? Words[1] : FString());
 	}
