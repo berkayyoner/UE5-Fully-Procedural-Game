@@ -1,3 +1,6 @@
+#include "Components/SkeletalMeshComponent.h"
+#include "Creature/AedirCreature.h"
+#include "Engine/SkeletalMesh.h"
 #include "Items/AedirCatalogItem.h"
 #include "Graphics/AedirScannedMaterial.h"
 #include "Creature/AedirStatsComponent.h"
@@ -126,6 +129,59 @@ void AAedirCatalogItem::Use_Implementation(AAedirCreature* User)
 		User->Combat->SetArmorProtection(ArmorZone, FMath::Max(CurrentProtection, ArmorProtection));
 		OnUsed(User);
 	}
+}
+
+void AAedirCatalogItem::ApplyWornLook()
+{
+	const FAedirItemDef* Def = UAedirItemCatalog::Find(CatalogId);
+	USkeletalMeshComponent* Body = Holder ? Holder->GetMesh() : nullptr;
+	if (!Def || Def->WornMeshPath.IsEmpty() || !Body || WornMesh)
+	{
+		return;
+	}
+	USkeletalMesh* Model = LoadObject<USkeletalMesh>(nullptr, *Def->WornMeshPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!Model)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("Item %s: worn model %s is missing."), *CatalogId.ToString(), *Def->WornMeshPath);
+		return;
+	}
+
+	// The piece bends with the body bone by bone, and what stood for it on the bone is put away.
+	WornMesh = NewObject<USkeletalMeshComponent>(this);
+	WornMesh->SetSkeletalMeshAsset(Model);
+	WornMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	WornMesh->SetupAttachment(Body);
+	WornMesh->RegisterComponent();
+	WornMesh->SetLeaderPoseComponent(Body);
+	const TArray<FSkeletalMaterial>& Slots = Model->GetMaterials();
+	for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
+	{
+		const FString SlotName = Slots[Slot].MaterialSlotName.ToString() + TEXT(" ") + GetNameSafe(Slots[Slot].MaterialInterface);
+		const bool bShow = Def->WornSections.ContainsByPredicate([&SlotName](const FString& Word) { return SlotName.Contains(Word); });
+		WornMesh->ShowMaterialSection(Slot, 0, bShow, 0);
+		if (!bShow)
+		{
+			WornMesh->SetMaterial(Slot, nullptr);
+		}
+	}
+	Mesh->SetVisibility(false, false);
+	for (const TObjectPtr<UStaticMeshComponent>& Detail : DetailMeshes)
+	{
+		if (Detail)
+		{
+			Detail->SetVisibility(false);
+		}
+	}
+}
+
+void AAedirCatalogItem::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (WornMesh)
+	{
+		WornMesh->DestroyComponent();
+		WornMesh = nullptr;
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void AAedirCatalogItem::OnRep_CatalogId()

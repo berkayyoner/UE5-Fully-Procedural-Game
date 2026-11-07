@@ -66,5 +66,11 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> DetailMeshes;
 
+	UPROPERTY(Transient)
+	TObjectPtr<class USkeletalMeshComponent> WornMesh;
+
+	virtual void ApplyWornLook() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
 	FName AppliedCatalogId = NAME_None;
 };

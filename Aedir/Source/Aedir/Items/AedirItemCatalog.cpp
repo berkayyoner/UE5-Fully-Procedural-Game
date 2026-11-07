@@ -148,6 +148,22 @@ namespace
 		SetBlade(TEXT("Spear"), TEXT("/Game/Weapon_Pack/Mesh/Weapons/Weapons_Kit/SM_Spear.SM_Spear"), 180.f, 0.f, true);
 		SetBlade(TEXT("Halberd"), TEXT("/Game/Weapon_Pack/Mesh/Weapons/Weapons_Kit/SM_GreatAxe.SM_GreatAxe"), 175.f, 0.f, true);
 
+		const auto SetWorn = [&Definitions](const TCHAR* Id, const TArray<FString>& Sections)
+		{
+			for (FAedirItemDef& Item : Definitions)
+			{
+				if (Item.Id == FName(Id))
+				{
+					Item.WornMeshPath = TEXT("/Game/ShadowKight/Mesh/ShadowknightUE_SK.ShadowknightUE_SK");
+					Item.WornSections = Sections;
+				}
+			}
+		};
+		SetWorn(TEXT("IronHelm"), { TEXT("Helmet") });
+		SetWorn(TEXT("IronCuirass"), { TEXT("Chest"), TEXT("Cloth") });
+		SetWorn(TEXT("Bracers"), { TEXT("Arms") });
+		SetWorn(TEXT("IronGreaves"), { TEXT("Pants") });
+
 		SetGrip(TEXT("Dagger"), -21.f, 8.f, true);
 		SetGrip(TEXT("ShortSword"), -42.f, 8.f, true);
 		SetGrip(TEXT("Sword"), -65.f, 9.f, true);

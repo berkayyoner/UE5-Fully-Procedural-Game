@@ -101,8 +101,11 @@ public:
 	FName ArmorAttachBone = NAME_None;
 
 	// Set on the server while the item is worn. Worn items are not pickable.
-	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Item")
+	UPROPERTY(ReplicatedUsing=OnRep_Worn, BlueprintReadOnly, Category="Aedir|Item")
 	bool bWorn = false;
+
+	// How the item looks once it is on the body.
+	virtual void ApplyWornLook() {}
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	TObjectPtr<UMaterialInterface> HighlightOverlayMaterial;
@@ -190,6 +193,9 @@ private:
 
 	UFUNCTION()
 	void OnRep_Stowed();
+
+	UFUNCTION()
+	void OnRep_Worn() { ApplyWornLook(); }
 
 	void ApplyStowed(bool bNewStowed);
 

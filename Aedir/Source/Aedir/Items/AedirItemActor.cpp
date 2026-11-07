@@ -465,6 +465,7 @@ void AAedirItemActor::AttachToWornBone(AAedirCreature* Creature)
 	Holder = Creature;
 	bHolstered = false;
 	bWorn = true;
+	ApplyWornLook();
 }
 
 void AAedirItemActor::SetFreePhysics(bool bFree)
