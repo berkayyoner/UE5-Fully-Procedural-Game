@@ -126,6 +126,7 @@ private:
 	// The menu closes and the body reaches for the item, on the next tick so that the click has finished.
 	void RequestBeltDraw(EAedirHand Hand, int32 Slot);
 	int32 PendingBeltSlot = INDEX_NONE;
+	int32 PendingPackIndex = INDEX_NONE;
 	EAedirHand PendingBeltHand = EAedirHand::Right;
 	void DropRow(int32 RowIndex);
 	void HandleRowClick(int32 Index, const FGeometry& RowGeometry, const FPointerEvent& MouseEvent);

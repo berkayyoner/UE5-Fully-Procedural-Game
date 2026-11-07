@@ -1,5 +1,7 @@
 #include "AedirCreature.h"
 
+#include "Creature/AedirWayFinder.h"
+
 #include "Aedir.h"
 #include "AedirGroupSubsystem.h"
 #include "Combat/AedirCombatComponent.h"
@@ -22,6 +24,13 @@
 namespace
 {
 	constexpr float AedirWalkProbeCm = 110.f;
+	constexpr float AedirWayGoalMovedCm = 300.f;
+	constexpr float AedirWayCheckSeconds = 0.5f;
+	constexpr float AedirWayLookAheadCm = 1500.f;
+	constexpr float AedirWayGroundUpCm = 300.f;
+	constexpr float AedirWayGroundDownCm = 600.f;
+	constexpr int32 AedirWayCellsPerFrame = 30;
+	constexpr float AedirWayPointReachedCm = 70.f;
 	constexpr float AedirWalkCheckSeconds = 0.8f;
 	constexpr float AedirWalkStuckCm = 25.f;
 	constexpr float AedirWalkDetourSeconds = 1.4f;
@@ -179,8 +188,64 @@ void AAedirCreature::TurnBodyTo(float Yaw, float DeltaSeconds, float TurnDegrees
 	SetActorRotation(FMath::RInterpConstantTo(FRotator(0.f, GetActorRotation().Yaw, 0.f), FRotator(0.f, Yaw, 0.f), DeltaSeconds, TurnDegreesPerSecond));
 }
 
-void AAedirCreature::WalkTowards(const FVector& Goal, float DeltaSeconds, float TurnDegreesPerSecond)
+FVector AAedirCreature::SteerAlongWay(const FVector& Goal, float DeltaSeconds)
 {
+	UWorld* World = GetWorld();
+	const float HalfHeight = GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+	const FVector Feet = GetActorLocation() - FVector(0.f, 0.f, HalfHeight);
+
+	if (FVector::DistSquared2D(Goal, WayGoal) > FMath::Square(AedirWayGoalMovedCm))
+	{
+		WayPoints.Reset();
+		WaySearch.Reset();
+		WayGoal = Goal;
+		WayCheckTimer = 0.f;
+	}
+
+	WayCheckTimer -= DeltaSeconds;
+	if (WayCheckTimer <= 0.f)
+	{
+		WayCheckTimer = AedirWayCheckSeconds;
+		// Far off, only the stretch ahead counts: it is looked at again when it gets there.
+		FVector Target = Goal;
+		const float Far = static_cast<float>(FVector::Dist2D(Feet, Goal));
+		if (Far > AedirWayLookAheadCm)
+		{
+			Target = Feet + (Goal - Feet).GetSafeNormal2D() * AedirWayLookAheadCm;
+		}
+		FVector TargetGround;
+		const bool bGround = FAedirWayFinder::FindGround(World, Target, AedirWayGroundUpCm, AedirWayGroundDownCm, this, TargetGround);
+		if (bGround && FAedirWayFinder::CanWalkStraight(World, Feet, TargetGround, this))
+		{
+			WayPoints.Reset();
+			WaySearch.Reset();
+			return Goal;
+		}
+		if (WayPoints.IsEmpty() && !WaySearch.IsValid())
+		{
+			FVector GoalGround = Goal;
+			FAedirWayFinder::FindGround(World, Goal, AedirWayGroundUpCm, AedirWayGroundDownCm, this, GoalGround);
+			WaySearch = MakeShared<FAedirWayFinder>();
+			WaySearch->Begin(World, Feet, GoalGround, this);
+		}
+	}
+
+	if (WaySearch.IsValid() && WaySearch->Step(AedirWayCellsPerFrame))
+	{
+		WayPoints = WaySearch->GetPoints();
+		WaySearch.Reset();
+	}
+
+	while (!WayPoints.IsEmpty() && FVector::DistSquared2D(WayPoints[0], Feet) < FMath::Square(AedirWayPointReachedCm))
+	{
+		WayPoints.RemoveAt(0);
+	}
+	return WayPoints.IsEmpty() ? Goal : WayPoints[0] + FVector(0.f, 0.f, HalfHeight);
+}
+
+void AAedirCreature::WalkTowards(const FVector& FinalGoal, float DeltaSeconds, float TurnDegreesPerSecond)
+{
+	const FVector Goal = SteerAlongWay(FinalGoal, DeltaSeconds);
 	const FVector From = GetActorLocation();
 	WalkCheckTimer += DeltaSeconds;
 	if (WalkCheckTimer >= AedirWalkCheckSeconds)
@@ -189,6 +254,9 @@ void AAedirCreature::WalkTowards(const FVector& Goal, float DeltaSeconds, float 
 		{
 			WalkDetourSeconds = AedirWalkDetourSeconds;
 			WalkDetourYaw = FMath::RandBool() ? 90.f : -90.f;
+			// The way it was on does not work out after all.
+			WayPoints.Reset();
+			WayCheckTimer = AedirWalkDetourSeconds;
 		}
 		WalkCheckLocation = From;
 		WalkCheckTimer = 0.f;

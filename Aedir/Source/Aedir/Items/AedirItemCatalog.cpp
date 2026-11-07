@@ -59,7 +59,7 @@ namespace
 		// Weapons. Blades run along X with the hilt at -length/2; shafts are centred on the hand.
 		Definitions.Add(CatalogMakeWeapon(TEXT("Dagger"), TEXT("Dagger"), 1.1f, 30.f, EAedirDamageType::Pierce, 4.f, false, CatalogSteel, FVector(0.30, 0.03, 0.006)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("ShortSword"), TEXT("Short Sword"), 2.4f, 70.f, EAedirDamageType::Slash, 8.f, false, CatalogSteel, FVector(0.70, 0.045, 0.008)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("Sword"), TEXT("Sword"), 3.4f, 105.f, EAedirDamageType::Slash, 11.f, false, CatalogSteel, FVector(1.05, 0.05, 0.01)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Sword"), TEXT("Sword"), 3.4f, 105.f, EAedirDamageType::Slash, 11.f, true, CatalogSteel, FVector(1.05, 0.05, 0.01)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("Longsword"), TEXT("Longsword"), 4.4f, 118.f, EAedirDamageType::Slash, 14.f, true, CatalogSteel, FVector(1.18, 0.052, 0.011)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("BattleAxe"), TEXT("Battle Axe"), 4.7f, 80.f, EAedirDamageType::Slash, 12.f, false, CatalogWood, FVector(0.80, 0.03, 0.03)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("Mace"), TEXT("Mace"), 4.2f, 65.f, EAedirDamageType::Blunt, 9.f, false, CatalogWood, FVector(0.65, 0.03, 0.03)));

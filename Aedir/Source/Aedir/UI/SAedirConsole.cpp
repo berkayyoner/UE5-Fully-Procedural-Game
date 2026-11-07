@@ -1,6 +1,9 @@
 #include "UI/SAedirConsole.h"
 
+#include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
 #include "Framework/Application/SlateApplication.h"
+#include "UnrealClient.h"
 #include "InputCoreTypes.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Input/SEditableTextBox.h"
@@ -21,15 +24,19 @@ namespace
 void SAedirConsole::Construct(const FArguments& InArgs)
 {
 	CommandDelegate = InArgs._OnCommand;
+	PickDelegate = InArgs._OnPick;
+	SetVisibility(EVisibility::Visible);
 	CloseDelegate = InArgs._OnClose;
 
 	const FSlateBrush* WhiteBrush = FCoreStyle::Get().GetBrush("GenericWhiteBox");
 
 	ChildSlot
-	.HAlign(HAlign_Left)
-	.VAlign(VAlign_Bottom)
-	.Padding(FMargin(16.f))
 	[
+		SNew(SBox)
+		.HAlign(HAlign_Left)
+		.VAlign(VAlign_Bottom)
+		.Padding(FMargin(16.f))
+		[
 		SNew(SBox)
 		.WidthOverride(ConsoleWidth)
 		[
@@ -37,8 +44,19 @@ void SAedirConsole::Construct(const FArguments& InArgs)
 			.BorderImage(WhiteBrush)
 			.BorderBackgroundColor(FLinearColor(0.f, 0.f, 0.f, 0.78f))
 			.Padding(FMargin(8.f))
+			.OnMouseButtonDown_Lambda([](const FGeometry&, const FPointerEvent&) { return FReply::Handled(); })
 			[
 				SNew(SVerticalBox)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.f, 0.f, 0.f, 6.f))
+				[
+					SAssignNew(SelectionText, STextBlock)
+					.Font(FCoreStyle::GetDefaultFontStyle("Mono", 11))
+					.ColorAndOpacity(FLinearColor(0.95f, 0.8f, 0.4f, 1.f))
+					.AutoWrapText(true)
+					.Visibility(EVisibility::Collapsed)
+				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				[
@@ -54,16 +72,17 @@ void SAedirConsole::Construct(const FArguments& InArgs)
 				[
 					SAssignNew(InputBox, SEditableTextBox)
 					.Font(FCoreStyle::GetDefaultFontStyle("Mono", 11))
-					.HintText(FText::FromString(TEXT("Command, for example DevHelp")))
+					.HintText(FText::FromString(TEXT("Command, for example help or player.additem Bread 2")))
 					.ClearKeyboardFocusOnCommit(false)
 					.OnTextChanged(this, &SAedirConsole::HandleTextChanged)
 					.OnTextCommitted(this, &SAedirConsole::HandleTextCommitted)
 				]
 			]
 		]
+		]
 	];
 
-	AddLogLine(TEXT("Console. Type DevHelp for the commands. [`] or [Esc] closes."), FLinearColor(0.9f, 0.8f, 0.4f, 1.f));
+	AddLogLine(TEXT("Console. Click something to select it. Type help for the commands, help * for every base id. [\"] or [Esc] closes."), FLinearColor(0.9f, 0.8f, 0.4f, 1.f));
 }
 
 void SAedirConsole::AddLogLine(const FString& Line, const FLinearColor& Color)
@@ -89,6 +108,33 @@ void SAedirConsole::AddLogLine(const FString& Line, const FLinearColor& Color)
 	LogScroll->ScrollToEnd();
 }
 
+void SAedirConsole::SetSelection(const FString& Text)
+{
+	if (SelectionText.IsValid())
+	{
+		SelectionText->SetText(FText::FromString(Text));
+		SelectionText->SetVisibility(Text.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible);
+	}
+}
+
+FReply SAedirConsole::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	// The click lands on the world behind the console.
+	const FVector2D Local = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	const FVector2D Share = Local / FVector2D(MyGeometry.GetLocalSize());
+	int32 SizeX = 0;
+	int32 SizeY = 0;
+	if (GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport)
+	{
+		const FIntPoint Size = GEngine->GameViewport->Viewport->GetSizeXY();
+		SizeX = Size.X;
+		SizeY = Size.Y;
+	}
+	PickDelegate.ExecuteIfBound(FVector2D(Share.X * SizeX, Share.Y * SizeY));
+	FocusInput();
+	return FReply::Handled();
+}
+
 void SAedirConsole::FocusInput()
 {
 	if (InputBox.IsValid())
@@ -100,7 +146,7 @@ void SAedirConsole::FocusInput()
 FReply SAedirConsole::OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
 	const FKey Key = InKeyEvent.GetKey();
-	if (Key == EKeys::Tilde || Key == EKeys::Escape)
+	if (Key == EKeys::Tilde || Key == EKeys::Quote || Key == EKeys::Escape)
 	{
 		CloseDelegate.ExecuteIfBound();
 		return FReply::Handled();

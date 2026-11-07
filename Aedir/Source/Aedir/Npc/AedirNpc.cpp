@@ -42,6 +42,7 @@ namespace
 	constexpr float NpcFetchReachCm = 70.f;
 	constexpr float NpcGoToStopCm = 80.f;
 	constexpr float NpcWayStuckSeconds = 8.f;
+	constexpr float NpcWayRoundShare = 0.2f;
 	constexpr float NpcWayProgressCm = 40.f;
 	constexpr int32 NpcFetchReachTries = 2;
 
@@ -254,7 +255,7 @@ bool AAedirNpc::IsStuckOnTheWay(float DistanceLeft, float DeltaSeconds)
 		WayStuckSeconds = 0.f;
 		return false;
 	}
-	WayStuckSeconds += DeltaSeconds;
+	WayStuckSeconds += DeltaSeconds * (IsFollowingWay() ? NpcWayRoundShare : 1.f);
 	return WayStuckSeconds >= NpcWayStuckSeconds;
 }
 
@@ -541,7 +542,8 @@ void AAedirNpc::FollowTo(const FVector& Where, float StopDistance, float RunDist
 		}
 		else if (ToLeader > NpcFollowStopCm * 2.f)
 		{
-			NoProgressSeconds += DeltaSeconds;
+			// A way round goes further from the leader before it comes closer.
+			NoProgressSeconds += DeltaSeconds * (IsFollowingWay() ? NpcWayRoundShare : 1.f);
 		}
 		if (NoProgressSeconds >= NpcCatchUpSeconds)
 		{

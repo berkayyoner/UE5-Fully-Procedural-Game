@@ -11,6 +11,11 @@ namespace
 	constexpr float StatsNeedEffortShare = 0.6f;
 	constexpr float StatsNeedFeltBelow = 25.f;
 	constexpr float StatsNeedRegenLoss = 0.6f;
+	constexpr float StatsEnergyFeltBelow = 70.f;
+	constexpr float StatsEnergyNeedLoss = 0.75f;
+	constexpr float StatsAthletismBase = 10.f;
+	constexpr float StatsAthletismMaxStaminaGain = 0.8f;
+	constexpr float StatsAthletismRegenGain = 1.2f;
 	constexpr float StatsStarveDamagePerSecond = 0.25f;
 	constexpr float AedirStatMin = 1.f;
 	constexpr float AedirStatMax = 100.f;
@@ -77,7 +82,7 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	const UWorld* World = GetWorld();
 	if (World && World->GetTimeSeconds() - LastStaminaConsumptionTime >= StaminaRegenDelay)
 	{
-		const float NewStamina = FMath::Min(MaxStamina, Stamina + StaminaRegenPerSecond * (1.f - GetNeedShare() * StatsNeedRegenLoss) * DeltaTime);
+		const float NewStamina = FMath::Min(GetMaxStamina(), Stamina + GetStaminaRegenRate() * DeltaTime);
 		bChanged |= NewStamina != Stamina;
 		Stamina = NewStamina;
 	}
@@ -106,6 +111,18 @@ void UAedirStatsComponent::SetNeeds(float NewHunger, float NewThirst)
 {
 	Hunger = FMath::Clamp(NewHunger, 0.f, 100.f);
 	Thirst = FMath::Clamp(NewThirst, 0.f, 100.f);
+}
+
+float UAedirStatsComponent::GetAthleticsShare() const
+{
+	return FMath::Clamp((Athletism - StatsAthletismBase) / (AedirStatMax - StatsAthletismBase), 0.f, 1.f);
+}
+
+float UAedirStatsComponent::GetStaminaRegenRate() const
+{
+	// The hungrier and thirstier, the slower the breath comes back. A trained body gets it back sooner.
+	const float NeedLoss = FMath::Clamp(1.f - FMath::Min(Hunger, Thirst) / StatsEnergyFeltBelow, 0.f, 1.f) * StatsEnergyNeedLoss;
+	return StaminaRegenPerSecond * (1.f + GetAthleticsShare() * StatsAthletismRegenGain) * (1.f - NeedLoss);
 }
 
 float UAedirStatsComponent::GetNeedShare() const
@@ -222,7 +239,7 @@ void UAedirStatsComponent::RestoreAll()
 
 	Health = MaxHealth;
 	Mana = MaxMana;
-	Stamina = MaxStamina;
+	Stamina = GetMaxStamina();
 	bIsDead = false;
 
 	OnStatChanged.Broadcast();
@@ -343,12 +360,12 @@ float UAedirStatsComponent::GetStamina() const
 
 float UAedirStatsComponent::GetStaminaFraction() const
 {
-	return SafeFraction(Stamina, MaxStamina);
+	return SafeFraction(Stamina, GetMaxStamina());
 }
 
 float UAedirStatsComponent::GetMaxStamina() const
 {
-	return MaxStamina;
+	return MaxStamina * (1.f + GetAthleticsShare() * StatsAthletismMaxStaminaGain);
 }
 
 float UAedirStatsComponent::GetHealth() const
@@ -420,7 +437,8 @@ void UAedirStatsComponent::ApplySavedState(float InHealth, float InMaxHealth, fl
 	Mana = FMath::Clamp(InMana, 0.f, MaxMana);
 
 	MaxStamina = FMath::Clamp(InMaxStamina, 0.f, MaxStaminaCap);
-	Stamina = FMath::Clamp(InStamina, 0.f, MaxStamina);
+	Athletism = FMath::Clamp(InAthletism, AedirStatMin, AedirStatMax);
+	Stamina = FMath::Clamp(InStamina, 0.f, GetMaxStamina());
 
 	Strength = FMath::Clamp(InStrength, AedirStatMin, AedirStatMax);
 	Athletism = FMath::Clamp(InAthletism, AedirStatMin, AedirStatMax);

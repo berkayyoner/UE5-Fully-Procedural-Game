@@ -67,6 +67,19 @@ namespace
 	constexpr float HighlightInterval = 0.1f;
 	constexpr float BackpackDropDistance = 60.f;
 	constexpr float BackpackDropHeight = 30.f;
+	// Food in the hand is held before the belly; at the mouth the hand stops short so that what it holds touches the lips.
+	constexpr float ConsumableBlendInSeconds = 0.35f;
+	constexpr float ConsumableRestForwardCm = 30.f;
+	constexpr float ConsumableRestSideCm = 18.f;
+	constexpr float ConsumableRestUpCm = 8.f;
+	constexpr float MouthHeadUpCm = 3.f;
+	constexpr float MouthHeadForwardCm = 7.f;
+	constexpr float MouthHandSideCm = 3.f;
+	constexpr float MouthHandDownCm = 14.f;
+	constexpr float MouthSeconds = 0.7f;
+	constexpr float BiteSeconds = 1.1f;
+	constexpr float MouthDrinkTipUp = 0.45f;
+	constexpr float MouthDrinkTipBack = 0.9f;
 
 	EAedirHand GetOtherHand(EAedirHand Hand)
 	{
@@ -132,6 +145,8 @@ void UAedirInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 
 	UpdateHolsterMotion(EAedirHand::Left, DeltaTime);
 	UpdateHolsterMotion(EAedirHand::Right, DeltaTime);
+	UpdateMouth(EAedirHand::Left, DeltaTime);
+	UpdateMouth(EAedirHand::Right, DeltaTime);
 	UpdateReachBlend(DeltaTime);
 	UpdatePelvisLower(DeltaTime);
 
@@ -155,6 +170,7 @@ void UAedirInteractionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	DOREPLIFETIME(UAedirInteractionComponent, WaistItems);
 	DOREPLIFETIME(UAedirInteractionComponent, WornItems);
 	DOREPLIFETIME(UAedirInteractionComponent, Backpack);
+	DOREPLIFETIME(UAedirInteractionComponent, MouthHands);
 }
 
 void UAedirInteractionComponent::StartReach(EAedirHand Hand)
@@ -336,8 +352,7 @@ int32 UAedirInteractionComponent::FindWaistWeaponSlot() const
 bool UAedirInteractionComponent::CanDrawWaistSlot(EAedirHand Hand, int32 SlotIndex) const
 {
 	const AAedirItemActor* Item = WaistItems.IsValidIndex(SlotIndex) ? WaistItems[SlotIndex].Get() : nullptr;
-	return Item && GetHandState(Hand) == EAedirHandState::Idle && HolsterMotion[static_cast<int32>(Hand)] == EAedirHolsterMotion::None
-		&& (!RequiresBothHands(Item) || GetHandState(GetOtherHand(Hand)) == EAedirHandState::Idle);
+	return Item && GetHandState(Hand) == EAedirHandState::Idle && HolsterMotion[static_cast<int32>(Hand)] == EAedirHolsterMotion::None;
 }
 
 void UAedirInteractionComponent::DrawWaistSlot(EAedirHand Hand, int32 SlotIndex)
@@ -375,8 +390,11 @@ void UAedirInteractionComponent::BeginHolsterMotion(EAedirHand Hand)
 	const AAedirItemActor* Held = GetHeldItem(Hand);
 	if (GetHandState(Hand) == EAedirHandState::Holding && Held && Held->FitsOnBelt())
 	{
-		HolsterWaistIndex[Index] = FindFreeWaistIndex(Hand);
+		// Only weapons hang on the belt. Anything else goes the same way, but into the pack behind it.
+		const bool bWeapon = Held->ItemClass == EAedirItemClass::Weapon;
+		HolsterWaistIndex[Index] = bWeapon ? FindFreeWaistIndex(Hand) : GetWaistSideBegin(Hand);
 		HolsterMotion[Index] = HolsterWaistIndex[Index] != INDEX_NONE ? EAedirHolsterMotion::Store : EAedirHolsterMotion::None;
+		MouthHands &= ~(1 << Index);
 	}
 	else if (GetHandState(Hand) == EAedirHandState::Idle)
 	{
@@ -433,10 +451,168 @@ bool UAedirInteractionComponent::GetHolsterAim(EAedirHand Hand, FVector& OutDire
 	return true;
 }
 
+FVector UAedirInteractionComponent::GetMouthWorld() const
+{
+	const AAedirCreature* Creature = GetCreature();
+	const USkeletalMeshComponent* BodyMesh = Creature ? Creature->GetMesh() : nullptr;
+	return BodyMesh ? BodyMesh->GetBoneLocation(FName(TEXT("head"))) + Creature->GetActorForwardVector() * MouthHeadForwardCm + FVector(0.f, 0.f, MouthHeadUpCm) : FVector::ZeroVector;
+}
+
+float UAedirInteractionComponent::GetMouthShare(EAedirHand Hand) const
+{
+	return HolsterSmoothStep(MouthElapsed[static_cast<int32>(Hand)] / MouthSeconds);
+}
+
+FVector UAedirInteractionComponent::GetConsumableHandTarget(EAedirHand Hand, const AAedirItemActor* Item) const
+{
+	const AAedirCreature* Creature = GetCreature();
+	if (!Creature || !Item)
+	{
+		return FVector::ZeroVector;
+	}
+
+	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
+	const FVector Rest = Creature->GetActorTransform().TransformPositionNoScale(FVector(ConsumableRestForwardCm, Side * ConsumableRestSideCm, ConsumableRestUpCm));
+	const FVector Forward = Creature->GetActorForwardVector();
+	const FVector Right = Creature->GetActorRightVector();
+	// What the hand holds comes to the lips from below and from its own side, a drink with its top to them.
+	const float Reach = Item->bDrinkable ? static_cast<float>(Item->BodyScale.X) * 50.f : 0.f;
+	const FVector AtMouth = GetMouthWorld() + Right * (Side * MouthHandSideCm) + Forward * (MouthHandSideCm + Reach * MouthDrinkTipBack) - FVector(0.f, 0.f, MouthHandDownCm + Reach * MouthDrinkTipUp);
+	return FMath::Lerp(Rest, AtMouth, static_cast<double>(GetMouthShare(Hand)));
+}
+
+bool UAedirInteractionComponent::GetConsumableAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutAlpha) const
+{
+	const AAedirCreature* Creature = GetCreature();
+	const AAedirItemActor* Item = GetHeldItem(Hand);
+	if (!Creature || !Item || !Item->IsConsumable() || HolsterMotion[static_cast<int32>(Hand)] != EAedirHolsterMotion::None)
+	{
+		return false;
+	}
+
+	const FVector Forward = Creature->GetActorForwardVector();
+	const FVector Right = Creature->GetActorRightVector();
+	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
+	// A drink stands upright and tips its top back towards the face; food lies across the hand and turns its end to the mouth.
+	const FVector RestAim = Item->bDrinkable ? (FVector::UpVector + Forward * 0.1f).GetSafeNormal() : (Forward - Right * (Side * 0.5f) + FVector::UpVector * 0.25f).GetSafeNormal();
+	const FVector MouthAim = Item->bDrinkable ? (FVector::UpVector * MouthDrinkTipUp - Forward * MouthDrinkTipBack).GetSafeNormal() : (FVector::UpVector * 0.4f - Forward * 0.5f - Right * (Side * 0.8f)).GetSafeNormal();
+	OutDirectionWorld = FMath::Lerp(RestAim, MouthAim, static_cast<double>(GetMouthShare(Hand))).GetSafeNormal();
+	OutAlpha = ReachBlend[static_cast<int32>(Hand)];
+	return OutAlpha > 0.f;
+}
+
+void UAedirInteractionComponent::SetMouthHold(EAedirHand Hand, bool bHold)
+{
+	if (!IsAuthoritative())
+	{
+		ServerSetMouthHold(Hand, bHold);
+		return;
+	}
+
+	const AAedirItemActor* Item = GetHeldItem(Hand);
+	const int32 Bit = 1 << static_cast<int32>(Hand);
+	MouthHands = bHold && Item && Item->IsConsumable() ? (MouthHands | Bit) : (MouthHands & ~Bit);
+}
+
+void UAedirInteractionComponent::ServerSetMouthHold_Implementation(EAedirHand Hand, bool bHold)
+{
+	SetMouthHold(Hand, bHold);
+}
+
+void UAedirInteractionComponent::UpdateMouth(EAedirHand Hand, float DeltaTime)
+{
+	const int32 Index = static_cast<int32>(Hand);
+	AAedirItemActor* Item = GetHeldItem(Hand);
+	const bool bHold = IsMouthHold(Hand) && Item && Item->IsConsumable();
+	MouthElapsed[Index] = FMath::Clamp(MouthElapsed[Index] + (bHold ? DeltaTime : -DeltaTime), 0.f, MouthSeconds);
+	if (!bHold || MouthElapsed[Index] < MouthSeconds)
+	{
+		BiteElapsed[Index] = 0.f;
+		return;
+	}
+
+	BiteElapsed[Index] += DeltaTime;
+	if (BiteElapsed[Index] < BiteSeconds || !IsAuthoritative())
+	{
+		return;
+	}
+
+	BiteElapsed[Index] = 0.f;
+	if (AAedirCreature* Creature = GetCreature())
+	{
+		Item->Use(Creature);
+		// The last bite leaves nothing to hold.
+		if (!IsValid(Item) || Item->IsActorBeingDestroyed())
+		{
+			ReleaseHeldItem(Item);
+			MouthHands &= ~(1 << Index);
+			UpdateCarriedWeight();
+		}
+	}
+}
+
+void UAedirInteractionComponent::DrawFromBackpack(int32 Index, EAedirHand Hand)
+{
+	if (!IsAuthoritative())
+	{
+		ServerDrawFromBackpack(Index, Hand);
+		return;
+	}
+
+	const int32 HandIndex = static_cast<int32>(Hand);
+	AAedirItemActor* Item = Backpack.IsValidIndex(Index) ? Backpack[Index].Get() : nullptr;
+	if (!Item || GetHandState(Hand) != EAedirHandState::Idle || HolsterMotion[HandIndex] != EAedirHolsterMotion::None)
+	{
+		return;
+	}
+
+	BackpackDrawItem[HandIndex] = Item;
+	HolsterWaistIndex[HandIndex] = GetWaistSideBegin(Hand);
+	HolsterMotion[HandIndex] = EAedirHolsterMotion::Draw;
+	StartHolsterPath(Hand);
+}
+
+void UAedirInteractionComponent::ServerDrawFromBackpack_Implementation(int32 Index, EAedirHand Hand)
+{
+	DrawFromBackpack(Index, Hand);
+}
+
+void UAedirInteractionComponent::StowNewItem(AAedirItemActor* Item)
+{
+	AAedirCreature* Creature = GetCreature();
+	if (IsAuthoritative() && Creature && Item)
+	{
+		Item->AttachToBackpack(Creature);
+		Backpack.Add(Item);
+		UpdateCarriedWeight();
+	}
+}
+
+void UAedirInteractionComponent::RemoveOwnedItem(AAedirItemActor* Item)
+{
+	if (!IsAuthoritative() || !Item)
+	{
+		return;
+	}
+
+	ReleaseHeldItem(Item);
+	Backpack.Remove(Item);
+	WornItems.Remove(Item);
+	for (TObjectPtr<AAedirItemActor>& WaistItem : WaistItems)
+	{
+		if (WaistItem == Item)
+		{
+			WaistItem = nullptr;
+		}
+	}
+	Item->Destroy();
+	UpdateCarriedWeight();
+}
+
 bool UAedirInteractionComponent::GetDrawAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutAlpha) const
 {
 	const int32 Index = static_cast<int32>(Hand);
-	const AAedirItemActor* Item = HolsterMotion[Index] == EAedirHolsterMotion::Draw && WaistItems.IsValidIndex(HolsterWaistIndex[Index]) ? WaistItems[HolsterWaistIndex[Index]].Get() : nullptr;
+	const AAedirItemActor* Item = HolsterMotion[Index] == EAedirHolsterMotion::Draw && !BackpackDrawItem[Index] && WaistItems.IsValidIndex(HolsterWaistIndex[Index]) ? WaistItems[HolsterWaistIndex[Index]].Get() : nullptr;
 	if (!Item || Item->ItemClass != EAedirItemClass::Weapon)
 	{
 		return false;
@@ -474,10 +650,12 @@ void UAedirInteractionComponent::UpdateHolsterMotion(EAedirHand Hand, float Delt
 	}
 
 	AAedirCreature* Creature = GetCreature();
-	const AAedirItemActor* Item = Motion == EAedirHolsterMotion::Store ? GetHeldItem(Hand) : (WaistItems.IsValidIndex(HolsterWaistIndex[Index]) ? WaistItems[HolsterWaistIndex[Index]].Get() : nullptr);
+	AAedirItemActor* FromPack = BackpackDrawItem[Index].Get();
+	const AAedirItemActor* Item = Motion == EAedirHolsterMotion::Store ? GetHeldItem(Hand) : (FromPack ? FromPack : (WaistItems.IsValidIndex(HolsterWaistIndex[Index]) ? WaistItems[HolsterWaistIndex[Index]].Get() : nullptr));
 	if (!Creature || !Item)
 	{
 		HolsterMotion[Index] = EAedirHolsterMotion::None;
+		BackpackDrawItem[Index] = nullptr;
 		return;
 	}
 
@@ -488,12 +666,17 @@ void UAedirInteractionComponent::UpdateHolsterMotion(EAedirHand Hand, float Delt
 	}
 
 	HolsterMotion[Index] = EAedirHolsterMotion::None;
-	HolsterDrawSettle[Index] = Motion == EAedirHolsterMotion::Draw ? HolsterDrawSettleSeconds : 0.f;
+	HolsterDrawSettle[Index] = Motion == EAedirHolsterMotion::Draw && !FromPack ? HolsterDrawSettleSeconds : 0.f;
 	if (IsAuthoritative())
 	{
 		if (Motion == EAedirHolsterMotion::Store)
 		{
 			StoreHeldToWaist(Hand, Creature);
+		}
+		else if (FromPack)
+		{
+			BackpackDrawItem[Index] = nullptr;
+			TakeFromBackpack(Backpack.IndexOfByKey(FromPack), Hand);
 		}
 		else
 		{
@@ -704,10 +887,6 @@ void UAedirInteractionComponent::BeginReach(EAedirHand Hand, AAedirItemActor* It
 
 	// The second key on the same item sends the second hand after the first.
 	const bool bOtherOnThisItem = Other.Item.Get() == Item;
-	if (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle && !bOtherOnThisItem)
-	{
-		return;
-	}
 
 	if (!bOtherOnThisItem || bJoiningOtherHand)
 	{
@@ -721,7 +900,7 @@ void UAedirInteractionComponent::BeginReach(EAedirHand Hand, AAedirItemActor* It
 	Slot.ReachElapsed = 0.f;
 	Slot.ReachHandWorld = GetHandWorld(Hand);
 
-	// Something that takes two hands is reached for with both, whichever key was pressed.
+	// Something that takes two hands is reached for with both if the other one is free, whichever key was pressed. With the other hand busy one has to do.
 	if (RequiresBothHands(Item) && Other.State == EAedirHandState::Idle)
 	{
 		Other.State = EAedirHandState::Reaching;
@@ -745,8 +924,8 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 	// Both hands close on the item if it needs them or if both are already on their way to it.
 	const bool bOtherOnThisItem = Other.State == EAedirHandState::Reaching && Other.Item.Get() == Item;
 	const bool bOtherHolds = Other.State == EAedirHandState::Holding && Other.Item.Get() == Item;
-	const bool bBothHands = RequiresBothHands(Item) || bOtherOnThisItem;
-	if (!CanLift(Item) || (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle && !bOtherOnThisItem && !bOtherHolds))
+	const bool bBothHands = (RequiresBothHands(Item) && Other.State == EAedirHandState::Idle) || bOtherOnThisItem || (bOtherHolds && RequiresBothHands(Item));
+	if (!CanLift(Item))
 	{
 		ResetSlot(Slot);
 		return;
@@ -867,9 +1046,10 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 		const bool bHolsterMotion = HolsterMotion[Index] != EAedirHolsterMotion::None;
 		const bool bPassGiver = IsPassingHeld(Hand);
 		const bool bPassTaker = IsPassingHeld(GetOtherHand(Hand));
-		if (Slot.State == EAedirHandState::Reaching || bCarryingObject || bHolsterMotion || bPassGiver)
+		const bool bConsumable = Slot.State == EAedirHandState::Holding && Slot.Item && Slot.Item->IsConsumable() && !bHolsterMotion;
+		if (Slot.State == EAedirHandState::Reaching || bCarryingObject || bHolsterMotion || bPassGiver || bConsumable)
 		{
-			const float BlendIn = bPassGiver || bPassTaker ? PassBlendInSeconds : (bHolsterMotion ? HolsterBlendInSeconds : ReachBlendInSeconds);
+			const float BlendIn = bPassGiver || bPassTaker ? PassBlendInSeconds : (bConsumable ? ConsumableBlendInSeconds : (bHolsterMotion ? HolsterBlendInSeconds : ReachBlendInSeconds));
 			ReachBlend[Index] = FMath::Min(1.f, ReachBlend[Index] + DeltaTime / BlendIn);
 		}
 		else
@@ -888,6 +1068,10 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 			const float T = HolsterSmoothStep(HolsterElapsed[Index] / HolsterHandSeconds);
 			const FVector Start = ActorTransform.TransformPositionNoScale(HolsterStartLocal[Index]);
 			ReachTargetCache[Index] = FMath::Lerp(FMath::Lerp(Start, Front, T), FMath::Lerp(Front, SlotWorld, T), T);
+		}
+		else if (bConsumable)
+		{
+			ReachTargetCache[Index] = GetConsumableHandTarget(Hand, Slot.Item.Get());
 		}
 		else if (bPassGiver)
 		{
@@ -1108,6 +1292,11 @@ void UAedirInteractionComponent::StoreHeldToWaist(EAedirHand Hand, AAedirCreatur
 	{
 		return;
 	}
+	if (Item->ItemClass != EAedirItemClass::Weapon)
+	{
+		AddToBackpack(Item);
+		return;
+	}
 
 	const int32 SideBegin = GetWaistSideBegin(Hand);
 	int32 FreeIndex = INDEX_NONE;
@@ -1144,10 +1333,11 @@ void UAedirInteractionComponent::DrawFromWaist(EAedirHand Hand, AAedirCreature* 
 	const FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
 
 	AAedirItemActor* Item = WaistItems.IsValidIndex(SourceIndex) ? WaistItems[SourceIndex].Get() : nullptr;
-	if (!Item || Slot.State != EAedirHandState::Idle || (RequiresBothHands(Item) && Other.State != EAedirHandState::Idle))
+	if (!Item || Slot.State != EAedirHandState::Idle)
 	{
 		return;
 	}
+	const bool bBothHands = RequiresBothHands(Item) && Other.State == EAedirHandState::Idle;
 
 	WaistItems[SourceIndex] = nullptr;
 	const int32 Side = SourceIndex < WaistSlotsPerSide ? 0 : 1;
@@ -1167,7 +1357,7 @@ void UAedirInteractionComponent::DrawFromWaist(EAedirHand Hand, AAedirCreature* 
 	Slot.State = EAedirHandState::Holding;
 	Slot.Item = Item;
 
-	if (RequiresBothHands(Item))
+	if (bBothHands)
 	{
 		FAedirHandSlot& OtherSlot = GetSlot(GetOtherHand(Hand));
 		OtherSlot.State = EAedirHandState::Holding;
@@ -1349,8 +1539,8 @@ bool UAedirInteractionComponent::EquipImmediate(EAedirHand Hand, AAedirItemActor
 
 	FAedirHandSlot& Slot = GetSlot(Hand);
 	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
-	const bool bBothHands = RequiresBothHands(Item);
-	if (Slot.State != EAedirHandState::Idle || (bBothHands && Other.State != EAedirHandState::Idle))
+	const bool bBothHands = RequiresBothHands(Item) && Other.State == EAedirHandState::Idle;
+	if (Slot.State != EAedirHandState::Idle)
 	{
 		return false;
 	}
@@ -1504,8 +1694,8 @@ void UAedirInteractionComponent::TakeFromBackpack(int32 Index, EAedirHand Hand)
 
 	FAedirHandSlot& Slot = GetSlot(Hand);
 	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
-	const bool bBothHands = RequiresBothHands(Item);
-	if (Slot.State != EAedirHandState::Idle || (bBothHands && Other.State != EAedirHandState::Idle) || Item->Weight > Creature->GetCarryCapacity())
+	const bool bBothHands = RequiresBothHands(Item) && Other.State == EAedirHandState::Idle;
+	if (Slot.State != EAedirHandState::Idle || Item->Weight > Creature->GetCarryCapacity())
 	{
 		return;
 	}

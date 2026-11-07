@@ -73,6 +73,7 @@ private:
 	void DrawPrompt(const AAedirCreature* Creature);
 	void DrawLookTarget(const AAedirCreature* Creature);
 	void DrawPointMarker(const AAedirCreature* Creature);
+	void DrawConsoleSelection(const AAedirCreature* Creature);
 	void DrawNeeds(const UAedirStatsComponent* Stats);
 	void DrawDeathOverlay();
 	void DrawFatigue(const UAedirStatsComponent* Stats);

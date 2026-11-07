@@ -28,6 +28,8 @@
 #include "Dev/AedirDevTools.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/Engine.h"
+#include "Dev/AedirConsoleCommands.h"
+#include "Game/AedirEntities.h"
 #include "UI/SAedirConsole.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Items/AedirInteractionComponent.h"
@@ -49,6 +51,8 @@
 namespace
 {
 	constexpr float AedirGuestStoreSeconds = 60.f;
+	constexpr float AedirConsolePickRangeCm = 20000.f;
+	constexpr float AedirConsolePickRadiusCm = 4.f;
 	constexpr float AedirPointRangeCm = 8000.f;
 	constexpr float AedirPointBehindCm = 40.f;
 	constexpr float AedirPointItemWidthCm = 18.f;
@@ -310,7 +314,9 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &AAedirPlayerCharacter::HandleThrustPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Released, this, &AAedirPlayerCharacter::HandleThrustReleased);
+	// The key under Esc types " on a Turkish keyboard, and is known by that.
 	PlayerInputComponent->BindKey(EKeys::Tilde, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
+	PlayerInputComponent->BindKey(EKeys::Quote, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
 	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AAedirPlayerCharacter::HandleDynamicKickPressed);
 }
 
@@ -825,6 +831,11 @@ void AAedirPlayerCharacter::HandleHandReleased(EAedirHand Hand)
 		return;
 	}
 
+	if (Interaction && Interaction->IsMouthHold(Hand))
+	{
+		Interaction->SetMouthHold(Hand, false);
+	}
+
 	const bool bUseTriggered = bHandUseTriggered[Index];
 	const bool bLongPress = Interaction && HandKeyHeldSeconds[Index] >= Interaction->UseHoldTime;
 
@@ -875,7 +886,13 @@ void AAedirPlayerCharacter::UpdateHandUseHold(float DeltaSeconds)
 		}
 
 		const AAedirItemActor* HeldItem = Interaction->GetHeldItem(Hand);
-		if (HeldItem && HeldItem->IsUsable())
+		if (HeldItem && HeldItem->IsConsumable())
+		{
+			// It goes to the mouth for as long as the key stays down.
+			Interaction->SetMouthHold(Hand, true);
+			bHandUseTriggered[Index] = true;
+		}
+		else if (HeldItem && HeldItem->IsUsable())
 		{
 			Interaction->UseHeld(Hand);
 			bHandUseTriggered[Index] = true;
@@ -1659,17 +1676,8 @@ void AAedirPlayerCharacter::ToggleConsole()
 	}
 
 	ConsoleWidget = SNew(SAedirConsole)
-		.OnCommand(FAedirConsoleCommand::CreateLambda([this](const FString& Command)
-		{
-			if (APlayerController* Controller = Cast<APlayerController>(GetController()))
-			{
-				const FString Output = Controller->ConsoleCommand(Command, false);
-				if (!Output.IsEmpty())
-				{
-					ConsoleWidget->AddLogLine(Output);
-				}
-			}
-		}))
+		.OnCommand(FAedirConsoleCommand::CreateUObject(this, &AAedirPlayerCharacter::RunConsoleLine))
+		.OnPick(FAedirConsolePick::CreateUObject(this, &AAedirPlayerCharacter::HandleConsolePick))
 		.OnClose(FSimpleDelegate::CreateUObject(this, &AAedirPlayerCharacter::CloseConsole));
 	GEngine->GameViewport->AddViewportWidgetContent(ConsoleWidget.ToSharedRef(), 90);
 
@@ -1688,6 +1696,165 @@ void AAedirPlayerCharacter::ToggleConsole()
 	PlayerController->SetInputMode(InputMode);
 	PlayerController->SetShowMouseCursor(true);
 	ConsoleWidget->FocusInput();
+	RefreshConsoleSelection();
+
+	// Alone in the world, everything waits. With others there it goes on.
+	bConsolePaused = GetWorld()->GetNetMode() == NM_Standalone && PlayerController->SetPause(true);
+}
+
+void AAedirPlayerCharacter::RunConsoleLine(const FString& Line)
+{
+	if (AedirConsoleCommands::IsCommand(Line))
+	{
+		const AActor* Selected = SelectedEntity.Get();
+		const FString Full = AedirConsoleCommands::TakesReference(Line) && Selected ? FString::Printf(TEXT("%s %08X"), *Line.TrimEnd(), AedirEntities::RefIdOfActor(Selected)) : Line;
+		if (HasAuthority())
+		{
+			AedirConsoleCommands::Run(this, Full);
+		}
+		else
+		{
+			ServerConsoleLine(Full);
+		}
+		if (Selected && !IsValid(SelectedEntity.Get()))
+		{
+			SelectedEntity.Reset();
+		}
+		RefreshConsoleSelection();
+		return;
+	}
+
+	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		const FString Output = PlayerController->ConsoleCommand(Line, false);
+		if (!Output.IsEmpty() && ConsoleWidget.IsValid())
+		{
+			ConsoleWidget->AddLogLine(Output);
+		}
+	}
+}
+
+void AAedirPlayerCharacter::ServerConsoleLine_Implementation(const FString& Line)
+{
+	AedirConsoleCommands::Run(this, Line);
+}
+
+void AAedirPlayerCharacter::HandleConsolePick(const FVector2D& ViewportPixel)
+{
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	FVector Origin;
+	FVector Direction;
+	AActor* Picked = nullptr;
+	if (PlayerController && PlayerController->DeprojectScreenPositionToWorld(ViewportPixel.X, ViewportPixel.Y, Origin, Direction))
+	{
+		FCollisionObjectQueryParams Objects;
+		Objects.AddObjectTypesToQuery(ECC_Pawn);
+		Objects.AddObjectTypesToQuery(ECC_PhysicsBody);
+		Objects.AddObjectTypesToQuery(ECC_WorldDynamic);
+		Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirConsolePick), true, this);
+		TArray<FHitResult> Hits;
+		GetWorld()->SweepMultiByObjectType(Hits, Origin, Origin + Direction * AedirConsolePickRangeCm, FQuat::Identity, Objects, FCollisionShape::MakeSphere(AedirConsolePickRadiusCm), Params);
+		for (const FHitResult& Hit : Hits)
+		{
+			AActor* Actor = Hit.GetActor();
+			if (AedirEntities::RefIdOfActor(Actor) != 0)
+			{
+				Picked = Actor;
+				break;
+			}
+			// A wall in the way ends the search.
+			if (Hit.bBlockingHit && Hit.Component.IsValid() && Hit.Component->GetCollisionObjectType() == ECC_WorldStatic)
+			{
+				break;
+			}
+		}
+	}
+
+	// A second click anywhere lets go of what was picked, on something else it takes that instead.
+	SelectedEntity = Picked != SelectedEntity.Get() ? Picked : nullptr;
+	RefreshConsoleSelection();
+}
+
+void AAedirPlayerCharacter::RefreshConsoleSelection()
+{
+	if (ConsoleWidget.IsValid())
+	{
+		const AActor* Selected = SelectedEntity.Get();
+		const FName Base = AedirEntities::BaseNameOfActor(Selected);
+		ConsoleWidget->SetSelection(Selected ? FString::Printf(TEXT("%s    Ref %08X    Base %08X (%s)"), *AedirEntities::DisplayNameOfActor(Selected), AedirEntities::RefIdOfActor(Selected), AedirEntities::BaseIdOfName(Base), *Base.ToString()) : FString());
+	}
+}
+
+void AAedirPlayerCharacter::Con(const FString& Line)
+{
+	RunConsoleLine(Line);
+}
+
+void AAedirPlayerCharacter::TalkOpenTest(const FString& Name)
+{
+	for (TActorIterator<AAedirNpc> It(GetWorld()); It; ++It)
+	{
+		const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+		const ULocalPlayer* Local = PlayerController ? PlayerController->GetLocalPlayer() : nullptr;
+		UAedirMenuSubsystem* Menus = Local ? Local->GetSubsystem<UAedirMenuSubsystem>() : nullptr;
+		if (Menus && It->NpcName.ToString().Contains(Name))
+		{
+			Menus->OpenDialogue(*It);
+			return;
+		}
+	}
+}
+
+void AAedirPlayerCharacter::ConOpen()
+{
+	ToggleConsole();
+}
+
+void AAedirPlayerCharacter::ConPick(float ShareX, float ShareY)
+{
+	int32 SizeX = 0;
+	int32 SizeY = 0;
+	if (const APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		PlayerController->GetViewportSize(SizeX, SizeY);
+	}
+	HandleConsolePick(FVector2D(SizeX * ShareX, SizeY * ShareY));
+	const AActor* Selected = SelectedEntity.Get();
+	UE_LOG(LogTemp, Display, TEXT("[Console] selected %s ref %08X"), *AedirEntities::DisplayNameOfActor(Selected), AedirEntities::RefIdOfActor(Selected));
+}
+
+void AAedirPlayerCharacter::MouthTest(int32 RightHand, int32 Hold)
+{
+	const EAedirHand Hand = RightHand != 0 ? EAedirHand::Right : EAedirHand::Left;
+	if (Hold != 0)
+	{
+		HandleHandPressed(Hand);
+	}
+	else
+	{
+		HandleHandReleased(Hand);
+	}
+}
+
+void AAedirPlayerCharacter::PackDrawTest(int32 RightHand)
+{
+	if (Interaction)
+	{
+		Interaction->DrawFromBackpack(0, RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
+	}
+}
+
+void AAedirPlayerCharacter::NeedInfo()
+{
+	if (Stats && Interaction)
+	{
+		const AAedirItemActor* Right = Interaction->GetHeldItem(EAedirHand::Right);
+		const AAedirItemActor* Left = Interaction->GetHeldItem(EAedirHand::Left);
+		const USkeletalMeshComponent* BodyMesh = GetMesh();
+		const FVector Head = BodyMesh->GetBoneLocation(FName(TEXT("head")));
+		UE_LOG(LogTemp, Display, TEXT("[Need] hunger %.1f thirst %.1f stamina %.1f/%.1f regen %.2f athletics %.0f pack %d right %s left %s item to head %.1f up %.2f"), Stats->GetHunger(), Stats->GetThirst(), Stats->GetStamina(), Stats->GetMaxStamina(), Stats->GetStaminaRegenRate(), Stats->Athletism, Interaction->GetBackpackItemsCopy().Num(), Right ? *Right->ItemName.ToString() : TEXT("-"), Left ? *Left->ItemName.ToString() : TEXT("-"), Right ? FVector::Dist(Right->GetBoundsCenterWorld(), Head) : 0.f, Right ? Right->GetActorForwardVector().Z : 0.f);
+	}
 }
 
 void AAedirPlayerCharacter::CloseConsole()
@@ -1708,7 +1875,13 @@ void AAedirPlayerCharacter::CloseConsole()
 	{
 		PlayerController->SetShowMouseCursor(false);
 		PlayerController->SetInputMode(FInputModeGameOnly());
+		if (bConsolePaused)
+		{
+			PlayerController->SetPause(false);
+		}
 	}
+	bConsolePaused = false;
+	SelectedEntity.Reset();
 }
 
 void AAedirPlayerCharacter::RunDevCommand(const FString& Command, const FString& Args, bool bRunOnServer)

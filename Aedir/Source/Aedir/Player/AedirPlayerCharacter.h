@@ -316,6 +316,33 @@ public:
 	// Opens or closes the lower left console. Bound to the key under Esc.
 	void ToggleConsole();
 
+	// The thing clicked while the console is open.
+	AActor* GetConsoleSelection() const { return SelectedEntity.Get(); }
+
+	// Con player.additem Bread 2: a line typed into the console, without the console.
+	UFUNCTION(Exec)
+	void Con(const FString& Line);
+
+	// ConPick 0.5 0.5: a click at that share of the screen, as with the console open.
+	UFUNCTION(Exec)
+	void ConPick(float ShareX, float ShareY);
+
+	UFUNCTION(Exec)
+	void ConOpen();
+
+	UFUNCTION(Exec)
+	void TalkOpenTest(const FString& Name);
+
+	// MouthTest 1 1: holds the grab key of the right hand down, 0 lets go. T and Y and the inventory click also have test commands.
+	UFUNCTION(Exec)
+	void MouthTest(int32 RightHand, int32 Hold);
+
+	UFUNCTION(Exec)
+	void PackDrawTest(int32 RightHand);
+
+	UFUNCTION(Exec)
+	void NeedInfo();
+
 	bool IsDebugBodyEnabled() const { return bDebugBody; }
 	void SetDebugBodyEnabled(bool bEnabled) { bDebugBody = bEnabled; }
 
@@ -371,6 +398,15 @@ private:
 	void HandleShovePressed();
 	TWeakObjectPtr<AAedirNpc> PointingNpc;
 	void AimForTest(TWeakObjectPtr<AActor> Target, bool bPress);
+
+	TWeakObjectPtr<AActor> SelectedEntity;
+	bool bConsolePaused = false;
+	void HandleConsolePick(const FVector2D& ViewportPixel);
+	void RefreshConsoleSelection();
+	void RunConsoleLine(const FString& Line);
+
+	UFUNCTION(Server, Reliable)
+	void ServerConsoleLine(const FString& Line);
 	bool bPressThenShot = false;
 
 	UFUNCTION(Server, Reliable)

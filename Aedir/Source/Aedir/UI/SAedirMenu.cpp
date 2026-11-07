@@ -779,6 +779,19 @@ void SAedirMenu::Tick(const FGeometry& AllottedGeometry, const double InCurrentT
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
 
+	if (PendingPackIndex != INDEX_NONE)
+	{
+		const int32 PackIndex = PendingPackIndex;
+		PendingPackIndex = INDEX_NONE;
+		const AAedirCreature* Pawn = Creature.Get();
+		CloseDelegate.ExecuteIfBound();
+		if (Pawn && Pawn->Interaction)
+		{
+			Pawn->Interaction->DrawFromBackpack(PackIndex, PendingBeltHand);
+		}
+		return;
+	}
+
 	if (PendingBeltSlot != INDEX_NONE)
 	{
 		const int32 Slot = PendingBeltSlot;
@@ -1019,7 +1032,8 @@ void SAedirMenu::ActivateSelected(bool bFromClick)
 			const EAedirHand Hand = Interaction->GetHandState(EAedirHand::Right) == EAedirHandState::Idle ? EAedirHand::Right : EAedirHand::Left;
 			if (Interaction->GetHandState(Hand) == EAedirHandState::Idle)
 			{
-				Interaction->TakeFromBackpack(Row.Index, Hand);
+				PendingBeltHand = Hand;
+				PendingPackIndex = Row.Index;
 			}
 		}
 		else if (Row.bIsHand)

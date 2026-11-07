@@ -75,7 +75,8 @@ bool FAedirCatalogWeaponTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("The sword cuts"), Longsword && Longsword->DamageType == EAedirDamageType::Slash);
 
 	TestTrue(TEXT("Spear is two-handed"), Spear->bTwoHanded);
-	TestFalse(TEXT("The sword is one-handed"), Longsword && Longsword->bTwoHanded);
+	TestTrue(TEXT("The sword takes both hands"), Longsword && Longsword->bTwoHanded);
+	TestFalse(TEXT("The mace is one-handed"), Mace && Mace->bTwoHanded);
 
 	return true;
 }

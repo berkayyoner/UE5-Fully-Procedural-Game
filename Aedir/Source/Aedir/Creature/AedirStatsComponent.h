@@ -115,6 +115,11 @@ public:
 	float GetThirst() const { return Thirst; }
 	void SetNeeds(float NewHunger, float NewThirst);
 	// How much the lack of food or water tells on the body: 0 fine, 1 starved or parched.
+	// Athletics make for more energy and bring it back faster, from 0 at the start to 1 at the top.
+	float GetAthleticsShare() const;
+	float GetStaminaRegenRate() const;
+	float GetBaseMaxStamina() const { return MaxStamina; }
+
 	float GetNeedShare() const;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")

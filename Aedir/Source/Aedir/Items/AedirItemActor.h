@@ -59,6 +59,10 @@ public:
 	// Spears, staves and big objects are too long to hang from a belt.
 	bool FitsOnBelt() const { return ItemClass != EAedirItemClass::Object && !bPolearm; }
 
+	// Food, drink and potions go to the mouth. Drinks and potions are held upright and tipped there.
+	bool bDrinkable = false;
+	bool IsConsumable() const { return ItemClass == EAedirItemClass::Food || ItemClass == EAedirItemClass::Poison; }
+
 	// Grip point along the long axis of the item, used when the item is held in the closed hand.
 	float GripLocalCm = 0.f;
 	float GripSpanCm = 13.f;

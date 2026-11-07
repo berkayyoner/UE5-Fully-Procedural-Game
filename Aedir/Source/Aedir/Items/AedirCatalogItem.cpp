@@ -147,6 +147,7 @@ void AAedirCatalogItem::ApplyDefinition()
 	ItemClass = Def->ItemClass;
 	Weight = Def->WeightKg;
 	bTwoHanded = Def->bTwoHanded;
+	bDrinkable = Def->DrinkValue > 0.f || Def->ItemClass == EAedirItemClass::Poison;
 	// The reach of a weapon counts from the hand to the tip.
 	WeaponLength = Def->WeaponLengthCm > 0.f ? Def->WeaponLengthCm * 0.5f - Def->GripCm : 0.f;
 	bPolearm = Def->WeaponLengthCm >= CatalogPolearmMinLengthCm;
@@ -180,7 +181,7 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 			FRotator Turn = FRotator::ZeroRotator;
 			double Longest = Size.X;
 			if (Size.Y > Longest) { Longest = Size.Y; Turn = FRotator(0.f, -90.f, 0.f); }
-			if (Size.Z > Longest) { Longest = Size.Z; Turn = FRotator(90.f, 0.f, 0.f); }
+			if (Size.Z > Longest) { Longest = Size.Z; Turn = FRotator(Def.DrinkValue > 0.f ? -90.f : 90.f, 0.f, 0.f); } // A jug has its top towards the front of the item, where it is drunk from.
 			const double Wanted = Def.ModelLengthCm > 0.f ? Def.ModelLengthCm : Def.WeaponLengthCm > 0.f ? Def.WeaponLengthCm : FMath::Max3(Def.BodyScale.X, Def.BodyScale.Y, Def.BodyScale.Z) * 100.0;
 			const float ModelScale = static_cast<float>(Wanted / FMath::Max(Longest, 1.0));
 			Mesh->SetStaticMesh(GetShapeMesh(EAedirCatalogShape::Cube));

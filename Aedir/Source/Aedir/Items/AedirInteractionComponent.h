@@ -112,6 +112,25 @@ public:
 	// True if that hand can take the item of that belt slot now.
 	bool CanDrawWaistSlot(EAedirHand Hand, int32 SlotIndex) const;
 
+	// Takes a stowed item: the hand goes to the belt as for a drawn weapon, and the item is in it when it comes back.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
+	void DrawFromBackpack(int32 Index, EAedirHand Hand);
+
+	// Brings food or drink in that hand to the mouth while held. It is eaten or drunk there, a bite at a time.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
+	void SetMouthHold(EAedirHand Hand, bool bHold);
+
+	bool IsMouthHold(EAedirHand Hand) const { return (MouthHands & (1 << static_cast<int32>(Hand))) != 0; }
+
+	// How the wrist holds food or drink, at rest or at the mouth.
+	bool GetConsumableAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutAlpha) const;
+
+	// Server only. A new item straight into the backpack.
+	void StowNewItem(AAedirItemActor* Item);
+
+	// Server only. Takes an item out of the hands, belt or backpack and destroys it.
+	void RemoveOwnedItem(AAedirItemActor* Item);
+
 	// A one-handed weapon goes to the empty other hand, which reaches for it first. False if there is nothing to pass.
 	bool PassToOtherHand();
 
@@ -259,6 +278,26 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerPassToOtherHand();
+
+	UFUNCTION(Server, Reliable)
+	void ServerDrawFromBackpack(int32 Index, EAedirHand Hand);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetMouthHold(EAedirHand Hand, bool bHold);
+
+	void UpdateMouth(EAedirHand Hand, float DeltaTime);
+	FVector GetConsumableHandTarget(EAedirHand Hand, const AAedirItemActor* Item) const;
+	FVector GetMouthWorld() const;
+	float GetMouthShare(EAedirHand Hand) const;
+
+	UPROPERTY(Replicated)
+	uint8 MouthHands = 0;
+
+	float MouthElapsed[2] = { 0.f, 0.f };
+	float BiteElapsed[2] = { 0.f, 0.f };
+
+	UPROPERTY(Transient)
+	TObjectPtr<AAedirItemActor> BackpackDrawItem[2];
 
 	UFUNCTION(Server, Reliable)
 	void ServerAddToBackpack(AAedirItemActor* Item);

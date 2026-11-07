@@ -72,7 +72,7 @@ namespace
 			Result.Mana = Stats->GetMana();
 			Result.MaxMana = Stats->GetMaxMana();
 			Result.Stamina = Stats->GetStamina();
-			Result.MaxStamina = Stats->GetMaxStamina();
+			Result.MaxStamina = Stats->GetBaseMaxStamina();
 			Result.Strength = Stats->Strength;
 			Result.Athletism = Stats->Athletism;
 			Result.Hunger = Stats->GetHunger();

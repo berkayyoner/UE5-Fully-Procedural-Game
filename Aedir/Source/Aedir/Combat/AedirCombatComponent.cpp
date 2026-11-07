@@ -953,7 +953,8 @@ void UAedirCombatComponent::UpdateGrip(float DeltaTime)
 
 	SecondaryGripBlend = FMath::FInterpConstantTo(SecondaryGripBlend, IsGripHeld() && !bRagdoll ? 1.f : 0.f, DeltaTime, 1.f / AedirSecondaryGripBlendSeconds);
 
-	const bool bHalfSwordWanted = bTwoHandGrip && bLeftGuard && CanHalfSword(Item) && IsGripHeld() && (bBothOnItem || PrimaryHand == EAedirHand::Right);
+	// A weapon that is in one hand only gets the second one on its handle first; the hand moves up the blade from a proper two-handed hold.
+	const bool bHalfSwordWanted = bTwoHandGrip && bLeftGuard && CanHalfSword(Item) && IsGripHeld() && bBothOnItem;
 	HalfSwordAlpha = FMath::FInterpConstantTo(HalfSwordAlpha, bHalfSwordWanted ? 1.f : 0.f, DeltaTime, 1.f / AedirHalfSwordSlideSeconds);
 
 	// The mouse means something else in this hold, so it starts from the middle.
@@ -1053,6 +1054,10 @@ bool UAedirCombatComponent::GetSecondaryGrip(EAedirHand& OutHand, FVector& OutPo
 bool UAedirCombatComponent::GetWeaponAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutAlpha) const
 {
 	const AAedirItemActor* HeldItem = GetHeldItem(Hand);
+	if (HeldItem && Creature && Creature->Interaction && Creature->Interaction->GetConsumableAim(Hand, OutDirectionWorld, OutAlpha))
+	{
+		return true;
+	}
 	if (!HeldItem || HeldItem->ItemClass != EAedirItemClass::Weapon)
 	{
 		// On its way to the belt the hand already turns to how the handle hangs there.
@@ -2842,7 +2847,7 @@ bool UAedirCombatComponent::EvaluateTwoHandGrip() const
 	}
 
 	// The right mouse button brings the free left hand onto a weapon in the right hand. Otherwise an empty hand joins only while both guards are held.
-	return (LeftItem && RightItem) || (bLeftGuard && CanHalfSword(RightItem)) || (bLeftGuard && bRightGuard);
+	return (LeftItem && RightItem) || (bLeftGuard && RightItem && RightItem->ItemClass == EAedirItemClass::Weapon) || (bLeftGuard && bRightGuard);
 }
 
 void UAedirCombatComponent::UpdateTwoHandGrip()

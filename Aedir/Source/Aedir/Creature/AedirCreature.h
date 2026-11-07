@@ -98,12 +98,22 @@ public:
 	void WalkTowards(const FVector& Goal, float DeltaSeconds, float TurnDegreesPerSecond);
 	void TurnBodyTo(float Yaw, float DeltaSeconds, float TurnDegreesPerSecond);
 
+	// True while it is working its way round something on a way it found for itself.
+	bool IsFollowingWay() const { return !WayPoints.IsEmpty() || WaySearch.IsValid(); }
+
 private:
 	// Stuck on the way somewhere: goes off to one side for a moment.
 	FVector WalkCheckLocation = FVector::ZeroVector;
 	float WalkCheckTimer = 0.f;
 	float WalkDetourSeconds = 0.f;
 	float WalkDetourYaw = 0.f;
+
+	// Where the straight line does not go, the next place on a way round.
+	FVector SteerAlongWay(const FVector& Goal, float DeltaSeconds);
+	TSharedPtr<class FAedirWayFinder> WaySearch;
+	TArray<FVector> WayPoints;
+	FVector WayGoal = FVector::ZeroVector;
+	float WayCheckTimer = 0.f;
 
 public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")

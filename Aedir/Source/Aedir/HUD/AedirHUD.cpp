@@ -37,8 +37,14 @@ namespace
 	constexpr float HudTargetBarHeight = 4.f;
 	constexpr float HudTargetBarGap = 3.f;
 	constexpr float HudTargetOverHeadCm = 26.f;
-	constexpr float HudNeedShowBelow = 25.f;
-	constexpr float HudNeedLift = 34.f;
+	constexpr float HudNeedBarHeight = 7.f;
+	constexpr float HudNeedBarGap = 6.f;
+	constexpr float HudNeedBarSpace = 3.f;
+	constexpr float HudNeedFontSize = 10.f;
+	constexpr float HudNeedLowShare = 0.25f;
+	const FLinearColor HudHungerColor(0.42f, 0.24f, 0.05f);
+	const FLinearColor HudThirstColor(0.07f, 0.26f, 0.36f);
+	const FLinearColor HudNeedLowColor(0.5f, 0.07f, 0.04f);
 	constexpr float HudPromptLift = 14.f;
 	constexpr float HudPromptFontSize = 13.f;
 	constexpr float HudBarFullThreshold = 0.999f;
@@ -271,6 +277,7 @@ void AAedirHUD::DrawHUD()
 	DrawPrompt(Creature);
 	DrawLookTarget(Creature);
 	DrawPointMarker(Creature);
+	DrawConsoleSelection(Creature);
 	DrawNeeds(Stats);
 
 	if (Stats && Stats->IsDead())
@@ -742,30 +749,79 @@ void AAedirHUD::DrawPointMarker(const AAedirCreature* Creature)
 
 void AAedirHUD::DrawNeeds(const UAedirStatsComponent* Stats)
 {
-	// Hunger and thirst only show when they start to tell, in a word over the middle bar, as a body would notice them.
-	if (!Canvas || !Stats)
+	if (!Canvas || !Canvas->Canvas || !Stats)
 	{
 		return;
 	}
 
-	FString Text;
-	if (Stats->GetThirst() < HudNeedShowBelow)
-	{
-		Text = Stats->GetThirst() <= 0.f ? TEXT("Parched") : TEXT("Thirsty");
-	}
-	if (Stats->GetHunger() < HudNeedShowBelow)
-	{
-		Text += (Text.IsEmpty() ? TEXT("") : TEXT("   ")) + FString(Stats->GetHunger() <= 0.f ? TEXT("Starving") : TEXT("Hungry"));
-	}
-	if (Text.IsEmpty())
-	{
-		return;
-	}
-
+	// Two short bars over the energy bar, in the same frame as the others. Low ones go red.
 	using namespace AedirUIStyle;
 	const float Scale = ScaleForHeight(static_cast<float>(Canvas->SizeY));
-	const FVector2f Spot(static_cast<float>(Canvas->SizeX) * 0.5f, static_cast<float>(Canvas->SizeY) - (BarBottomMargin + BarHeight + HudNeedLift) * Scale);
-	AedirUIStyle::DrawText(*Canvas, Text, LightFont(HudTargetFontSize * Scale, 40), Spot, Ivory, EAedirTextAlign::Center, 1.f);
+	const float ScreenWidth = static_cast<float>(Canvas->SizeX);
+	const float StaminaY = static_cast<float>(Canvas->SizeY) - (BarBottomMargin + BarHeight * 0.5f) * Scale;
+	const float CenterY = StaminaY - (BarHeight * 0.5f + HudNeedBarGap + HudNeedBarHeight * 0.5f) * Scale;
+	const float HalfWidth = (BarWidth * 0.5f - HudNeedBarSpace) * 0.5f * Scale;
+	const float HalfHeight = HudNeedBarHeight * 0.5f * Scale;
+	const float Taper = HudNeedBarHeight * Scale;
+	const float Offsets[2] = { -(HalfWidth + HudNeedBarSpace * Scale), HalfWidth + HudNeedBarSpace * Scale };
+	const float Values[2] = { Stats->GetHunger() / 100.f, Stats->GetThirst() / 100.f };
+	const FLinearColor Colors[2] = { HudHungerColor, HudThirstColor };
+	const TCHAR* const Labels[2] = { TEXT("Hunger"), TEXT("Thirst") };
+	const FSlateFontInfo Font = LightFont(HudNeedFontSize * Scale, 20);
+
+	FAedirUIMesh Mesh(1.f);
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		const FVector2f Center(ScreenWidth * HudBarCenterFractions[2] + Offsets[Index], CenterY);
+		const float Fraction = FMath::Clamp(Values[Index], 0.f, 1.f);
+		const FLinearColor Base = Fraction < HudNeedLowShare ? HudNeedLowColor : Colors[Index];
+		const FLinearColor Dark(Base.R * 0.42f, Base.G * 0.42f, Base.B * 0.42f, 1.f);
+		AddTaperedBar(Mesh, Center, HalfWidth, HalfHeight, Taper, FLinearColor(0.f, 0.f, 0.f, 0.5f), FLinearColor(0.f, 0.f, 0.f, 0.72f), FLinearColor(0.f, 0.f, 0.f, 0.5f));
+		const float InnerHalfHeight = FMath::Max(HalfHeight - Scale, 0.5f);
+		const float FillHalfWidth = (HalfWidth - 2.f * Scale) * Fraction;
+		if (FillHalfWidth > 0.5f)
+		{
+			AddTaperedBar(Mesh, Center, FillHalfWidth, InnerHalfHeight, Taper * 0.6f, Dark, Base, Dark);
+		}
+		AddTaperedFrame(Mesh, Center, HalfWidth, HalfHeight, Taper, FMath::Max(1.f, Scale), WithAlpha(Metal, 0.9f));
+	}
+	DrawMesh(*Canvas->Canvas, Mesh);
+
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		const FVector2f Spot(ScreenWidth * HudBarCenterFractions[2] + Offsets[Index], CenterY - HalfHeight - MeasureText(Labels[Index], Font).Y - 1.f * Scale);
+		AedirUIStyle::DrawText(*Canvas, Labels[Index], Font, Spot, TextDim, EAedirTextAlign::Center, 1.f);
+	}
+}
+
+void AAedirHUD::DrawConsoleSelection(const AAedirCreature* Creature)
+{
+	const AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(Creature);
+	const AActor* Selected = Player ? Player->GetConsoleSelection() : nullptr;
+	if (!Canvas || !Selected)
+	{
+		return;
+	}
+
+	const FBox Box = Selected->GetComponentsBoundingBox(true);
+	FVector2D Least(UE_BIG_NUMBER, UE_BIG_NUMBER);
+	FVector2D Most(-UE_BIG_NUMBER, -UE_BIG_NUMBER);
+	for (int32 Corner = 0; Corner < 8; ++Corner)
+	{
+		const FVector Point((Corner & 1) ? Box.Max.X : Box.Min.X, (Corner & 2) ? Box.Max.Y : Box.Min.Y, (Corner & 4) ? Box.Max.Z : Box.Min.Z);
+		const FVector Projected = Canvas->Project(Point);
+		if (Projected.Z <= 0.0)
+		{
+			return;
+		}
+		Least = FVector2D(FMath::Min(Least.X, Projected.X), FMath::Min(Least.Y, Projected.Y));
+		Most = FVector2D(FMath::Max(Most.X, Projected.X), FMath::Max(Most.Y, Projected.Y));
+	}
+	const FLinearColor Mark(0.95f, 0.78f, 0.36f, 0.95f);
+	Canvas->K2_DrawLine(Least, FVector2D(Most.X, Least.Y), 2.f, Mark);
+	Canvas->K2_DrawLine(FVector2D(Most.X, Least.Y), Most, 2.f, Mark);
+	Canvas->K2_DrawLine(Most, FVector2D(Least.X, Most.Y), 2.f, Mark);
+	Canvas->K2_DrawLine(FVector2D(Least.X, Most.Y), Least, 2.f, Mark);
 }
 
 void AAedirHUD::DrawDeathOverlay()
