@@ -2,7 +2,13 @@
 
 #include "Aedir.h"
 #include "Components/CapsuleComponent.h"
+#include "Animation/TransformProviderData.h"
+#include "Components/InstancedSkinnedMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
+#include "Creature/AedirWayFinder.h"
+#include "DynamicWindParameters.h"
+#include "DynamicWindSubsystem.h"
+#include "Engine/SkeletalMesh.h"
 #include "Creature/AedirCreature.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
@@ -31,6 +37,16 @@ namespace
 	constexpr int32 FoliageMaxBend = 3;
 	constexpr float FoliageBendDistance = 70.f;
 	constexpr float FoliageWindFollow = 0.4f;
+	const TCHAR* const FoliageTreeRoot = TEXT("/Game/Megaplant_Library/Tree_Norway_Spruce/Tree_Norway_Spruce_01/");
+	const TCHAR* const FoliageTreeName = TEXT("Tree_Norway_Spruce_01");
+	const TCHAR* const FoliageWindDataClass = TEXT("/Script/DynamicWind.DynamicWindData");
+	constexpr int32 FoliageTreeTries = 6;
+	constexpr float FoliageTreeLookCm = 800.f;
+	constexpr float FoliageTreeSpacingCm = 450.f;
+	constexpr float FoliageTrunkRadiusCm = 22.f;
+	constexpr float FoliageTrunkHalfCm = 200.f;
+	constexpr float FoliageWindExtentsCm = 100000.f;
+	constexpr float FoliageWindYaw = 35.f;
 }
 
 TStatId UAedirFoliageSubsystem::GetStatId() const
@@ -46,6 +62,94 @@ int32 UAedirFoliageSubsystem::GetInstanceCount() const
 		Count += Patch ? Patch->GetInstanceCount() : 0;
 	}
 	return Count;
+}
+
+void UAedirFoliageSubsystem::EnsureMeadowActor()
+{
+	if (!MeadowActor)
+	{
+		FActorSpawnParameters Params;
+		Params.Name = TEXT("AedirMeadow");
+		MeadowActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, Params);
+		MeadowActor->SetRootComponent(NewObject<USceneComponent>(MeadowActor));
+		MeadowActor->GetRootComponent()->RegisterComponent();
+	}
+}
+
+void UAedirFoliageSubsystem::PlantTrees(const FVector& Around, float InnerCm, float OuterCm, int32 Count, int32 RandomSeed)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	TArray<USkeletalMesh*> Models;
+	for (const TCHAR* Variant : { TEXT("A"), TEXT("B"), TEXT("C"), TEXT("D") })
+	{
+		const FString Name = FString::Printf(TEXT("%s_%s"), FoliageTreeName, Variant);
+		if (USkeletalMesh* Model = LoadObject<USkeletalMesh>(nullptr, *FString::Printf(TEXT("%s%s.%s"), FoliageTreeRoot, *Name, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
+		{
+			Models.Add(Model);
+		}
+	}
+	if (Models.IsEmpty())
+	{
+		UE_LOG(LogAedir, Warning, TEXT("No tree models found under %s"), FoliageTreeRoot);
+		return;
+	}
+	EnsureMeadowActor();
+
+	// The wind reaches the branches through this data, which the plugin keeps to itself.
+	if (!TreeWindData)
+	{
+		if (UClass* WindClass = LoadClass<UObject>(nullptr, FoliageWindDataClass))
+		{
+			TreeWindData = NewObject<UObject>(this, WindClass);
+		}
+	}
+
+	FRandomStream Random(RandomSeed);
+	TMap<USkeletalMesh*, UInstancedSkinnedMeshComponent*> ByModel;
+	TArray<FVector> Taken;
+	for (int32 Try = 0; Try < Count * FoliageTreeTries && TreeCount < Count; ++Try)
+	{
+		const float Angle = Random.FRandRange(0.f, UE_TWO_PI);
+		const float Radius = Random.FRandRange(InnerCm, OuterCm);
+		const FVector Spot = Around + FVector(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, 0.f);
+		FVector Ground;
+		if (!FAedirWayFinder::FindGround(World, Spot, FoliageTreeLookCm, FoliageTreeLookCm, nullptr, Ground) || Taken.ContainsByPredicate([&Ground](const FVector& Other) { return FVector::DistSquared2D(Ground, Other) < FMath::Square(FoliageTreeSpacingCm); }))
+		{
+			continue;
+		}
+		Taken.Add(Ground);
+
+		USkeletalMesh* Model = Models[Random.RandHelper(Models.Num())];
+		UInstancedSkinnedMeshComponent*& Trees = ByModel.FindOrAdd(Model);
+		if (!Trees)
+		{
+			Trees = NewObject<UInstancedSkinnedMeshComponent>(MeadowActor);
+			Trees->SetSkinnedAsset(Model);
+			Trees->SetMobility(EComponentMobility::Movable);
+			Trees->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Trees->SetTransformProvider(Cast<UTransformProviderData>(TreeWindData));
+			Trees->SetupAttachment(MeadowActor->GetRootComponent());
+			Trees->RegisterComponent();
+			TreeMeshes.Add(Trees);
+		}
+		const float Scale = Random.FRandRange(0.85f, 1.15f);
+		Trees->AddInstance(FTransform(FRotator(0.f, Random.FRandRange(0.f, 360.f), 0.f), Ground, FVector(Scale)), 0, true);
+
+		// The trunk stops whoever walks into it. The branches give way.
+		UCapsuleComponent* Trunk = NewObject<UCapsuleComponent>(MeadowActor);
+		Trunk->InitCapsuleSize(FoliageTrunkRadiusCm * Scale, FoliageTrunkHalfCm);
+		Trunk->SetCollisionProfileName(TEXT("BlockAll"));
+		Trunk->SetWorldLocation(Ground + FVector(0.f, 0.f, FoliageTrunkHalfCm));
+		Trunk->SetupAttachment(MeadowActor->GetRootComponent());
+		Trunk->RegisterComponent();
+		++TreeCount;
+	}
+	UE_LOG(LogAedir, Log, TEXT("Planted %d trees around %s, wind data %s"), TreeCount, *Around.ToCompactString(), *GetNameSafe(TreeWindData));
 }
 
 void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm, float DensityPerSquareMeter, int32 RandomSeed)
@@ -90,14 +194,7 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 		return;
 	}
 
-	if (!MeadowActor)
-	{
-		FActorSpawnParameters Params;
-		Params.Name = TEXT("AedirMeadow");
-		MeadowActor = World->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, Params);
-		MeadowActor->SetRootComponent(NewObject<USceneComponent>(MeadowActor));
-		MeadowActor->GetRootComponent()->RegisterComponent();
-	}
+	EnsureMeadowActor();
 
 	TMap<UStaticMesh*, UInstancedStaticMeshComponent*> ByMesh;
 	const auto PatchOf = [&](UStaticMesh* Mesh)
@@ -149,7 +246,7 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 void UAedirFoliageSubsystem::Tick(float DeltaTime)
 {
 	UWorld* World = GetWorld();
-	if (!World || !World->IsGameWorld() || Patches.IsEmpty())
+	if (!World || !World->IsGameWorld() || (Patches.IsEmpty() && TreeMeshes.IsEmpty()))
 	{
 		return;
 	}
@@ -207,14 +304,27 @@ void UAedirFoliageSubsystem::UpdateBending()
 void UAedirFoliageSubsystem::UpdateWind(float DeltaTime)
 {
 	UWorld* World = GetWorld();
-	if (!Collection)
-	{
-		return;
-	}
 	const UAedirWeatherSubsystem* Weather = World->GetSubsystem<UAedirWeatherSubsystem>();
 	const AAedirWeatherManager* Manager = Weather ? Weather->GetManager() : nullptr;
 	const float Wanted = Manager ? Manager->GetWindShare() : 0.35f;
 	WindNow = FMath::FInterpTo(WindNow, Wanted, DeltaTime, FoliageWindFollow);
+
+	if (UDynamicWindSubsystem* TreeWind = World->GetSubsystem<UDynamicWindSubsystem>())
+	{
+		const APlayerController* Viewer = World->GetFirstPlayerController();
+		FDynamicWindParameters Parameters;
+		Parameters.SimulationCenter = Viewer && Viewer->GetPawn() ? Viewer->GetPawn()->GetActorLocation() : FVector::ZeroVector;
+		Parameters.SimulationExtents = FoliageWindExtentsCm;
+		Parameters.WindDirection = FRotator(0.f, FoliageWindYaw, 0.f).Vector();
+		Parameters.WindSpeed = FMath::Lerp(4.f, 45.f, WindNow);
+		Parameters.WindAmplitude = FMath::Lerp(0.5f, 2.f, WindNow);
+		TreeWind->UpdateWindParameters(Parameters);
+	}
+
+	if (!Collection)
+	{
+		return;
+	}
 	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Intensity"), FMath::Lerp(0.4f, 3.f, WindNow));
 	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Speed"), FMath::Lerp(0.7f, 2.2f, WindNow));
 }

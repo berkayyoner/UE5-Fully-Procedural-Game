@@ -21,6 +21,10 @@ public:
 	// Covers a stretch of ground, skipping what stands on it. Around is the middle, on the ground.
 	void PlantMeadow(const FVector& Around, float HalfSizeCm, float DensityPerSquareMeter, int32 RandomSeed);
 
+	// Stands trees in a ring around a place, with a trunk that can be walked into. They sway on the wind of the weather.
+	void PlantTrees(const FVector& Around, float InnerCm, float OuterCm, int32 Count, int32 RandomSeed);
+
+	int32 GetTreeCount() const { return TreeCount; }
 	int32 GetCrushedCount() const { return Crushed.Num(); }
 	int32 GetInstanceCount() const;
 
@@ -36,6 +40,7 @@ private:
 
 	void UpdateBending();
 	void UpdateWind(float DeltaTime);
+	void EnsureMeadowActor();
 	void CrushUnderFeet();
 	void Recover(float DeltaTime);
 	void SetInstanceFlatness(FCrushed& Entry);
@@ -49,6 +54,13 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialParameterCollection> Collection;
 
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UInstancedSkinnedMeshComponent>> TreeMeshes;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UObject> TreeWindData;
+
+	int32 TreeCount = 0;
 	TArray<FCrushed> Crushed;
 	TSet<TPair<UInstancedStaticMeshComponent*, int32>> CrushedKeys;
 	float CrushTimer = 0.f;

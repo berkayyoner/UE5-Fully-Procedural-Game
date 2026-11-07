@@ -1,3 +1,4 @@
+using System.IO;
 using UnrealBuildTool;
 
 public class Aedir : ModuleRules
@@ -6,6 +7,9 @@ public class Aedir : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 		PublicIncludePaths.Add(ModuleDirectory);
+
+		// The wind plugin's public header reaches into its own internal folder.
+		PrivateIncludePaths.Add(Path.Combine(EngineDirectory, "Plugins", "Experimental", "DynamicWind", "Source", "DynamicWind", "Internal"));
 
 		PublicDependencyModuleNames.AddRange(new string[]
 		{
@@ -17,6 +21,7 @@ public class Aedir : ModuleRules
 			"EnhancedInput",
 			"PhysicsCore",
 			"Niagara",
+			"DynamicWind",
 			"ProceduralMeshComponent",
 			"DeveloperSettings",
 			"NetCore",

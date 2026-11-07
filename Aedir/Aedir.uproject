@@ -99,6 +99,14 @@
 			"Enabled": true
 		},
 		{
+			"Name": "DynamicWind",
+			"Enabled": true
+		},
+		{
+			"Name": "ProceduralVegetationEditor",
+			"Enabled": true
+		},
+		{
 			"Name": "ProceduralMeshComponent",
 			"Enabled": true
 		}

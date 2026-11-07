@@ -25,6 +25,9 @@ namespace
 	constexpr float DirectorMeadowHalfCm = 1700.f;
 	constexpr float DirectorMeadowDensity = 9.f;
 	constexpr int32 DirectorMeadowSeed = 4711;
+	constexpr float DirectorTreesInnerCm = 500.f;
+	constexpr float DirectorTreesOuterCm = 1800.f;
+	constexpr int32 DirectorTreeCount = 9;
 
 	struct FDirectorDecor
 	{
@@ -185,6 +188,7 @@ void AedirWorldDirector::PopulateTestMap(UWorld* World)
 		if (UAedirFoliageSubsystem* Foliage = World->GetSubsystem<UAedirFoliageSubsystem>())
 		{
 			Foliage->PlantMeadow(Ground, DirectorMeadowHalfCm, DirectorMeadowDensity, DirectorMeadowSeed);
+			Foliage->PlantTrees(Ground, DirectorTreesInnerCm, DirectorTreesOuterCm, DirectorTreeCount, DirectorMeadowSeed);
 		}
 		World->SpawnActor<AAedirTrainingDummy>(AAedirTrainingDummy::StaticClass(), Ground, FRotator::ZeroRotator);
 		for (const FDirectorDecor& Decor : DirectorYard)

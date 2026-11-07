@@ -74,3 +74,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Sword, longsword, short sword and battle axe with the Atris models, and a model sheet command for choosing from a pack.
 - Dagger, mace, warhammer, spear and halberd with models from the weapon sample pack.
 - Moved to Unreal Engine 5.8, NVIDIA upscaler plugins switched off until they exist for it.
+- Norway spruces with real branches around the meadow, swaying on the plugin's wind driven by the weather, with trunks that block the way.
