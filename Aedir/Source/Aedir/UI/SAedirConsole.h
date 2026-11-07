@@ -47,6 +47,8 @@ private:
 	TSharedPtr<SEditableTextBox> InputBox;
 	TSharedPtr<SScrollBox> LogScroll;
 
-	TArray<FString> History;
+	// Shows again what the console showed when it was last open.
+	void RestoreLog();
+
 	int32 HistoryIndex = INDEX_NONE;
 };

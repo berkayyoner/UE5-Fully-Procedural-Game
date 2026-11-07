@@ -5,6 +5,8 @@
 #include "Framework/Application/SlateApplication.h"
 #include "UnrealClient.h"
 #include "InputCoreTypes.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Layout/SBorder.h"
@@ -18,7 +20,28 @@ namespace
 	constexpr float ConsoleWidth = 640.f;
 	constexpr float ConsoleLogHeight = 220.f;
 	constexpr int32 ConsoleMaxLogLines = 80;
-	constexpr int32 ConsoleMaxHistory = 40;
+	constexpr int32 ConsoleMaxHistory = 100;
+
+	// The log and the typed commands outlive the widget, so closing the console loses nothing; commands also outlive the game.
+	TArray<TPair<FString, FLinearColor>> ConsoleKeptLog;
+
+	FString ConsoleHistoryFile()
+	{
+		return FPaths::ProjectSavedDir() / TEXT("ConsoleHistory.txt");
+	}
+
+	TArray<FString>& ConsoleHistory()
+	{
+		static TArray<FString> History;
+		static bool bLoaded = false;
+		if (!bLoaded)
+		{
+			bLoaded = true;
+			FFileHelper::LoadFileToStringArray(History, *ConsoleHistoryFile());
+			History.RemoveAll([](const FString& Line) { return Line.TrimStartAndEnd().IsEmpty(); });
+		}
+		return History;
+	}
 }
 
 void SAedirConsole::Construct(const FArguments& InArgs)
@@ -82,11 +105,31 @@ void SAedirConsole::Construct(const FArguments& InArgs)
 		]
 	];
 
+	if (!ConsoleKeptLog.IsEmpty())
+	{
+		RestoreLog();
+		return;
+	}
 	AddLogLine(TEXT("Console. Click something to select it. Type help for the commands, help * for every base id. [\"] or [Esc] closes."), FLinearColor(0.9f, 0.8f, 0.4f, 1.f));
+}
+
+void SAedirConsole::RestoreLog()
+{
+	const TArray<TPair<FString, FLinearColor>> Kept = MoveTemp(ConsoleKeptLog);
+	ConsoleKeptLog.Reset();
+	for (const TPair<FString, FLinearColor>& Line : Kept)
+	{
+		AddLogLine(Line.Key, Line.Value);
+	}
 }
 
 void SAedirConsole::AddLogLine(const FString& Line, const FLinearColor& Color)
 {
+	ConsoleKeptLog.Emplace(Line, Color);
+	while (ConsoleKeptLog.Num() > ConsoleMaxLogLines)
+	{
+		ConsoleKeptLog.RemoveAt(0);
+	}
 	if (!LogScroll.IsValid())
 	{
 		return;
@@ -153,6 +196,7 @@ FReply SAedirConsole::OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEv
 	}
 
 	// Up and down walk the command history.
+	const TArray<FString>& History = ConsoleHistory();
 	if ((Key == EKeys::Up || Key == EKeys::Down) && !History.IsEmpty())
 	{
 		HistoryIndex = Key == EKeys::Up
@@ -160,6 +204,7 @@ FReply SAedirConsole::OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEv
 			: (HistoryIndex == INDEX_NONE ? INDEX_NONE : FMath::Min(HistoryIndex + 1, History.Num()));
 		const FString Text = History.IsValidIndex(HistoryIndex) ? History[HistoryIndex] : FString();
 		InputBox->SetText(FText::FromString(Text));
+		InputBox->GoTo(ETextLocation::EndOfDocument);
 		return FReply::Handled();
 	}
 
@@ -192,10 +237,16 @@ void SAedirConsole::HandleTextCommitted(const FText& NewText, ETextCommit::Type 
 		return;
 	}
 
-	History.Add(Command);
-	if (History.Num() > ConsoleMaxHistory)
+	// The same command twice in a row is kept once, as a shell does.
+	TArray<FString>& History = ConsoleHistory();
+	if (History.IsEmpty() || History.Last() != Command)
 	{
-		History.RemoveAt(0);
+		History.Add(Command);
+		while (History.Num() > ConsoleMaxHistory)
+		{
+			History.RemoveAt(0);
+		}
+		FFileHelper::SaveStringArrayToFile(History, *ConsoleHistoryFile());
 	}
 
 	AddLogLine(TEXT("> ") + Command, FLinearColor(0.55f, 0.85f, 1.f, 1.f));
