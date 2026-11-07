@@ -837,7 +837,9 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 	const FVector Capsule = Player->GetActorLocation();
 	if (Player->Stats)
 	{
-		DevToolsReport(FString::Printf(TEXT("Body: stamina %.1f fatigue %.2f strength %.3f athletism %.3f"), Player->Stats->GetStamina(), Player->Stats->GetFatigue(), Player->Stats->Strength, Player->Stats->Athletism));
+		const FVector PelvisLocal = Player->GetActorTransform().InverseTransformPositionNoScale(Mesh->GetBoneLocation(TEXT("pelvis")));
+		DevToolsReport(FString::Printf(TEXT("Body: stamina %.1f fatigue %.2f strength %.3f athletism %.3f balance %.2f ragdoll %d pelvis %.0f %.0f %.0f"), Player->Stats->GetStamina(), Player->Stats->GetFatigue(), Player->Stats->Strength, Player->Stats->Athletism,
+			Player->Balance ? Player->Balance->GetBalance() : 1.f, Player->Balance && Player->Balance->IsRagdoll() ? 1 : 0, PelvisLocal.X, PelvisLocal.Y, PelvisLocal.Z));
 	}
 	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
 	{
@@ -867,9 +869,17 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 		const FVector ElbowWorld = BoneWorld(TEXT("lowerarm"));
 		const FVector ElbowLocal = Player->GetActorTransform().InverseTransformPositionNoScale(ElbowWorld);
 		const double ForearmToBlade = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct((Wrist - ElbowWorld).GetSafeNormal(), Axis), -1.0, 1.0)));
-		DevToolsReport(FString::Printf(TEXT("%s hand on %s: carrier=%d along=%.1f offAxis=%.1f knuckleAngle=%.0f palm local %.0f %.0f %.0f bladePitch=%.0f bladeYaw=%.0f wrist=%.0f elbow local %.0f %.0f %.0f"),
+		// How far the hand has turned against the forearm since the last report, and how far around the forearm.
+		const FName HandBone(*FString::Printf(TEXT("hand%s"), Suffix));
+		const FName ForearmBone(*FString::Printf(TEXT("lowerarm%s"), Suffix));
+		const FQuat WristNow = Mesh->GetBoneQuaternion(ForearmBone).Inverse() * Mesh->GetBoneQuaternion(HandBone);
+		static FQuat LastWrist[2] = { FQuat::Identity, FQuat::Identity };
+		const int32 HandSlot = Hand == EAedirHand::Left ? 0 : 1;
+		const float WristTurn = FMath::RadiansToDegrees(static_cast<float>(LastWrist[HandSlot].AngularDistance(WristNow)));
+		LastWrist[HandSlot] = WristNow;
+		DevToolsReport(FString::Printf(TEXT("%s hand on %s: carrier=%d along=%.1f offAxis=%.1f knuckleAngle=%.0f palm local %.0f %.0f %.0f bladePitch=%.0f bladeYaw=%.0f wrist=%.0f turn=%.0f elbow local %.0f %.0f %.0f"),
 			Hand == EAedirHand::Left ? TEXT("Left") : TEXT("Right"), *Item->ItemName.ToString(), Item->HeldHand == Hand ? 1 : 0, AlongItem, OffAxis, KnucklesToBlade,
-			Local.X, Local.Y, Local.Z, Axis.Rotation().Pitch, FRotator::NormalizeAxis(Axis.Rotation().Yaw - Player->GetActorRotation().Yaw), ForearmToBlade, ElbowLocal.X, ElbowLocal.Y, ElbowLocal.Z));
+			Local.X, Local.Y, Local.Z, Axis.Rotation().Pitch, FRotator::NormalizeAxis(Axis.Rotation().Yaw - Player->GetActorRotation().Yaw), ForearmToBlade, WristTurn, ElbowLocal.X, ElbowLocal.Y, ElbowLocal.Z));
 	}
 
 	for (const AAedirItemActor* Item : Player->Interaction->GetWaistItemsCopy())

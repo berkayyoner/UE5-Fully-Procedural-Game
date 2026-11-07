@@ -132,10 +132,11 @@ void UAedirBalanceComponent::BeginPlay()
 
 	BodyMesh->SetAllBodiesBelowSimulatePhysics(PelvisBoneName, true, true);
 	BodyMesh->SetAllBodiesPhysicsBlendWeight(1.f);
+	MeshRestRelative = BodyMesh->GetRelativeTransform();
+	BodyMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	BodyMesh->SetNotifyRigidBodyCollision(true);
-	// The simulated limbs of a standing body pass through loose physics objects, so stepping on one does not fling it;
-	// the capsule still pushes and blocks them, and a ragdoll collides with them again.
-	BodyMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Overlap);
+	ApplyBodyContacts(false);
+	ApplyJointLimits(false);
 	BodyMesh->OnComponentHit.AddDynamic(this, &UAedirBalanceComponent::OnMeshHit);
 
 	BodyCapsule->SetNotifyRigidBodyCollision(true);
@@ -907,12 +908,8 @@ void UAedirBalanceComponent::DrivePelvis()
 		return;
 	}
 
-	const float MeshScale = static_cast<float>(BodyMesh->GetComponentScale().Z);
-	const FVector Location = BodyCapsule->GetComponentLocation()
-		+ FVector(0.f, 0.f, -BodyCapsule->GetScaledCapsuleHalfHeight() + PelvisRestHeight * MeshScale);
-	const FQuat Rotation = CharacterOwner->GetActorQuat() * CurrentLean.Quaternion();
-
-	Pelvis->SetBodyTransform(FTransform(Rotation, Location), ETeleportType::None);
+	// Everything hangs from the pelvis, which goes exactly where the pose has it.
+	Pelvis->SetBodyTransform(BodyMesh->GetSocketTransform(PelvisBoneName, RTS_World), ETeleportType::None);
 }
 
 void UAedirBalanceComponent::SetRagdollPresentation(bool bRagdoll)
@@ -937,7 +934,8 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	}
 
 	UpdateMotors(0.f, true);
-	BodyMesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bRagdoll ? ECR_Block : ECR_Overlap);
+	ApplyBodyContacts(bRagdoll);
+	ApplyJointLimits(bRagdoll);
 
 	UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
 	FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName);
@@ -970,6 +968,13 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 				+ FVector(0.f, 0.f, BodyCapsule->GetScaledCapsuleHalfHeight() - PelvisRestHeight * MeshScale);
 			CharacterOwner->SetActorLocation(CapsuleLocation, false, nullptr, ETeleportType::TeleportPhysics);
 		}
+
+		// A loose pelvis took the mesh along with it. Back on its feet the mesh goes back to the capsule, and the limbs to the pose.
+		if (BodyMesh->GetAttachParent() != BodyCapsule)
+		{
+			BodyMesh->AttachToComponent(BodyCapsule, FAttachmentTransformRules::KeepRelativeTransform);
+		}
+		BodyMesh->SetRelativeTransform(MeshRestRelative, false, nullptr, ETeleportType::ResetPhysics);
 	}
 
 	if (Movement)
@@ -978,6 +983,92 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	}
 
 	BodyCapsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+}
+
+void UAedirBalanceComponent::ApplyBodyContacts(bool bRagdoll)
+{
+	if (!BodyMesh)
+	{
+		return;
+	}
+
+	for (FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		if (!Body || !Body->BodySetup.IsValid())
+		{
+			continue;
+		}
+
+		// Standing, the feet and shins are placed on the ground by the pose: contact there would only make them shake.
+		// A hand lets loose things be, or it would knock away what it reaches for, and so do legs, or stepping on something would fling it.
+		const FString Bone = Body->BodySetup->BoneName.ToString();
+		const bool bFoot = Bone.Contains(TEXT("foot")) || Bone.Contains(TEXT("ball")) || Bone.Contains(TEXT("calf"));
+		const bool bSoft = bFoot || Bone.Contains(TEXT("thigh")) || Bone.Contains(TEXT("hand"));
+		const ECollisionResponse World = bFoot && !bRagdoll ? ECR_Ignore : ECR_Block;
+		Body->SetResponseToChannel(ECC_WorldStatic, World);
+		Body->SetResponseToChannel(ECC_WorldDynamic, World);
+		Body->SetResponseToChannel(ECC_PhysicsBody, bSoft && !bRagdoll ? ECR_Overlap : ECR_Block);
+	}
+}
+
+void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll)
+{
+	if (!BodyMesh)
+	{
+		return;
+	}
+
+	// The joint limits of the physics asset are made for a limp body. The living pose goes past them, and its muscles would fight them.
+	if (LooseJointLimits.IsEmpty())
+	{
+		for (const FConstraintInstance* Joint : BodyMesh->Constraints)
+		{
+			LooseJointLimits.Add(Joint->ProfileInstance);
+		}
+	}
+
+	for (int32 Index = 0; Index < BodyMesh->Constraints.Num() && Index < LooseJointLimits.Num(); ++Index)
+	{
+		FConstraintInstance* Joint = BodyMesh->Constraints[Index];
+		const FConstraintProfileProperties& Loose = LooseJointLimits[Index];
+		Joint->SetAngularSwing1Motion(bRagdoll ? Loose.ConeLimit.Swing1Motion.GetValue() : ACM_Free);
+		Joint->SetAngularSwing2Motion(bRagdoll ? Loose.ConeLimit.Swing2Motion.GetValue() : ACM_Free);
+		Joint->SetAngularTwistMotion(bRagdoll ? Loose.TwistLimit.TwistMotion.GetValue() : ACM_Free);
+	}
+}
+
+const FAedirBoneMotor& UAedirBalanceComponent::GetBoneMotor(FName BoneName) const
+{
+	const FString Bone = BoneName.ToString();
+	if (Bone.Contains(TEXT("hand")))
+	{
+		return HandMotor;
+	}
+	if (Bone.Contains(TEXT("lowerarm")))
+	{
+		return LowerArmMotor;
+	}
+	if (Bone.Contains(TEXT("upperarm")) || Bone.Contains(TEXT("clavicle")))
+	{
+		return UpperArmMotor;
+	}
+	if (Bone.Contains(TEXT("foot")) || Bone.Contains(TEXT("ball")))
+	{
+		return FootMotor;
+	}
+	if (Bone.Contains(TEXT("calf")))
+	{
+		return CalfMotor;
+	}
+	if (Bone.Contains(TEXT("thigh")))
+	{
+		return ThighMotor;
+	}
+	if (Bone.Contains(TEXT("head")) || Bone.Contains(TEXT("neck")))
+	{
+		return HeadMotor;
+	}
+	return SpineMotor;
 }
 
 void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent* OtherComponent, const FHitResult& Hit)
@@ -1149,7 +1240,7 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	}
 	if (bIsRagdoll || (Stats && Stats->IsDead()))
 	{
-		Common = 0.04f;
+		Common = RagdollMotorShare;
 	}
 
 	float Strength[5];
@@ -1175,34 +1266,16 @@ void UAedirBalanceComponent::UpdateLegBlend(float DeltaTime)
 		return;
 	}
 
-	// Balanced legs follow the IK pose exactly, so simulated feet cannot fight the ground and jitter. Staggering, falling or hurt legs go physical.
-	const UAedirCombatComponent* Combat = CharacterOwner ? CharacterOwner->FindComponentByClass<UAedirCombatComponent>() : nullptr;
-	const bool bLegHurt = Combat && (Combat->GetLimbInjury(EAedirLimb::LeftLeg) > 0.3f || Combat->GetLimbInjury(EAedirLimb::RightLeg) > 0.3f);
-	const bool bPhysical = bIsRagdoll || StaggerSeconds > 0.f || DazeSeconds > 0.f || Balance < 0.6f || bLegHurt;
-	LegPhysicsBlend = FMath::FInterpTo(LegPhysicsBlend, bPhysical ? 1.f : 0.f, DeltaTime, 8.f);
-
-	// The spine and head follow the pose too; a simulated torso lags behind a quickly turning pelvis and swings the wrong way.
-	for (const int32 GroupIndex : { 0, 3, 4 })
+	// The whole body is physical, held to the pose by its muscles.
+	LegPhysicsBlend = 1.f;
+	ArmPhysicsBlend = 1.f;
+	for (const TArray<FName>& Group : MotorGroupBones)
 	{
-		for (const FName& BoneName : MotorGroupBones[GroupIndex])
+		for (const FName& BoneName : Group)
 		{
 			if (FBodyInstance* Body = BodyMesh->GetBodyInstance(BoneName))
 			{
-				Body->PhysicsBlendWeight = LegPhysicsBlend;
-			}
-		}
-	}
-
-	// Arms are physical, except both of them closed on one weapon: simulated arms would pull the hands off the handle.
-	const bool bArmsOnWeapon = !bPhysical && Combat && Combat->IsTwoHandGrip();
-	ArmPhysicsBlend = FMath::FInterpTo(ArmPhysicsBlend, bArmsOnWeapon ? 0.f : 1.f, DeltaTime, 12.f);
-	for (const int32 GroupIndex : { 1, 2 })
-	{
-		for (const FName& BoneName : MotorGroupBones[GroupIndex])
-		{
-			if (FBodyInstance* Body = BodyMesh->GetBodyInstance(BoneName))
-			{
-				Body->PhysicsBlendWeight = ArmPhysicsBlend;
+				Body->PhysicsBlendWeight = 1.f;
 			}
 		}
 	}
@@ -1215,23 +1288,23 @@ void UAedirBalanceComponent::ApplyMotorGroup(int32 GroupIndex, float Strength)
 		return;
 	}
 
-	// Base spring strengths per group: legs carry the body weight and need the stiffest motors.
-	static const float MotorBaseOrientation[5] = { 3000.f, 1800.f, 1800.f, 6000.f, 6000.f };
-	static const float MotorBaseAngularVelocity[5] = { 300.f, 180.f, 180.f, 600.f, 600.f };
-
 	AppliedMotorStrength[GroupIndex] = Strength;
 
-	FPhysicalAnimationData Data;
-	Data.bIsLocalSimulation = true;
-	Data.OrientationStrength = MotorBaseOrientation[GroupIndex] * Strength;
-	Data.AngularVelocityStrength = MotorBaseAngularVelocity[GroupIndex] * Strength;
-	Data.PositionStrength = 0.f;
-	Data.VelocityStrength = 0.f;
-	Data.MaxLinearForce = 0.f;
-	Data.MaxAngularForce = 0.f;
+	// A loose body only keeps a faint memory of the pose at its joints. A living one is pulled to where the pose is in the world, as hard as its muscles can.
+	const UAedirStatsComponent* Stats = FindStats();
+	const bool bLoose = bIsRagdoll || (Stats && Stats->IsDead());
 
 	for (const FName& BoneName : MotorGroupBones[GroupIndex])
 	{
+		const FAedirBoneMotor& Motor = GetBoneMotor(BoneName);
+		FPhysicalAnimationData Data;
+		Data.bIsLocalSimulation = bLoose;
+		Data.OrientationStrength = Motor.OrientationStrength * Strength;
+		Data.AngularVelocityStrength = Motor.AngularVelocityStrength * Strength;
+		Data.PositionStrength = bLoose ? 0.f : Motor.PositionStrength * Strength;
+		Data.VelocityStrength = bLoose ? 0.f : Motor.VelocityStrength * Strength;
+		Data.MaxLinearForce = Motor.MaxLinearForce;
+		Data.MaxAngularForce = Motor.MaxAngularForce;
 		MotorComponent->ApplyPhysicalAnimationSettings(BoneName, Data);
 	}
 }

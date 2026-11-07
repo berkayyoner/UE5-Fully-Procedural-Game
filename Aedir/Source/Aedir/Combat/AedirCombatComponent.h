@@ -328,6 +328,9 @@ public:
 	// How firmly the wrist keeps its angle: in a fight the arm does the moving, in a thrust the blade lies along the forearm.
 	float GetWristFirmShare(EAedirHand Hand) const;
 
+	// The angle between the forearm and a weapon that only hangs from the hand.
+	float GetHangWristDegrees(EAedirHand Hand) const;
+
 	// A big object in both hands: where its middle is, how big it is, and how far the hands have come to it.
 	bool GetObjectCarry(FVector& OutCenterWorld, float& OutRadiusCm, float& OutAlpha) const;
 

@@ -519,6 +519,16 @@ FString UAedirSettingsSubsystem::GetValueText(int32 Index) const
 	return Option->Values.IsValidIndex(Current) ? Option->Values[Current] : FString(TEXT("Custom"));
 }
 
+void UAedirSettingsSubsystem::SetOptionValue(int32 Index, int32 ValueIndex)
+{
+	const FAedirSettingOption* Option = GetOption(Index);
+	if (Option && Option->Values.IsValidIndex(ValueIndex))
+	{
+		Option->Apply(ValueIndex);
+		Store(*Option, ValueIndex);
+	}
+}
+
 void UAedirSettingsSubsystem::StepOption(int32 Index, int32 Delta)
 {
 	const FAedirSettingOption* Option = GetOption(Index);

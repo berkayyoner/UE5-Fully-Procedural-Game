@@ -587,6 +587,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	ReadWeaponAim(EAedirHand::Right, GaitState.RightWeaponDirWorld, GaitState.RightWeaponAimAlpha);
 	GaitState.LeftWristFrontShare = FMath::FInterpConstantTo(GaitState.LeftWristFrontShare, Combat && Combat->IsHangingWeapon(EAedirHand::Left) ? 1.f : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.RightWristFrontShare = FMath::FInterpConstantTo(GaitState.RightWristFrontShare, Combat && Combat->IsHangingWeapon(EAedirHand::Right) ? 1.f : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
+	if (Combat)
+	{
+		GaitState.LeftHangDegrees = Combat->GetHangWristDegrees(EAedirHand::Left);
+		GaitState.RightHangDegrees = Combat->GetHangWristDegrees(EAedirHand::Right);
+	}
 	const auto ReadArmShape = [Combat, DeltaTime](EAedirHand Hand, float& OutWristDegrees, FVector& OutHint, float& OutHintAlpha)
 	{
 		const float WristTarget = FMath::Lerp(AedirWristLooseDegrees, AedirWristFirmDegrees, Combat ? Combat->GetWristFirmShare(Hand) : 0.f);

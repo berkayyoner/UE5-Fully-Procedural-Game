@@ -81,7 +81,7 @@ namespace AedirMenuContent
 	// Vignette, the list panel fading out to the right, the double line between list and details.
 	void PaintListBackdrop(const FVector2f& Size, FAedirUIMesh& Mesh, float VignetteStrength);
 	// Plain text row with a small marker instead of a filled background. MarkerStrength is 0 when no marker should show.
-	TSharedRef<SWidget> MakeListRow(const FAedirMenuRow& Row, const FSlateFontInfo& Font, TFunction<FLinearColor()> TextColor, TFunction<float()> MarkerStrength);
+	TSharedRef<SWidget> MakeListRow(const FAedirMenuRow& Row, const FSlateFontInfo& Font, TFunction<FLinearColor()> TextColor, TFunction<float()> MarkerStrength, TSharedPtr<SWidget> ValueWidget = nullptr);
 	// The layout shared by the category menus and the pause menu.
 	TSharedRef<SWidget> MakeListScreen(const TSharedRef<SWidget>& Header, const TSharedRef<SWidget>& List, const TSharedRef<SWidget>& Detail, const TAttribute<FText>& Status, const TAttribute<FText>& Hint, float VignetteStrength);
 	TSharedRef<SWidget> MakeTitle(const TAttribute<FText>& Title);

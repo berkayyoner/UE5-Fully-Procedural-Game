@@ -4,6 +4,7 @@
 #include "Engine/LocalPlayer.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Brushes/SlateColorBrush.h"
 #include "Settings/AedirSettingsSubsystem.h"
 #include "InputCoreTypes.h"
 #include "Input/Events.h"
@@ -20,6 +21,7 @@
 
 namespace
 {
+	constexpr float PauseOptionValueWidth = 130.f;
 	const TCHAR* const PauseTabNames[] = { TEXT("OPTIONS"), TEXT("JOURNAL") };
 	constexpr float PauseRowFontSize = 18.f;
 	constexpr float PauseSaveRowFontSize = 15.f;
@@ -113,7 +115,6 @@ void SAedirPauseMenu::Construct(const FArguments& InArgs)
 			SNew(SBorder)
 			.BorderImage(FStyleDefaults::GetNoBrush())
 			.Padding(FMargin(0.f, 2.f))
-			.Cursor(EMouseCursor::Hand)
 			.OnMouseButtonDown_Lambda([this, Index](const FGeometry&, const FPointerEvent&)
 			{
 				if (!IsConfirmOpen())
@@ -144,8 +145,16 @@ void SAedirPauseMenu::Construct(const FArguments& InArgs)
 			TabBar
 		];
 
+	static const FSlateColorBrush ScrollThumb(WithAlpha(Metal, 0.75f));
+	static const FSlateColorBrush ScrollThumbHot(IvoryBright);
+	static const FSlateColorBrush ScrollTrack(FLinearColor(0.f, 0.f, 0.f, 0.3f));
+	static const FScrollBarStyle ScrollStyle = FScrollBarStyle()
+		.SetNormalThumbImage(ScrollThumb).SetHoveredThumbImage(ScrollThumbHot).SetDraggedThumbImage(ScrollThumbHot)
+		.SetVerticalBackgroundImage(ScrollTrack).SetVerticalTopSlotImage(ScrollTrack).SetVerticalBottomSlotImage(ScrollTrack);
+
 	const TSharedRef<SWidget> List = SAssignNew(ListScroll, SScrollBox)
-		.ScrollBarVisibility(EVisibility::Collapsed)
+		.ScrollBarStyle(&ScrollStyle)
+		.ScrollBarThickness(FVector2D(6.f, 6.f))
 		+ SScrollBox::Slot()
 		[
 			SAssignNew(ListBox, SVerticalBox)
@@ -240,7 +249,6 @@ TSharedRef<SWidget> SAedirPauseMenu::MakeConfirmButton(const TCHAR* Label, bool 
 	return SNew(SBorder)
 		.BorderImage(FStyleDefaults::GetNoBrush())
 		.Padding(FMargin(0.f))
-		.Cursor(EMouseCursor::Hand)
 		.OnMouseMove_Lambda([this, bYes](const FGeometry&, const FPointerEvent& MouseEvent)
 		{
 			if (!MouseEvent.GetCursorDelta().IsNearlyZero())
@@ -301,6 +309,7 @@ void SAedirPauseMenu::GoToPage(EAedirPausePage NewPage)
 	const int32 ReturnSettingsRow = Page == EAedirPausePage::SettingsAudio ? 1 : (Page == EAedirPausePage::SettingsGameplay ? 2 : 0);
 	CurrentTab = static_cast<int32>(EAedirPauseTab::Options);
 	Page = NewPage;
+	OpenDropDown = INDEX_NONE;
 	SelectedRow = NewPage == EAedirPausePage::Main ? ReturnRow : (NewPage == EAedirPausePage::Settings ? ReturnSettingsRow : 0);
 	if (Page == EAedirPausePage::SaveList || Page == EAedirPausePage::LoadList)
 	{
@@ -336,8 +345,175 @@ void SAedirPauseMenu::RefreshSaveEntries()
 	SaveEntries = Saves ? Saves->ListSaves() : TArray<FAedirSaveInfo>();
 }
 
+void SAedirPauseMenu::ToggleDropDown(int32 OptionIndex)
+{
+	const UAedirSettingsSubsystem* Settings = PauseGetSettings(World.Get());
+	const FAedirSettingOption* Option = Settings ? Settings->GetOption(OptionIndex) : nullptr;
+	OpenDropDown = Option && OpenDropDown != OptionIndex ? OptionIndex : INDEX_NONE;
+	DropDownCursor = Option ? FMath::Max(Option->Read(), 0) : 0;
+	RefreshView(true);
+}
+
+void SAedirPauseMenu::PickDropDownValue(int32 ValueIndex)
+{
+	if (UAedirSettingsSubsystem* Settings = PauseGetSettings(World.Get()))
+	{
+		Settings->SetOptionValue(OpenDropDown, ValueIndex);
+	}
+	OpenDropDown = INDEX_NONE;
+	RefreshView(true);
+}
+
+TSharedRef<SWidget> SAedirPauseMenu::MakeOptionArrow(int32 RowIndex, int32 OptionIndex, int32 Delta)
+{
+	using namespace AedirUIStyle;
+
+	return SNew(SBorder)
+		.BorderImage(FStyleDefaults::GetNoBrush())
+		.Padding(FMargin(6.f, 2.f))
+		.OnMouseButtonDown_Lambda([this, RowIndex, Delta](const FGeometry&, const FPointerEvent& MouseEvent)
+		{
+			if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+			{
+				SelectedRow = RowIndex;
+				OpenDropDown = INDEX_NONE;
+				StepSelectedOption(Delta);
+			}
+			return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
+		})
+		[
+			SNew(SAedirUIPaint)
+			.DesiredSize(FVector2D(10.f, 14.f))
+			.Painter([this, RowIndex, Delta](const FVector2f& Size, FAedirUIMesh& Mesh)
+			{
+				const FLinearColor Color = WithAlpha(GetRowTextColor(RowIndex), 0.9f);
+				const float TipX = Delta < 0 ? 0.f : Size.X;
+				const float BackX = Delta < 0 ? Size.X : 0.f;
+				const FVector2f Left[] = { FVector2f(BackX, 0.f), FVector2f(TipX, Size.Y * 0.5f), FVector2f(BackX, Size.Y) };
+				const FVector2f Right[] = { FVector2f(BackX, 0.f), FVector2f(BackX, Size.Y), FVector2f(TipX, Size.Y * 0.5f) };
+				Delta < 0 ? Mesh.AddConvex(Right, Color) : Mesh.AddConvex(Left, Color);
+			})
+		];
+}
+
+TSharedRef<SWidget> SAedirPauseMenu::MakeOptionControl(int32 RowIndex, int32 OptionIndex)
+{
+	using namespace AedirUIStyle;
+
+	const UAedirSettingsSubsystem* Settings = PauseGetSettings(World.Get());
+	const FAedirSettingOption* Option = Settings ? Settings->GetOption(OptionIndex) : nullptr;
+	const FText ValueText = FText::FromString(Settings ? Settings->GetValueText(OptionIndex) : FString());
+	const TSharedRef<SWidget> Value = SNew(STextBlock)
+		.Text(ValueText)
+		.Font(LightFont(FMath::Max(12.f, PauseRowFontSize - 2.f)))
+		.ColorAndOpacity_Lambda([this, RowIndex]() { return FSlateColor(WithAlpha(GetRowTextColor(RowIndex), 0.85f)); })
+		.ShadowOffset(FVector2D(1.f, 1.f))
+		.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.7f));
+
+	if (Option && Option->Values.Num() == 2)
+	{
+		return SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				MakeOptionArrow(RowIndex, OptionIndex, -1)
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(SBox).MinDesiredWidth(PauseOptionValueWidth).HAlign(HAlign_Center)
+				[
+					Value
+				]
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				MakeOptionArrow(RowIndex, OptionIndex, 1)
+			];
+	}
+
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+		[
+			SNew(SBox).MinDesiredWidth(PauseOptionValueWidth).HAlign(HAlign_Right)
+			[
+				Value
+			]
+		]
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(8.f, 0.f, 6.f, 0.f))
+		[
+			SNew(SAedirUIPaint)
+			.DesiredSize(FVector2D(12.f, 8.f))
+			.Painter([this, RowIndex, OptionIndex](const FVector2f& Size, FAedirUIMesh& Mesh)
+			{
+				const FLinearColor Color = WithAlpha(GetRowTextColor(RowIndex), 0.9f);
+				if (OpenDropDown == OptionIndex)
+				{
+					const FVector2f Up[] = { FVector2f(0.f, Size.Y), FVector2f(Size.X * 0.5f, 0.f), FVector2f(Size.X, Size.Y) };
+					Mesh.AddConvex(Up, Color);
+				}
+				else
+				{
+					const FVector2f Down[] = { FVector2f(0.f, 0.f), FVector2f(Size.X, 0.f), FVector2f(Size.X * 0.5f, Size.Y) };
+					Mesh.AddConvex(Down, Color);
+				}
+			})
+		];
+}
+
+TSharedRef<SWidget> SAedirPauseMenu::MakeOptionDropDown(int32 OptionIndex)
+{
+	using namespace AedirUIStyle;
+
+	static const FSlateColorBrush DropBackground(FLinearColor(0.01f, 0.01f, 0.012f, 0.9f));
+
+	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
+	const UAedirSettingsSubsystem* Settings = PauseGetSettings(World.Get());
+	const FAedirSettingOption* Option = Settings ? Settings->GetOption(OptionIndex) : nullptr;
+	DropDownWidgets.Reset();
+	for (int32 ValueIndex = 0; Option && ValueIndex < Option->Values.Num(); ++ValueIndex)
+	{
+		const bool bCurrent = Option->Read() == ValueIndex;
+		TSharedRef<SBorder> Item = SNew(SBorder)
+			.BorderImage(FStyleDefaults::GetNoBrush())
+			.Padding(FMargin(14.f, 3.f))
+			.HAlign(HAlign_Right)
+			.OnMouseMove_Lambda([this, ValueIndex](const FGeometry&, const FPointerEvent& MouseEvent)
+			{
+				if (!MouseEvent.GetCursorDelta().IsNearlyZero())
+				{
+					DropDownCursor = ValueIndex;
+				}
+				return FReply::Unhandled();
+			})
+			.OnMouseButtonDown_Lambda([this, ValueIndex](const FGeometry&, const FPointerEvent&)
+			{
+				PickDropDownValue(ValueIndex);
+				return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
+			})
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(Option->Values[ValueIndex]))
+				.Font(LightFont(FMath::Max(12.f, PauseRowFontSize - 3.f)))
+				.ColorAndOpacity_Lambda([this, ValueIndex, bCurrent]() { return FSlateColor(DropDownCursor == ValueIndex ? IvoryBright : (bCurrent ? Metal : TextDim)); })
+			];
+		Box->AddSlot().AutoHeight()[ Item ];
+		DropDownWidgets.Add(Item);
+	}
+
+	return SNew(SBorder)
+		.BorderImage(&DropBackground)
+		.Padding(FMargin(0.f, 4.f))
+		[
+			Box
+		];
+}
+
 FReply SAedirPauseMenu::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
+	if (OpenDropDown != INDEX_NONE)
+	{
+		OpenDropDown = INDEX_NONE;
+		RefreshView(true);
+	}
 	return FReply::Handled().SetUserFocus(AsShared(), EFocusCause::Mouse);
 }
 
@@ -363,6 +539,29 @@ FReply SAedirPauseMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& 
 		else if (Key == EKeys::A || Key == EKeys::D || Key == EKeys::W || Key == EKeys::S || Key == EKeys::Left || Key == EKeys::Right || Key == EKeys::Up || Key == EKeys::Down)
 		{
 			bConfirmYesSelected = !bConfirmYesSelected;
+		}
+		return FReply::Handled();
+	}
+
+	if (OpenDropDown != INDEX_NONE)
+	{
+		if (Key == EKeys::W || Key == EKeys::Up || Key == EKeys::S || Key == EKeys::Down)
+		{
+			const int32 ValueCount = DropDownWidgets.Num();
+			if (ValueCount > 0)
+			{
+				DropDownCursor = (DropDownCursor + (Key == EKeys::W || Key == EKeys::Up ? -1 : 1) + ValueCount) % ValueCount;
+				ListScroll->ScrollDescendantIntoView(DropDownWidgets[DropDownCursor], true);
+			}
+		}
+		else if (Key == EKeys::Enter || Key == EKeys::E)
+		{
+			PickDropDownValue(DropDownCursor);
+		}
+		else if (Key == EKeys::Escape || Key == EKeys::Tab)
+		{
+			OpenDropDown = INDEX_NONE;
+			RefreshView(true);
 		}
 		return FReply::Handled();
 	}
@@ -641,10 +840,10 @@ void SAedirPauseMenu::RebuildList()
 
 	for (int32 Index = 0; Index < Rows.Num(); ++Index)
 	{
+		const int32 OptionIndex = IsOptionPage() ? Rows[Index].Index - static_cast<int32>(EPauseAction::FirstOptionRow) : INDEX_NONE;
 		TSharedRef<SBorder> RowBorder = SNew(SBorder)
 		.BorderImage(FStyleDefaults::GetNoBrush())
 		.Padding(FMargin(0.f))
-		.Cursor(EMouseCursor::Hand)
 		.OnMouseMove_Lambda([this, Index](const FGeometry&, const FPointerEvent& MouseEvent)
 		{
 			// Slate also sends moves with no motion when widgets change, a resting cursor must not undo W and S.
@@ -688,7 +887,8 @@ void SAedirPauseMenu::RebuildList()
 		[
 			AedirMenuContent::MakeListRow(Rows[Index], RowFont,
 				[this, Index]() { return GetRowTextColor(Index); },
-				[this, Index]() { return GetRowMarker(Index); })
+				[this, Index]() { return GetRowMarker(Index); },
+				OptionIndex >= 0 ? TSharedPtr<SWidget>(MakeOptionControl(Index, OptionIndex)) : nullptr)
 		];
 
 		ListBox->AddSlot()
@@ -698,6 +898,16 @@ void SAedirPauseMenu::RebuildList()
 			RowBorder
 		];
 		RowWidgets.Add(RowBorder);
+
+		if (OptionIndex >= 0 && OptionIndex == OpenDropDown)
+		{
+			ListBox->AddSlot()
+			.AutoHeight()
+			.Padding(FMargin(30.f, 0.f, 0.f, RowGap))
+			[
+				MakeOptionDropDown(OptionIndex)
+			];
+		}
 	}
 
 	if (RowWidgets.IsValidIndex(SelectedRow))
@@ -747,7 +957,18 @@ void SAedirPauseMenu::Activate(int32 Action)
 {
 	if (Action >= static_cast<int32>(EPauseAction::FirstOptionRow))
 	{
-		StepSelectedOption(1);
+		const int32 OptionIndex = Action - static_cast<int32>(EPauseAction::FirstOptionRow);
+		const UAedirSettingsSubsystem* Settings = PauseGetSettings(World.Get());
+		const FAedirSettingOption* Option = Settings ? Settings->GetOption(OptionIndex) : nullptr;
+		if (Option && Option->Values.Num() > 2)
+		{
+			ToggleDropDown(OptionIndex);
+		}
+		else
+		{
+			OpenDropDown = INDEX_NONE;
+			StepSelectedOption(1);
+		}
 		return;
 	}
 

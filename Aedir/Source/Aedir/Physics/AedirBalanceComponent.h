@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "PhysicsEngine/ConstraintInstance.h"
 #include "Combat/AedirCombatTypes.h"
 #include "Components/ActorComponent.h"
 #include "Engine/HitResult.h"
@@ -16,6 +17,31 @@ class USkeletalMeshComponent;
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAedirBalanceEvent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FAedirHitReaction, EAedirBodyZone, Zone, float, Energy, bool, bStaggered, bool, bKnockedDown);
+
+// How hard the muscles of one part of the body hold it to the pose. Strength is how stiff the pull is, force is the most it can give: past that, what the body runs into wins.
+USTRUCT(BlueprintType)
+struct FAedirBoneMotor
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	float OrientationStrength = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	float AngularVelocityStrength = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	float PositionStrength = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	float VelocityStrength = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	float MaxLinearForce = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	float MaxAngularForce = 0.f;
+};
 
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
 class AEDIR_API UAedirBalanceComponent : public UActorComponent
@@ -58,6 +84,35 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float MinRagdollSeconds = 2.f;
+
+	// Muscles per part of the body, at full strength.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	FAedirBoneMotor SpineMotor = { 9000.f, 900.f, 9000.f, 900.f, 0.f, 0.f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	FAedirBoneMotor HeadMotor = { 6000.f, 600.f, 6000.f, 600.f, 0.f, 0.f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	FAedirBoneMotor UpperArmMotor = { 9000.f, 900.f, 9000.f, 900.f, 0.f, 0.f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	FAedirBoneMotor LowerArmMotor = { 9000.f, 900.f, 9000.f, 900.f, 0.f, 0.f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	FAedirBoneMotor HandMotor = { 12000.f, 1200.f, 12000.f, 1200.f, 0.f, 0.f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	FAedirBoneMotor ThighMotor = { 14000.f, 1400.f, 14000.f, 1400.f, 0.f, 0.f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	FAedirBoneMotor CalfMotor = { 14000.f, 1400.f, 14000.f, 1400.f, 0.f, 0.f };
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	FAedirBoneMotor FootMotor = { 14000.f, 1400.f, 14000.f, 1400.f, 0.f, 0.f };
+
+	// The hit a loose body gets on top of its faint muscles.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
+	float RagdollMotorShare = 0.04f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float WallImpactSpeedThreshold = 300.f;
@@ -194,6 +249,11 @@ private:
 	void DrivePelvis();
 	void SetRagdollPresentation(bool bRagdoll);
 	void ApplyRagdollPhysics(bool bRagdoll);
+	void ApplyBodyContacts(bool bRagdoll);
+	void ApplyJointLimits(bool bRagdoll);
+	TArray<FConstraintProfileProperties> LooseJointLimits;
+	FTransform MeshRestRelative = FTransform::Identity;
+	const FAedirBoneMotor& GetBoneMotor(FName BoneName) const;
 	void ProcessHit(AActor* OtherActor, UPrimitiveComponent* OtherComponent, const FHitResult& Hit);
 	void SetupMotors();
 	void UpdateMotors(float DeltaTime, bool bForce);

@@ -44,14 +44,15 @@ namespace
 	constexpr float HudNotificationFontSize = 16.f;
 	const FLinearColor HudMissionColor(FColor(226, 190, 112));
 	// Out of breath the sight closes in from the edges. The middle stays visible even with nothing left.
-	constexpr int32 HudFatigueCells = 28;
-	constexpr float HudFatigueEdgeAlpha = 0.98f;
-	constexpr float HudFatigueCenterAlpha = 0.45f;
+	constexpr int32 HudFatigueCells = 56;
+	constexpr float HudFatigueEdgeAlpha = 0.85f;
+	constexpr float HudFatigueCenterAlpha = 0.22f;
+	constexpr float HudFatigueFollowSpeed = 1.5f;
 	constexpr float HudFatigueClearStart = 0.9f;
 	constexpr float HudFatigueClearEnd = 0.12f;
-	constexpr float HudFatigueBlackAt = 0.95f;
-	constexpr float HudFatiguePulseShare = 0.05f;
-	constexpr float HudFatiguePulseSpeed = 2.4f;
+	constexpr float HudFatigueBlackAt = 1.3f;
+	constexpr float HudFatiguePulseShare = 0.04f;
+	constexpr float HudFatiguePulseSpeed = 1.6f;
 
 	struct FHudCompassPole
 	{
@@ -171,8 +172,12 @@ void AAedirHUD::DrawFatigue(const UAedirStatsComponent* Stats)
 {
 	using namespace AedirUIStyle;
 
-	const float Fatigue = Stats && !Stats->IsDead() ? Stats->GetFatigue() : 0.f;
-	if (!Canvas || !Canvas->Canvas || Fatigue <= 0.f)
+	// The sight closes and clears slowly, whatever the stamina jumps by.
+	const float FatigueTarget = Stats && !Stats->IsDead() ? Stats->GetFatigue() : 0.f;
+	const UWorld* FatigueWorld = GetWorld();
+	FatigueShown = FMath::FInterpTo(FatigueShown, FatigueTarget, FatigueWorld ? FatigueWorld->GetDeltaSeconds() : 0.f, HudFatigueFollowSpeed);
+	const float Fatigue = FatigueShown;
+	if (!Canvas || !Canvas->Canvas || Fatigue <= 0.002f)
 	{
 		return;
 	}
@@ -186,7 +191,7 @@ void AAedirHUD::DrawFatigue(const UAedirStatsComponent* Stats)
 	const auto ColorAt = [&](int32 CellX, int32 CellY)
 	{
 		const FVector2f Offset(CellX * 2.f / HudFatigueCells - 1.f, CellY * 2.f / HudFatigueCells - 1.f);
-		const float Dark = FMath::SmoothStep(Clear, FMath::Max(HudFatigueBlackAt, Clear + 0.3f), Offset.Size());
+		const float Dark = FMath::SmoothStep(Clear, FMath::Max(HudFatigueBlackAt, Clear + 0.5f), Offset.Size());
 		return FLinearColor(0.f, 0.f, 0.f, FMath::Lerp(CenterAlpha, EdgeAlpha, Dark));
 	};
 

@@ -86,6 +86,12 @@ private:
 	FText GetHintText() const;
 	FText GetTitleText() const;
 	TSharedRef<SWidget> MakeConfirmButton(const TCHAR* Label, bool bYes);
+	// The control at the right of a settings row: arrows for two values, a drop-down for more.
+	TSharedRef<SWidget> MakeOptionControl(int32 RowIndex, int32 OptionIndex);
+	TSharedRef<SWidget> MakeOptionArrow(int32 RowIndex, int32 OptionIndex, int32 Delta);
+	TSharedRef<SWidget> MakeOptionDropDown(int32 OptionIndex);
+	void ToggleDropDown(int32 OptionIndex);
+	void PickDropDownValue(int32 ValueIndex);
 
 	float GetRowMarker(int32 Index) const;
 	FLinearColor GetRowTextColor(int32 Index) const;
@@ -99,6 +105,11 @@ private:
 	TArray<FAedirMenuRow> Rows;
 	TArray<FAedirMenuLine> Lines;
 	TArray<TSharedPtr<SWidget>> RowWidgets;
+
+	// The settings option whose list of values is open, and the value the cursor is on.
+	int32 OpenDropDown = INDEX_NONE;
+	int32 DropDownCursor = 0;
+	TArray<TSharedPtr<SWidget>> DropDownWidgets;
 
 	// Filled when a page opens and after each save or delete. Reading it from disk every frame would stall the game.
 	TArray<FAedirSaveInfo> SaveEntries;

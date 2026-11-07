@@ -73,6 +73,7 @@ private:
 	void DrawPrompt(const AAedirCreature* Creature);
 	void DrawDeathOverlay();
 	void DrawFatigue(const UAedirStatsComponent* Stats);
+	float FatigueShown = 0.f;
 	void UpdateSkillNotifications(float DeltaSeconds, const UAedirStatsComponent* Stats);
 	void DrawSkillNotifications();
 

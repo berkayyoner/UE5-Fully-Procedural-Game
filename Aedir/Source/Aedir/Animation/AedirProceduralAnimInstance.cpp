@@ -182,8 +182,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh, GaitData.LeftElbowHint, GaitData.LeftElbowHintAlpha);
 	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh, GaitData.RightElbowHint, GaitData.RightElbowHintAlpha);
 
-	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha, GaitData.LeftWristFrontShare, GaitData.LeftWristMinDegrees);
-	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha, GaitData.RightWristFrontShare, GaitData.RightWristMinDegrees);
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha, GaitData.LeftWristFrontShare, GaitData.LeftWristMinDegrees, GaitData.LeftHangDegrees);
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha, GaitData.RightWristFrontShare, GaitData.RightWristMinDegrees, GaitData.RightHangDegrees);
 
 	if (GaitData.ObjectAlpha > AedirReachAlphaThreshold)
 	{
@@ -439,7 +439,7 @@ void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, cons
 	}
 }
 
-void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha, float FrontShare, float MinBladeDegrees) const
+void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha, float FrontShare, float MinBladeDegrees, float HangDegrees) const
 {
 	if (Alpha <= AedirReachAlphaThreshold)
 	{
@@ -466,13 +466,12 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 	const FVector Forearm = (HandTransform.GetLocation() - CSPose.GetComponentSpaceTransform(Radius).GetLocation()).GetSafeNormal();
 	FVector Blade = MeshToWorld.InverseTransformVectorNoScale(DirectionWorld).GetSafeNormal();
 
-	// A hanging weapon stays on the front side of the forearm while the arm swings past it. Going through the line of the forearm would turn the whole hand over.
-	const double MinFront = FMath::Sin(FMath::DegreesToRadians(AedirWristMinBladeDegrees));
-	if (FrontShare > 0.f && FVector::DotProduct(Blade, Forearm) > 0.0)
+	// A weapon that only hangs moves with the forearm as one piece, at a fixed angle in front of it, so a swinging arm does nothing to the wrist.
+	if (FrontShare > 0.f)
 	{
 		const FVector Front = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::ForwardVector), Forearm).GetSafeNormal();
-		const double Side = FVector::DotProduct(Blade, Front);
-		Blade = (Blade + Front * (FMath::Lerp(Side, FMath::Max(Side, MinFront), static_cast<double>(FrontShare)) - Side)).GetSafeNormal();
+		const float HangRadians = FMath::DegreesToRadians(FMath::Max(HangDegrees, AedirWristMinBladeDegrees));
+		Blade = FMath::Lerp(Blade, Forearm * FMath::Cos(HangRadians) + Front * FMath::Sin(HangRadians), static_cast<double>(FrontShare)).GetSafeNormal();
 	}
 
 	// The handle crosses the palm: the wrist bends only so far, and a blade pointing along the forearm stops short of its line.

@@ -54,6 +54,7 @@ public:
 	const FAedirSettingOption* GetOption(int32 Index) const;
 	FString GetValueText(int32 Index) const;
 	void StepOption(int32 Index, int32 Delta);
+	void SetOptionValue(int32 Index, int32 ValueIndex);
 
 	// What needs the game window and the audio device, which do not exist yet when the subsystem starts.
 	void ApplyWhenWorldReady();

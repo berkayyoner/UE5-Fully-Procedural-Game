@@ -47,8 +47,6 @@ namespace
 	constexpr float HolsterOverForward = 0.2f;
 	constexpr float HolsterOverSide = 0.35f;
 	constexpr float HolsterDrawSettleSeconds = 0.6f;
-	constexpr float HolsterDrawAimStart = 0.15f;
-	constexpr float HolsterDrawAimEnd = 0.7f;
 	// Passing a weapon: both hands come together before the chest and the other hand takes it there.
 	constexpr float PassHandSeconds = 0.95f;
 	constexpr float PassGiveUpSeconds = 1.5f;
@@ -420,8 +418,17 @@ bool UAedirInteractionComponent::GetDrawAim(EAedirHand Hand, FVector& OutDirecti
 		return false;
 	}
 
-	OutDirectionWorld = Item->GetActorForwardVector();
-	OutAlpha = HolsterSmoothStep((HolsterElapsed[Index] / HolsterHandSeconds - HolsterDrawAimStart) / (HolsterDrawAimEnd - HolsterDrawAimStart));
+	// The same turn as putting it away: thumb up first, then over the side of the body down to how it hangs.
+	const AAedirCreature* Creature = GetCreature();
+	if (!Creature)
+	{
+		return false;
+	}
+	const float SlotSide = HolsterWaistIndex[Index] < WaistSlotsPerSide ? -1.f : 1.f;
+	const FVector Over = (Creature->GetActorForwardVector() * HolsterOverForward + Creature->GetActorRightVector() * (SlotSide * HolsterOverSide) + FVector::UpVector).GetSafeNormal();
+	const float Share = HolsterSmoothStep((HolsterElapsed[Index] / HolsterHandSeconds - HolsterAimStart) / (HolsterAimEnd - HolsterAimStart));
+	OutDirectionWorld = Share < 0.5f ? Over : FMath::Lerp(Over, Item->GetActorForwardVector(), (Share - 0.5f) * 2.f).GetSafeNormal();
+	OutAlpha = FMath::Min(Share * 2.f, 1.f);
 	return OutAlpha > 0.f;
 }
 

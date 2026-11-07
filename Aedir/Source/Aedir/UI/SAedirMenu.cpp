@@ -418,7 +418,7 @@ void AedirMenuContent::PaintListBackdrop(const FVector2f& Size, FAedirUIMesh& Me
 	AddOrnamentRule(Mesh, FVector2f(Size.X * 0.5f, Size.Y - MenuBottomMargin + 28.f), Size.X * 0.46f, WithAlpha(Metal, 0.85f));
 }
 
-TSharedRef<SWidget> AedirMenuContent::MakeListRow(const FAedirMenuRow& Row, const FSlateFontInfo& Font, TFunction<FLinearColor()> TextColor, TFunction<float()> MarkerStrength)
+TSharedRef<SWidget> AedirMenuContent::MakeListRow(const FAedirMenuRow& Row, const FSlateFontInfo& Font, TFunction<FLinearColor()> TextColor, TFunction<float()> MarkerStrength, TSharedPtr<SWidget> ValueWidget)
 {
 	using namespace AedirUIStyle;
 
@@ -479,12 +479,12 @@ TSharedRef<SWidget> AedirMenuContent::MakeListRow(const FAedirMenuRow& Row, cons
 		.VAlign(VAlign_Center)
 		.Padding(FMargin(14.f, 5.f, 6.f, 5.f))
 		[
-			SNew(STextBlock)
+			ValueWidget.IsValid() ? ValueWidget.ToSharedRef() : StaticCastSharedRef<SWidget>(SNew(STextBlock)
 			.Text(FText::FromString(Row.Value))
 			.Font(LightFont(FMath::Max(12.f, Font.Size - 2.f)))
 			.ColorAndOpacity_Lambda([TextColor]() { return FSlateColor(WithAlpha(TextColor(), 0.78f)); })
 			.ShadowOffset(FVector2D(1.f, 1.f))
-			.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.7f))
+			.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.7f)))
 		];
 }
 
@@ -602,7 +602,6 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 			SNew(SBorder)
 			.BorderImage(FStyleDefaults::GetNoBrush())
 			.Padding(FMargin(0.f, 2.f))
-			.Cursor(EMouseCursor::Hand)
 			.Visibility_Lambda([this, Index]() { return GetTabVisibility(Index); })
 			.OnMouseButtonDown_Lambda([this, Index](const FGeometry&, const FPointerEvent&)
 			{

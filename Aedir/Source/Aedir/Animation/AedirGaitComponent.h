@@ -85,6 +85,8 @@ struct AEDIR_API FAedirGaitState
 	// How far the blade may go towards the line of the forearm. Which way the elbow points, in the frame of the body.
 	float LeftWristMinDegrees = 28.f;
 	float RightWristMinDegrees = 28.f;
+	float LeftHangDegrees = 30.f;
+	float RightHangDegrees = 30.f;
 	FVector LeftElbowHint = FVector::ZeroVector;
 	FVector RightElbowHint = FVector::ZeroVector;
 	float LeftElbowHintAlpha = 0.f;

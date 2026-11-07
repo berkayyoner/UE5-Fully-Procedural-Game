@@ -89,7 +89,7 @@ namespace
 	constexpr float AedirWeaponMouseShare = 1.8f;
 	// With no button held the point hangs down and across the body.
 	constexpr float AedirWeaponGuardPitch = -30.f;
-	constexpr float AedirWeaponGuardInwardYaw = 12.f;
+	constexpr float AedirWeaponGuardInwardYaw = 34.f;
 	constexpr float AedirWeaponChestHeightCm = 28.f;
 	constexpr float AedirWeaponChestSideCm = 10.f;
 	constexpr float AedirWeaponHandReachCm = 44.f;
@@ -99,7 +99,7 @@ namespace
 	constexpr float AedirWeaponHandPitchShare = 0.7f;
 	constexpr float AedirWeaponTurnRate = 24.f;
 	// How fast the arms get to where the mouse wants them. Weight slows them, and so does being out of breath.
-	constexpr float AedirPoseMaxSpeed = 360.f;
+	constexpr float AedirPoseMaxSpeed = 520.f;
 	constexpr float AedirPoseFollowRate = 9.f;
 	constexpr float AedirPoseAccelRate = 11.f;
 	constexpr float AedirPoseSpeedMassShare = 0.15f;
@@ -132,6 +132,12 @@ namespace
 	// The second half opens the blade outwards and takes it round behind the body, with the hand up beside the shoulder.
 	constexpr float AedirWeaponBackYaw = 165.f;
 	constexpr float AedirWeaponBackPitch = 18.f;
+	// On its way it stands up over the hand. Through the level it would cross the line of the forearm and the wrist would turn over.
+	constexpr float AedirWeaponOpenOverPitch = 40.f;
+	constexpr float AedirWeaponOpenOverAcrossPitch = 66.f;
+	constexpr float AedirWeaponOpenMaxPitch = 86.f;
+	constexpr float AedirWeaponMaxTurnDegrees = 1000.f;
+	constexpr float AedirWeaponMaxTurnMassShare = 0.08f;
 	constexpr float AedirWeaponLowerPitchShare = 0.9f;
 	constexpr float AedirWeaponSpineShare = 0.5f;
 	constexpr float AedirWeaponSpineMaxDegrees = 40.f;
@@ -984,7 +990,9 @@ FVector UAedirCombatComponent::ComputeWeaponTargetDir(EAedirHand Hand, const FAe
 	const float Droop = (Item && Item->bTwoHanded && !bTwoHandGrip ? AedirOneHandedDroopPitch : 0.f) + (Creature->Stats ? Creature->Stats->GetFatigue() * AedirFatigueDroopPitch : 0.f);
 	const float Upright = FMath::Lerp(bLong ? AedirPolearmGuardPitch : AedirWeaponGuardPitch, bLong ? AedirPolearmFightPitch : AedirWeaponFightPitch, FightShare);
 	const float BeforeOpen = FMath::Lerp(Upright, bLong ? AedirPolearmMidPitch : AedirWeaponMidPitch, MidShare);
-	const float Pitch = FMath::Lerp(BeforeOpen, AedirWeaponBackPitch, Open) + FMath::Min(static_cast<float>(Aim.Y), 0.f) * AedirWeaponLowerPitchShare - Droop;
+	// An arm going across the body lies along the way of the blade, so there it has to stand up further.
+	const float OverPitch = FMath::Sign(static_cast<float>(Aim.X)) * HandSide < 0.f ? AedirWeaponOpenOverAcrossPitch : AedirWeaponOpenOverPitch;
+	const float Pitch = FMath::Min(FMath::Lerp(BeforeOpen, AedirWeaponBackPitch, Open) + FMath::Sin(Open * UE_PI) * OverPitch, AedirWeaponOpenMaxPitch) + FMath::Min(static_cast<float>(Aim.Y), 0.f) * AedirWeaponLowerPitchShare - Droop;
 	const float RestInward = bLong ? AedirPolearmInwardYaw : AedirWeaponGuardInwardYaw * (1.f - FightShare);
 	const float SwingYaw = FMath::Sign(static_cast<float>(Aim.X)) * FMath::Lerp(-AedirWeaponTipInwardYaw * MidShare, AedirWeaponBackYaw, Open) - HandSide * RestInward * (1.f - Open);
 	const FVector SwingDir = FRotator(Pitch, ActorYaw + SwingYaw, 0.0).Vector();
@@ -1126,6 +1134,12 @@ float UAedirCombatComponent::GetWristFirmShare(EAedirHand Hand) const
 	return IsWeaponStance(Hand) && !bThrustMode ? GetFightShare() * (1.f - AedirHalfSwordWristLoose * GetHalfSwordShare()) : 0.f;
 }
 
+float UAedirCombatComponent::GetHangWristDegrees(EAedirHand Hand) const
+{
+	const FVector Carried = ComputeCarriedDir(Hand);
+	return 90.f - FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(static_cast<float>(-Carried.Z), -1.f, 1.f)));
+}
+
 void UAedirCombatComponent::UpdatePoseAim(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight)
 {
 	const UAedirStatsComponent* Stats = Creature->Stats.Get();
@@ -1188,7 +1202,10 @@ void UAedirCombatComponent::UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& 
 	const FVector Blended = FMath::Lerp(Arm.WeaponDir, Target, Blend);
 	if (!Blended.IsNearlyZero())
 	{
-		Arm.WeaponDir = Blended.GetSafeNormal();
+		const FVector Next = Blended.GetSafeNormal();
+		const float MaxStep = FMath::DegreesToRadians(AedirWeaponMaxTurnDegrees) * DeltaTime * StrengthFactor / AedirPoseStrengthReference / (1.f + WeaponWeight * AedirWeaponMaxTurnMassShare);
+		const float Step = FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(Arm.WeaponDir, Next)), -1.f, 1.f));
+		Arm.WeaponDir = Step > MaxStep ? FQuat::Slerp(FQuat::Identity, FQuat::FindBetweenNormals(Arm.WeaponDir, Next), MaxStep / Step).RotateVector(Arm.WeaponDir).GetSafeNormal() : Next;
 	}
 }
 
