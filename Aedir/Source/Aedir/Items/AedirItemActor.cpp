@@ -17,6 +17,7 @@ namespace
 
 namespace
 {
+	constexpr float ItemSettleSeconds = 0.25f;
 	constexpr float HangSwingStiffness = 45.f;
 	constexpr float HangSwingDamping = 5.f;
 	constexpr float HangSwingGain = 0.05f;
@@ -113,6 +114,23 @@ void AAedirItemActor::AttachToCreatureHand(AAedirCreature* Creature, EAedirHand 
 	bHolstered = false;
 }
 
+void AAedirItemActor::SettleIntoCreatureHand(AAedirCreature* Creature, EAedirHand Hand)
+{
+	const FTransform Before = GetActorTransform();
+	AttachToCreatureHand(Creature, Hand);
+	if (Holder != Creature || !GetRootComponent())
+	{
+		return;
+	}
+
+	// Seen from the hand, where it was and where the grip wants it; it goes from one to the other, never through a jump.
+	SettleTo = GetRootComponent()->GetRelativeTransform();
+	SetActorTransform(Before);
+	SettleFrom = GetRootComponent()->GetRelativeTransform();
+	SettleAlpha = 0.f;
+	SetActorTickEnabled(true);
+}
+
 void AAedirItemActor::AttachToHandInPlace(AAedirCreature* Creature, EAedirHand Hand)
 {
 	if (!HasAuthority() || !Creature || !Creature->Interaction)
@@ -205,6 +223,16 @@ void AAedirItemActor::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 
 	const USceneComponent* Parent = GetRootComponent() ? GetRootComponent()->GetAttachParent() : nullptr;
+	if (SettleAlpha < 1.f && Parent && !bHolstered)
+	{
+		SettleAlpha = FMath::Min(SettleAlpha + DeltaSeconds / ItemSettleSeconds, 1.f);
+		const float Share = FMath::SmoothStep(0.f, 1.f, SettleAlpha);
+		FTransform Now;
+		Now.Blend(SettleFrom, SettleTo, Share);
+		SetActorRelativeTransform(Now);
+		return;
+	}
+	SettleAlpha = 1.f;
 	if (!bHolstered || !Parent || DeltaSeconds <= KINDA_SMALL_NUMBER)
 	{
 		SetActorTickEnabled(false);

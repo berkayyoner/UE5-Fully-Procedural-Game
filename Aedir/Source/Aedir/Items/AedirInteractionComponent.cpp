@@ -1374,7 +1374,7 @@ void UAedirInteractionComponent::DrawFromWaist(EAedirHand Hand, AAedirCreature* 
 
 	const FVector HangingDir = Item->GetActorForwardVector();
 	HolsterDrawFrom[static_cast<int32>(Hand)] = HangingDir;
-	Item->AttachToCreatureHand(Creature, Hand);
+	Item->SettleIntoCreatureHand(Creature, Hand);
 	if (Creature->Combat)
 	{
 		Creature->Combat->SetWeaponDirNow(Hand, HangingDir);

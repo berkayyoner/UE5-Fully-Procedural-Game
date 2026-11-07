@@ -138,11 +138,22 @@ public:
 	// Server only.
 	void AttachToCreatureHand(AAedirCreature* Creature, EAedirHand Hand, float GripShiftCm = 0.f);
 
+	// Takes it into the hand from where it is, then lets the handle slide into the grip, as when it is drawn from the belt.
+	void SettleIntoCreatureHand(AAedirCreature* Creature, EAedirHand Hand);
+
 	// Server only. Hangs the item from a point on the waist bone, rotated as given, pivoting at PivotCm along its long axis.
 	// It keeps swinging on that pivot with the movement of the body.
 	void AttachToWaist(AAedirCreature* Creature, FName BoneName, const FVector& SlotOnBone, const FQuat& RotationOnBone, float PivotCm);
 
 	virtual void Tick(float DeltaSeconds) override;
+
+private:
+	// The grip being settled into, from the hold it was taken with.
+	FTransform SettleFrom = FTransform::Identity;
+	FTransform SettleTo = FTransform::Identity;
+	float SettleAlpha = 1.f;
+
+public:
 
 	// Server only.
 	void Detach(const FVector& ThrowVelocity);

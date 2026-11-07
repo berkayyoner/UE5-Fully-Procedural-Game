@@ -1,5 +1,7 @@
 #include "Game/AedirWorldDirector.h"
 
+#include "Engine/CollisionProfile.h"
+
 #include "Graphics/AedirFoliageSubsystem.h"
 #include "Graphics/AedirScannedMaterial.h"
 
@@ -205,6 +207,8 @@ void AedirWorldDirector::PopulateTestMap(UWorld* World)
 				{
 					Prop->SetMobility(EComponentMobility::Movable);
 					Prop->GetStaticMeshComponent()->SetStaticMesh(Mesh);
+					// Props stand in the way of bodies, items and blades alike.
+					Prop->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 					AedirScannedMaterial::Apply(Prop->GetStaticMeshComponent(), AedirScannedMaterial::FolderOfPath(Decor.Path));
 				}
 			}

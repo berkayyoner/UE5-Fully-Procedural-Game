@@ -21,6 +21,7 @@ public class AedirEditor : ModuleRules
 			"Slate",
 			"SlateCore",
 			"InputCore",
+			"StaticMeshEditor",
 			"Aedir"
 		});
 	}

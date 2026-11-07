@@ -1303,10 +1303,12 @@ void AAedirPlayerCharacter::SwingTrace(int32 RightHand, float Seconds)
 	const FName HandBone = RightHand != 0 ? TEXT("hand_r") : TEXT("hand_l");
 	TSharedRef<FTimerHandle> Timer = MakeShared<FTimerHandle>();
 	TSharedRef<float> Elapsed = MakeShared<float>(0.f);
+	// The item in that hand at the start is followed wherever it goes, onto the belt and back.
+	const TWeakObjectPtr<AAedirItemActor> Watched = Interaction ? Interaction->GetHeldItem(Hand) : nullptr;
 	FTimerManagerTimerParameters Params;
 	Params.bLoop = true;
 	Params.bMaxOncePerFrame = true;
-	GetWorldTimerManager().SetTimer(*Timer, FTimerDelegate::CreateWeakLambda(this, [this, Timer, Elapsed, Hand, HandBone, Seconds]()
+	GetWorldTimerManager().SetTimer(*Timer, FTimerDelegate::CreateWeakLambda(this, [this, Timer, Elapsed, Hand, HandBone, Seconds, Watched]()
 	{
 		const float Delta = GetWorld()->GetDeltaSeconds();
 		*Elapsed += Delta;
@@ -1315,6 +1317,7 @@ void AAedirPlayerCharacter::SwingTrace(int32 RightHand, float Seconds)
 		const FVector HandLocal = Body.InverseTransformPositionNoScale(BodyMesh->GetBoneLocation(HandBone));
 		const AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(Hand) : nullptr;
 		const FVector Blade = Item ? Body.InverseTransformVectorNoScale(Item->GetActorForwardVector()) : FVector::ZeroVector;
+		const FVector ItemLocal = Watched.IsValid() ? Body.InverseTransformPositionNoScale(Watched->GetActorLocation()) : FVector::ZeroVector;
 		const FVector2D Pose = Combat ? Combat->DevGetPoseAim(Hand) : FVector2D::ZeroVector;
 		const auto FootLine = [&](const TCHAR* Foot, const TCHAR* Ball) { return Body.InverseTransformVectorNoScale(BodyMesh->GetBoneLocation(Ball) - BodyMesh->GetBoneLocation(Foot)).GetSafeNormal(); };
 		const FVector FootL = FootLine(TEXT("foot_l"), TEXT("ball_l"));
@@ -1325,7 +1328,7 @@ void AAedirPlayerCharacter::SwingTrace(int32 RightHand, float Seconds)
 		{
 			Meant = Body.InverseTransformVectorNoScale(Meant);
 		}
-		UE_LOG(LogTemp, Display, TEXT("[Swing] %.3f %.4f %.1f %.1f %.2f %.2f %.2f %.4f %.4f %.4f %.3f %.3f %.3f %.3f %.3f %.3f %.4f %.4f %.4f"), *Elapsed, Delta, Pose.X, Pose.Y, HandLocal.X, HandLocal.Y, HandLocal.Z, Blade.X, Blade.Y, Blade.Z, FootL.X, FootL.Y, FootL.Z, FootR.X, FootR.Y, FootR.Z, Meant.X, Meant.Y, Meant.Z);
+		UE_LOG(LogTemp, Display, TEXT("[Swing] %.3f %.4f %.1f %.1f %.2f %.2f %.2f %.4f %.4f %.4f %.3f %.3f %.3f %.3f %.3f %.3f %.4f %.4f %.4f %.2f %.2f %.2f"), *Elapsed, Delta, Pose.X, Pose.Y, HandLocal.X, HandLocal.Y, HandLocal.Z, Blade.X, Blade.Y, Blade.Z, FootL.X, FootL.Y, FootL.Z, FootR.X, FootR.Y, FootR.Z, Meant.X, Meant.Y, Meant.Z, ItemLocal.X, ItemLocal.Y, ItemLocal.Z);
 		if (*Elapsed >= Seconds)
 		{
 			GetWorldTimerManager().ClearTimer(*Timer);

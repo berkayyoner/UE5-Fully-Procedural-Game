@@ -1,6 +1,11 @@
 #include "AedirContentCommandlet.h"
 
 #include "AedirEditor.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Editor.h"
+#include "Engine/StaticMesh.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "StaticMeshEditorSubsystem.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkinnedAssetCommon.h"
 #include "Engine/Texture.h"
@@ -258,6 +263,63 @@ namespace
 	}
 }
 
+namespace
+{
+	// Scanned props came in without collision, so bodies and items went through tables and barrels. Each gets a few convex
+	// hulls around its shape: the legs and top of a table, not one box around it all.
+	constexpr int32 ContentPropHulls = 8;
+	constexpr int32 ContentPropHullVerts = 16;
+	constexpr int32 ContentPropHullPrecision = 100000;
+
+	void ContentBuildPropCollision(TArray<UPackage*>& ToSave)
+	{
+		IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+		Registry.SearchAllAssets(true);
+		TArray<FAssetData> Assets;
+		Registry.ScanPathsSynchronous({ TEXT("/Game/Megascans") }, true);
+		Registry.GetAssetsByPath(FName(TEXT("/Game/Megascans/3D_Assets")), Assets, true);
+		FModuleManager::Get().LoadModuleChecked(TEXT("StaticMeshEditor"));
+		UStaticMeshEditorSubsystem* MeshEditor = GEditor ? GEditor->GetEditorSubsystem<UStaticMeshEditorSubsystem>() : nullptr;
+		if (!MeshEditor)
+		{
+			UE_LOG(LogAedirEditor, Error, TEXT("No static mesh editor to build collision with."));
+			return;
+		}
+		int32 Built = 0;
+		for (const FAssetData& Asset : Assets)
+		{
+			if (Asset.AssetClassPath.GetAssetName() != FName(TEXT("StaticMesh")))
+			{
+				continue;
+			}
+			UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.GetAsset());
+			if (!Mesh || !MeshEditor)
+			{
+				continue;
+			}
+			// A mesh told to use its full shape as its simple one has nothing to block with once Nanite holds that shape.
+			UBodySetup* Body = Mesh->GetBodySetup();
+			const bool bComplexOnly = Body && Body->CollisionTraceFlag == CTF_UseComplexAsSimple;
+			UE_LOG(LogAedirEditor, Display, TEXT("Prop %s: %d simple shapes, trace flag %d"), *Mesh->GetName(), MeshEditor->GetSimpleCollisionCount(Mesh), Body ? static_cast<int32>(Body->CollisionTraceFlag.GetValue()) : -1);
+			if (MeshEditor->GetSimpleCollisionCount(Mesh) > 0 && !bComplexOnly)
+			{
+				continue;
+			}
+			if (Body)
+			{
+				Body->CollisionTraceFlag = CTF_UseDefault;
+			}
+			if (MeshEditor->SetConvexDecompositionCollisions(Mesh, ContentPropHulls, ContentPropHullVerts, ContentPropHullPrecision))
+			{
+				Mesh->MarkPackageDirty();
+				ToSave.AddUnique(Mesh->GetOutermost());
+				++Built;
+			}
+		}
+		UE_LOG(LogAedirEditor, Display, TEXT("Gave %d of %d scanned assets collision."), Built, Assets.Num());
+	}
+}
+
 UAedirContentCommandlet::UAedirContentCommandlet()
 {
 	IsEditor = true;
@@ -275,6 +337,12 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 		ContentBuildPrecip(ToSave);
 		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
 	}
+	if (Only == TEXT("Collision"))
+	{
+		ContentBuildPropCollision(ToSave);
+		return ToSave.IsEmpty() || UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
+	ContentBuildPropCollision(ToSave);
 	ContentBuildPrecip(ToSave);
 	ContentBuildScanned(ToSave);
 	ContentBuildFootprint(ToSave);

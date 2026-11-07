@@ -84,3 +84,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Blows stagger by how hard they land and a body that cannot catch itself falls; edges glance off, stick or cut through by their speed; swings gather speed; held weapons pull on the hand and can be torn from it; the second hand is held on the blade.
 - Bodies, living or dead, and cut-off limbs can be taken hold of and dragged; hits shove the struck part and the trunk and knock the view; tired NPCs hold back; enemy stamina and magicka under their health; swings flow evenly.
 - Console: player.setstats, addstats and removestats for every stat and skill, a full help list, suggestions while typing and Tab to finish a command.
+- Scanned props block bodies, items and blades with convex collision; a weapon drawn from the belt comes along with the hand and settles into the grip.
