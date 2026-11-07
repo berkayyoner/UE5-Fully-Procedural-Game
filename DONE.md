@@ -83,3 +83,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Thinner rain that splashes on the ground, shin-high calmer grass, blood that stays three game days, smaller weapons and a tucked forearm when running.
 - Blows stagger by how hard they land and a body that cannot catch itself falls; edges glance off, stick or cut through by their speed; swings gather speed; held weapons pull on the hand and can be torn from it; the second hand is held on the blade.
 - Bodies, living or dead, and cut-off limbs can be taken hold of and dragged; hits shove the struck part and the trunk and knock the view; tired NPCs hold back; enemy stamina and magicka under their health; swings flow evenly.
+- Console: player.setstats, addstats and removestats for every stat and skill, a full help list, suggestions while typing and Tab to finish a command.

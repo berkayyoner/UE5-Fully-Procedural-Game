@@ -1,5 +1,7 @@
 #include "UI/SAedirConsole.h"
 
+#include "Dev/AedirConsoleCommands.h"
+
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Framework/Application/SlateApplication.h"
@@ -88,6 +90,16 @@ void SAedirConsole::Construct(const FArguments& InArgs)
 					[
 						SAssignNew(LogScroll, SScrollBox)
 					]
+				]
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(FMargin(0.f, 4.f, 0.f, 0.f))
+				[
+					SAssignNew(SuggestionText, STextBlock)
+					.Font(FCoreStyle::GetDefaultFontStyle("Mono", 10))
+					.ColorAndOpacity(FLinearColor(0.6f, 0.75f, 0.6f, 1.f))
+					.AutoWrapText(true)
+					.Visibility(EVisibility::Collapsed)
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -195,6 +207,24 @@ FReply SAedirConsole::OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEv
 		return FReply::Handled();
 	}
 
+	// Tab finishes the command being typed with the first one it could be.
+	if (Key == EKeys::Tab)
+	{
+		const FString Typed = InputBox->GetText().ToString();
+		if (!Typed.Contains(TEXT(" ")))
+		{
+			const TArray<FString> Options = AedirConsoleCommands::GetSuggestions(Typed);
+			if (!Options.IsEmpty())
+			{
+				FString Verb;
+				Options[0].Split(TEXT(" "), &Verb, nullptr);
+				InputBox->SetText(FText::FromString((Verb.IsEmpty() ? Options[0] : Verb) + TEXT(" ")));
+				InputBox->GoTo(ETextLocation::EndOfDocument);
+			}
+		}
+		return FReply::Handled();
+	}
+
 	// Up and down walk the command history.
 	const TArray<FString>& History = ConsoleHistory();
 	if ((Key == EKeys::Up || Key == EKeys::Down) && !History.IsEmpty())
@@ -220,6 +250,25 @@ void SAedirConsole::HandleTextChanged(const FText& NewText)
 	{
 		InputBox->SetText(FText::FromString(Cleaned));
 	}
+	UpdateSuggestions(Cleaned);
+}
+
+void SAedirConsole::UpdateSuggestions(const FString& Typed)
+{
+	if (!SuggestionText.IsValid())
+	{
+		return;
+	}
+	TArray<FString> Options = AedirConsoleCommands::GetSuggestions(Typed);
+	constexpr int32 MaxShown = 6;
+	if (Options.Num() > MaxShown)
+	{
+		const int32 More = Options.Num() - MaxShown;
+		Options.SetNum(MaxShown);
+		Options.Add(FString::Printf(TEXT("... %d more"), More));
+	}
+	SuggestionText->SetText(FText::FromString(FString::Join(Options, LINE_TERMINATOR)));
+	SuggestionText->SetVisibility(Options.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible);
 }
 
 void SAedirConsole::HandleTextCommitted(const FText& NewText, ETextCommit::Type CommitType)
@@ -231,6 +280,7 @@ void SAedirConsole::HandleTextCommitted(const FText& NewText, ETextCommit::Type 
 
 	const FString Command = NewText.ToString().TrimStartAndEnd();
 	InputBox->SetText(FText::GetEmpty());
+	UpdateSuggestions(FString());
 	HistoryIndex = INDEX_NONE;
 	if (Command.IsEmpty())
 	{

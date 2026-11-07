@@ -257,6 +257,34 @@ void UAedirStatsComponent::AddSkillExperience(EAedirSkill Skill, float Amount)
 	OnStatChanged.Broadcast();
 }
 
+void UAedirStatsComponent::SetStamina(float NewStamina)
+{
+	if (IsAuthoritative())
+	{
+		Stamina = FMath::Clamp(NewStamina, 0.f, GetMaxStamina());
+		OnStatChanged.Broadcast();
+	}
+}
+
+void UAedirStatsComponent::SetMana(float NewMana)
+{
+	if (IsAuthoritative())
+	{
+		Mana = FMath::Clamp(NewMana, 0.f, GetMaxMana());
+		OnStatChanged.Broadcast();
+	}
+}
+
+void UAedirStatsComponent::SetSkill(EAedirSkill Skill, float NewLevel)
+{
+	const int32 Index = static_cast<int32>(Skill);
+	if (IsAuthoritative() && Skills.IsValidIndex(Index))
+	{
+		Skills[Index] = FMath::Clamp(NewLevel, AedirSkillMin, AedirSkillMax);
+		OnStatChanged.Broadcast();
+	}
+}
+
 void UAedirStatsComponent::SetStrength(float NewStrength)
 {
 	if (!IsAuthoritative())

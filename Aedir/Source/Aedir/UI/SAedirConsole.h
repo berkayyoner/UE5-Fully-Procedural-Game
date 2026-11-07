@@ -42,6 +42,10 @@ private:
 	FAedirConsoleCommand CommandDelegate;
 	FAedirConsolePick PickDelegate;
 	TSharedPtr<class STextBlock> SelectionText;
+	TSharedPtr<class STextBlock> SuggestionText;
+
+	// Shows what the typed line could become, under the log.
+	void UpdateSuggestions(const FString& Typed);
 	FSimpleDelegate CloseDelegate;
 
 	TSharedPtr<SEditableTextBox> InputBox;

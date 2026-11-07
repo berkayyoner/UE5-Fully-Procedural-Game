@@ -138,6 +138,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
 	void SetAthletism(float NewAthletism);
 
+	// Sets what is left of breath, magicka or a skill straight away, within its limits.
+	void SetStamina(float NewStamina);
+	void SetMana(float NewMana);
+	void SetSkill(EAedirSkill Skill, float NewLevel);
+
 	// Server only. Tiny gains from use, gathered up so the body does not change every frame.
 	void AddStrengthExperience(float Amount);
 	void AddAthleticsExperience(float Amount);

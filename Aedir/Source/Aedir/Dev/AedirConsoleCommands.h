@@ -14,4 +14,10 @@ namespace AedirConsoleCommands
 	bool TakesReference(const FString& Line);
 
 	void Run(AAedirPlayerCharacter* Player, const FString& Line);
+
+	// Every command with how it is written and what it does, one line each.
+	TArray<FString> GetHelp();
+
+	// The commands that what has been typed so far could become, with how each is written; stat names after a stats command.
+	TArray<FString> GetSuggestions(const FString& Typed);
 }
