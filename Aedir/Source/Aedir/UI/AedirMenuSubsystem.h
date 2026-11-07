@@ -69,7 +69,7 @@ public:
 private:
 	// Closes every menu and returns the controller when a new one may open.
 	APlayerController* PrepareToOpen();
-	void BeginUIMode(APlayerController* PlayerController, const TSharedRef<SWidget>& FocusWidget);
+	void BeginUIMode(APlayerController* PlayerController, const TSharedRef<SWidget>& FocusWidget, bool bPause = true);
 	void RemoveUIWidget(const TSharedRef<SWidget>& ClosingWidget);
 	void OpenCategoryMenu(int32 StartCategory);
 	void OpenRadialMenu();
@@ -92,4 +92,11 @@ private:
 	void OpenMainMenuSettings();
 	TSharedPtr<SAedirCharacterCreation> CreationWidget;
 	bool bPausedByMenu = false;
+
+	// While two talk the rest of the world holds still, as in Skyrim; the speaker keeps moving.
+	void FreezeWorldFor(const AActor* Speaker, const AActor* Listener);
+	void ThawWorld();
+	TWeakObjectPtr<AAedirNpc> DialogueNpc;
+	TArray<TWeakObjectPtr<AActor>> FrozenActors;
+	TArray<TWeakObjectPtr<UActorComponent>> FrozenComponents;
 };

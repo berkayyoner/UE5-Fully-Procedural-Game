@@ -34,6 +34,10 @@ namespace
 	constexpr float NpcComplimentSeconds = 120.f;
 	constexpr float NpcHealOnHelp = 25.f;
 	constexpr float NpcSheatheCalmSeconds = 4.f;
+	constexpr float NpcSpeakSecondsPerLetter = 0.055f;
+	constexpr float NpcSpeakMinSeconds = 1.2f;
+	constexpr float NpcSpeakMaxSeconds = 9.f;
+	constexpr float NpcTalkTurnSpeed = 200.f;
 	constexpr float NpcItemSearchSeconds = 1.f;
 	constexpr float NpcItemSightCm = 1500.f;
 	constexpr float NpcItemSightCosine = 0.15f;
@@ -121,6 +125,11 @@ void AAedirNpc::Tick(float DeltaSeconds)
 	}
 
 	UpdateNeeds(DeltaSeconds);
+	if (TalkPartner.IsValid())
+	{
+		UpdateConversation(DeltaSeconds);
+		return;
+	}
 	UpdateWeaponReadiness(DeltaSeconds);
 	if (Combat && Combat->HasAITarget())
 	{
@@ -135,6 +144,52 @@ void AAedirNpc::Tick(float DeltaSeconds)
 	else
 	{
 		UpdateOrders(DeltaSeconds);
+	}
+}
+
+void AAedirNpc::BeginConversation(AAedirCreature* With)
+{
+	TalkPartner = With;
+	TalkSeconds = 0.f;
+	SpeakSeconds = 0.f;
+	MoveLocal(FVector2D::ZeroVector);
+}
+
+void AAedirNpc::EndConversation()
+{
+	TalkPartner.Reset();
+	SpeakSeconds = 0.f;
+}
+
+void AAedirNpc::Speak(const FText& Line)
+{
+	// As long as the words take to say, at a calm pace.
+	SpeakSeconds = FMath::Clamp(Line.ToString().Len() * NpcSpeakSecondsPerLetter, NpcSpeakMinSeconds, NpcSpeakMaxSeconds);
+}
+
+void AAedirNpc::UpdateConversation(float DeltaSeconds)
+{
+	const AAedirCreature* Partner = TalkPartner.Get();
+	TalkSeconds += DeltaSeconds;
+	SpeakSeconds = FMath::Max(SpeakSeconds - DeltaSeconds, 0.f);
+	MoveLocal(FVector2D::ZeroVector);
+
+	// The whole body comes round to the one it talks to; the eyes meet theirs.
+	const FVector Eyes = GetPawnViewLocation();
+	const FVector TheirEyes = Partner->GetPawnViewLocation();
+	const FRotator Look = (TheirEyes - Eyes).Rotation();
+	TurnBodyTo(static_cast<float>(Look.Yaw), DeltaSeconds, NpcTalkTurnSpeed);
+
+	// A living head is never still: it drifts slowly while listening, and nods and turns with the words while speaking.
+	const float Speaking = FMath::Clamp(SpeakSeconds * 2.f, 0.f, 1.f);
+	const float T = TalkSeconds;
+	const float DriftYaw = 2.5f * FMath::Sin(T * 0.53f) + 1.5f * FMath::Sin(T * 1.31f + 1.f);
+	const float DriftPitch = 1.5f * FMath::Sin(T * 0.71f + 2.f);
+	const float WordsPitch = Speaking * (3.5f * FMath::Sin(T * 6.3f) + 2.f * FMath::Sin(T * 2.9f + 0.5f));
+	const float WordsYaw = Speaking * 3.f * FMath::Sin(T * 2.2f + 1.7f);
+	if (AController* Mind = GetController())
+	{
+		Mind->SetControlRotation(FRotator(Look.Pitch + DriftPitch + WordsPitch, Look.Yaw + DriftYaw + WordsYaw, 0.f));
 	}
 }
 

@@ -87,3 +87,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Scanned props block bodies, items and blades with convex collision; a weapon drawn from the belt comes along with the hand and settles into the grip.
 - Every step is heard and leaves a print: a foot counts as down once it has been up, however slowly it settles; prints are shaped like a left or right sole and no longer land on legs.
 - Rain has a sound of its own, made from noise by Scripts/MakeWeatherSounds.py and imported with -run=AedirContent -Only=Sounds; wind and thunder keep theirs.
+- Talking is as in Skyrim: the view turns to the NPC, everyone else and the sky hold still, the NPC turns to face you and its head drifts and nods as it speaks; topics stand right of centre between gold rules, its words as a subtitle below.

@@ -116,11 +116,22 @@ public:
 	void CollectGear(TArray<FName>& OutGear) const;
 	void RestoreGear(const TArray<FName>& Gear);
 
+	// In a conversation the NPC stands, turns to face whoever it talks to and keeps its eyes on them, its head moving as it speaks.
+	void BeginConversation(AAedirCreature* With);
+	void EndConversation();
+	void Speak(const FText& Line);
+	bool IsInConversation() const { return TalkPartner.IsValid(); }
+
 	void SetHome(const FVector& Location, float Yaw);
 	const FVector& GetHomeLocation() const { return HomeLocation; }
 	float GetHomeYaw() const { return HomeYaw; }
 
 private:
+	void UpdateConversation(float DeltaSeconds);
+	TWeakObjectPtr<AAedirCreature> TalkPartner;
+	float SpeakSeconds = 0.f;
+	float TalkSeconds = 0.f;
+
 	void UpdateOrders(float DeltaSeconds);
 	void UpdateNeeds(float DeltaSeconds);
 	void FollowTo(const FVector& Where, float StopDistance, float RunDistance, float DeltaSeconds);

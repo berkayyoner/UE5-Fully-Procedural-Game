@@ -5,6 +5,9 @@
 #include "UI/SAedirMainMenu.h"
 
 #include "Creature/AedirCreature.h"
+#include "EngineUtils.h"
+#include "Npc/AedirNpc.h"
+#include "Weather/AedirWeatherManager.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
@@ -192,12 +195,73 @@ void UAedirMenuSubsystem::OpenDialogue(AAedirNpc* Npc)
 		.OnClose(FSimpleDelegate::CreateUObject(this, &UAedirMenuSubsystem::CloseMenu));
 	GEngine->GameViewport->AddViewportWidgetContent(DialogueWidget.ToSharedRef(), MenuZOrder);
 
-	BeginUIMode(PlayerController, DialogueWidget.ToSharedRef());
+	// The game runs on; only the two talking move.
+	BeginUIMode(PlayerController, DialogueWidget.ToSharedRef(), false);
 
 	if (Player)
 	{
 		Player->MoveLocal(FVector2D::ZeroVector);
+		DialogueNpc = Npc;
+		// The view turns to the one spoken to.
+		const FRotator Toward = (Npc->GetPawnViewLocation() - Player->GetPawnViewLocation()).Rotation();
+		PlayerController->SetControlRotation(FRotator(FMath::Clamp(Toward.Pitch, -20.f, 20.f), Toward.Yaw, 0.f));
+		Npc->BeginConversation(Player);
+		Npc->Speak(Npc->GetGreeting(Player));
+		FreezeWorldFor(Npc, Player);
 	}
+}
+
+void UAedirMenuSubsystem::FreezeWorldFor(const AActor* Speaker, const AActor* Listener)
+{
+	ThawWorld();
+	UWorld* World = GetWorld();
+	if (!World || World->GetNetMode() != NM_Standalone)
+	{
+		return;
+	}
+
+	// Every other living thing and the sky stop where they are; their bodies keep standing on their own muscles.
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		AActor* Actor = *It;
+		if (Actor == Speaker || Actor == Listener || !(Actor->IsA<AAedirCreature>() || Actor->IsA<AAedirWeatherManager>()))
+		{
+			continue;
+		}
+		if (Actor->IsActorTickEnabled())
+		{
+			Actor->SetActorTickEnabled(false);
+			FrozenActors.Add(Actor);
+		}
+		for (UActorComponent* Component : Actor->GetComponents())
+		{
+			if (Component && Component->IsComponentTickEnabled())
+			{
+				Component->SetComponentTickEnabled(false);
+				FrozenComponents.Add(Component);
+			}
+		}
+	}
+}
+
+void UAedirMenuSubsystem::ThawWorld()
+{
+	for (const TWeakObjectPtr<AActor>& Actor : FrozenActors)
+	{
+		if (Actor.IsValid())
+		{
+			Actor->SetActorTickEnabled(true);
+		}
+	}
+	for (const TWeakObjectPtr<UActorComponent>& Component : FrozenComponents)
+	{
+		if (Component.IsValid())
+		{
+			Component->SetComponentTickEnabled(true);
+		}
+	}
+	FrozenActors.Reset();
+	FrozenComponents.Reset();
 }
 
 void UAedirMenuSubsystem::OpenMainMenu()
@@ -266,6 +330,12 @@ void UAedirMenuSubsystem::CloseMenu()
 		const TSharedRef<SAedirDialogue> ClosingDialogue = DialogueWidget.ToSharedRef();
 		DialogueWidget.Reset();
 		RemoveUIWidget(ClosingDialogue);
+		ThawWorld();
+		if (DialogueNpc.IsValid())
+		{
+			DialogueNpc->EndConversation();
+		}
+		DialogueNpc.Reset();
 	}
 	CloseMap();
 }
@@ -445,7 +515,7 @@ void UAedirMenuSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
-void UAedirMenuSubsystem::BeginUIMode(APlayerController* PlayerController, const TSharedRef<SWidget>& FocusWidget)
+void UAedirMenuSubsystem::BeginUIMode(APlayerController* PlayerController, const TSharedRef<SWidget>& FocusWidget, bool bPause)
 {
 	FInputModeGameAndUI InputMode;
 	InputMode.SetWidgetToFocus(FocusWidget);
@@ -455,7 +525,7 @@ void UAedirMenuSubsystem::BeginUIMode(APlayerController* PlayerController, const
 	PlayerController->SetShowMouseCursor(true);
 
 	UWorld* World = GetWorld();
-	if (World && World->GetNetMode() == NM_Standalone)
+	if (bPause && World && World->GetNetMode() == NM_Standalone)
 	{
 		UGameplayStatics::SetGamePaused(World, true);
 		bPausedByMenu = true;

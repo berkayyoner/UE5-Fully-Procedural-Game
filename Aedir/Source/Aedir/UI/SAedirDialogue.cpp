@@ -1,4 +1,4 @@
-#include "UI/SAedirDialogue.h"
+﻿#include "UI/SAedirDialogue.h"
 
 #include "Engine/World.h"
 #include "Net/AedirSaveSubsystem.h"
@@ -14,8 +14,8 @@
 
 namespace
 {
-	constexpr float DialogueWidth = 520.f;
-	constexpr float DialogueSpeechWidth = 900.f;
+	constexpr float DialogueWidth = 460.f;
+	constexpr float DialogueSpeechWidth = 1000.f;
 }
 
 void SAedirDialogue::Construct(const FArguments& InArgs)
@@ -28,52 +28,67 @@ void SAedirDialogue::Construct(const FArguments& InArgs)
 	const AAedirPlayerCharacter* Me = Player.Get();
 	const FString Key = Me ? UAedirSaveSubsystem::MakePlayerKey(Cast<APlayerController>(Me->GetController())) : FString();
 
-	ChildSlot
-	[
-		SNew(SOverlay)
-		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0.f, 90.f, 0.f, 0.f)
-		[
-			SNew(SBox).WidthOverride(DialogueSpeechWidth)
-			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(Other ? Other->NpcName : FText::GetEmpty())
-					.Font(AedirUIStyle::RegularFont(20.f, 60))
-					.ColorAndOpacity(AedirUIStyle::IvoryBright)
-					.ShadowOffset(FVector2D(1.f, 1.f))
-				]
-				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.f, 2.f, 0.f, 12.f)
-				[
-					SAssignNew(StandingText, STextBlock)
-					.Text(Other ? Other->GetStandingText(Key) : FText::GetEmpty())
-					.Font(AedirUIStyle::LightFont(13.f, 40))
-					.ColorAndOpacity(AedirUIStyle::TextDim)
-					.ShadowOffset(FVector2D(1.f, 1.f))
-				]
-				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
-				[
-					SAssignNew(SpeechText, STextBlock)
-					.Text(Other && Me ? Other->GetGreeting(Me) : FText::GetEmpty())
-					.Font(AedirUIStyle::LightFont(19.f))
-					.ColorAndOpacity(AedirUIStyle::Ivory)
-					.ShadowOffset(FVector2D(1.f, 1.f))
-					.AutoWrapText(true)
-					.Justification(ETextJustify::Center)
-				]
-			]
-		]
-		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.f, 40.f, 90.f, 0.f)
-		[
-			SNew(SBox).WidthOverride(DialogueWidth)
+	// As in Skyrim: what the other says stands as a subtitle low in the middle, the topics to the right of centre between two
+	// thin gold rules, the selected one bright and the rest dim.
+	const auto Rule = []()
+	{
+		return SNew(SBox).HeightOverride(1.f)
 			[
 				SNew(SBorder)
 				.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
-				.BorderBackgroundColor(FLinearColor(0.f, 0.f, 0.f, 0.55f))
-				.Padding(26.f, 18.f)
+				.BorderBackgroundColor(AedirUIStyle::LineColor)
+			];
+	};
+
+	ChildSlot
+	[
+		SNew(SOverlay)
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0.f, 0.f, 0.f, 120.f)
+		[
+			SNew(SBox).WidthOverride(DialogueSpeechWidth)
+			[
+				SAssignNew(SpeechText, STextBlock)
+				.Text(Other && Me ? Other->GetGreeting(Me) : FText::GetEmpty())
+				.Font(AedirUIStyle::LightFont(19.f))
+				.ColorAndOpacity(AedirUIStyle::IvoryBright)
+				.ShadowOffset(FVector2D(1.5f, 1.5f))
+				.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.9f))
+				.AutoWrapText(true)
+				.Justification(ETextJustify::Center)
+			]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.f, 0.f, 140.f, 0.f)
+		[
+			SNew(SBox).WidthOverride(DialogueWidth)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 0.f, 0.f, 6.f)
 				[
-					SAssignNew(TopicBox, SVerticalBox)
+					SNew(STextBlock)
+					.Text(Other ? Other->NpcName : FText::GetEmpty())
+					.Font(AedirUIStyle::RegularFont(15.f, 120))
+					.ColorAndOpacity(AedirUIStyle::TextDim)
+					.ShadowOffset(FVector2D(1.f, 1.f))
+				]
+				+ SVerticalBox::Slot().AutoHeight()[Rule()]
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(SBorder)
+					.BorderImage(FCoreStyle::Get().GetBrush("WhiteBrush"))
+					.BorderBackgroundColor(FLinearColor(0.f, 0.f, 0.f, 0.45f))
+					.Padding(22.f, 14.f)
+					[
+						SAssignNew(TopicBox, SVerticalBox)
+					]
+				]
+				+ SVerticalBox::Slot().AutoHeight()[Rule()]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.f, 6.f, 0.f, 0.f)
+				[
+					SAssignNew(StandingText, STextBlock)
+					.Text(Other ? Other->GetStandingText(Key) : FText::GetEmpty())
+					.Font(AedirUIStyle::LightFont(12.f, 40))
+					.ColorAndOpacity(AedirUIStyle::TextDim)
+					.ShadowOffset(FVector2D(1.f, 1.f))
 				]
 			]
 		]
@@ -105,7 +120,7 @@ void SAedirDialogue::RebuildTopics()
 			[
 				SAssignNew(Row, STextBlock)
 				.Text(Topics[Index].Label)
-				.Font(AedirUIStyle::RegularFont(17.f, 20))
+				.Font(AedirUIStyle::RegularFont(18.f, 20))
 				.ShadowOffset(FVector2D(1.f, 1.f))
 				.AutoWrapText(true)
 			]
@@ -132,6 +147,10 @@ void SAedirDialogue::Choose(int32 Index)
 
 	const FAedirDialogueTopic Topic = Topics[Index];
 	SpeechText->SetText(Topic.Response);
+	if (AAedirNpc* Speaker = Npc.Get())
+	{
+		Speaker->Speak(Topic.Response);
+	}
 
 	AAedirPlayerCharacter* Me = Player.Get();
 	if (Me && Topic.Action != EAedirNpcAction::None && Npc.IsValid())
