@@ -1058,6 +1058,37 @@ void AAedirPlayerCharacter::MouseFlick(int32 RightHand, float DeltaX, float Delt
 	}), Step, true);
 }
 
+void AAedirPlayerCharacter::SwingTrace(int32 RightHand, float Seconds)
+{
+	// One log line per frame with where the hand, the blade and the feet really are against the body, for a look at how evenly they move.
+	const EAedirHand Hand = RightHand != 0 ? EAedirHand::Right : EAedirHand::Left;
+	const FName HandBone = RightHand != 0 ? TEXT("hand_r") : TEXT("hand_l");
+	TSharedRef<FTimerHandle> Timer = MakeShared<FTimerHandle>();
+	TSharedRef<float> Elapsed = MakeShared<float>(0.f);
+	FTimerManagerTimerParameters Params;
+	Params.bLoop = true;
+	Params.bMaxOncePerFrame = true;
+	GetWorldTimerManager().SetTimer(*Timer, FTimerDelegate::CreateWeakLambda(this, [this, Timer, Elapsed, Hand, HandBone, Seconds]()
+	{
+		const float Delta = GetWorld()->GetDeltaSeconds();
+		*Elapsed += Delta;
+		const FTransform& Body = GetActorTransform();
+		const USkeletalMeshComponent* BodyMesh = GetMesh();
+		const FVector HandLocal = Body.InverseTransformPositionNoScale(BodyMesh->GetBoneLocation(HandBone));
+		const AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(Hand) : nullptr;
+		const FVector Blade = Item ? Body.InverseTransformVectorNoScale(Item->GetActorForwardVector()) : FVector::ZeroVector;
+		const FVector2D Pose = Combat ? Combat->DevGetPoseAim(Hand) : FVector2D::ZeroVector;
+		const auto FootLine = [&](const TCHAR* Foot, const TCHAR* Ball) { return Body.InverseTransformVectorNoScale(BodyMesh->GetBoneLocation(Ball) - BodyMesh->GetBoneLocation(Foot)).GetSafeNormal(); };
+		const FVector FootL = FootLine(TEXT("foot_l"), TEXT("ball_l"));
+		const FVector FootR = FootLine(TEXT("foot_r"), TEXT("ball_r"));
+		UE_LOG(LogTemp, Display, TEXT("[Swing] %.3f %.4f %.1f %.1f %.2f %.2f %.2f %.4f %.4f %.4f %.3f %.3f %.3f %.3f %.3f %.3f"), *Elapsed, Delta, Pose.X, Pose.Y, HandLocal.X, HandLocal.Y, HandLocal.Z, Blade.X, Blade.Y, Blade.Z, FootL.X, FootL.Y, FootL.Z, FootR.X, FootR.Y, FootR.Z);
+		if (*Elapsed >= Seconds)
+		{
+			GetWorldTimerManager().ClearTimer(*Timer);
+		}
+	}), 0.001f, Params);
+}
+
 void AAedirPlayerCharacter::PassHand()
 {
 	if (Interaction)

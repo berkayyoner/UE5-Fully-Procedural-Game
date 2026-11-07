@@ -19,6 +19,7 @@
 
 namespace
 {
+	constexpr int32 AedirFirstLegMotorGroup = 3;
 	constexpr float AedirLegInjuryRecoveryPenalty = 0.5f;
 	constexpr float AedirLeanInterpSpeed = 8.f;
 	constexpr float AedirSafeLandingSpeed = 900.f;
@@ -28,7 +29,8 @@ namespace
 	constexpr float AedirAthletismDamageScale = 200.f;
 	constexpr float AedirWalkableNormalZ = 0.5f;
 	constexpr float AedirWallImpactMaxLoss = 0.8f;
-	constexpr float AedirObjectImpactBalanceMultiplier = 10.f;
+	constexpr float AedirObjectImpactBalanceMultiplier = 0.14f;
+	constexpr float AedirObjectImpactMinSpeed = 120.f;
 	constexpr float ObjectImpactMinHeightCm = 50.f;
 	constexpr float AedirObjectImpactDamagePerScore = 0.002f;
 	constexpr float AedirWallImpactDamagePerSpeed = 0.01f;
@@ -137,14 +139,13 @@ void UAedirBalanceComponent::BeginPlay()
 	BodyMesh->SetNotifyRigidBodyCollision(true);
 	ApplyBodyContacts(false);
 	ApplyJointLimits(false);
+	ApplyLegPhysics(false);
 	BodyMesh->OnComponentHit.AddDynamic(this, &UAedirBalanceComponent::OnMeshHit);
 
 	BodyCapsule->SetNotifyRigidBodyCollision(true);
 	BodyCapsule->OnComponentHit.AddDynamic(this, &UAedirBalanceComponent::OnCapsuleHit);
 
 	PelvisRestHeight = static_cast<float>(BodyMesh->GetBoneLocation(PelvisBoneName, EBoneSpaces::ComponentSpace).Z);
-
-	SetupMotors();
 
 	if (FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName))
 	{
@@ -179,6 +180,12 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	if (!CharacterOwner || !BodyMesh || !BodyCapsule)
 	{
 		return;
+	}
+
+	// The muscles pull towards the pose, so they start once a body spawned in mid-game has one.
+	if (!MotorComponent && !BodyMesh->GetEditableComponentSpaceTransforms().IsEmpty())
+	{
+		SetupMotors();
 	}
 
 	ComSampleTimer -= DeltaTime;
@@ -838,8 +845,12 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	const float DazeRecoveryScale = IsDazed() ? HitReactionDazeRecoveryScale : 1.f;
 	const float StaggerRecoveryScale = IsStaggering() ? HitReactionStaggerRecoveryScale : 1.f;
 	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * DeltaTime;
-	SetBalance(Balance + Recovery);
-	DecayLeanDirection(Recovery);
+	// Once the legs have given way there is no catching it any more, only getting up again afterwards.
+	if (bIsRagdoll || bDead || Balance >= FallBalanceThreshold)
+	{
+		SetBalance(Balance + Recovery);
+		DecayLeanDirection(Recovery);
+	}
 	ApplyCenterOfMassLoss(DeltaTime);
 
 	StaggerSeconds = FMath::Max(0.f, StaggerSeconds - DeltaTime);
@@ -936,6 +947,7 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	UpdateMotors(0.f, true);
 	ApplyBodyContacts(bRagdoll);
 	ApplyJointLimits(bRagdoll);
+	ApplyLegPhysics(bRagdoll);
 
 	UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
 	FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName);
@@ -992,22 +1004,35 @@ void UAedirBalanceComponent::ApplyBodyContacts(bool bRagdoll)
 		return;
 	}
 
+	// Standing, the legs are placed on the ground by the pose, and the floor under the feet would only push them out of it.
+	// A skeletal mesh takes its responses from the component, so a body has to be told through its shapes.
 	for (FBodyInstance* Body : BodyMesh->Bodies)
 	{
-		if (!Body || !Body->BodySetup.IsValid())
+		const UBodySetup* Setup = Body ? Body->GetBodySetup() : nullptr;
+		if (!Setup)
 		{
 			continue;
 		}
 
-		// Standing, the feet and shins are placed on the ground by the pose: contact there would only make them shake.
-		// A hand lets loose things be, or it would knock away what it reaches for, and so do legs, or stepping on something would fling it.
-		const FString Bone = Body->BodySetup->BoneName.ToString();
-		const bool bFoot = Bone.Contains(TEXT("foot")) || Bone.Contains(TEXT("ball")) || Bone.Contains(TEXT("calf"));
-		const bool bSoft = bFoot || Bone.Contains(TEXT("thigh")) || Bone.Contains(TEXT("hand"));
-		const ECollisionResponse World = bFoot && !bRagdoll ? ECR_Ignore : ECR_Block;
-		Body->SetResponseToChannel(ECC_WorldStatic, World);
-		Body->SetResponseToChannel(ECC_WorldDynamic, World);
-		Body->SetResponseToChannel(ECC_PhysicsBody, bSoft && !bRagdoll ? ECR_Overlap : ECR_Block);
+		const FString Bone = Setup->BoneName.ToString();
+		const bool bLeg = Bone.Contains(TEXT("thigh")) || Bone.Contains(TEXT("calf")) || Bone.Contains(TEXT("foot")) || Bone.Contains(TEXT("ball"));
+		for (int32 Shape = 0; Shape < Setup->AggGeom.GetElementCount(); ++Shape)
+		{
+			Body->SetShapeCollisionEnabled(Shape, bLeg && !bRagdoll ? ECollisionEnabled::QueryOnly : ECollisionEnabled::QueryAndPhysics);
+		}
+	}
+}
+
+void UAedirBalanceComponent::ApplyLegPhysics(bool bRagdoll)
+{
+	// The feet have to be exactly where the steps put them, so a body on its feet stands on legs of the pose. From the pelvis up it is all muscle, and when it falls all of it is.
+	if (BodyMesh)
+	{
+		for (const FName& Thigh : { FName(TEXT("thigh_l")), FName(TEXT("thigh_r")) })
+		{
+			BodyMesh->SetAllBodiesBelowSimulatePhysics(Thigh, bRagdoll, true);
+			BodyMesh->SetAllBodiesBelowPhysicsBlendWeight(Thigh, bRagdoll ? 1.f : 0.f, false, true);
+		}
 	}
 }
 
@@ -1096,6 +1121,12 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 		const float FeetZ = static_cast<float>(Owner->GetActorLocation().Z) - (BodyCapsule ? BodyCapsule->GetScaledCapsuleHalfHeight() : 0.f);
 		const float KneeHeight = ObjectImpactMinHeightCm * static_cast<float>(Owner->GetActorScale3D().Z);
 		if (Hit.ImpactPoint.Z - FeetZ < KneeHeight)
+		{
+			return;
+		}
+
+		// Walking into something that lies still is no blow.
+		if (OtherComponent->GetComponentVelocity().SizeSquared() < AedirObjectImpactMinSpeed * AedirObjectImpactMinSpeed)
 		{
 			return;
 		}
@@ -1266,16 +1297,18 @@ void UAedirBalanceComponent::UpdateLegBlend(float DeltaTime)
 		return;
 	}
 
-	// The whole body is physical, held to the pose by its muscles.
+	// The body is physical, held to the pose by its muscles, and on its feet the legs are the pose itself.
 	LegPhysicsBlend = 1.f;
 	ArmPhysicsBlend = 1.f;
-	for (const TArray<FName>& Group : MotorGroupBones)
+	const UAedirStatsComponent* Stats = FindStats();
+	const bool bLoose = bIsRagdoll || (Stats && Stats->IsDead());
+	for (int32 GroupIndex = 0; GroupIndex < UE_ARRAY_COUNT(MotorGroupBones); ++GroupIndex)
 	{
-		for (const FName& BoneName : Group)
+		for (const FName& BoneName : MotorGroupBones[GroupIndex])
 		{
 			if (FBodyInstance* Body = BodyMesh->GetBodyInstance(BoneName))
 			{
-				Body->PhysicsBlendWeight = 1.f;
+				Body->PhysicsBlendWeight = GroupIndex >= AedirFirstLegMotorGroup && !bLoose ? 0.f : 1.f;
 			}
 		}
 	}

@@ -21,6 +21,26 @@ namespace
 
 	const TArray<FString> SettingsOffOn = { TEXT("Off"), TEXT("On") };
 	const TArray<FString> SettingsQualityNames = { TEXT("Low"), TEXT("Medium"), TEXT("High"), TEXT("Epic"), TEXT("Cinematic") };
+	const TCHAR* const SettingsPresetKey = TEXT("GraphicsPreset");
+	constexpr int32 SettingsPresetCustom = 4;
+
+	// The lines of the graphics page a preset sets on top of the quality groups, as a value for each of Low, Medium, High and Epic.
+	struct FSettingsPresetLine
+	{
+		const TCHAR* Key;
+		int32 Values[SettingsPresetCustom];
+	};
+	const FSettingsPresetLine SettingsPresetLines[] = {
+		{ TEXT("VirtualShadows"), { 0, 0, 1, 1 } },
+		{ TEXT("ShadowResolution"), { 1, 2, 2, 3 } },
+		{ TEXT("ContactShadows"), { 0, 0, 1, 1 } },
+		{ TEXT("VolumetricFog"), { 0, 1, 1, 1 } },
+		{ TEXT("MotionBlur"), { 0, 2, 3, 4 } },
+		{ TEXT("DepthOfField"), { 0, 2, 3, 4 } },
+		{ TEXT("Bloom"), { 1, 2, 3, 4 } },
+		{ TEXT("Anisotropy"), { 2, 3, 4, 4 } },
+		{ TEXT("GrassDensity"), { 1, 2, 3, 3 } }
+	};
 	const TArray<FString> SettingsPercentNames = { TEXT("0%"), TEXT("10%"), TEXT("25%"), TEXT("50%"), TEXT("75%"), TEXT("100%") };
 	const TArray<float> SettingsPercentValues = { 0.f, 0.1f, 0.25f, 0.5f, 0.75f, 1.f };
 
@@ -105,6 +125,7 @@ void UAedirSettingsSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UAedirSettingsSubsystem::BuildOptions()
 {
+	BuildPresetOption();
 	BuildDisplayOptions();
 	BuildQualityOptions();
 	BuildAudioOptions();
@@ -171,6 +192,70 @@ void UAedirSettingsSubsystem::AddQuality(const TCHAR* Name, const TCHAR* Descrip
 				User->SaveSettings();
 			}
 		});
+}
+
+void UAedirSettingsSubsystem::BuildPresetOption()
+{
+	AddChoice(EAedirSettingsPage::Graphics, SettingsPresetKey, TEXT("Graphics preset"), TEXT("Sets the whole page at once. Changing a line below makes it Custom."), { TEXT("Low"), TEXT("Medium"), TEXT("High"), TEXT("Epic"), TEXT("Custom") },
+		[this]()
+		{
+			const UGameUserSettings* User = SettingsGetUser();
+			const int32 Level = User ? User->GetOverallScalabilityLevel() : INDEX_NONE;
+			return bPresetCustom || Level < 0 || Level >= SettingsPresetCustom ? SettingsPresetCustom : Level;
+		},
+		[this](int32 Index)
+		{
+			// The engine and the lines below store what the preset set, so at the start of the game only the choice itself comes back.
+			bPresetCustom = Index == SettingsPresetCustom;
+			if (!bLoadingSaved && !bPresetCustom)
+			{
+				ApplyGraphicsPreset(Index);
+			}
+		});
+}
+
+void UAedirSettingsSubsystem::ApplyGraphicsPreset(int32 Preset)
+{
+	if (UGameUserSettings* User = SettingsGetUser())
+	{
+		User->SetOverallScalabilityLevel(Preset);
+		User->ApplyNonResolutionSettings();
+		User->SaveSettings();
+	}
+
+	bApplyingPreset = true;
+	for (const FSettingsPresetLine& Line : SettingsPresetLines)
+	{
+		const int32 OptionIndex = Options.IndexOfByPredicate([&Line](const FAedirSettingOption& Option) { return Option.Key == Line.Key; });
+		if (OptionIndex != INDEX_NONE)
+		{
+			SetOptionValue(OptionIndex, Line.Values[Preset]);
+		}
+	}
+	bApplyingPreset = false;
+}
+
+void UAedirSettingsSubsystem::NoteGraphicsChange(const FAedirSettingOption& Option)
+{
+	if (bApplyingPreset || bLoadingSaved)
+	{
+		return;
+	}
+
+	// A line of the preset changed by hand: the page no longer is what the preset says.
+	for (const FSettingsPresetLine& Line : SettingsPresetLines)
+	{
+		if (Option.Key == Line.Key)
+		{
+			bPresetCustom = true;
+			const FAedirSettingOption* Preset = Options.FindByPredicate([](const FAedirSettingOption& Other) { return Other.Key == SettingsPresetKey; });
+			if (Preset)
+			{
+				Store(*Preset, SettingsPresetCustom);
+			}
+			return;
+		}
+	}
 }
 
 void UAedirSettingsSubsystem::BuildDisplayOptions()
@@ -333,22 +418,6 @@ void UAedirSettingsSubsystem::BuildDisplayOptions()
 
 void UAedirSettingsSubsystem::BuildQualityOptions()
 {
-	AddChoice(EAedirSettingsPage::Graphics, TEXT(""), TEXT("Overall quality"), TEXT("Sets all the quality groups below at once."), SettingsQualityNames,
-		[]()
-		{
-			const UGameUserSettings* User = SettingsGetUser();
-			return User ? User->GetOverallScalabilityLevel() : INDEX_NONE;
-		},
-		[](int32 Index)
-		{
-			if (UGameUserSettings* User = SettingsGetUser())
-			{
-				User->SetOverallScalabilityLevel(Index);
-				User->ApplyNonResolutionSettings();
-				User->SaveSettings();
-			}
-		});
-
 	AddQuality(TEXT("View distance"), TEXT("How far objects stay detailed."), [](const UGameUserSettings& U) { return U.GetViewDistanceQuality(); }, [](UGameUserSettings& U, int32 V) { U.SetViewDistanceQuality(V); });
 	AddQuality(TEXT("Anti-aliasing quality"), TEXT("Quality of the edge smoothing."), [](const UGameUserSettings& U) { return U.GetAntiAliasingQuality(); }, [](UGameUserSettings& U, int32 V) { U.SetAntiAliasingQuality(V); });
 	AddQuality(TEXT("Shadows"), TEXT("Resolution and reach of shadows."), [](const UGameUserSettings& U) { return U.GetShadowQuality(); }, [](UGameUserSettings& U, int32 V) { U.SetShadowQuality(V); });
@@ -446,6 +515,7 @@ void UAedirSettingsSubsystem::LoadSaved()
 		return;
 	}
 
+	bLoadingSaved = true;
 	for (const FAedirSettingOption& Option : Options)
 	{
 		FString Saved;
@@ -460,6 +530,7 @@ void UAedirSettingsSubsystem::LoadSaved()
 			Option.Apply(ValueIndex);
 		}
 	}
+	bLoadingSaved = false;
 }
 
 void UAedirSettingsSubsystem::Store(const FAedirSettingOption& Option, int32 ValueIndex) const
@@ -526,6 +597,7 @@ void UAedirSettingsSubsystem::SetOptionValue(int32 Index, int32 ValueIndex)
 	{
 		Option->Apply(ValueIndex);
 		Store(*Option, ValueIndex);
+		NoteGraphicsChange(*Option);
 	}
 }
 
@@ -542,4 +614,5 @@ void UAedirSettingsSubsystem::StepOption(int32 Index, int32 Delta)
 	const int32 Next = Option->Values.IsValidIndex(Current) ? (Current + Delta + Count) % Count : 0;
 	Option->Apply(Next);
 	Store(*Option, Next);
+	NoteGraphicsChange(*Option);
 }

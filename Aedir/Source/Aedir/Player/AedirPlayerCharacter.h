@@ -205,6 +205,9 @@ public:
 	void MouseFlick(int32 RightHand, float DeltaX, float DeltaY, float Seconds);
 
 	UFUNCTION(Exec)
+	void SwingTrace(int32 RightHand, float Seconds);
+
+	UFUNCTION(Exec)
 	void PassHand();
 
 	UFUNCTION(Exec)

@@ -18,7 +18,7 @@ namespace
 	constexpr float AedirKneePoleDistance = 100.f;
 	constexpr float AedirKneePoleDropDistance = 30.f;
 	constexpr float AedirLegMinReachShare = 0.3f;
-	constexpr float AedirLegMaxReachShare = 0.995f;
+	constexpr float AedirLegMaxReachShare = 0.998f;
 	constexpr float AedirHeelLiftStartShare = 0.2f;
 	constexpr float AedirHeelLiftRangeShare = 0.2f;
 	constexpr float AedirHeelRaiseCm = 7.f;
@@ -38,6 +38,8 @@ namespace
 	constexpr float AedirElbowRaisedForwardCm = 18.f;
 	// The handle crosses the palm, so it never lies closer to the line of the forearm than this.
 	constexpr float AedirWristMinBladeDegrees = 28.f;
+	// However the blade and the forearm come to lie, a hand turns no faster than this.
+	constexpr float AedirHandMaxTurnDegrees = 1000.f;
 	constexpr float AedirElbowHintDistanceCm = 50.f;
 	// How far a hand on a long shaft may stay from the handle's line, and how close it may come to the other hand when it has to slide nearer.
 	constexpr float AedirGripPalmReachCm = 4.f;
@@ -441,8 +443,10 @@ void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, cons
 
 void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha, float FrontShare, float MinBladeDegrees, float HangDegrees) const
 {
+	const int32 HandSlot = HandName == BoneNameSet.LeftHand ? 0 : 1;
 	if (Alpha <= AedirReachAlphaThreshold)
 	{
+		bLastHandValid[HandSlot] = false;
 		return;
 	}
 
@@ -490,7 +494,18 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 	}
 
 	// The blade runs across the knuckles and the fingers run on from the forearm, so a change of direction comes from the arm.
-	const FQuat HandRotation = FRotationMatrix::MakeFromXY(Blade, FVector::VectorPlaneProject(Forearm, Blade)).ToQuat() * ClosedHandInverse;
+	FQuat HandRotation = FRotationMatrix::MakeFromXY(Blade, FVector::VectorPlaneProject(Forearm, Blade)).ToQuat() * ClosedHandInverse;
+	if (bLastHandValid[HandSlot])
+	{
+		const float Turn = static_cast<float>(LastHandRotation[HandSlot].AngularDistance(HandRotation));
+		const float MaxTurn = FMath::DegreesToRadians(AedirHandMaxTurnDegrees) * GetDeltaSeconds();
+		if (Turn > MaxTurn && MaxTurn > 0.f)
+		{
+			HandRotation = FQuat::Slerp(LastHandRotation[HandSlot], HandRotation, MaxTurn / Turn).GetNormalized();
+		}
+	}
+	LastHandRotation[HandSlot] = HandRotation;
+	bLastHandValid[HandSlot] = true;
 	HandTransform.SetRotation(FQuat::Slerp(HandTransform.GetRotation(), HandRotation, FMath::Clamp(Alpha, 0.f, 1.f)).GetNormalized());
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
 }

@@ -61,6 +61,9 @@ public:
 
 private:
 	void BuildOptions();
+	void BuildPresetOption();
+	void ApplyGraphicsPreset(int32 Preset);
+	void NoteGraphicsChange(const FAedirSettingOption& Option);
 	void BuildDisplayOptions();
 	void BuildQualityOptions();
 	void BuildAudioOptions();
@@ -77,4 +80,7 @@ private:
 	float MasterVolume = 1.f;
 	int32 SavedMonitor = INDEX_NONE;
 	bool bWorldReadyApplied = false;
+	bool bPresetCustom = false;
+	bool bLoadingSaved = false;
+	bool bApplyingPreset = false;
 };

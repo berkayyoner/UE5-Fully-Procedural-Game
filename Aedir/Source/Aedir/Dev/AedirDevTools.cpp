@@ -841,8 +841,23 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 		DevToolsReport(FString::Printf(TEXT("Body: stamina %.1f fatigue %.2f strength %.3f athletism %.3f balance %.2f ragdoll %d pelvis %.0f %.0f %.0f"), Player->Stats->GetStamina(), Player->Stats->GetFatigue(), Player->Stats->Strength, Player->Stats->Athletism,
 			Player->Balance ? Player->Balance->GetBalance() : 1.f, Player->Balance && Player->Balance->IsRagdoll() ? 1 : 0, PelvisLocal.X, PelvisLocal.Y, PelvisLocal.Z));
 	}
+	const auto LegBend = [Mesh](const TCHAR* Thigh, const TCHAR* Calf, const TCHAR* Foot)
+	{
+		const FVector Knee = Mesh->GetBoneLocation(Calf);
+		return FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct((Knee - Mesh->GetBoneLocation(Thigh)).GetSafeNormal(), (Mesh->GetBoneLocation(Foot) - Knee).GetSafeNormal()), -1.0, 1.0)));
+	};
+	DevToolsReport(FString::Printf(TEXT("Knees bent %.1f %.1f deg"), LegBend(TEXT("thigh_l"), TEXT("calf_l"), TEXT("foot_l")), LegBend(TEXT("thigh_r"), TEXT("calf_r"), TEXT("foot_r"))));
 	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
 	{
+		// Where the inside of the hand looks, and how much of that is towards the middle of the body.
+		const TCHAR* PalmSuffix = Hand == EAedirHand::Left ? TEXT("_l") : TEXT("_r");
+		const auto PalmBone = [Mesh, PalmSuffix](const TCHAR* Bone) { return Mesh->GetBoneLocation(FName(*FString::Printf(TEXT("%s%s"), Bone, PalmSuffix))); };
+		const FVector PalmWrist = PalmBone(TEXT("hand"));
+		const FVector PalmFacing = FVector::CrossProduct(PalmBone(TEXT("index_01")) - PalmBone(TEXT("pinky_01")), PalmBone(TEXT("middle_01")) - PalmWrist).GetSafeNormal() * (Hand == EAedirHand::Left ? 1.0 : -1.0);
+		const FVector PalmLocal = Player->GetActorTransform().InverseTransformVectorNoScale(PalmFacing);
+		const FVector WristLocal = Player->GetActorTransform().InverseTransformPositionNoScale(PalmWrist);
+		DevToolsReport(FString::Printf(TEXT("Palm %s at %.0f %.0f %.0f looks %.2f %.2f %.2f, towards body %.2f"), PalmSuffix, WristLocal.X, WristLocal.Y, WristLocal.Z, PalmLocal.X, PalmLocal.Y, PalmLocal.Z, FVector::DotProduct(PalmLocal, FVector(-WristLocal.X, -WristLocal.Y, 0.0).GetSafeNormal())));
+
 		const AAedirItemActor* Item = Player->Interaction->GetHeldItem(Hand);
 		if (!Item)
 		{

@@ -14,11 +14,14 @@
 
 namespace
 {
-	constexpr float AedirSwingTwistInterpSpeed = 14.f;
+	constexpr float AedirSwingTwistInterpSpeed = 16.f;
+	// A turn of the chest starts from the hips. A fist adds its weight forward.
+	constexpr float AedirSwingPelvisShare = 0.3f;
+	constexpr float AedirPunchLeanInterpSpeed = 14.f;
 	// The hand eases into and out of holding an item, it does not jump when the item comes or goes.
 	constexpr float AedirWeaponAimFadeSeconds = 0.2f;
 	constexpr float AedirWristLooseDegrees = 28.f;
-	constexpr float AedirWristFirmDegrees = 50.f;
+	constexpr float AedirWristFirmDegrees = 40.f;
 	constexpr float AedirRestPhaseMin = 0.4f;
 	constexpr float AedirRestPhaseMax = 0.5f;
 	constexpr float AedirRestCatchUpCyclesPerSecond = 2.f;
@@ -38,7 +41,7 @@ namespace
 	constexpr float AedirPhaseCorrectionSpeed = 10.f;
 	constexpr float AedirReachHipHingeShare = 0.5f;
 	constexpr float AedirFootDropLiftLimit = 0.25f;
-	constexpr float AedirLegComfortShare = 0.985f;
+	constexpr float AedirLegComfortShare = 0.995f;
 	constexpr float AedirFootDropWalkMaxCm = 16.f;
 	constexpr float AedirFootDropRunMaxCm = 6.f;
 	constexpr float AedirStairMinSpeedScale = 0.6f;
@@ -530,7 +533,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * GaitIntensity;
 	// A low reach hinges at the hips as well as along the spine: half of the bend tips the pelvis forward.
 	const float ReachLean = Interaction ? Interaction->GetReachLeanDegrees() : 0.f;
-	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch - ReachLean * AedirReachHipHingeShare, PelvisYaw, BalanceLean.Roll);
+	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch - ReachLean * AedirReachHipHingeShare, PelvisYaw + SmoothedSwingTwist * AedirSwingPelvisShare, BalanceLean.Roll);
 
 	const float LookYaw = MovementComponent->GetYawDeltaToControl();
 	const float LookPitch = FMath::Clamp(FRotator::NormalizeAxis(CreatureOwner->GetControlRotation().Pitch), -MaxLookPitchDegrees, MaxLookPitchDegrees);
@@ -543,6 +546,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineLeanPitch -= ProtectiveSpineLeanDegrees * ProtectiveAlpha;
 	// Backward positive: the torso leans back to bring the kicking leg up.
 	GaitState.SpineLeanPitch += KickSpineLeanDegrees * KickAlpha;
+	SmoothedPunchLean = FMath::FInterpTo(SmoothedPunchLean, Combat ? Combat->GetPunchLeanDegrees() : 0.f, DeltaTime, AedirPunchLeanInterpSpeed);
+	GaitState.SpineLeanPitch -= SmoothedPunchLean;
 	const float TwistTarget = FMath::Clamp(LookYaw * SpineTwistScale, -SpineTwistLimitDegrees, SpineTwistLimitDegrees);
 	SmoothedSpineTwist = FMath::FInterpTo(SmoothedSpineTwist, TwistTarget, DeltaTime, LookInterpSpeed);
 	SmoothedSwingTwist = FMath::FInterpTo(SmoothedSwingTwist, Combat ? Combat->GetSwingTwistDegrees() : 0.f, DeltaTime, AedirSwingTwistInterpSpeed);

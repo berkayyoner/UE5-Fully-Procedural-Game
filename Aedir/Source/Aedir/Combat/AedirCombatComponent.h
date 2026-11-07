@@ -107,6 +107,8 @@ struct FAedirArmDynamics
 
 	// World direction the blade points in while a weapon is in the stance. It lags the mouse, more so for a heavy weapon.
 	FVector WeaponDir = FVector::ZeroVector;
+	// It has weight: the wrist gives and the blade carries on a little after the arm has stopped.
+	FVector WeaponDirSpeed = FVector::ZeroVector;
 
 	bool bScriptedControl = false;
 	FVector ScriptedTargetWorld = FVector::ZeroVector;
@@ -336,9 +338,11 @@ public:
 
 	// Holds a kick at that share of its length, for a look at the pose. Below zero lets it run.
 	void DevHoldKick(float Share);
+	FVector2D DevGetPoseAim(EAedirHand Hand) const { return GetArm(Hand).PoseAimDeg; }
 
 	// How far the spine turns with a weapon pulled to the side.
 	float GetSwingTwistDegrees() const;
+	float GetPunchLeanDegrees() const;
 
 	// Puts the blade of that hand there at once, when it takes over a weapon from elsewhere.
 	void SetWeaponDirNow(EAedirHand Hand, const FVector& DirectionWorld);
@@ -533,6 +537,9 @@ private:
 	void ResolveHeldCollision(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& PrevHand, const FVector& PrevDir, float DeltaTime);
 	FVector ComputeHalfSwordHand(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
 	FVector ComputeStanceHandLocal(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
+	FVector ComputeSwingHandKey(EAedirHand Hand, const FVector& Rest, float Travel) const;
+	FVector2D ComputeSwingBladeKey(EAedirHand Hand, const AAedirItemActor* Item, float Travel) const;
+	void ComputePolearmPose(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item, FVector& OutHandLocal, FVector& OutDirLocal) const;
 	void UpdatePoseAim(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);
 	// Spears, staves and the like: too long to hold in front of the groin.
 	static bool IsPolearm(const AAedirItemActor* Item);

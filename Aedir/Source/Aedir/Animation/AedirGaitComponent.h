@@ -746,6 +746,7 @@ private:
 	float DynamicHipOffset = 0.f;
 	float SmoothedSpineTwist = 0.f;
 	float SmoothedSwingTwist = 0.f;
+	float SmoothedPunchLean = 0.f;
 	bool bFeetInitialized = false;
 
 	// Seconds of motion time that drive the idle sway and the weight shift.

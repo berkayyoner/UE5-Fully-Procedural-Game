@@ -77,7 +77,7 @@ public:
 	float FallBalanceThreshold = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float FallDelaySeconds = 1.2f;
+	float FallDelaySeconds = 0.45f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float GetUpBalanceThreshold = 0.6f;
@@ -250,6 +250,7 @@ private:
 	void SetRagdollPresentation(bool bRagdoll);
 	void ApplyRagdollPhysics(bool bRagdoll);
 	void ApplyBodyContacts(bool bRagdoll);
+	void ApplyLegPhysics(bool bRagdoll);
 	void ApplyJointLimits(bool bRagdoll);
 	TArray<FConstraintProfileProperties> LooseJointLimits;
 	FTransform MeshRestRelative = FTransform::Identity;
