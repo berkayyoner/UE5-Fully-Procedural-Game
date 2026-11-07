@@ -24,6 +24,8 @@ namespace
 	constexpr float AedirHeelRaiseCm = 7.f;
 	constexpr float AedirFootLooseGain = 3.f;
 	constexpr float AedirWristFollowShare = 0.25f;
+	// A bent elbow carries the forearm in across the belly, as a runner's does.
+	constexpr float AedirForearmInwardShare = 0.4f;
 	constexpr float AedirClavicleFollowShare = 0.25f;
 	constexpr float AedirReachAlphaThreshold = 0.001f;
 	constexpr float AedirElbowOutwardDistance = 60.f;
@@ -339,7 +341,10 @@ void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FB
 	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
 	if (Radius.IsValid())
 	{
-		RotateBone(CSPose, Radius, ActorRotationToMesh(FRotator(RestElbowDegrees, 0.f, 0.f).Quaternion()));
+		// The left arm hangs on the actor's -Y side, so in is towards +Y, a positive yaw.
+		const float InwardSign = ClavicleName == BoneNameSet.LeftClavicle ? 1.f : -1.f;
+		const float InwardDegrees = InwardSign * ElbowDegrees * AedirForearmInwardShare * FMath::Clamp(1.f - ReachAlpha, 0.f, 1.f);
+		RotateBone(CSPose, Radius, ActorRotationToMesh(FRotator(RestElbowDegrees, InwardDegrees, 0.f).Quaternion()));
 	}
 
 	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);

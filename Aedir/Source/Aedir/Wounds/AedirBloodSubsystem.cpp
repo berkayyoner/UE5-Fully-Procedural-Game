@@ -38,8 +38,8 @@ namespace
 	constexpr float BloodSplatDepth = 6.f;
 	constexpr float BloodSplatRadiusPerScale = 8.f;
 	constexpr float BloodSplatMinScale = 0.05f;
-	constexpr float BloodSplatFadeStartFraction = 0.6f;
-	constexpr float BloodSplatFadeDurationFraction = 0.4f;
+	constexpr float BloodSplatFadeStartFraction = 0.9f;
+	constexpr float BloodSplatFadeDurationFraction = 0.1f;
 	constexpr float BloodDropHitSplatScale = 1.f;
 
 	struct FBloodMaterialSlot

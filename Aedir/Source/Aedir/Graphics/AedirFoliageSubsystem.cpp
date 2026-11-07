@@ -37,6 +37,10 @@ namespace
 	constexpr int32 FoliageMaxBend = 3;
 	constexpr float FoliageBendDistance = 70.f;
 	constexpr float FoliageWindFollow = 0.4f;
+	constexpr float FoliageGrassMinCm = 14.f;
+	constexpr float FoliageGrassMaxCm = 34.f;
+	constexpr float FoliageFlowerMinCm = 22.f;
+	constexpr float FoliageFlowerMaxCm = 40.f;
 	const TCHAR* const FoliageTreeRoot = TEXT("/Game/Megaplant_Library/Tree_Norway_Spruce/Tree_Norway_Spruce_01/");
 	const TCHAR* const FoliageTreeName = TEXT("Tree_Norway_Spruce_01");
 	const TCHAR* const FoliageWindDataClass = TEXT("/Script/DynamicWind.DynamicWindData");
@@ -235,9 +239,13 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 		const TArray<UStaticMesh*>& Pool = bFlower ? Flowers : Grasses;
 		UStaticMesh* Mesh = Pool[Random.RandHelper(Pool.Num())];
 		const FRotator Turn(0.f, Random.FRandRange(0.f, 360.f), 0.f);
-		const float Scale = Random.FRandRange(0.8f, 1.25f);
+		// A meadow that has been grazed and walked: shin-high at most, whatever height the model was made at.
+		const float MadeHeight = FMath::Max(static_cast<float>(Mesh->GetBoundingBox().GetSize().Z), 1.f);
+		const float WantedHeight = bFlower ? Random.FRandRange(FoliageFlowerMinCm, FoliageFlowerMaxCm) : FoliageGrassMinCm + (FoliageGrassMaxCm - FoliageGrassMinCm) * FMath::Square(Random.FRand());
+		const float Spread = Random.FRandRange(0.85f, 1.15f);
+		const FVector Scale(Spread, Spread, FMath::Clamp(WantedHeight / MadeHeight, 0.25f, 1.1f));
 		const FQuat ToSlope = FQuat::FindBetweenNormals(FVector::UpVector, Hit.ImpactNormal);
-		PatchOf(Mesh)->AddInstance(FTransform(ToSlope * Turn.Quaternion(), Hit.ImpactPoint, FVector(Scale)), true);
+		PatchOf(Mesh)->AddInstance(FTransform(ToSlope * Turn.Quaternion(), Hit.ImpactPoint, Scale), true);
 		++Planted;
 	}
 	UE_LOG(LogAedir, Log, TEXT("Planted %d grass and flowers around %s"), Planted, *Around.ToCompactString());
@@ -325,8 +333,8 @@ void UAedirFoliageSubsystem::UpdateWind(float DeltaTime)
 	{
 		return;
 	}
-	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Intensity"), FMath::Lerp(0.4f, 3.f, WindNow));
-	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Speed"), FMath::Lerp(0.7f, 2.2f, WindNow));
+	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Intensity"), FMath::Lerp(0.12f, 1.1f, WindNow));
+	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Speed"), FMath::Lerp(0.35f, 1.1f, WindNow));
 }
 
 void UAedirFoliageSubsystem::CrushUnderFeet()

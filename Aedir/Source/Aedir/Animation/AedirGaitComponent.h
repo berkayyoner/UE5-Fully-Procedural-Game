@@ -444,7 +444,7 @@ public:
 	float MaxArmSwingWalkDegrees = 12.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxArmSwingRunDegrees = 42.f;
+	float MaxArmSwingRunDegrees = 36.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ArmSideScale = 0.4f;
@@ -463,7 +463,7 @@ public:
 	float ElbowBendWalkDegrees = 5.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ElbowBendRunDegrees = 55.f;
+	float ElbowBendRunDegrees = 68.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float KneeBendMaxDegrees = 40.f;

@@ -33,6 +33,9 @@ private:
 
 	void EnsureMeshes();
 	void Spawn(FFall& Fall, int32 Index, const FVector& Center, bool bAnyHeight, const FVector& Wind, float FallSpeed, float Sideways);
+	// Splashes where drops meet the ground: each one opens and is gone in a moment.
+	void StepSplashes(float DeltaTime, const FVector& Eye);
+
 	void Step(FFall& Fall, UInstancedStaticMeshComponent* Mesh, UMaterialInstanceDynamic* Material, float Wanted, float DeltaTime, const FVector& Eye, const FVector& Wind, float FallSpeed, float Sideways, const FVector2f& Size, bool bAlongFall);
 
 	UPROPERTY(Transient)
@@ -45,6 +48,12 @@ private:
 	TObjectPtr<UInstancedStaticMeshComponent> SnowMesh;
 
 	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> SplashMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> SplashMaterial;
+
+	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> RainMaterial;
 
 	UPROPERTY(Transient)
@@ -52,6 +61,11 @@ private:
 
 	FFall Rain;
 	FFall Snow;
+	TArray<FVector> SplashPlaces;
+	TArray<float> SplashAges;
+	TArray<FTransform> SplashTransforms;
+	float SplashDebt = 0.f;
+	int32 NextSplash = 0;
 	FRandomStream Random;
 	float RoofTimer = 0.f;
 	bool bUnderRoof = false;

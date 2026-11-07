@@ -42,8 +42,9 @@ class AEDIR_API UAedirBloodSubsystem : public UWorldSubsystem
 
 public:
 	static constexpr int32 MaxDrops = 64;
-	static constexpr int32 MaxSplats = 160;
-	static constexpr float SplatLifetime = 150.f;
+	static constexpr int32 MaxSplats = 700;
+	// Three game days at Skyrim's pace, where a day passes in 72 real minutes.
+	static constexpr float SplatLifetime = 3.f * 72.f * 60.f;
 
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 

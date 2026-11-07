@@ -30,11 +30,18 @@ namespace
 	constexpr float PrecipRoofSeconds = 0.5f;
 	constexpr float PrecipRoofLookCm = 3000.f;
 	constexpr float PrecipPlaneCm = 100.f;
-	const FVector2f PrecipRainSize(65.f, 1.1f);
+	const FVector2f PrecipRainSize(30.f, 0.45f);
 	const FVector2f PrecipSnowSize(2.6f, 2.6f);
 	const FLinearColor PrecipRainColor(0.55f, 0.6f, 0.68f);
 	const FLinearColor PrecipSnowColor(0.85f, 0.88f, 0.92f);
-	constexpr float PrecipRainStrength = 0.34f;
+	constexpr float PrecipRainStrength = 0.3f;
+	constexpr int32 PrecipSplashCount = 260;
+	constexpr float PrecipSplashPerSecond = 1400.f;
+	constexpr float PrecipSplashLife = 0.16f;
+	constexpr float PrecipSplashRadiusCm = 1300.f;
+	constexpr float PrecipSplashSizeCm = 9.f;
+	constexpr float PrecipSplashStrength = 0.45f;
+	const FLinearColor PrecipSplashColor(0.7f, 0.74f, 0.8f);
 	constexpr float PrecipSnowStrength = 0.9f;
 }
 
@@ -90,6 +97,11 @@ void UAedirPrecipitationSubsystem::EnsureMeshes()
 	};
 	Make(RainMesh, RainMaterial, Rain, PrecipRainCount, PrecipRainColor);
 	Make(SnowMesh, SnowMaterial, Snow, PrecipSnowCount, PrecipSnowColor);
+	FFall SplashFall;
+	Make(SplashMesh, SplashMaterial, SplashFall, PrecipSplashCount, PrecipSplashColor);
+	SplashPlaces.SetNumZeroed(PrecipSplashCount);
+	SplashAges.Init(PrecipSplashLife, PrecipSplashCount);
+	SplashTransforms = MoveTemp(SplashFall.Transforms);
 }
 
 void UAedirPrecipitationSubsystem::Spawn(FFall& Fall, int32 Index, const FVector& Center, bool bAnyHeight, const FVector& Wind, float FallSpeed, float Sideways)
@@ -144,6 +156,64 @@ void UAedirPrecipitationSubsystem::Step(FFall& Fall, UInstancedStaticMeshCompone
 	}
 }
 
+void UAedirPrecipitationSubsystem::StepSplashes(float DeltaTime, const FVector& Eye)
+{
+	UWorld* World = GetWorld();
+	const float Share = bUnderRoof ? 0.f : FMath::Clamp(Rain.Fade, 0.f, 1.f);
+	const bool bAny = Share > 0.f || SplashAges.ContainsByPredicate([](float Age) { return Age < PrecipSplashLife; });
+	if (SplashMesh->IsVisible() != bAny)
+	{
+		SplashMesh->SetVisibility(bAny);
+	}
+	if (!bAny)
+	{
+		return;
+	}
+
+	// Each new splash finds the ground under a random spot near the eye, so it lands on slopes, rocks and roofs alike.
+	SplashDebt += PrecipSplashPerSecond * Share * DeltaTime;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirPrecipSplash), false);
+	if (const APlayerController* Viewer = World->GetFirstPlayerController())
+	{
+		Params.AddIgnoredActor(Viewer->GetPawn());
+	}
+	int32 Tries = FMath::Min(FMath::FloorToInt(SplashDebt), PrecipSplashCount / 4);
+	SplashDebt -= FMath::FloorToFloat(SplashDebt);
+	while (Tries-- > 0)
+	{
+		// Closer ground gets more splashes, where they can be seen.
+		const float Distance = PrecipSplashRadiusCm * FMath::Square(Random.FRand());
+		const FVector Spot = Eye + FRotator(0.f, Random.FRandRange(0.f, 360.f), 0.f).Vector() * Distance;
+		FHitResult Hit;
+		if (World->LineTraceSingleByChannel(Hit, Spot + FVector(0.f, 0.f, 400.f), Spot - FVector(0.f, 0.f, 900.f), ECC_Visibility, Params))
+		{
+			SplashPlaces[NextSplash] = Hit.ImpactPoint + FVector(0.f, 0.f, 0.5f);
+			SplashAges[NextSplash] = 0.f;
+			NextSplash = (NextSplash + 1) % PrecipSplashCount;
+		}
+	}
+
+	for (int32 Index = 0; Index < PrecipSplashCount; ++Index)
+	{
+		float& Age = SplashAges[Index];
+		if (Age >= PrecipSplashLife)
+		{
+			SplashTransforms[Index].SetScale3D(FVector(0.f));
+			continue;
+		}
+		Age += DeltaTime;
+		// A crown that jumps up, widens and sinks away.
+		const float T = FMath::Clamp(Age / PrecipSplashLife, 0.f, 1.f);
+		const float Width = PrecipSplashSizeCm * (0.35f + T) / PrecipPlaneCm;
+		const float Height = PrecipSplashSizeCm * 0.6f * FMath::Sin(T * PI) / PrecipPlaneCm;
+		const FVector Where = SplashPlaces[Index] + FVector(0.f, 0.f, Height * PrecipPlaneCm * 0.5f);
+		const FVector ToEye = (Eye - Where).GetSafeNormal2D();
+		SplashTransforms[Index] = FTransform(FRotationMatrix::MakeFromXZ(FVector::UpVector, ToEye.IsNearlyZero() ? FVector::ForwardVector : ToEye).ToQuat(), Where, FVector(FMath::Max(Height, 0.01f), Width, 1.f));
+	}
+	SplashMesh->BatchUpdateInstancesTransforms(0, SplashTransforms, true, true, true);
+	SplashMaterial->SetScalarParameterValue(TEXT("Strength"), PrecipSplashStrength);
+}
+
 void UAedirPrecipitationSubsystem::Tick(float DeltaTime)
 {
 	UWorld* World = GetWorld();
@@ -182,6 +252,7 @@ void UAedirPrecipitationSubsystem::Tick(float DeltaTime)
 	const FVector Wind = FRotator(0.f, PrecipWindYaw, 0.f).Vector() * (Manager->GetWindShare() * PrecipWindCmPerShare);
 	Step(Rain, RainMesh, RainMaterial, WantedRain, DeltaTime, Eye, Wind, PrecipRainSpeed, PrecipRainSideways, PrecipRainSize, true);
 	Step(Snow, SnowMesh, SnowMaterial, WantedSnow, DeltaTime, Eye, Wind * 0.6f, PrecipSnowSpeed, PrecipSnowSideways, PrecipSnowSize, false);
+	StepSplashes(DeltaTime, Eye);
 	RainMaterial->SetScalarParameterValue(TEXT("Strength"), PrecipRainStrength);
 	SnowMaterial->SetScalarParameterValue(TEXT("Strength"), PrecipSnowStrength);
 }
