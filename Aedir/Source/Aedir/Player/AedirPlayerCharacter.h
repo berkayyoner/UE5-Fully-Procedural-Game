@@ -333,6 +333,10 @@ public:
 	UFUNCTION(Exec)
 	void PrecipInfo();
 
+	// Holds or lets go of a mouse button's guard, as the button would.
+	UFUNCTION(Exec)
+	void GuardKey(int32 RightHand, int32 Down);
+
 	// MeshSheet /Game/Pack/Meshes: stands every model of a folder in a row with its name over it and logs its size, for choosing from a pack.
 	UFUNCTION(Exec)
 	void MeshSheet(const FString& Folder);

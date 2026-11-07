@@ -100,17 +100,22 @@ namespace
 	constexpr float AedirWeaponHandPitch = -18.f;
 	constexpr float AedirWeaponFightHandPitch = -5.f;
 	constexpr float AedirWeaponHandPitchShare = 0.7f;
-	constexpr float AedirWeaponTurnRate = 40.f;
+	constexpr float AedirWeaponTurnRate = 48.f;
 	constexpr float AedirWeaponTurnFrequencyShare = 1.4f;
 	constexpr float AedirWeaponTurnDampingLight = 0.78f;
 	constexpr float AedirWeaponTurnDampingHeavy = 0.5f;
 	constexpr float AedirWeaponTurnDampingPerKg = 0.05f;
 	constexpr float AedirWeaponTurnSubstep = 1.f / 120.f;
 	constexpr float AedirWeaponWeightDroopPerKg = 1.5f;
-	// How fast the arms get to where the mouse wants them. Weight slows them, and so does being out of breath.
-	constexpr float AedirPoseMaxSpeed = 820.f;
-	constexpr float AedirPoseFollowRate = 13.f;
-	constexpr float AedirPoseAccelRate = 30.f;
+	// How the arms get to where the mouse wants them: the muscles push with a limited force, so a swing gathers speed, peaks
+	// and is reined in again, a heavier weapon running on a little further. Weight slows them, and so does being out of breath.
+	constexpr float AedirPoseMaxSpeed = 1500.f;
+	constexpr float AedirPoseMaxAccel = 14000.f;
+	constexpr float AedirPoseFrequency = 17.f;
+	constexpr float AedirPoseDampingLight = 0.85f;
+	constexpr float AedirPoseDampingHeavy = 0.6f;
+	constexpr float AedirPoseDampingPerKg = 0.06f;
+	constexpr float AedirPoseSubstep = 1.f / 120.f;
 	constexpr float AedirPoseSpeedMassShare = 0.15f;
 	constexpr float AedirPoseStrengthReference = 0.7f;
 	constexpr float AedirFatigueSpeedLoss = 0.55f;
@@ -145,7 +150,7 @@ namespace
 	constexpr float AedirWeaponOpenOverPitch = 40.f;
 	constexpr float AedirWeaponOpenOverAcrossPitch = 66.f;
 	constexpr float AedirWeaponOpenMaxPitch = 86.f;
-	constexpr float AedirWeaponMaxTurnDegrees = 1700.f;
+	constexpr float AedirWeaponMaxTurnDegrees = 2400.f;
 	constexpr float AedirWeaponMaxTurnMassShare = 0.08f;
 	constexpr float AedirWeaponLowerPitchShare = 0.9f;
 	constexpr float AedirWeaponSpineShare = 0.5f;
@@ -278,7 +283,26 @@ namespace
 	constexpr float AedirArmorMaxProtection = 0.9f;
 
 	// A graze does little of what a weapon can do; the full damage takes a blow with this much energy behind it.
-	constexpr float AedirImpactFullFlatJoules = 30.f;
+	constexpr float AedirImpactFullFlatJoules = 120.f;
+	constexpr float AedirImpactMaxHealthShare = 0.6f;
+	// How fast a caught blade has to have been going to tear itself out of the hand.
+	constexpr float AedirWrenchSpeedBase = 2600.f;
+	constexpr float AedirWrenchSpeedPerStrength = 12.f;
+	constexpr float AedirWrenchTwoHandShare = 1.6f;
+	// An edge needs this much energy, before armour, to go right through each part of the body. A blow well short of it
+	// glances off, one in between bites in and sticks, and anything past it carries on.
+	constexpr float AedirCutHeadJoules = 160.f;
+	constexpr float AedirCutTorsoJoules = 340.f;
+	constexpr float AedirCutArmJoules = 120.f;
+	constexpr float AedirCutLegJoules = 190.f;
+	constexpr float AedirCutGlanceShare = 0.3f;
+	constexpr float AedirCutLuck = 0.2f;
+	constexpr float AedirGlanceBounce = 0.35f;
+	constexpr float AedirGlanceDamageShare = 0.4f;
+	constexpr float AedirCutThroughKeep = 0.7f;
+	constexpr float AedirLodgedMinSeconds = 0.25f;
+	constexpr float AedirLodgedMaxSeconds = 0.9f;
+	constexpr float AedirLodgedTearCm = 32.f;
 	constexpr float AedirImpactMinFlatShare = 0.12f;
 	// Most of a blow goes into the wound. This share of it is what pushes the body off its feet.
 	constexpr float AedirImpactBodyEnergyShare = 0.35f;
@@ -459,6 +483,8 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
 	UpdateArms(DeltaTime);
 	UpdateObjectCarry();
+	UpdateHeldWeight(DeltaTime);
+	UpdateGripJoint(DeltaTime);
 
 	if (bAuthority)
 	{
@@ -726,7 +752,7 @@ bool UAedirCombatComponent::IsWeaponStance(EAedirHand Hand) const
 
 bool UAedirCombatComponent::IsGripHeld() const
 {
-	return bTwoHandGrip && !(Creature && Creature->Interaction && Creature->Interaction->IsHolsterMoving());
+	return bTwoHandGrip && GripLostSeconds <= 0.f && !(Creature && Creature->Interaction && Creature->Interaction->IsHolsterMoving());
 }
 
 bool UAedirCombatComponent::IsHalfSwording() const
@@ -852,6 +878,17 @@ void UAedirCombatComponent::ResolveHeldCollision(EAedirHand Hand, FAedirArmDynam
 		Arm.HandWorld -= Arm.WeaponDir * FMath::Min(Over, AedirBladeMaxPullBackCm);
 		Arm.HandVelocity = FVector::ZeroVector;
 		Arm.WeaponDirSpeed = FVector::ZeroVector;
+		return;
+	}
+
+	// Caught fast enough, the weapon is wrenched out of the hand instead of stopping the arm.
+	const float CaughtSpeed = static_cast<float>((Arm.HandVelocity + (Arm.WeaponDir - PrevDir) * (Length / FMath::Max(DeltaTime, KINDA_SMALL_NUMBER))).Size());
+	const float Strength = Creature->Stats ? Creature->Stats->Strength : AedirDefaultStat;
+	const float WrenchSpeed = (AedirWrenchSpeedBase + Strength * AedirWrenchSpeedPerStrength) * (IsGripHeld() ? AedirWrenchTwoHandShare : 1.f);
+	if (CaughtSpeed > WrenchSpeed && IsAuthoritative() && Creature->Interaction)
+	{
+		UE_LOG(LogAedir, Log, TEXT("%s had %s wrenched from the hand at %.0f cm/s"), *Creature->GetName(), *Item->GetName(), CaughtSpeed);
+		Creature->Interaction->DropHeld(Hand);
 		return;
 	}
 
@@ -1341,10 +1378,29 @@ void UAedirCombatComponent::UpdatePoseAim(EAedirHand Hand, FAedirArmDynamics& Ar
 	const AAedirItemActor* Item = GetHeldItem(Hand);
 	const float Load = WeaponWeight * (Item && Item->bTwoHanded && !bTwoHandGrip ? AedirOneHandedStrainMass : 1.f) * (bTwoHandGrip ? 0.5f : 1.f);
 	const float Tired = 1.f - (Stats ? Stats->GetFatigue() : 0.f) * AedirFatigueSpeedLoss;
-	const float MaxSpeed = AedirPoseMaxSpeed * (StrengthFactor / AedirPoseStrengthReference) * Tired / (1.f + Load * AedirPoseSpeedMassShare);
-	const FVector2D Wanted = ((Arm.AimOffsetDeg - Arm.PoseAimDeg) * AedirPoseFollowRate).ClampAxes(-MaxSpeed, MaxSpeed);
-	Arm.PoseAimSpeed = FMath::Vector2DInterpTo(Arm.PoseAimSpeed, Wanted, DeltaTime, AedirPoseAccelRate);
-	Arm.PoseAimDeg += Arm.PoseAimSpeed * DeltaTime;
+	const float Power = (StrengthFactor / AedirPoseStrengthReference) * Tired / (1.f + Load * AedirPoseSpeedMassShare);
+	const float MaxSpeed = AedirPoseMaxSpeed * Power;
+	const float MaxAccel = AedirPoseMaxAccel * Power;
+	const float Frequency = AedirPoseFrequency / FMath::Sqrt(1.f + Load * AedirPoseSpeedMassShare);
+	const float DampingRatio = FMath::Clamp(AedirPoseDampingLight - Load * AedirPoseDampingPerKg, AedirPoseDampingHeavy, AedirPoseDampingLight);
+	const int32 Steps = FMath::Max(1, FMath::CeilToInt(DeltaTime / AedirPoseSubstep));
+	const float StepSeconds = DeltaTime / Steps;
+	for (int32 Step = 0; Step < Steps; ++Step)
+	{
+		FVector2D Push = (Arm.AimOffsetDeg - Arm.PoseAimDeg) * (Frequency * Frequency) - Arm.PoseAimSpeed * (2.f * DampingRatio * Frequency);
+		const double PushSize = Push.Size();
+		if (PushSize > MaxAccel)
+		{
+			Push *= MaxAccel / PushSize;
+		}
+		Arm.PoseAimSpeed += Push * StepSeconds;
+		const double Speed = Arm.PoseAimSpeed.Size();
+		if (Speed > MaxSpeed)
+		{
+			Arm.PoseAimSpeed *= MaxSpeed / Speed;
+		}
+		Arm.PoseAimDeg += Arm.PoseAimSpeed * StepSeconds;
+	}
 
 	// Throwing a weight around tires the arm and builds it.
 	const bool bSwinging = Item && !IsSecondaryGripHand(Hand) && (IsWeaponStance(Hand) || (IsObjectGrip() && Hand == GetGripHand()));
@@ -2042,6 +2098,43 @@ void UAedirCombatComponent::IntegrateArm(EAedirHand Hand, FAedirArmDynamics& Arm
 
 	UpdateWeaponDir(Hand, Arm, DeltaTime, StrengthFactor, WeaponWeight);
 	ResolveHeldCollision(Hand, Arm, PrevHand, PrevDir, DeltaTime);
+	UpdateLodged(Hand, Arm, DeltaTime);
+}
+
+void UAedirCombatComponent::UpdateLodged(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime)
+{
+	USkeletalMeshComponent* Body = Arm.LodgedIn.Get();
+	if (!Body)
+	{
+		Arm.LodgedSeconds = 0.f;
+		return;
+	}
+
+	const FTransform BoneWorld = Body->GetSocketTransform(Arm.LodgedBone, RTS_World);
+	const FVector Tip = BoneWorld.TransformPosition(Arm.LodgedTipLocal);
+	const FVector Dir = BoneWorld.TransformVectorNoScale(Arm.LodgedDirLocal).GetSafeNormal();
+	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
+	const FVector Held = Tip - Dir * (GetEffectiveWeaponLength(Hand) * Scale);
+
+	// A hard pull tears it out early; otherwise it works free on its own after a moment.
+	Arm.LodgedSeconds -= DeltaTime;
+	const bool bTorn = FVector::Dist(ComputeArmTarget(Hand, Arm), Held) > AedirLodgedTearCm * Scale;
+	if (Arm.LodgedSeconds <= 0.f || bTorn || Dir.IsNearlyZero())
+	{
+		if (AAedirCreature* Victim = Cast<AAedirCreature>(Body->GetOwner()); Victim && Victim->Wounds && bTorn && IsAuthoritative())
+		{
+			Victim->Wounds->AddWound(Arm.LodgedBone, Tip, -Dir, EAedirDamageType::Slash, AedirCutArmJoules * 0.25f, 0.f, Dir * 10.f);
+		}
+		Arm.LodgedIn.Reset();
+		Arm.LodgedSeconds = 0.f;
+		return;
+	}
+
+	Arm.HandWorld = Held;
+	Arm.HandVelocity = FVector::ZeroVector;
+	Arm.WeaponDir = Dir;
+	Arm.WeaponDirSpeed = FVector::ZeroVector;
+	Arm.PoseAimSpeed = FVector2D::ZeroVector;
 }
 
 void UAedirCombatComponent::ApplyRemoteArmState(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime)
@@ -2402,7 +2495,8 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, const FVector& TipVelocity, float RelativeSpeed, float MassEff, float AxialAlignment)
 {
 	AAedirItemActor* HeldItem = GetHeldItem(Hand);
-	const FName Bone = Hit.BoneName;
+	// A blow that met the body's capsule still lands on whatever part of the body is closest to where it struck.
+	const FName Bone = !Hit.BoneName.IsNone() || !Victim->GetMesh() ? Hit.BoneName : Victim->GetMesh()->FindClosestBone(Hit.ImpactPoint);
 	const EAedirBodyZone Zone = ClassifyBodyZone(Bone);
 	const EAedirDamageType DamageType = HeldItem ? HeldItem->GetDamageType() : EAedirDamageType::Blunt;
 	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
@@ -2410,7 +2504,23 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	const float VictimZoneProtection = Victim->Combat ? Victim->Combat->GetArmorProtection(Zone) : 0.f;
 	const float ArmorFactor = 1.f - VictimZoneProtection;
 
-	const float Damage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(DamageType, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor + FlatDamage;
+	// One blow to the body or a limb leaves the victim alive however hard it was; only the head can be finished at once.
+	const float RawDamage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(DamageType, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor + FlatDamage;
+	// How far an edge or a point gets depends on how fast it came: short of enough it glances off, between it bites and
+	// sticks, past it it goes on through.
+	float CutJoules = AedirCutTorsoJoules;
+	switch (Zone)
+	{
+	case EAedirBodyZone::Head: CutJoules = AedirCutHeadJoules; break;
+	case EAedirBodyZone::Arm: CutJoules = AedirCutArmJoules; break;
+	case EAedirBodyZone::Leg: CutJoules = AedirCutLegJoules; break;
+	default: break;
+	}
+	const bool bEdged = HeldItem && (DamageType == EAedirDamageType::Slash || DamageType == EAedirDamageType::Pierce);
+	const float CutShare = Energy * ArmorFactor / CutJoules * FMath::FRandRange(1.f - AedirCutLuck, 1.f + AedirCutLuck);
+	const bool bGlance = bEdged && CutShare < AedirCutGlanceShare;
+	const float DamageShare = bGlance ? AedirGlanceDamageShare : 1.f;
+	const float Damage = DamageShare * (Zone == EAedirBodyZone::Head || !Victim->Stats ? RawDamage : FMath::Min(RawDamage, Victim->Stats->GetMaxHealth() * AedirImpactMaxHealthShare));
 	const float AppliedDamage = Victim->ReceiveCreatureDamage(Damage);
 
 	EAedirLimb Limb = EAedirLimb::LeftArm;
@@ -2438,19 +2548,54 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	UE_LOG(LogAedir, Log, TEXT("Impact: %s hit %s on %s, %.0f cm/s, %.1f kg, %.0f J, %.1f damage, balance %.2f, down %d"), *Creature->GetName(), *Victim->GetName(), *Bone.ToString(), RelativeSpeed, MassEff, Energy, AppliedDamage,
 		Victim->Balance ? Victim->Balance->GetBalance() : 1.f, Victim->Balance && Victim->Balance->IsRagdoll() ? 1 : 0);
 
-	if (Victim->Wounds && DamageType == EAedirDamageType::Slash)
+	bool bSevered = false;
+	if (Victim->Wounds && DamageType == EAedirDamageType::Slash && !bGlance)
 	{
 		const FVector CutNormal = FVector::CrossProduct(TipVelocity.GetSafeNormal(), Arm.WeaponDir).GetSafeNormal();
-		Victim->Wounds->TrySever(Bone, Hit.ImpactPoint, CutNormal, TipVelocity, Energy, VictimZoneProtection);
+		bSevered = Victim->Wounds->TrySever(Bone, Hit.ImpactPoint, CutNormal, TipVelocity, Energy, VictimZoneProtection);
 	}
 
 	if (Victim->Wounds)
 	{
 		const FVector TipMotion = ComputeArmTip(Hand, Arm) - Arm.PrevTipWorld;
-		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, DamageType, Energy, VictimZoneProtection, TipMotion);
+		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, bGlance ? EAedirDamageType::Blunt : DamageType, Energy * DamageShare, VictimZoneProtection, TipMotion);
 	}
 
-	Arm.HandVelocity *= AedirImpactRecoilScale;
+	USkeletalMeshComponent* VictimBody = Victim->GetMesh();
+	const TCHAR* Outcome = TEXT("stuck");
+	if (!bEdged)
+	{
+		Arm.HandVelocity *= AedirImpactRecoilScale;
+		Outcome = TEXT("blunt");
+	}
+	else if (bGlance)
+	{
+		Outcome = TEXT("glanced off");
+		// Not enough behind it: the edge skips off and the arm is thrown back.
+		Arm.HandVelocity *= -AedirGlanceBounce;
+		Arm.WeaponDirSpeed *= -AedirGlanceBounce;
+		Arm.PoseAimSpeed *= -AedirGlanceBounce;
+	}
+	else if (bSevered || CutShare >= 1.f || !VictimBody || Bone.IsNone())
+	{
+		// Clean through: it slows, but the swing carries on.
+		Outcome = TEXT("went through");
+		Arm.HandVelocity *= AedirCutThroughKeep;
+		Arm.PoseAimSpeed *= AedirCutThroughKeep;
+	}
+	else
+	{
+		// It bit in and is held there by what it cut.
+		const FTransform BoneWorld = VictimBody->GetSocketTransform(Bone, RTS_World);
+		const FVector Dir = Arm.WeaponDir.GetSafeNormal();
+		const float Depth = FMath::Lerp(2.f, 9.f, FMath::Clamp(CutShare, 0.f, 1.f));
+		Arm.LodgedIn = VictimBody;
+		Arm.LodgedBone = Bone;
+		Arm.LodgedTipLocal = BoneWorld.InverseTransformPosition(FVector(Hit.ImpactPoint) + TipVelocity.GetSafeNormal() * Depth);
+		Arm.LodgedDirLocal = BoneWorld.InverseTransformVectorNoScale(Dir);
+		Arm.LodgedSeconds = FMath::Lerp(AedirLodgedMaxSeconds, AedirLodgedMinSeconds, FMath::Clamp(CutShare, 0.f, 1.f));
+	}
+	UE_LOG(LogAedir, Log, TEXT("Cut: %s, share %.2f"), Outcome, CutShare);
 
 	if (Creature->Stats)
 	{

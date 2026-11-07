@@ -49,8 +49,14 @@ namespace
 	constexpr float HitReactionDazeMaxSeconds = 2.5f;
 	constexpr float HitReactionDazeRecoveryScale = 0.5f;
 	constexpr float HitReactionKnockdownExtraSeconds = 0.8f;
-	constexpr float HitReactionBoneImpulseScale = 0.35f;
-	constexpr float HitReactionBoneImpulseMax = 25000.f;
+	// The blow moves the part it lands on, not the whole body through the air.
+	constexpr float GrippedArmMotorShare = 0.3f;
+	constexpr float HitReactionBoneImpulseScale = 0.1f;
+	constexpr float HitReactionBoneImpulseMax = 5000.f;
+	// How much of its usual recovery a stumbling body manages while it tries to get its feet back under it.
+	constexpr float StumbleCatchShare = 0.75f;
+	constexpr float StumbleCatchTiredShare = 0.35f;
+	constexpr float StumbleStaggerSeconds = 0.35f;
 
 	constexpr float ComBalanceSampleIntervalSeconds = 0.1f;
 	constexpr float ComBalanceGroundToleranceCm = 12.f;
@@ -99,10 +105,10 @@ namespace
 	{
 		switch (Zone)
 		{
-		case EAedirBodyZone::Head: return 25.f;
-		case EAedirBodyZone::Torso: return 60.f;
-		case EAedirBodyZone::Arm: return 120.f;
-		case EAedirBodyZone::Leg: return 40.f;
+		case EAedirBodyZone::Head: return 45.f;
+		case EAedirBodyZone::Torso: return 130.f;
+		case EAedirBodyZone::Arm: return 220.f;
+		case EAedirBodyZone::Leg: return 80.f;
 		default: checkNoEntry(); return 60.f;
 		}
 	}
@@ -240,6 +246,7 @@ void UAedirBalanceComponent::ApplyBalanceImpact(FVector WorldDirection, float Ma
 
 	AddLeanDirection(WorldDirection, Magnitude);
 
+	StumbleDebt += FMath::Max(Magnitude - Balance, 0.f);
 	SetBalance(Balance - Magnitude);
 }
 
@@ -357,10 +364,10 @@ float UAedirBalanceComponent::GetKnockdownEnergy(EAedirBodyZone Zone)
 {
 	switch (Zone)
 	{
-	case EAedirBodyZone::Head: return 90.f;
-	case EAedirBodyZone::Torso: return 220.f;
-	case EAedirBodyZone::Arm: return 400.f;
-	case EAedirBodyZone::Leg: return 70.f;
+	case EAedirBodyZone::Head: return 200.f;
+	case EAedirBodyZone::Torso: return 450.f;
+	case EAedirBodyZone::Arm: return 800.f;
+	case EAedirBodyZone::Leg: return 170.f;
 	default: checkNoEntry(); return 220.f;
 	}
 }
@@ -856,8 +863,21 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	// Once the legs have given way there is no catching it any more, only getting up again afterwards.
 	if (bIsRagdoll || bDead || Balance >= FallBalanceThreshold)
 	{
+		StumbleDebt = 0.f;
 		SetBalance(Balance + Recovery);
 		DecayLeanDirection(Recovery);
+	}
+	else
+	{
+		// Stumbling: the feet step to catch the body. A fresh, trained body wins it back from a light blow; a hard blow or a
+		// tired one leaves too much to make up before the legs give way.
+		const float StaminaShare = StatsComponent ? StatsComponent->GetStaminaFraction() : 1.f;
+		float Catch = Recovery * StumbleCatchShare * FMath::Lerp(StumbleCatchTiredShare, 1.f, StaminaShare);
+		const float Paid = FMath::Min(Catch, StumbleDebt);
+		StumbleDebt -= Paid;
+		Catch -= Paid;
+		SetBalance(Balance + Catch);
+		StaggerSeconds = FMath::Max(StaggerSeconds, StumbleStaggerSeconds);
 	}
 	ApplyCenterOfMassLoss(DeltaTime);
 
@@ -1310,6 +1330,11 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	Strength[2] = Common * (1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::RightArm) : 0.f));
 	Strength[3] = Common * (1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::LeftLeg) : 0.f));
 	Strength[4] = Common * (1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::RightLeg) : 0.f));
+	// A hand held onto a weapon by the grip follows the weapon; its arm only keeps a little of its own will.
+	if (Combat && Combat->GetGripJointForce() >= 0.f && !bIsRagdoll)
+	{
+		Strength[Combat->GetGripHand() == EAedirHand::Left ? 2 : 1] *= GrippedArmMotorShare;
+	}
 
 	for (int32 GroupIndex = 0; GroupIndex < 5; ++GroupIndex)
 	{

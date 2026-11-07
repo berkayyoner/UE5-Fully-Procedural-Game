@@ -1,6 +1,7 @@
 #include "Dev/AedirDevTools.h"
 #include "Npc/AedirNpc.h"
 #include "Combat/AedirCombatTypes.h"
+#include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirCreatureTypes.h"
 #include "Engine/World.h"
@@ -847,6 +848,10 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 		const FVector Knee = Mesh->GetBoneLocation(Calf);
 		return FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct((Knee - Mesh->GetBoneLocation(Thigh)).GetSafeNormal(), (Mesh->GetBoneLocation(Foot) - Knee).GetSafeNormal()), -1.0, 1.0)));
 	};
+	if (Player->Combat)
+	{
+		DevToolsReport(FString::Printf(TEXT("Grip joint force %.0f, half-sword %d"), Player->Combat->GetGripJointForce(), Player->Combat->IsHalfSwording() ? 1 : 0));
+	}
 	DevToolsReport(FString::Printf(TEXT("Knees bent %.1f %.1f deg"), LegBend(TEXT("thigh_l"), TEXT("calf_l"), TEXT("foot_l")), LegBend(TEXT("thigh_r"), TEXT("calf_r"), TEXT("foot_r"))));
 	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
 	{

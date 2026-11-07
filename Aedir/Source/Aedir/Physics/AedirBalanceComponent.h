@@ -77,7 +77,7 @@ public:
 	float FallBalanceThreshold = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float FallDelaySeconds = 0.45f;
+	float FallDelaySeconds = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float GetUpBalanceThreshold = 0.6f;
@@ -321,6 +321,9 @@ private:
 
 	FRotator CurrentLean = FRotator::ZeroRotator;
 	float TimeBelowThreshold = 0.f;
+
+	// Balance a blow took beyond what there was to lose. A stumbling body has to win this back before it stands again.
+	float StumbleDebt = 0.f;
 	double RagdollStartTime = 0.0;
 	float CurrentRagdollMinSeconds = 0.f;
 	float LastFallSpeed = 0.f;

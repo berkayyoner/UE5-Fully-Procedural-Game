@@ -79,3 +79,6 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Male Armour fitted to the mannequin by sweeping its arms along the bones and taking weights from the body's skin, worn as cuirass and bracers, and credited.
 - Rain and snow of our own around the camera, as dense as the weather says, leaning with the wind and stopping under a roof.
 - setweather in the console.
+- Console keeps its log and command history between openings and games; up and down bring back earlier commands.
+- Thinner rain that splashes on the ground, shin-high calmer grass, blood that stays three game days, smaller weapons and a tucked forearm when running.
+- Blows stagger by how hard they land and a body that cannot catch itself falls; edges glance off, stick or cut through by their speed; swings gather speed; held weapons pull on the hand and can be torn from it; the second hand is held on the blade.

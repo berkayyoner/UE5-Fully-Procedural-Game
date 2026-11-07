@@ -115,6 +115,24 @@ struct FAedirArmDynamics
 
 	float ActiveAlpha = 0.f;
 	bool bInitialized = false;
+
+	// A blade that bit in and stuck: the tip stays where it went in, in the frame of that bone, until it works free.
+	TWeakObjectPtr<USkeletalMeshComponent> LodgedIn;
+	FName LodgedBone = NAME_None;
+	FVector LodgedTipLocal = FVector::ZeroVector;
+	FVector LodgedDirLocal = FVector::ZeroVector;
+	float LodgedSeconds = 0.f;
+};
+
+// How a held weapon has been moving, to know what it takes to hold and swing it.
+struct FAedirHeldWeight
+{
+	TWeakObjectPtr<class AAedirItemActor> Item;
+	FVector LastCenter = FVector::ZeroVector;
+	FVector LastVelocity = FVector::ZeroVector;
+	FVector Accel = FVector::ZeroVector;
+	bool bHasVelocity = false;
+	float StrainSeconds = 0.f;
 };
 
 struct FAedirTimedContact
@@ -153,7 +171,7 @@ public:
 	float FistDamage = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
-	float ImpactDamageScale = 0.25f;
+	float ImpactDamageScale = 0.08f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingStaminaCost = 8.f;
@@ -317,6 +335,12 @@ public:
 
 	// True while the right mouse button holds a weapon with the second hand up on its blade.
 	bool IsHalfSwording() const;
+
+	// The second hand comes off the weapon for a while, as when it is torn loose.
+	void LoseGrip(float Seconds);
+
+	// What the joint holding the second hand on the weapon carries, or -1 when there is none.
+	float GetGripJointForce() const;
 
 	// A weapon that only hangs from the hand, with no stance and no move to or from the belt going on.
 	bool IsHangingWeapon(EAedirHand Hand) const;
@@ -488,6 +512,9 @@ private:
 	FVector ComputeArmTarget(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	FVector ComputeArmTip(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	void IntegrateArm(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
+
+	// Holds a stuck blade where it is lodged until the time is up or the arm tears it out.
+	void UpdateLodged(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	void ApplyRemoteArmState(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	void PublishArmState(EAedirHand Hand, const FAedirArmDynamics& Arm);
 	void SendArmAimToServer(float DeltaTime);
@@ -562,6 +589,21 @@ private:
 	bool bThrustMode = false;
 	float DevKickHoldShare = -1.f;
 	float HalfSwordAlpha = 0.f;
+
+	// The weight of what each hand holds pulls on that hand.
+	FAedirHeldWeight HeldWeight[2];
+
+	// The second hand on a weapon, held where it closed on it.
+	TWeakObjectPtr<class UPhysicsConstraintComponent> GripJoint;
+
+	float GripJointStrain = 0.f;
+
+	// Torn loose: the second hand stays off the weapon until this runs out.
+	float GripLostSeconds = 0.f;
+
+	void UpdateHeldWeight(float DeltaTime);
+	void UpdateGripJoint(float DeltaTime);
+	void ReleaseGripJoint();
 	bool bHalfSwordWantedLast = false;
 	bool bObjectGripLast = false;
 	float SecondaryGripBlend = 0.f;

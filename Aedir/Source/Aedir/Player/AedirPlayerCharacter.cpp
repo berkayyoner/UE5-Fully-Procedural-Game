@@ -1855,6 +1855,14 @@ void AAedirPlayerCharacter::MeshSheet(const FString& Folder)
 	}
 }
 
+void AAedirPlayerCharacter::GuardKey(int32 RightHand, int32 Down)
+{
+	if (Combat)
+	{
+		Combat->SetGuard(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left, Down != 0);
+	}
+}
+
 void AAedirPlayerCharacter::PrecipInfo()
 {
 	if (const UAedirPrecipitationSubsystem* Precip = GetWorld()->GetSubsystem<UAedirPrecipitationSubsystem>())
