@@ -2,7 +2,8 @@
 
 UAedirWeatherSettings::UAedirWeatherSettings()
 {
-	// Wind and thunder come from the scanned sound library.
+	// Rain is made by Scripts/MakeWeatherSounds.py; wind and thunder come from the scanned sound library.
+	RainLoop = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/Aedir/Sounds/S_Rain_Loop.S_Rain_Loop")));
 	WindLoop = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/Audio/_Content/SFX/Amb_Misc/Wind/sfx_ambient_forest_WindTone_PGFX_F1.sfx_ambient_forest_WindTone_PGFX_F1")));
 	ThunderSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/Audio/_Content/SFX/Thunder/wav/sfx_Ambient_Thunder_01.sfx_Ambient_Thunder_01")));
 

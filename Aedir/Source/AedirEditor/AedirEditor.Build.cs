@@ -1,4 +1,4 @@
-using UnrealBuildTool;
+﻿using UnrealBuildTool;
 
 public class AedirEditor : ModuleRules
 {
@@ -22,6 +22,7 @@ public class AedirEditor : ModuleRules
 			"SlateCore",
 			"InputCore",
 			"StaticMeshEditor",
+			"AudioEditor",
 			"Aedir"
 		});
 	}

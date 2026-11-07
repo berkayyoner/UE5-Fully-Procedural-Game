@@ -10,6 +10,9 @@
 #include "Engine/SkinnedAssetCommon.h"
 #include "Engine/Texture.h"
 #include "Engine/Texture2D.h"
+#include "Factories/SoundFactory.h"
+#include "HAL/FileManager.h"
+#include "Sound/SoundWave.h"
 #include "Materials/MaterialExpressionTextureSample.h"
 #include "Engine/World.h"
 #include "FileHelpers.h"
@@ -383,6 +386,35 @@ namespace
 	}
 }
 
+namespace
+{
+	// Sounds made by Scripts/MakeWeatherSounds.py, brought in as sound waves. One whose name says Loop plays on and on.
+	void ContentImportSounds(const FString& Source, TArray<UPackage*>& ToSave)
+	{
+		TArray<FString> Files;
+		IFileManager::Get().FindFiles(Files, *(Source / TEXT("*.wav")), true, false);
+		for (const FString& File : Files)
+		{
+			const FString AssetName = FString(TEXT("S_")) + FPaths::GetBaseFilename(File);
+			UPackage* Package = CreatePackage(*(FString(TEXT("/Game/Aedir/Sounds/")) + AssetName));
+			USoundFactory* Factory = NewObject<USoundFactory>();
+			Factory->AddToRoot();
+			bool bCanceled = false;
+			USoundWave* Sound = Cast<USoundWave>(UFactory::StaticImportObject(USoundWave::StaticClass(), Package, FName(*AssetName), RF_Public | RF_Standalone, bCanceled, *(Source / File), nullptr, Factory));
+			Factory->RemoveFromRoot();
+			if (!Sound)
+			{
+				UE_LOG(LogAedirEditor, Error, TEXT("Could not import %s"), *File);
+				continue;
+			}
+			Sound->bLooping = File.Contains(TEXT("Loop"));
+			Sound->MarkPackageDirty();
+			ToSave.Add(Package);
+			UE_LOG(LogAedirEditor, Display, TEXT("Imported %s"), *Sound->GetPathName());
+		}
+	}
+}
+
 UAedirContentCommandlet::UAedirContentCommandlet()
 {
 	IsEditor = true;
@@ -399,6 +431,13 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 	{
 		ContentBuildPrecip(ToSave);
 		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
+	if (Only == TEXT("Sounds"))
+	{
+		FString Source;
+		FParse::Value(*Params, TEXT("Source="), Source);
+		ContentImportSounds(Source, ToSave);
+		return !ToSave.IsEmpty() && UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
 	}
 	if (Only == TEXT("Footprint"))
 	{
