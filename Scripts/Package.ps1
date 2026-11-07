@@ -3,7 +3,7 @@
 
 [CmdletBinding()]
 param(
-	[string]$EnginePath = "C:\Program Files\Epic Games\UE_5.7",
+	[string]$EnginePath = "C:\Users\berka\Epic Games\UE_5.8",
 
 	[ValidateSet("Development", "Shipping")]
 	[string]$Configuration = "Development",

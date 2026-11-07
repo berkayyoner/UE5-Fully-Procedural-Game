@@ -73,3 +73,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Meadow of grass and flowers on the test map that leans from bodies, moves with the weather's wind and stays flattened where stepped on, blood bursts from the Vefects pack on cuts and punctures.
 - Sword, longsword, short sword and battle axe with the Atris models, and a model sheet command for choosing from a pack.
 - Dagger, mace, warhammer, spear and halberd with models from the weapon sample pack.
+- Moved to Unreal Engine 5.8, NVIDIA upscaler plugins switched off until they exist for it.
