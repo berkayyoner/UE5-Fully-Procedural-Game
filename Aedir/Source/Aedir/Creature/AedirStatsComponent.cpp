@@ -12,6 +12,8 @@ namespace
 	constexpr float AedirSpeedPerAthletism = 0.5f;
 	constexpr float AedirJumpPerAthletism = 0.4f;
 	constexpr float AedirCarryCapacityPerStrength = 2.f;
+	constexpr float AedirExperienceBankStep = 0.05f;
+	constexpr float AedirFatigueStartFraction = 0.5f;
 
 	float SafeFraction(float Value, float Max)
 	{
@@ -218,6 +220,31 @@ void UAedirStatsComponent::SetAthletism(float NewAthletism)
 
 	Athletism = FMath::Clamp(NewAthletism, AedirStatMin, AedirStatMax);
 	OnStatChanged.Broadcast();
+}
+
+void UAedirStatsComponent::AddStrengthExperience(float Amount)
+{
+	StrengthExperienceBank += Amount;
+	if (StrengthExperienceBank >= AedirExperienceBankStep)
+	{
+		SetStrength(Strength + StrengthExperienceBank);
+		StrengthExperienceBank = 0.f;
+	}
+}
+
+void UAedirStatsComponent::AddAthleticsExperience(float Amount)
+{
+	AthleticsExperienceBank += Amount;
+	if (AthleticsExperienceBank >= AedirExperienceBankStep)
+	{
+		SetAthletism(Athletism + AthleticsExperienceBank);
+		AthleticsExperienceBank = 0.f;
+	}
+}
+
+float UAedirStatsComponent::GetFatigue() const
+{
+	return FMath::Clamp((AedirFatigueStartFraction - GetStaminaFraction()) / AedirFatigueStartFraction, 0.f, 1.f);
 }
 
 void UAedirStatsComponent::ApplyRace(const FAedirRaceDef& Race)

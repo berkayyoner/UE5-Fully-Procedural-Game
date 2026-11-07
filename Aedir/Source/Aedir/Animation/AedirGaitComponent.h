@@ -82,6 +82,14 @@ struct AEDIR_API FAedirGaitState
 	float LeftWristFrontShare = 0.f;
 	float RightWristFrontShare = 0.f;
 
+	// How far the blade may go towards the line of the forearm. Which way the elbow points, in the frame of the body.
+	float LeftWristMinDegrees = 28.f;
+	float RightWristMinDegrees = 28.f;
+	FVector LeftElbowHint = FVector::ZeroVector;
+	FVector RightElbowHint = FVector::ZeroVector;
+	float LeftElbowHintAlpha = 0.f;
+	float RightElbowHintAlpha = 0.f;
+
 	// How far the second hand has turned over to lie on top of the weapon, for half-swording.
 	float GripOverhand = 0.f;
 

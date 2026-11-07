@@ -6,6 +6,7 @@
 #include "Items/AedirInteractionComponent.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "Materials/MaterialInterface.h"
 #include "Net/UnrealNetwork.h"
 
@@ -19,7 +20,16 @@ namespace
 	constexpr float HangSwingStiffness = 45.f;
 	constexpr float HangSwingDamping = 5.f;
 	constexpr float HangSwingGain = 0.05f;
-	constexpr float HangSwingMaxRadians = 0.7f;
+	constexpr float HangSwingMaxRadians = 1.1f;
+	// What hangs on the belt runs into things: it swings away from what stands firm and shoves what is loose.
+	constexpr float HangSweepRadiusCm = 3.f;
+	constexpr float HangBlockRadiansPerSecond = 5.f;
+	constexpr float HangContactHoldSeconds = 0.3f;
+	constexpr float HangBlockMassKg = 40.f;
+	constexpr float HangEndOnShare = 0.2f;
+	constexpr float HangShoveShare = 0.3f;
+	constexpr float HangShoveMinSpeed = 30.f;
+	constexpr float HangShoveMaxSpeed = 400.f;
 	constexpr float HangMaxAcceleration = 1800.f;
 	constexpr double ReleaseGraceSeconds = 1.5;
 	// An item let go inside the capsule is pushed out of it gently, not shot away.
@@ -185,6 +195,7 @@ void AAedirItemActor::AttachToWaist(AAedirCreature* Creature, FName BoneName, co
 	HangPivotCm = PivotCm;
 	HangSwing = FVector::ZeroVector;
 	HangSwingSpeed = FVector::ZeroVector;
+	HangContactHold = 0.f;
 	bHangTracking = false;
 	SetActorTickEnabled(true);
 }
@@ -217,13 +228,78 @@ void AAedirItemActor::Tick(float DeltaSeconds)
 	const FVector Lever = HangRotation.RotateVector(FVector(-HangPivotCm >= 0.f ? 1.f : -1.f, 0.f, 0.f));
 	const FVector Inertial = BoneWorld.GetRotation().Inverse().RotateVector(-Acceleration);
 	const FVector Torque = FVector::CrossProduct(Lever, Inertial) * HangSwingGain;
-	HangSwingSpeed += (Torque - HangSwing * HangSwingStiffness - HangSwingSpeed * HangSwingDamping) * DeltaSeconds;
+	// Pushed aside it stays there a moment, or it would rattle against what it touches.
+	HangContactHold = FMath::Max(HangContactHold - DeltaSeconds, 0.f);
+	HangSwingSpeed = HangContactHold > 0.f ? FVector::ZeroVector : HangSwingSpeed + (Torque - HangSwing * HangSwingStiffness - HangSwingSpeed * HangSwingDamping) * DeltaSeconds;
 	HangSwing = (HangSwing + HangSwingSpeed * DeltaSeconds).GetClampedToMaxSize(HangSwingMaxRadians);
+	UpdateHangContact(BoneWorld, DeltaSeconds);
 
 	const float Angle = static_cast<float>(HangSwing.Size());
 	const FQuat Swing = Angle > KINDA_SMALL_NUMBER ? FQuat(HangSwing / Angle, Angle) : FQuat::Identity;
 	const FQuat Rotation = Swing * HangRotation;
 	SetActorRelativeTransform(FTransform(Rotation, HangSlot - Rotation.RotateVector(FVector(HangPivotCm, 0.f, 0.f)), BodyScale));
+}
+
+void AAedirItemActor::UpdateHangContact(const FTransform& BoneWorld, float DeltaSeconds)
+{
+	UWorld* World = GetWorld();
+	// The length of a weapon runs from its grip to its point, and the mesh is centred on the actor.
+	const float HalfLength = GetWeaponLength() > 0.f ? FMath::Max(GripLocalCm + GetWeaponLength(), -GripLocalCm) : (Mesh ? static_cast<float>(Mesh->Bounds.SphereRadius) : 0.f);
+	if (!World || HalfLength <= 0.f)
+	{
+		return;
+	}
+
+	// Along its whole length, as it hangs this moment.
+	const FVector Pivot = BoneWorld.TransformPosition(HangSlot);
+	const FVector Axis = GetActorForwardVector();
+	const FVector Middle = GetActorLocation();
+	const FVector EndA = Middle + Axis * HalfLength;
+	const FVector EndB = Middle - Axis * HalfLength;
+
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+	Objects.AddObjectTypesToQuery(ECC_WorldDynamic);
+	Objects.AddObjectTypesToQuery(ECC_PhysicsBody);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirHangingItem), false);
+	Params.AddIgnoredActor(this);
+	if (AActor* HolderActor = GetAttachParentActor())
+	{
+		Params.AddIgnoredActor(HolderActor);
+		TArray<AActor*> Attached;
+		HolderActor->GetAttachedActors(Attached);
+		Params.AddIgnoredActors(Attached);
+	}
+
+	FHitResult Hit;
+	if (!World->SweepSingleByObjectType(Hit, EndA, EndB, FQuat::Identity, Objects, FCollisionShape::MakeSphere(HangSweepRadiusCm), Params))
+	{
+		return;
+	}
+
+	UPrimitiveComponent* Other = Hit.GetComponent();
+	if (Other && Other->IsSimulatingPhysics() && Other->GetMass() <= HangBlockMassKg)
+	{
+		const FVector Motion = (HangPreviousVelocity).GetClampedToMaxSize(HangShoveMaxSpeed);
+		if (HasAuthority() && Motion.SizeSquared() > FMath::Square(HangShoveMinSpeed))
+		{
+			Other->AddImpulseAtLocation(Motion * (Other->GetMass() * HangShoveShare * DeltaSeconds * 10.f), Hit.ImpactPoint);
+		}
+		return;
+	}
+
+	// The part that touches swings out of the way, around the pivot and away from what it touches. Pushed along its own length, as on the floor, it goes back behind the body.
+	const FVector FarDirection = FVector::DotProduct(Hit.Location - Pivot, Axis) >= 0.0 ? Axis : -Axis;
+	FVector Away = FVector::VectorPlaneProject(Hit.ImpactNormal, FarDirection);
+	if (Away.SizeSquared() < FMath::Square(HangEndOnShare))
+	{
+		const AActor* Wearer = GetAttachParentActor();
+		Away = FVector::VectorPlaneProject(Wearer ? -Wearer->GetActorForwardVector() : -GetActorRightVector(), FarDirection);
+	}
+	const FVector Turn = FVector::CrossProduct(FarDirection, Away.GetSafeNormal());
+	HangSwing = (HangSwing + BoneWorld.GetRotation().Inverse().RotateVector(Turn) * (HangBlockRadiansPerSecond * DeltaSeconds)).GetClampedToMaxSize(HangSwingMaxRadians);
+	HangSwingSpeed = FVector::ZeroVector;
+	HangContactHold = HangContactHoldSeconds;
 }
 
 FVector AAedirItemActor::GetGripWorld() const

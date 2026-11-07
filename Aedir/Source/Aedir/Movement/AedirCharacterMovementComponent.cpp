@@ -176,6 +176,10 @@ void UAedirCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick
 	{
 		bWantsToRun = false;
 	}
+	else
+	{
+		Stats->AddAthleticsExperience(RunAthleticsPerSecond * DeltaTime);
+	}
 }
 
 bool UAedirCharacterMovementComponent::BeginJumpWindup()

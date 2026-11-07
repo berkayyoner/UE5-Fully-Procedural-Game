@@ -835,6 +835,10 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 	}
 
 	const FVector Capsule = Player->GetActorLocation();
+	if (Player->Stats)
+	{
+		DevToolsReport(FString::Printf(TEXT("Body: stamina %.1f fatigue %.2f strength %.3f athletism %.3f"), Player->Stats->GetStamina(), Player->Stats->GetFatigue(), Player->Stats->Strength, Player->Stats->Athletism));
+	}
 	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
 	{
 		const AAedirItemActor* Item = Player->Interaction->GetHeldItem(Hand);
@@ -860,9 +864,21 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 		const double OffAxis = (FromItem - Axis * AlongItem).Size();
 		const FVector Local = Player->GetActorTransform().InverseTransformPositionNoScale(Palm);
 		const double KnucklesToBlade = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Knuckles.GetSafeNormal(), Axis), -1.0, 1.0)));
-		DevToolsReport(FString::Printf(TEXT("%s hand on %s: carrier=%d along=%.1f offAxis=%.1f knuckleAngle=%.0f palm local %.0f %.0f %.0f bladePitch=%.0f bladeYaw=%.0f"),
+		const FVector ElbowWorld = BoneWorld(TEXT("lowerarm"));
+		const FVector ElbowLocal = Player->GetActorTransform().InverseTransformPositionNoScale(ElbowWorld);
+		const double ForearmToBlade = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct((Wrist - ElbowWorld).GetSafeNormal(), Axis), -1.0, 1.0)));
+		DevToolsReport(FString::Printf(TEXT("%s hand on %s: carrier=%d along=%.1f offAxis=%.1f knuckleAngle=%.0f palm local %.0f %.0f %.0f bladePitch=%.0f bladeYaw=%.0f wrist=%.0f elbow local %.0f %.0f %.0f"),
 			Hand == EAedirHand::Left ? TEXT("Left") : TEXT("Right"), *Item->ItemName.ToString(), Item->HeldHand == Hand ? 1 : 0, AlongItem, OffAxis, KnucklesToBlade,
-			Local.X, Local.Y, Local.Z, Axis.Rotation().Pitch, FRotator::NormalizeAxis(Axis.Rotation().Yaw - Player->GetActorRotation().Yaw)));
+			Local.X, Local.Y, Local.Z, Axis.Rotation().Pitch, FRotator::NormalizeAxis(Axis.Rotation().Yaw - Player->GetActorRotation().Yaw), ForearmToBlade, ElbowLocal.X, ElbowLocal.Y, ElbowLocal.Z));
+	}
+
+	for (const AAedirItemActor* Item : Player->Interaction->GetWaistItemsCopy())
+	{
+		if (Item)
+		{
+			const FVector Axis = Player->GetActorTransform().InverseTransformVectorNoScale(Item->GetActorForwardVector());
+			DevToolsReport(FString::Printf(TEXT("Belt %s: axis local %.2f %.2f %.2f"), *Item->ItemName.ToString(), Axis.X, Axis.Y, Axis.Z));
+		}
 	}
 
 	for (TActorIterator<AAedirItemActor> It(World); It; ++It)

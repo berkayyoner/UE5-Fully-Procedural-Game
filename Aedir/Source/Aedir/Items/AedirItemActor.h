@@ -53,6 +53,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	float WeaponLength = 0.f;
 
+	// Spears, staves and the like: held with the lower hand beside the waist.
+	bool bPolearm = false;
+
 	// Grip point along the long axis of the item, used when the item is held in the closed hand.
 	float GripLocalCm = 0.f;
 	float GripSpanCm = 13.f;
@@ -197,7 +200,9 @@ private:
 	FVector HangSwingSpeed = FVector::ZeroVector;
 	FVector HangPreviousBone = FVector::ZeroVector;
 	FVector HangPreviousVelocity = FVector::ZeroVector;
+	float HangContactHold = 0.f;
 	bool bHangTracking = false;
+	void UpdateHangContact(const FTransform& BoneWorld, float DeltaSeconds);
 
 	TWeakObjectPtr<const AActor> LastHolder;
 	double LastReleaseTime = -1000.0;

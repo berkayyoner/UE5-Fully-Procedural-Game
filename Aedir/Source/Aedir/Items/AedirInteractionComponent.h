@@ -118,6 +118,9 @@ public:
 	// How the wrist turns an item on its way to the belt.
 	bool GetHolsterAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutShare) const;
 
+	// On its way to take an item off the belt: how that item hangs there, and how far the hand has turned to it.
+	bool GetDrawAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutAlpha) const;
+
 	// True while the other hand is coming to take the weapon this hand holds.
 	bool IsPassingHeld(EAedirHand Hand) const;
 
@@ -299,6 +302,7 @@ private:
 	EAedirHolsterMotion HolsterMotion[2] = { EAedirHolsterMotion::None, EAedirHolsterMotion::None };
 	float HolsterElapsed[2] = { 0.f, 0.f };
 	float HolsterDrawSettle[2] = { 0.f, 0.f };
+	FVector HolsterDrawFrom[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector HolsterStartLocal[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	int32 HolsterWaistIndex[2] = { INDEX_NONE, INDEX_NONE };
 

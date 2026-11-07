@@ -282,8 +282,9 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::E, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightHandPressed);
 	PlayerInputComponent->BindKey(EKeys::E, IE_Released, this, &AAedirPlayerCharacter::HandleRightHandReleased);
 
-	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHolsterPressed);
-	PlayerInputComponent->BindKey(EKeys::Y, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightHolsterPressed);
+	// A hand goes across the body to the belt, so T works the left side of the belt with the right hand and Y the right side with the left.
+	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightHolsterPressed);
+	PlayerInputComponent->BindKey(EKeys::Y, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHolsterPressed);
 
 	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);

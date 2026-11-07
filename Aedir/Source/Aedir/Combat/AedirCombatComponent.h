@@ -97,6 +97,10 @@ struct FAedirArmDynamics
 	FVector2D AimOffsetDeg = FVector2D::ZeroVector;
 	float Extension = 0.5f;
 
+	// The aim as the arm has got to it. Hand and blade both come from this, so they move as one and the wrist stays as it is.
+	FVector2D PoseAimDeg = FVector2D::ZeroVector;
+	FVector2D PoseAimSpeed = FVector2D::ZeroVector;
+
 	// Smoothed mouse speed in counts per second, and how far the arm follows the aim (1) instead of holding the guard in front of the face (0).
 	float MouseSpeed = 0.f;
 	float PunchBlend = 0.f;
@@ -318,6 +322,12 @@ public:
 	// How far the second hand has gone over to the half-sword hold, from 0 to 1.
 	float GetHalfSwordShare() const;
 
+	// Which way the elbow of this hand points in the stance, in the frame of the body.
+	bool GetElbowHint(EAedirHand Hand, FVector& OutLocal, float& OutAlpha) const;
+
+	// How firmly the wrist keeps its angle: in a fight the arm does the moving, in a thrust the blade lies along the forearm.
+	float GetWristFirmShare(EAedirHand Hand) const;
+
 	// A big object in both hands: where its middle is, how big it is, and how far the hands have come to it.
 	bool GetObjectCarry(FVector& OutCenterWorld, float& OutRadiusCm, float& OutAlpha) const;
 
@@ -519,6 +529,10 @@ private:
 	bool SweepHeldBlade(const AAedirItemActor* Item, const FVector& HandWorld, const FVector& Direction, float LengthCm, FHitResult& OutHit) const;
 	void ResolveHeldCollision(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& PrevHand, const FVector& PrevDir, float DeltaTime);
 	FVector ComputeHalfSwordHand(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
+	FVector ComputeStanceHandLocal(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
+	void UpdatePoseAim(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);
+	// Spears, staves and the like: too long to hold in front of the groin.
+	static bool IsPolearm(const AAedirItemActor* Item);
 	FVector ComputeObjectCenter(const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
 	FVector ComputeWeaponTargetDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	void UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);

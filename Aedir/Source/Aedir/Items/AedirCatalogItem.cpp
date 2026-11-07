@@ -14,6 +14,7 @@
 
 namespace
 {
+	constexpr float CatalogPolearmMinLengthCm = 140.f;
 	const FLinearColor CatalogItemSteel(0.55f, 0.57f, 0.6f);
 	const FLinearColor CatalogItemWood(0.36f, 0.22f, 0.12f);
 	const FLinearColor CatalogItemStrap(0.12f, 0.08f, 0.05f);
@@ -129,6 +130,7 @@ void AAedirCatalogItem::ApplyDefinition()
 	bTwoHanded = Def->bTwoHanded;
 	// The reach of a weapon counts from the hand to the tip.
 	WeaponLength = Def->WeaponLengthCm > 0.f ? Def->WeaponLengthCm * 0.5f - Def->GripCm : 0.f;
+	bPolearm = Def->WeaponLengthCm >= CatalogPolearmMinLengthCm;
 	GripLocalCm = Def->GripCm;
 	GripSpanCm = Def->GripSpanCm;
 	bHangsDiagonal = Def->bHangsDiagonal;

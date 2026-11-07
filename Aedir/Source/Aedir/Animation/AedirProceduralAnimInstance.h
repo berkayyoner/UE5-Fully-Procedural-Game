@@ -29,9 +29,9 @@ private:
 	void ApplyArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& ClavicleName, const FName& HumerusName, const FName& RadiusName, const FName& HandName, float ArmSwingDegrees, float ElbowDegrees, float ReachAlpha, float RestRollDegrees, float ClavicleRollDegrees) const;
 	// Breathing wave in [-1, 1], zero while dead.
 	float GetBreathWave() const;
-	void ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
+	void ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh, const FVector& ElbowHint = FVector::ZeroVector, float ElbowHintAlpha = 0.f) const;
 	void ApplyFingers(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const TArray<FName>& FingerBoneNames, float FistAlpha, float CurlSign) const;
-	void ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha, float FrontShare) const;
+	void ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha, float FrontShare, float MinBladeDegrees) const;
 	void ApplyForearmTwist(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix) const;
 	void ApplyObjectHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, bool bLeft, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
 	void ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;

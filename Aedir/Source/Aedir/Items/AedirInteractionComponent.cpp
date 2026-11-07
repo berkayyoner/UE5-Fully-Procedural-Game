@@ -46,7 +46,9 @@ namespace
 	// The blade goes over the top on its way to and from the belt, with the thumb up: below, the wrist would have to turn all the way round.
 	constexpr float HolsterOverForward = 0.2f;
 	constexpr float HolsterOverSide = 0.35f;
-	constexpr float HolsterDrawSettleSeconds = 0.3f;
+	constexpr float HolsterDrawSettleSeconds = 0.6f;
+	constexpr float HolsterDrawAimStart = 0.15f;
+	constexpr float HolsterDrawAimEnd = 0.7f;
 	// Passing a weapon: both hands come together before the chest and the other hand takes it there.
 	constexpr float PassHandSeconds = 0.95f;
 	constexpr float PassGiveUpSeconds = 1.5f;
@@ -387,11 +389,12 @@ bool UAedirInteractionComponent::GetHolsterAim(EAedirHand Hand, FVector& OutDire
 	const float SlotSide = HolsterWaistIndex[Index] < WaistSlotsPerSide ? -1.f : 1.f;
 	const FVector Over = (Creature->GetActorForwardVector() * HolsterOverForward + Creature->GetActorRightVector() * (SlotSide * HolsterOverSide) + FVector::UpVector).GetSafeNormal();
 
-	// Just drawn, the blade comes up out of the belt before it goes where the stance wants it.
+	// Just drawn, the blade goes back the way it came in: up out of the belt over the side of the body, then where the stance wants it.
 	if (!bStoring)
 	{
-		OutDirectionWorld = Over;
-		OutShare = HolsterDrawSettle[Index] / HolsterDrawSettleSeconds;
+		const float Settled = 1.f - HolsterDrawSettle[Index] / HolsterDrawSettleSeconds;
+		OutDirectionWorld = Settled < 0.5f ? FMath::Lerp(HolsterDrawFrom[Index], Over, HolsterSmoothStep(Settled * 2.f)).GetSafeNormal() : Over;
+		OutShare = FMath::Min((1.f - Settled) * 2.f, 1.f);
 		return true;
 	}
 
@@ -406,6 +409,20 @@ bool UAedirInteractionComponent::GetHolsterAim(EAedirHand Hand, FVector& OutDire
 	OutDirectionWorld = Share < 0.5f ? Over : FMath::Lerp(Over, HangDirection, (Share - 0.5f) * 2.f).GetSafeNormal();
 	OutShare = FMath::Min(Share * 2.f, 1.f);
 	return true;
+}
+
+bool UAedirInteractionComponent::GetDrawAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutAlpha) const
+{
+	const int32 Index = static_cast<int32>(Hand);
+	const AAedirItemActor* Item = HolsterMotion[Index] == EAedirHolsterMotion::Draw && WaistItems.IsValidIndex(HolsterWaistIndex[Index]) ? WaistItems[HolsterWaistIndex[Index]].Get() : nullptr;
+	if (!Item || Item->ItemClass != EAedirItemClass::Weapon)
+	{
+		return false;
+	}
+
+	OutDirectionWorld = Item->GetActorForwardVector();
+	OutAlpha = HolsterSmoothStep((HolsterElapsed[Index] / HolsterHandSeconds - HolsterDrawAimStart) / (HolsterDrawAimEnd - HolsterDrawAimStart));
+	return OutAlpha > 0.f;
 }
 
 bool UAedirInteractionComponent::IsPassingHeld(EAedirHand Hand) const
@@ -520,7 +537,8 @@ void UAedirInteractionComponent::GetWaistSlot(int32 WaistIndex, const AAedirItem
 	else if (bWeapon)
 	{
 		LongAxis = FVector::UpVector;
-		OutPivotCm = -Item->GripLocalCm * 0.5f;
+		// A long shaft hangs by its lower part, so its end stays off the ground.
+		OutPivotCm = Item->bPolearm ? Item->GripLocalCm : -Item->GripLocalCm * 0.5f;
 	}
 	// The flat of the item lies against the body, its thin side facing out.
 	const FQuat RotationInBody = FRotationMatrix::MakeFromXZ(LongAxis, Outward).ToQuat();
@@ -1109,6 +1127,7 @@ void UAedirInteractionComponent::DrawFromWaist(EAedirHand Hand, AAedirCreature* 
 	}
 
 	const FVector HangingDir = Item->GetActorForwardVector();
+	HolsterDrawFrom[static_cast<int32>(Hand)] = HangingDir;
 	Item->AttachToCreatureHand(Creature, Hand);
 	if (Creature->Combat)
 	{

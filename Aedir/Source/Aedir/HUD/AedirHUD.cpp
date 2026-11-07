@@ -43,6 +43,15 @@ namespace
 	constexpr float HudNotificationSpacing = 42.f;
 	constexpr float HudNotificationFontSize = 16.f;
 	const FLinearColor HudMissionColor(FColor(226, 190, 112));
+	// Out of breath the sight closes in from the edges. The middle stays visible even with nothing left.
+	constexpr int32 HudFatigueCells = 28;
+	constexpr float HudFatigueEdgeAlpha = 0.98f;
+	constexpr float HudFatigueCenterAlpha = 0.45f;
+	constexpr float HudFatigueClearStart = 0.9f;
+	constexpr float HudFatigueClearEnd = 0.12f;
+	constexpr float HudFatigueBlackAt = 0.95f;
+	constexpr float HudFatiguePulseShare = 0.05f;
+	constexpr float HudFatiguePulseSpeed = 2.4f;
 
 	struct FHudCompassPole
 	{
@@ -158,6 +167,42 @@ namespace
 	}
 }
 
+void AAedirHUD::DrawFatigue(const UAedirStatsComponent* Stats)
+{
+	using namespace AedirUIStyle;
+
+	const float Fatigue = Stats && !Stats->IsDead() ? Stats->GetFatigue() : 0.f;
+	if (!Canvas || !Canvas->Canvas || Fatigue <= 0.f)
+	{
+		return;
+	}
+
+	const FVector2f Size(static_cast<float>(Canvas->SizeX), static_cast<float>(Canvas->SizeY));
+	const UWorld* World = GetWorld();
+	const float Pulse = FMath::Sin((World ? World->GetTimeSeconds() : 0.f) * HudFatiguePulseSpeed) * HudFatiguePulseShare * Fatigue;
+	const float Clear = FMath::Lerp(HudFatigueClearStart, HudFatigueClearEnd, Fatigue) + Pulse;
+	const float EdgeAlpha = HudFatigueEdgeAlpha * FMath::SmoothStep(0.f, 0.2f, Fatigue);
+	const float CenterAlpha = HudFatigueCenterAlpha * Fatigue * Fatigue;
+	const auto ColorAt = [&](int32 CellX, int32 CellY)
+	{
+		const FVector2f Offset(CellX * 2.f / HudFatigueCells - 1.f, CellY * 2.f / HudFatigueCells - 1.f);
+		const float Dark = FMath::SmoothStep(Clear, FMath::Max(HudFatigueBlackAt, Clear + 0.3f), Offset.Size());
+		return FLinearColor(0.f, 0.f, 0.f, FMath::Lerp(CenterAlpha, EdgeAlpha, Dark));
+	};
+
+	FAedirUIMesh Mesh(1.f);
+	for (int32 CellY = 0; CellY < HudFatigueCells; ++CellY)
+	{
+		for (int32 CellX = 0; CellX < HudFatigueCells; ++CellX)
+		{
+			const FVector2f Min(Size.X * CellX / HudFatigueCells, Size.Y * CellY / HudFatigueCells);
+			const FVector2f Max(Size.X * (CellX + 1) / HudFatigueCells, Size.Y * (CellY + 1) / HudFatigueCells);
+			Mesh.AddGradientRect(Min, Max, ColorAt(CellX, CellY), ColorAt(CellX + 1, CellY), ColorAt(CellX + 1, CellY + 1), ColorAt(CellX, CellY + 1));
+		}
+	}
+	DrawMesh(*Canvas->Canvas, Mesh);
+}
+
 void AAedirHUD::DrawHUD()
 {
 	Super::DrawHUD();
@@ -185,6 +230,8 @@ void AAedirHUD::DrawHUD()
 	{
 		return;
 	}
+
+	DrawFatigue(Stats);
 
 	const FAedirGameplaySettings& Shown = UAedirSettingsSubsystem::GetValues();
 	if (Shown.bShowCompass)

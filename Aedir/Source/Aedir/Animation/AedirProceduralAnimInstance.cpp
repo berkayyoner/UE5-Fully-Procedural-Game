@@ -38,6 +38,11 @@ namespace
 	constexpr float AedirElbowRaisedForwardCm = 18.f;
 	// The handle crosses the palm, so it never lies closer to the line of the forearm than this.
 	constexpr float AedirWristMinBladeDegrees = 28.f;
+	constexpr float AedirElbowHintDistanceCm = 50.f;
+	// How far a hand on a long shaft may stay from the handle's line, and how close it may come to the other hand when it has to slide nearer.
+	constexpr float AedirGripPalmReachCm = 4.f;
+	constexpr float AedirGripSlideStepCm = 2.f;
+	constexpr float AedirGripMinHandsApartCm = 12.f;
 	constexpr float AedirFistAlphaThreshold = 0.001f;
 	constexpr int32 AedirFingerCount = 5;
 	constexpr int32 AedirFingerJointCount = 3;
@@ -174,11 +179,11 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	const FVector RightOutwardMesh = ActorToMesh.RotateVector(FVector::RightVector);
 	const FVector DownMesh = ActorToMesh.RotateVector(-FVector::UpVector);
 	const FVector ArmForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
-	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh);
-	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh);
+	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh, GaitData.LeftElbowHint, GaitData.LeftElbowHintAlpha);
+	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh, GaitData.RightElbowHint, GaitData.RightElbowHintAlpha);
 
-	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha, GaitData.LeftWristFrontShare);
-	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha, GaitData.RightWristFrontShare);
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"), GaitData.LeftWeaponDirWorld, GaitData.LeftWeaponAimAlpha, GaitData.LeftWristFrontShare, GaitData.LeftWristMinDegrees);
+	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"), GaitData.RightWeaponDirWorld, GaitData.RightWeaponAimAlpha, GaitData.RightWristFrontShare, GaitData.RightWristMinDegrees);
 
 	if (GaitData.ObjectAlpha > AedirReachAlphaThreshold)
 	{
@@ -342,7 +347,7 @@ void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FB
 	}
 }
 
-void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const
+void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh, const FVector& ElbowHint, float ElbowHintAlpha) const
 {
 	if (ReachAlpha <= AedirReachAlphaThreshold)
 	{
@@ -377,7 +382,9 @@ void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, con
 	// Over the shoulder a pole below the hand would lie on the line of the arm and flip the elbow, so the raised elbow has its own.
 	const float RaisedShare = FMath::SmoothStep(0.f, 1.f, static_cast<float>(-FVector::DotProduct(Effector - RootPosition, DownMesh)) / AedirElbowRaiseRangeCm);
 	const FVector RaisedJointTarget = (RootPosition + Effector) * 0.5 + OutwardMesh * AedirElbowRaisedOutCm + ForwardMesh * AedirElbowRaisedForwardCm;
-	const FVector JointTarget = FMath::Lerp(LowJointTarget, RaisedJointTarget, RaisedShare);
+	// In a weapon stance the pose says where the elbow goes.
+	const FVector HintJointTarget = (RootPosition + Effector) * 0.5 + ActorToMesh.RotateVector(ElbowHint) * AedirElbowHintDistanceCm;
+	const FVector JointTarget = FMath::Lerp(FMath::Lerp(LowJointTarget, RaisedJointTarget, RaisedShare), HintJointTarget, FMath::Clamp(ElbowHintAlpha, 0.f, 1.f));
 
 	FVector SolvedJointPosition;
 	FVector SolvedEndPosition;
@@ -432,7 +439,7 @@ void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, cons
 	}
 }
 
-void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha, float FrontShare) const
+void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha, float FrontShare, float MinBladeDegrees) const
 {
 	if (Alpha <= AedirReachAlphaThreshold)
 	{
@@ -470,7 +477,7 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 
 	// The handle crosses the palm: the wrist bends only so far, and a blade pointing along the forearm stops short of its line.
 	const double Along = FVector::DotProduct(Blade, Forearm);
-	const double LimitCos = FMath::Cos(FMath::DegreesToRadians(AedirWristMinBladeDegrees));
+	const double LimitCos = FMath::Cos(FMath::DegreesToRadians(MinBladeDegrees));
 	if (FMath::Abs(Along) > LimitCos)
 	{
 		// Close to that line the front of the body decides the side, or the hand would turn over as the blade crosses it.
@@ -480,7 +487,7 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 		{
 			Across = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector), Forearm);
 		}
-		Blade = Forearm * (Along > 0.0 ? LimitCos : -LimitCos) + Across.GetSafeNormal() * FMath::Sin(FMath::DegreesToRadians(AedirWristMinBladeDegrees));
+		Blade = Forearm * (Along > 0.0 ? LimitCos : -LimitCos) + Across.GetSafeNormal() * FMath::Sin(FMath::DegreesToRadians(MinBladeDegrees));
 	}
 
 	// The blade runs across the knuckles and the fingers run on from the forearm, so a change of direction comes from the arm.
@@ -623,8 +630,23 @@ void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCS
 
 	// The point on the weapon comes from the final pose of the carrying hand, so the two hands cannot drift apart.
 	const FTransform PrimaryTransform = CSPose.GetComponentSpaceTransform(PrimaryHand);
-	const FVector HandleMesh = PrimaryTransform.TransformPositionNoScale(GaitData.GripPointInPrimaryHand);
+	FVector HandleMesh = PrimaryTransform.TransformPositionNoScale(GaitData.GripPointInPrimaryHand);
 	const FVector BladeMesh = PrimaryTransform.GetRotation().RotateVector(GaitData.GripBladeInPrimaryHand).GetSafeNormal();
+
+	// A hand cannot close on a point its arm does not reach, so on a long shaft it takes hold nearer the carrying hand.
+	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
+	if (Humerus.IsValid())
+	{
+		const FVector Shoulder = CSPose.GetComponentSpaceTransform(Humerus).GetLocation();
+		const FVector Elbow = CSPose.GetComponentSpaceTransform(Radius).GetLocation();
+		const double ArmCm = (Elbow - Shoulder).Size() + (CSPose.GetComponentSpaceTransform(Hand).GetLocation() - Elbow).Size() + AedirGripPalmReachCm;
+		double Slide = FVector::DotProduct(HandleMesh - PrimaryTransform.GetLocation(), BladeMesh) - AedirGripMinHandsApartCm;
+		while (Slide > 0.0 && (HandleMesh - Shoulder).Size() > ArmCm)
+		{
+			HandleMesh -= BladeMesh * AedirGripSlideStepCm;
+			Slide -= AedirGripSlideStepCm;
+		}
+	}
 
 	// The blade runs across the knuckles, the fingers point away from the elbow, and the palm goes on the handle. The elbow
 	// moves with the solve and the wrist with the elbow, so a second pass settles both.
@@ -647,7 +669,7 @@ void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCS
 		}
 		HandRotation = FRotationMatrix::MakeFromXY(Knuckles, Fingers).ToQuat() * ClosedHandInverse;
 		const FVector Wrist = HandleMesh - HandRotation.RotateVector(PalmInHand);
-		ApplyArmReach(CSPose, Bones, HumerusName, RadiusName, HandName, MeshToWorld.TransformPosition(Wrist), GaitData.GripAlpha, OutwardMesh, DownMesh, ForwardMesh);
+		ApplyArmReach(CSPose, Bones, HumerusName, RadiusName, HandName, MeshToWorld.TransformPosition(Wrist), GaitData.GripAlpha, OutwardMesh, DownMesh, ForwardMesh, bLeft ? GaitData.LeftElbowHint : GaitData.RightElbowHint, bLeft ? GaitData.LeftElbowHintAlpha : GaitData.RightElbowHintAlpha);
 	}
 
 	FTransform HandTransform = CSPose.GetComponentSpaceTransform(Hand);

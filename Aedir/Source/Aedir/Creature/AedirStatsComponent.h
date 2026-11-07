@@ -125,6 +125,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
 	void SetAthletism(float NewAthletism);
 
+	// Server only. Tiny gains from use, gathered up so the body does not change every frame.
+	void AddStrengthExperience(float Amount);
+	void AddAthleticsExperience(float Amount);
+
 	// Server only. Applies a race's starting stats, refills the pools and adds its skill bonuses.
 	void ApplyRace(const FAedirRaceDef& Race);
 
@@ -139,6 +143,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetStaminaFraction() const;
+
+	// How out of breath: nothing above half the stamina, 1 with none left.
+	float GetFatigue() const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetMaxStamina() const;
@@ -192,4 +199,6 @@ private:
 	void OnRep_IsDead();
 
 	double LastStaminaConsumptionTime = -1000000.0;
+	float StrengthExperienceBank = 0.f;
+	float AthleticsExperienceBank = 0.f;
 };

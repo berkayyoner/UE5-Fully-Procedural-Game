@@ -17,6 +17,8 @@ namespace
 	constexpr float AedirSwingTwistInterpSpeed = 14.f;
 	// The hand eases into and out of holding an item, it does not jump when the item comes or goes.
 	constexpr float AedirWeaponAimFadeSeconds = 0.2f;
+	constexpr float AedirWristLooseDegrees = 28.f;
+	constexpr float AedirWristFirmDegrees = 50.f;
 	constexpr float AedirRestPhaseMin = 0.4f;
 	constexpr float AedirRestPhaseMax = 0.5f;
 	constexpr float AedirRestCatchUpCyclesPerSecond = 2.f;
@@ -585,6 +587,20 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	ReadWeaponAim(EAedirHand::Right, GaitState.RightWeaponDirWorld, GaitState.RightWeaponAimAlpha);
 	GaitState.LeftWristFrontShare = FMath::FInterpConstantTo(GaitState.LeftWristFrontShare, Combat && Combat->IsHangingWeapon(EAedirHand::Left) ? 1.f : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.RightWristFrontShare = FMath::FInterpConstantTo(GaitState.RightWristFrontShare, Combat && Combat->IsHangingWeapon(EAedirHand::Right) ? 1.f : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
+	const auto ReadArmShape = [Combat, DeltaTime](EAedirHand Hand, float& OutWristDegrees, FVector& OutHint, float& OutHintAlpha)
+	{
+		const float WristTarget = FMath::Lerp(AedirWristLooseDegrees, AedirWristFirmDegrees, Combat ? Combat->GetWristFirmShare(Hand) : 0.f);
+		OutWristDegrees = FMath::FInterpConstantTo(OutWristDegrees, WristTarget, DeltaTime, (AedirWristFirmDegrees - AedirWristLooseDegrees) / AedirWeaponAimFadeSeconds);
+		FVector Hint = FVector::ZeroVector;
+		float HintAlpha = 0.f;
+		if (Combat && Combat->GetElbowHint(Hand, Hint, HintAlpha))
+		{
+			OutHint = Hint;
+		}
+		OutHintAlpha = FMath::FInterpConstantTo(OutHintAlpha, HintAlpha, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
+	};
+	ReadArmShape(EAedirHand::Left, GaitState.LeftWristMinDegrees, GaitState.LeftElbowHint, GaitState.LeftElbowHintAlpha);
+	ReadArmShape(EAedirHand::Right, GaitState.RightWristMinDegrees, GaitState.RightElbowHint, GaitState.RightElbowHintAlpha);
 	GaitState.KickLeftLeg = bKickLeftLeg;
 	GaitState.KickSoleAlpha = 0.f;
 	GaitState.ObjectAlpha = 0.f;
