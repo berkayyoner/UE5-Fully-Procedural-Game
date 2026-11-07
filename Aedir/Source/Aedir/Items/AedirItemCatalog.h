@@ -64,6 +64,10 @@ struct AEDIR_API FAedirItemDef
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	FName ArmorAttachBone;
 
+	// A model longer than the item's blade: its full length and where its middle lies on the item.
+	float ModelLengthCm = 0.f;
+	float ModelCenterCm = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	FLinearColor Color = FLinearColor::Gray;
 

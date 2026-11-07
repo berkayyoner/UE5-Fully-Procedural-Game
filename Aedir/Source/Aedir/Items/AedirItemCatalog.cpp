@@ -104,7 +104,7 @@ namespace
 			Item.MeshPath = Mesh;
 			Definitions.Add(Item);
 		};
-		AddFood(TEXT("Bread"), TEXT("Loaf of Bread"), 0.4f, FLinearColor(0.42f, 0.24f, 0.09f), FVector(0.22, 0.12, 0.09), 35.f, 0.f, 1, TEXT(""));
+		AddFood(TEXT("Bread"), TEXT("Loaf of Bread"), 0.4f, FLinearColor(0.42f, 0.24f, 0.09f), FVector(0.15, 0.13, 0.08), 35.f, 0.f, 1, TEXT(""));
 		AddFood(TEXT("Apple"), TEXT("Apple"), 0.2f, FLinearColor(0.45f, 0.06f, 0.04f), FVector(0.08, 0.08, 0.08), 12.f, 6.f, 1, TEXT(""));
 		AddFood(TEXT("SmokedMeat"), TEXT("Smoked Meat"), 0.5f, FLinearColor(0.24f, 0.08f, 0.05f), FVector(0.2, 0.1, 0.06), 45.f, 0.f, 1, TEXT(""));
 		AddFood(TEXT("WaterJug"), TEXT("Jug of Water"), 2.2f, FLinearColor(0.3f, 0.26f, 0.18f), FVector(0.2, 0.2, 0.3), 0.f, 40.f, 3, TEXT("/Game/Megascans/3D_Assets/JuteJug/SM_JuteJug.SM_JuteJug"));
@@ -122,6 +122,23 @@ namespace
 		};
 		SetMesh(TEXT("BattleAxe"), TEXT("/Game/Megascans/3D_Assets/Axe/SM_Axe.SM_Axe"));
 		SetMesh(TEXT("Warhammer"), TEXT("/Game/Megascans/3D_Assets/OldHammer/SM_OldHammer.SM_OldHammer"));
+		SetMesh(TEXT("Bread"), TEXT("/Game/Megascans/3D_Assets/BreadRoll/SM_BreadRoll.SM_BreadRoll"));
+		SetMesh(TEXT("Apple"), TEXT("/Game/Megascans/3D_Assets/Apple03/SM_Apple03.SM_Apple03"));
+		SetMesh(TEXT("SmokedMeat"), TEXT("/Game/Megascans/3D_Assets/SmokedMeat/SM_SmokedMeat.SM_SmokedMeat"));
+		const auto SetSword = [&Definitions](const TCHAR* Id, float LengthCm, float CenterCm)
+		{
+			for (FAedirItemDef& Item : Definitions)
+			{
+				if (Item.Id == FName(Id))
+				{
+					Item.MeshPath = TEXT("/Game/Megascans/3D_Assets/MercenaryLongsword/SM_MercenaryLongsword.SM_MercenaryLongsword");
+					Item.ModelLengthCm = LengthCm;
+					Item.ModelCenterCm = CenterCm;
+				}
+			}
+		};
+		SetSword(TEXT("Longsword"), 147.f, -14.5f);
+		SetSword(TEXT("Sword"), 128.f, -12.f);
 
 		SetGrip(TEXT("Dagger"), -21.f, 8.f, true);
 		SetGrip(TEXT("ShortSword"), -42.f, 8.f, true);

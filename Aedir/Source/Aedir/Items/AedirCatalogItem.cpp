@@ -181,7 +181,7 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 			double Longest = Size.X;
 			if (Size.Y > Longest) { Longest = Size.Y; Turn = FRotator(0.f, -90.f, 0.f); }
 			if (Size.Z > Longest) { Longest = Size.Z; Turn = FRotator(90.f, 0.f, 0.f); }
-			const double Wanted = Def.WeaponLengthCm > 0.f ? Def.WeaponLengthCm : FMath::Max3(Def.BodyScale.X, Def.BodyScale.Y, Def.BodyScale.Z) * 100.0;
+			const double Wanted = Def.ModelLengthCm > 0.f ? Def.ModelLengthCm : Def.WeaponLengthCm > 0.f ? Def.WeaponLengthCm : FMath::Max3(Def.BodyScale.X, Def.BodyScale.Y, Def.BodyScale.Z) * 100.0;
 			const float ModelScale = static_cast<float>(Wanted / FMath::Max(Longest, 1.0));
 			Mesh->SetStaticMesh(GetShapeMesh(EAedirCatalogShape::Cube));
 			Mesh->SetMaterial(0, nullptr);
@@ -195,7 +195,7 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 				Model->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 				Model->SetWorldScale3D(FVector(ModelScale));
 				Model->SetRelativeRotation(Turn);
-				Model->SetRelativeLocation(Turn.RotateVector(-Box.GetCenter() * ModelScale) / BodyScale);
+				Model->SetRelativeLocation((Turn.RotateVector(-Box.GetCenter() * ModelScale) + FVector(Def.ModelCenterCm, 0.f, 0.f)) / BodyScale);
 				Model->RegisterComponent();
 				AedirScannedMaterial::Apply(Model, AedirScannedMaterial::FolderOfPath(Def.MeshPath));
 				DetailMeshes.Add(Model);

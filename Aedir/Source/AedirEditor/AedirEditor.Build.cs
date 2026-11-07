@@ -16,6 +16,7 @@ public class AedirEditor : ModuleRules
 			"MaterialEditor",
 			"RHI",
 			"AssetRegistry",
+			"AssetTools",
 			"EditorSubsystem",
 			"Slate",
 			"SlateCore",
