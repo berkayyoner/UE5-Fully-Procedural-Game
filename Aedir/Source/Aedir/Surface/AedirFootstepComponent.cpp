@@ -29,7 +29,7 @@ namespace
 	constexpr float AedirStepBloodRadiusCm = 12.f;
 	constexpr float AedirStepBloodReachCm = 30.f;
 	constexpr float AedirStepCarryShare = 0.78f;
-	constexpr float AedirStepDirtStrength = 0.6f;
+	constexpr float AedirStepDirtStrength = 0.8f;
 	constexpr float AedirStepHalfWidthCm = 6.f;
 	constexpr float AedirStepHalfLengthCm = 14.f;
 	constexpr float AedirStepForwardCm = 8.f;
@@ -111,7 +111,16 @@ void UAedirFootstepComponent::TickComponent(float DeltaTime, ELevelTick TickType
 
 	for (int32 FootIndex = 0; FootIndex < 2; ++FootIndex)
 	{
-		const bool bPlanted = bLanded || (PreviousLift[FootIndex] > AedirPlantLiftHigh && Lift[FootIndex] <= AedirPlantLiftLow);
+		// A foot that has been up comes down once, however slowly it settles.
+		if (Lift[FootIndex] > AedirPlantLiftHigh)
+		{
+			bFootRaised[FootIndex] = true;
+		}
+		const bool bPlanted = bLanded || (bFootRaised[FootIndex] && Lift[FootIndex] <= AedirPlantLiftLow);
+		if (bPlanted)
+		{
+			bFootRaised[FootIndex] = false;
+		}
 		if (bPlanted)
 		{
 			ProcessFootPlant(FootIndex, FootWorld[FootIndex], Speed2D, bLanded ? AedirLandingVolumeMultiplier : 1.f);
@@ -253,6 +262,8 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 				Print->SetVectorParameterValue(TEXT("Color"), Color);
 				Print->SetScalarParameterValue(TEXT("Strength"), Strength);
 				Print->SetScalarParameterValue(TEXT("Roughness"), Roughness);
+				// The sole is drawn as a left one; the right foot gets it mirrored.
+				Print->SetScalarParameterValue(TEXT("Mirror"), Foot == 1 ? 1.f : 0.f);
 			}
 		}
 	}

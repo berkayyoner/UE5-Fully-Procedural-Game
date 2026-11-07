@@ -46,6 +46,12 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 
 	bUseControllerRotationYaw = false;
 
+	// Footprints and blood on the ground land on the ground, not on the legs standing over it.
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		Body->SetReceivesDecals(false);
+	}
+
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
 	{
 		Movement->bOrientRotationToMovement = false;

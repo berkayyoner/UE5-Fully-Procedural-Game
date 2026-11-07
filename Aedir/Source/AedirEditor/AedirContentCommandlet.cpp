@@ -9,6 +9,8 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/SkinnedAssetCommon.h"
 #include "Engine/Texture.h"
+#include "Engine/Texture2D.h"
+#include "Materials/MaterialExpressionTextureSample.h"
 #include "Engine/World.h"
 #include "FileHelpers.h"
 #include "Game/AedirMenuGameMode.h"
@@ -90,40 +92,101 @@ namespace
 	}
 
 	// A sole pressed in the ground: an oval darkening whose colour and strength the game sets, dust, mud, blood or water.
+	// The sole of a left shoe seen from above, toes at the top: a broad ball, the arch drawn in on the inside, a round heel,
+	// worn into a little tread. The game mirrors it for the right foot.
+	UTexture2D* ContentBuildFootprintTexture(TArray<UPackage*>& ToSave)
+	{
+		constexpr int32 Width = 64;
+		constexpr int32 Height = 128;
+		// Width of the sole down its length, as a share of the whole print, and how much of it lies on the inner side.
+		static const FVector2f Profile[] = { { 0.f, 0.f }, { 0.03f, 0.5f }, { 0.1f, 0.82f }, { 0.24f, 0.96f }, { 0.38f, 0.9f }, { 0.55f, 0.66f }, { 0.7f, 0.66f }, { 0.84f, 0.72f }, { 0.94f, 0.6f }, { 1.f, 0.f } };
+		const auto WidthAt = [](float V)
+		{
+			for (int32 Index = 1; Index < UE_ARRAY_COUNT(Profile); ++Index)
+			{
+				if (V <= Profile[Index].X)
+				{
+					const float Share = (V - Profile[Index - 1].X) / FMath::Max(Profile[Index].X - Profile[Index - 1].X, KINDA_SMALL_NUMBER);
+					return FMath::Lerp(Profile[Index - 1].Y, Profile[Index].Y, FMath::Sin(Share * HALF_PI));
+				}
+			}
+			return 0.f;
+		};
+
+		TArray<uint8> Pixels;
+		Pixels.SetNumZeroed(Width * Height);
+		FRandomStream Random(7);
+		for (int32 Y = 0; Y < Height; ++Y)
+		{
+			const float V = (Y + 0.5f) / Height;
+			const float Half = WidthAt(V) * 0.5f;
+			// The big toe side reaches further forward and the arch curves in, so the inner edge is drawn apart from the outer.
+			const float Arch = FMath::Clamp(1.f - FMath::Abs(V - 0.6f) / 0.16f, 0.f, 1.f);
+			const float Inner = Half * (1.f - 0.45f * Arch);
+			const float Outer = Half;
+			for (int32 X = 0; X < Width; ++X)
+			{
+				const float U = (X + 0.5f) / Width - 0.5f;
+				const float Edge = U < 0.f ? Inner : Outer;
+				const float Inside = FMath::Clamp((Edge - FMath::Abs(U)) * 40.f, 0.f, 1.f);
+				// Treads across the ball and heel, and the grain of the dirt.
+				const float Tread = (V < 0.45f || V > 0.75f) && FMath::Fmod(V * 22.f, 1.f) < 0.25f ? 0.75f : 1.f;
+				const float Grain = Random.FRandRange(0.8f, 1.f);
+				Pixels[Y * Width + X] = static_cast<uint8>(FMath::Clamp(Inside * Tread * Grain, 0.f, 1.f) * 255.f);
+			}
+		}
+
+		const FString PackageName = FString(ContentFolder) + TEXT("T_Footprint");
+		UPackage* Package = CreatePackage(*PackageName);
+		UTexture2D* Texture = NewObject<UTexture2D>(Package, TEXT("T_Footprint"), RF_Public | RF_Standalone | RF_Transactional);
+		Texture->Source.Init(Width, Height, 1, 1, TSF_G8, Pixels.GetData());
+		Texture->SRGB = false;
+		Texture->CompressionSettings = TC_Grayscale;
+		Texture->AddressX = TA_Clamp;
+		Texture->AddressY = TA_Clamp;
+		Texture->PostEditChange();
+		Texture->MarkPackageDirty();
+		ToSave.Add(Package);
+		return Texture;
+	}
+
 	void ContentBuildFootprint(TArray<UPackage*>& ToSave)
 	{
+		UTexture2D* Sole = ContentBuildFootprintTexture(ToSave);
 		UMaterial* Material = ContentNewMaterial(TEXT("M_Footprint"), ToSave);
 		Material->MaterialDomain = MD_DeferredDecal;
 		Material->BlendMode = BLEND_Translucent;
 
-		UMaterialExpressionTextureCoordinate* Coord = ContentNode<UMaterialExpressionTextureCoordinate>(Material, -1000, 0);
-		UMaterialExpressionConstant* Half = ContentNode<UMaterialExpressionConstant>(Material, -1000, 200);
-		Half->R = 0.5f;
-		UMaterialExpressionSubtract* Centered = ContentNode<UMaterialExpressionSubtract>(Material, -800, 100);
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Coord, TEXT(""), Centered, TEXT("A"));
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Half, TEXT(""), Centered, TEXT("B"));
-		UMaterialExpressionConstant* Grow = ContentNode<UMaterialExpressionConstant>(Material, -800, 300);
-		Grow->R = 2.f;
-		UMaterialExpressionMultiply* Scaled = ContentNode<UMaterialExpressionMultiply>(Material, -600, 200);
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Centered, TEXT(""), Scaled, TEXT("A"));
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Grow, TEXT(""), Scaled, TEXT("B"));
-		UMaterialExpressionLength* Length = ContentNode<UMaterialExpressionLength>(Material, -400, 200);
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Scaled, TEXT(""), Length, TEXT(""));
-		UMaterialExpressionOneMinus* Inside = ContentNode<UMaterialExpressionOneMinus>(Material, -250, 200);
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Length, TEXT(""), Inside, TEXT(""));
-		UMaterialExpressionConstant* Edge = ContentNode<UMaterialExpressionConstant>(Material, -250, 350);
-		Edge->R = 4.f;
-		UMaterialExpressionMultiply* Sharpen = ContentNode<UMaterialExpressionMultiply>(Material, -100, 250);
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Inside, TEXT(""), Sharpen, TEXT("A"));
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Edge, TEXT(""), Sharpen, TEXT("B"));
-		UMaterialExpressionSaturate* Shape = ContentNode<UMaterialExpressionSaturate>(Material, 50, 250);
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Sharpen, TEXT(""), Shape, TEXT(""));
+		// Mirror 1 turns the left sole into a right one.
+		UMaterialExpressionTextureCoordinate* Coord = ContentNode<UMaterialExpressionTextureCoordinate>(Material, -1200, 0);
+		UMaterialExpressionComponentMask* U = ContentNode<UMaterialExpressionComponentMask>(Material, -1000, -60);
+		U->R = true;
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Coord, TEXT(""), U, TEXT(""));
+		UMaterialExpressionComponentMask* V = ContentNode<UMaterialExpressionComponentMask>(Material, -1000, 60);
+		V->G = true;
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Coord, TEXT(""), V, TEXT(""));
+		UMaterialExpressionScalarParameter* Mirror = ContentNode<UMaterialExpressionScalarParameter>(Material, -1000, -200);
+		Mirror->ParameterName = TEXT("Mirror");
+		Mirror->DefaultValue = 0.f;
+		UMaterialExpressionOneMinus* Flipped = ContentNode<UMaterialExpressionOneMinus>(Material, -850, -120);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(U, TEXT(""), Flipped, TEXT(""));
+		UMaterialExpressionLinearInterpolate* Across = ContentNode<UMaterialExpressionLinearInterpolate>(Material, -700, -100);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(U, TEXT(""), Across, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Flipped, TEXT(""), Across, TEXT("B"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Mirror, TEXT(""), Across, TEXT("Alpha"));
+		UMaterialExpressionAppendVector* Uv = ContentNode<UMaterialExpressionAppendVector>(Material, -550, 0);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Across, TEXT(""), Uv, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(V, TEXT(""), Uv, TEXT("B"));
+		UMaterialExpressionTextureSample* Sample = ContentNode<UMaterialExpressionTextureSample>(Material, -400, 0);
+		Sample->Texture = Sole;
+		Sample->SamplerType = SAMPLERTYPE_Grayscale;
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Uv, TEXT(""), Sample, TEXT("UVs"));
 
-		UMaterialExpressionScalarParameter* Strength = ContentNode<UMaterialExpressionScalarParameter>(Material, 50, 400);
+		UMaterialExpressionScalarParameter* Strength = ContentNode<UMaterialExpressionScalarParameter>(Material, -200, 200);
 		Strength->ParameterName = TEXT("Strength");
 		Strength->DefaultValue = 0.6f;
-		UMaterialExpressionMultiply* Opacity = ContentNode<UMaterialExpressionMultiply>(Material, 250, 300);
-		UMaterialEditingLibrary::ConnectMaterialExpressions(Shape, TEXT(""), Opacity, TEXT("A"));
+		UMaterialExpressionMultiply* Opacity = ContentNode<UMaterialExpressionMultiply>(Material, 0, 100);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Sample, TEXT("R"), Opacity, TEXT("A"));
 		UMaterialEditingLibrary::ConnectMaterialExpressions(Strength, TEXT(""), Opacity, TEXT("B"));
 		UMaterialEditingLibrary::ConnectMaterialProperty(Opacity, TEXT(""), MP_Opacity);
 
@@ -335,6 +398,11 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 	if (FParse::Value(*Params, TEXT("Only="), Only) && Only == TEXT("Precip"))
 	{
 		ContentBuildPrecip(ToSave);
+		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
+	if (Only == TEXT("Footprint"))
+	{
+		ContentBuildFootprint(ToSave);
 		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
 	}
 	if (Only == TEXT("Collision"))

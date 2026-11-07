@@ -53,6 +53,9 @@ private:
 
 	float FootWetness[2] = { 0.f, 0.f };
 	float PreviousLift[2] = { 0.f, 0.f };
+
+	// Whether each foot has been lifted since it last came down.
+	bool bFootRaised[2] = { false, false };
 	float SurfaceQueryTimer = 0.1f;
 	float CachedSlipperiness = 0.f;
 	float CachedSpeedMultiplier = 1.f;

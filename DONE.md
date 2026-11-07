@@ -85,3 +85,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Bodies, living or dead, and cut-off limbs can be taken hold of and dragged; hits shove the struck part and the trunk and knock the view; tired NPCs hold back; enemy stamina and magicka under their health; swings flow evenly.
 - Console: player.setstats, addstats and removestats for every stat and skill, a full help list, suggestions while typing and Tab to finish a command.
 - Scanned props block bodies, items and blades with convex collision; a weapon drawn from the belt comes along with the hand and settles into the grip.
+- Every step is heard and leaves a print: a foot counts as down once it has been up, however slowly it settles; prints are shaped like a left or right sole and no longer land on legs.
