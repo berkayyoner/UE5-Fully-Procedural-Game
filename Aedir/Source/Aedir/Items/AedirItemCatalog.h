@@ -68,6 +68,9 @@ struct AEDIR_API FAedirItemDef
 	float ModelLengthCm = 0.f;
 	float ModelCenterCm = 0.f;
 
+	// The model's top is the working end, as on an axe standing on its handle. Swords stand on their point instead.
+	bool bModelTopForward = false;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	FLinearColor Color = FLinearColor::Gray;
 

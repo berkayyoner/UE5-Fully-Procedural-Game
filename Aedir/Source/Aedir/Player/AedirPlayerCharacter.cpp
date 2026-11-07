@@ -29,6 +29,8 @@
 #include "Engine/GameViewportClient.h"
 #include "Engine/Engine.h"
 #include "Dev/AedirConsoleCommands.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "Engine/StaticMeshActor.h"
 #include "Game/AedirEntities.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
@@ -1824,6 +1826,31 @@ void AAedirPlayerCharacter::FxTest(const FString& Path, float Scale)
 	if (System)
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, System, GetActorLocation() + GetActorForwardVector() * 120.f + FVector(0.f, 0.f, 40.f), GetActorForwardVector().Rotation(), FVector(Scale));
+	}
+}
+
+void AAedirPlayerCharacter::MeshSheet(const FString& Folder)
+{
+	TArray<FAssetData> Assets;
+	IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry").Get();
+	Registry.ScanPathsSynchronous({ Folder }, true);
+	Registry.GetAssetsByPath(FName(*Folder), Assets, true);
+	FVector Where = GetActorLocation() + GetActorForwardVector() * 300.f;
+	const FVector Step = GetActorRightVector() * 45.f;
+	Where -= Step * (Assets.Num() / 2);
+	for (const FAssetData& Asset : Assets)
+	{
+		UStaticMesh* Model = Cast<UStaticMesh>(Asset.GetAsset());
+		if (!Model)
+		{
+			continue;
+		}
+		const FBox Box = Model->GetBoundingBox();
+		AStaticMeshActor* Actor = GetWorld()->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), Where - Box.GetCenter(), FRotator::ZeroRotator);
+		Actor->SetMobility(EComponentMobility::Movable);
+		Actor->GetStaticMeshComponent()->SetStaticMesh(Model);
+		UE_LOG(LogTemp, Display, TEXT("[Model] %s size %s center %s tris %d material %s"), *Model->GetName(), *Box.GetSize().ToCompactString(), *Box.GetCenter().ToCompactString(), Model->GetNumTriangles(0), *GetNameSafe(Model->GetMaterial(0)));
+		Where += Step;
 	}
 }
 

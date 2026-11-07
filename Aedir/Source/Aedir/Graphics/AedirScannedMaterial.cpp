@@ -19,6 +19,12 @@ namespace
 
 UMaterialInterface* AedirScannedMaterial::Make(UObject* Outer, const FString& AssetFolder)
 {
+	// A model from elsewhere comes with its own materials.
+	if (AssetFolder.IsEmpty())
+	{
+		return nullptr;
+	}
+
 	UMaterialInterface* Master = LoadObject<UMaterialInterface>(nullptr, ScannedMasterPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
 	UTexture* Base = ScannedTexture(AssetFolder, TEXT("A"));
 	if (!Master || !Base)

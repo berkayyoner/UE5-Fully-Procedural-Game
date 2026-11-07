@@ -330,6 +330,10 @@ public:
 	UFUNCTION(Exec)
 	void ConOpen();
 
+	// MeshSheet /Game/Pack/Meshes: stands every model of a folder in a row with its name over it and logs its size, for choosing from a pack.
+	UFUNCTION(Exec)
+	void MeshSheet(const FString& Folder);
+
 	// FxTest /Game/Pack/NS_Thing.NS_Thing 0.5: plays an effect in front of the chest.
 	UFUNCTION(Exec)
 	void FxTest(const FString& Path, float Scale);

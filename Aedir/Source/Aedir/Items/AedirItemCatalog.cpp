@@ -125,20 +125,23 @@ namespace
 		SetMesh(TEXT("Bread"), TEXT("/Game/Megascans/3D_Assets/BreadRoll/SM_BreadRoll.SM_BreadRoll"));
 		SetMesh(TEXT("Apple"), TEXT("/Game/Megascans/3D_Assets/Apple03/SM_Apple03.SM_Apple03"));
 		SetMesh(TEXT("SmokedMeat"), TEXT("/Game/Megascans/3D_Assets/SmokedMeat/SM_SmokedMeat.SM_SmokedMeat"));
-		const auto SetSword = [&Definitions](const TCHAR* Id, float LengthCm, float CenterCm)
+		const auto SetBlade = [&Definitions](const TCHAR* Id, const TCHAR* Mesh, float LengthCm, float CenterCm, bool bTopForward = false)
 		{
 			for (FAedirItemDef& Item : Definitions)
 			{
 				if (Item.Id == FName(Id))
 				{
-					Item.MeshPath = TEXT("/Game/Megascans/3D_Assets/MercenaryLongsword/SM_MercenaryLongsword.SM_MercenaryLongsword");
+					Item.MeshPath = Mesh;
 					Item.ModelLengthCm = LengthCm;
 					Item.ModelCenterCm = CenterCm;
+					Item.bModelTopForward = bTopForward;
 				}
 			}
 		};
-		SetSword(TEXT("Longsword"), 147.f, -14.5f);
-		SetSword(TEXT("Sword"), 128.f, -12.f);
+		SetBlade(TEXT("Longsword"), TEXT("/Game/Atris_swords/Meshes/SM_Sword1k.SM_Sword1k"), 147.f, -14.5f);
+		SetBlade(TEXT("Sword"), TEXT("/Game/Atris_swords/Meshes/SM_Sword1h.SM_Sword1h"), 128.f, -12.f);
+		SetBlade(TEXT("ShortSword"), TEXT("/Game/Atris_swords/Meshes/SM_Sword1e.SM_Sword1e"), 86.f, -6.8f);
+		SetBlade(TEXT("BattleAxe"), TEXT("/Game/Atris_axes/Meshes/SM_axe5.SM_axe5"), 80.f, 0.f, true);
 
 		SetGrip(TEXT("Dagger"), -21.f, 8.f, true);
 		SetGrip(TEXT("ShortSword"), -42.f, 8.f, true);
