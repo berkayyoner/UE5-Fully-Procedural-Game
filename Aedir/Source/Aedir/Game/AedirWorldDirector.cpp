@@ -1,5 +1,6 @@
 #include "Game/AedirWorldDirector.h"
 
+#include "Graphics/AedirFoliageSubsystem.h"
 #include "Graphics/AedirScannedMaterial.h"
 
 #include "Aedir.h"
@@ -21,6 +22,9 @@ namespace
 	const TCHAR* const DirectorRampMesh = TEXT("SM_Ramp");
 	const TCHAR* const DirectorGreenMaterial = TEXT("MI_ThirdPersonColWay");
 	constexpr float DirectorTraceHeightCm = 2000.f;
+	constexpr float DirectorMeadowHalfCm = 1700.f;
+	constexpr float DirectorMeadowDensity = 9.f;
+	constexpr int32 DirectorMeadowSeed = 4711;
 
 	struct FDirectorDecor
 	{
@@ -178,6 +182,10 @@ void AedirWorldDirector::PopulateTestMap(UWorld* World)
 	FVector Ground;
 	if (DirectorGroundUnder(World, Yard, Ground))
 	{
+		if (UAedirFoliageSubsystem* Foliage = World->GetSubsystem<UAedirFoliageSubsystem>())
+		{
+			Foliage->PlantMeadow(Ground, DirectorMeadowHalfCm, DirectorMeadowDensity, DirectorMeadowSeed);
+		}
 		World->SpawnActor<AAedirTrainingDummy>(AAedirTrainingDummy::StaticClass(), Ground, FRotator::ZeroRotator);
 		for (const FDirectorDecor& Decor : DirectorYard)
 		{

@@ -1,3 +1,5 @@
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
 #include "Wounds/AedirBloodSubsystem.h"
 
 #include "Aedir.h"
@@ -15,6 +17,11 @@
 
 namespace
 {
+	const TCHAR* const BloodBurstLight = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Once.NS_Blood_Splat_Directional_01_Floor_Once");
+	const TCHAR* const BloodBurstHeavy = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Bunch_Once.NS_Blood_Splat_Directional_01_Floor_Bunch_Once");
+	constexpr float BloodBurstHeavyAbove = 0.6f;
+	constexpr float BloodBurstMinScale = 0.25f;
+	constexpr float BloodBurstMaxScale = 0.7f;
 	constexpr float BloodDropScale = 0.012f;
 	constexpr float BloodDropLifeSpan = 4.f;
 	constexpr float BloodDropLinearDamping = 0.05f;
@@ -187,6 +194,14 @@ void UAedirBloodSubsystem::SpawnDrop(const FVector& Location, const FVector& Vel
 
 void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Direction, float Severity, EAedirWoundType Type)
 {
+	// The burst of the wound itself, drawn from the effect pack. The drops below fall on and mark the ground.
+	const TCHAR* const BurstPath = Type == EAedirWoundType::Bruise ? nullptr : (Severity > BloodBurstHeavyAbove ? BloodBurstHeavy : BloodBurstLight);
+	if (UNiagaraSystem* Burst = BurstPath ? LoadObject<UNiagaraSystem>(nullptr, BurstPath, nullptr, LOAD_NoWarn | LOAD_Quiet) : nullptr)
+	{
+		const float BurstScale = FMath::Lerp(BloodBurstMinScale, BloodBurstMaxScale, FMath::Clamp(Severity, 0.f, 1.f));
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Burst, Location, Direction.Rotation(), FVector(BurstScale));
+	}
+
 	if (Type == EAedirWoundType::Bruise || !BloodCanSpawn(GetWorld()))
 	{
 		return;

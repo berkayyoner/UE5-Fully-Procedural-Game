@@ -30,6 +30,9 @@
 #include "Engine/Engine.h"
 #include "Dev/AedirConsoleCommands.h"
 #include "Game/AedirEntities.h"
+#include "NiagaraFunctionLibrary.h"
+#include "NiagaraSystem.h"
+#include "Graphics/AedirFoliageSubsystem.h"
 #include "UI/SAedirConsole.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Items/AedirInteractionComponent.h"
@@ -1803,6 +1806,24 @@ void AAedirPlayerCharacter::TalkOpenTest(const FString& Name)
 			Menus->OpenDialogue(*It);
 			return;
 		}
+	}
+}
+
+void AAedirPlayerCharacter::FoliageInfo()
+{
+	if (const UAedirFoliageSubsystem* Foliage = GetWorld()->GetSubsystem<UAedirFoliageSubsystem>())
+	{
+		UE_LOG(LogTemp, Display, TEXT("[Foliage] %d planted, %d crushed"), Foliage->GetInstanceCount(), Foliage->GetCrushedCount());
+	}
+}
+
+void AAedirPlayerCharacter::FxTest(const FString& Path, float Scale)
+{
+	UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, *Path);
+	UE_LOG(LogTemp, Display, TEXT("[Fx] %s: %d"), *Path, System ? 1 : 0);
+	if (System)
+	{
+		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, System, GetActorLocation() + GetActorForwardVector() * 120.f + FVector(0.f, 0.f, 40.f), GetActorForwardVector().Rotation(), FVector(Scale));
 	}
 }
 

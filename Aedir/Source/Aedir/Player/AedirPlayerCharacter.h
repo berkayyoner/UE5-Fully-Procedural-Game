@@ -330,6 +330,13 @@ public:
 	UFUNCTION(Exec)
 	void ConOpen();
 
+	// FxTest /Game/Pack/NS_Thing.NS_Thing 0.5: plays an effect in front of the chest.
+	UFUNCTION(Exec)
+	void FxTest(const FString& Path, float Scale);
+
+	UFUNCTION(Exec)
+	void FoliageInfo();
+
 	UFUNCTION(Exec)
 	void TalkOpenTest(const FString& Name);
 

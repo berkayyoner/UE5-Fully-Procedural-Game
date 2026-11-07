@@ -24,6 +24,9 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Weather")
 	EAedirWeather PreviousWeather = EAedirWeather::Sunny;
 
+	// How hard the wind blows now, from still air to the worst of a storm.
+	float GetWindShare() const { return FMath::Clamp(FAedirWeatherProfile::MakeDefaultProfile(CurrentWeather).WindSpeed / 18.f, 0.f, 1.f); }
+
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Weather")
 	double TransitionStartServerTime = 0.0;
 
