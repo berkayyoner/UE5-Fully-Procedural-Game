@@ -211,6 +211,10 @@ public:
 	UFUNCTION(Exec)
 	void ShotCam(const FString& CameraArgs);
 
+	// A lightning bolt strikes nearby now.
+	UFUNCTION(Exec)
+	void LightningNow();
+
 	// Logs the collision filter of every physical shape of the hands, welded weapons included.
 	UFUNCTION(Exec)
 	void ShapeInfo();

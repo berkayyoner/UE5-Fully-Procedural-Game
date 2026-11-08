@@ -39,8 +39,8 @@ namespace
 	constexpr float PrecipSplashPerSecond = 1400.f;
 	constexpr float PrecipSplashLife = 0.16f;
 	constexpr float PrecipSplashRadiusCm = 1300.f;
-	constexpr float PrecipSplashSizeCm = 9.f;
-	constexpr float PrecipSplashStrength = 0.45f;
+	constexpr float PrecipSplashSizeCm = 3.f;
+	constexpr float PrecipSplashStrength = 0.3f;
 	const FLinearColor PrecipSplashColor(0.7f, 0.74f, 0.8f);
 	constexpr float PrecipSnowStrength = 0.9f;
 	// Droplets thrown up where a drop lands: how many, how fast out and up (cm/s), how big, and within what distance of the
@@ -52,7 +52,7 @@ namespace
 	constexpr float PrecipDropletUpMin = 70.f;
 	constexpr float PrecipDropletUpMax = 140.f;
 	constexpr float PrecipDropletGravity = 980.f;
-	constexpr float PrecipDropletSizeCm = 0.7f;
+	constexpr float PrecipDropletSizeCm = 0.35f;
 	constexpr float PrecipDropletRadiusCm = 600.f;
 	constexpr float PrecipDropletStrength = 0.6f;
 }

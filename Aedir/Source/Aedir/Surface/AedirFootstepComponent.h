@@ -28,10 +28,10 @@ public:
 	// Dust or spray kicked up by a step: small at a walk, larger at a run, and the share of walking and running steps that
 	// throw any up (every one by default). A landing always does.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
-	float StepEffectWalkScale = 0.18f;
+	float StepEffectWalkScale = 0.07f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
-	float StepEffectRunScale = 0.3f;
+	float StepEffectRunScale = 0.12f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
 	float StepEffectWalkChance = 1.f;

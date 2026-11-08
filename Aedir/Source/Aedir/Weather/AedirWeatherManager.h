@@ -61,6 +61,9 @@ public:
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastLightning(FVector StrikeLocation, float Seed);
 
+	// Strikes a bolt at once, somewhere around the players, whatever the weather.
+	void StrikeLightningNow() { StrikeLightning(); }
+
 private:
 	double GetServerTime() const;
 	void UpdateServerSchedules(double ServerTime, const FAedirWeatherProfile& Profile);
@@ -104,4 +107,18 @@ private:
 
 	float SmoothedWetness = 0.f;
 	float SmoothedSnow = 0.f;
+
+	// The bolt itself: a jagged glowing line from the clouds to where it strikes, with a few forks, flickering for a moment.
+	void BuildBolt(const FVector& StrikeLocation, float Seed);
+	void StepBolt(float DeltaSeconds);
+	UPROPERTY(Transient)
+	TObjectPtr<class UInstancedStaticMeshComponent> BoltMesh;
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> BoltMaterial;
+	UPROPERTY(Transient)
+	TObjectPtr<class UPointLightComponent> BoltLight;
+	// Segment ends, two per segment, and each segment's width.
+	TArray<FVector> BoltPoints;
+	TArray<float> BoltWidths;
+	float BoltAge = 1000.f;
 };

@@ -16,6 +16,7 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/KismetMaterialLibrary.h"
+#include "LandscapeProxy.h"
 #include "Materials/MaterialParameterCollection.h"
 #include "Weather/AedirWeatherManager.h"
 #include "Weather/AedirWeatherSubsystem.h"
@@ -27,6 +28,9 @@ namespace
 	constexpr float FoliageCullFromCm = 5000.f;
 	constexpr float FoliageCullToCm = 7500.f;
 	constexpr float FoliageSkipAboveCm = 160.f;
+	// A blade is on bare ground when, looking down from this far over its root to this far under it, the ground comes first.
+	constexpr float FoliageBareCheckAboveCm = 300.f;
+	constexpr float FoliageBareCheckBelowCm = 30.f;
 	constexpr float FoliageFlowerShare = 0.12f;
 	constexpr float FoliageCrushSeconds = 0.1f;
 	constexpr float FoliageCrushRadiusCm = 32.f;
@@ -123,6 +127,21 @@ void UAedirFoliageSubsystem::EnsureTreeWindData()
 	}
 }
 
+bool UAedirFoliageSubsystem::IsBareGround(const UWorld& InWorld, const FVector& Point)
+{
+	// Looking down on the spot from a little above, the first solid thing met is the ground itself.
+	FHitResult Hit;
+	FCollisionObjectQueryParams Objects;
+	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
+	Objects.AddObjectTypesToQuery(ECC_WorldDynamic);
+	const FCollisionQueryParams Query(SCENE_QUERY_STAT(AedirBareGround), false);
+	if (!InWorld.LineTraceSingleByObjectType(Hit, Point + FVector(0.f, 0.f, FoliageBareCheckAboveCm), Point - FVector(0.f, 0.f, FoliageBareCheckBelowCm), Objects, Query))
+	{
+		return true;
+	}
+	return Hit.GetActor() && Hit.GetActor()->IsA<ALandscapeProxy>();
+}
+
 void UAedirFoliageSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 {
 	Super::OnWorldBeginPlay(InWorld);
@@ -136,10 +155,27 @@ void UAedirFoliageSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		EnsureTreeWindData();
 		TArray<UInstancedStaticMeshComponent*> Grass;
 		It->GetComponents(Grass);
+		int32 Cleared = 0;
 		for (UInstancedStaticMeshComponent* Patch : Grass)
 		{
 			Patches.AddUnique(Patch);
+			// Grass planted before the rule that it only grows on bare ground is pulled out of anything standing over it.
+			TArray<int32> Covered;
+			for (int32 Index = 0; Index < Patch->GetInstanceCount(); ++Index)
+			{
+				FTransform Where;
+				if (Patch->GetInstanceTransform(Index, Where, true) && !IsBareGround(InWorld, Where.GetLocation()))
+				{
+					Covered.Add(Index);
+				}
+			}
+			if (!Covered.IsEmpty())
+			{
+				Patch->RemoveInstances(Covered);
+				Cleared += Covered.Num();
+			}
 		}
+		UE_CLOG(Cleared > 0, LogAedir, Log, TEXT("Cleared %d grass blades growing on props."), Cleared);
 		TArray<UInstancedSkinnedMeshComponent*> Trees;
 		It->GetComponents(Trees);
 		for (UInstancedSkinnedMeshComponent* Tree : Trees)
@@ -321,7 +357,9 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 	{
 		const FVector Spot = Around + FVector(Random.FRandRange(-HalfSizeCm, HalfSizeCm), Random.FRandRange(-HalfSizeCm, HalfSizeCm), 0.f);
 		FHitResult Hit;
-		if (!World->LineTraceSingleByObjectType(Hit, Spot + FVector(0.f, 0.f, 1500.f), Spot - FVector(0.f, 0.f, 1500.f), Objects, Query) || Hit.ImpactNormal.Z < 0.8f || FMath::Abs(Hit.ImpactPoint.Z - Around.Z) > FoliageSkipAboveCm)
+		// Grass grows on the bare ground only, never on a rock, a table or a roof.
+		if (!World->LineTraceSingleByObjectType(Hit, Spot + FVector(0.f, 0.f, 1500.f), Spot - FVector(0.f, 0.f, 1500.f), Objects, Query) || Hit.ImpactNormal.Z < 0.8f || FMath::Abs(Hit.ImpactPoint.Z - Around.Z) > FoliageSkipAboveCm
+			|| !Hit.GetActor() || !Hit.GetActor()->IsA<ALandscapeProxy>())
 		{
 			continue;
 		}

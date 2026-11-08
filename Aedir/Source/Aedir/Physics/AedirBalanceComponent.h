@@ -130,7 +130,7 @@ public:
 	// motors pull them where the legs would carry them, as hard as the body is strong. Every other part is held by its joint
 	// to the part above it, so weight and blows travel through the body. Off, the hips are a simulated mass moved by hand.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
-	bool bPhysicalHips = true;
+	bool bPhysicalHips = false;
 
 	// The hip joint's pull: how stiff the spring to where the hips belong is and how hard it damps, for position and for
 	// turning, at full strength. Force per cm and per degree, in the units of a physics constraint drive.

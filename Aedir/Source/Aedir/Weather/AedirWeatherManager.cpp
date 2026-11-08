@@ -8,6 +8,9 @@
 #include "Components/VolumetricCloudComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Components/SkyLightComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "Components/PointLightComponent.h"
+#include "Engine/StaticMesh.h"
 #include "Creature/AedirCreature.h"
 #include "EngineUtils.h"
 #include "Engine/DirectionalLight.h"
@@ -47,6 +50,16 @@ namespace
 	constexpr float WeatherManagerLightningFlashLux = 30.f;
 	constexpr float WeatherManagerLightningStrikeRange = 8000.f;
 	constexpr float WeatherManagerLightningSkyOffset = 6000.f;
+	// The drawn bolt: the glowing shape it is drawn with, how wide its main channel is, how bright, how long it lasts and how
+	// far its light reaches.
+	const TCHAR* const WeatherManagerBoltPlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
+	const TCHAR* const WeatherManagerBoltMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirPrecip.M_AedirPrecip");
+	constexpr float WeatherManagerBoltPlaneCm = 100.f;
+	constexpr float WeatherManagerBoltWidthCm = 90.f;
+	const FLinearColor WeatherManagerBoltColor(30.f, 34.f, 48.f);
+	constexpr float WeatherManagerBoltLife = 0.45f;
+	constexpr float WeatherManagerBoltLightCandelas = 50000.f;
+	constexpr float WeatherManagerBoltLightRadius = 12000.f;
 	constexpr float WeatherManagerLightningBalanceImpact = 0.6f;
 	constexpr float WeatherManagerSoundSpeedCmPerSecond = 34300.f;
 	constexpr float WeatherManagerFullSunLux = 14.f;
@@ -189,6 +202,7 @@ void AAedirWeatherManager::BeginPlay()
 void AAedirWeatherManager::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	StepBolt(DeltaSeconds);
 
 	const FAedirWeatherProfile Profile = GetBlendedProfile();
 
@@ -279,6 +293,140 @@ FVector AAedirWeatherManager::GetWindVector() const
 	return Direction * GetBlendedProfile().WindSpeed;
 }
 
+void AAedirWeatherManager::BuildBolt(const FVector& StrikeLocation, float Seed)
+{
+	UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, WeatherManagerBoltPlanePath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, WeatherManagerBoltMaterialPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!Plane || !Base)
+	{
+		return;
+	}
+	if (!BoltMesh)
+	{
+		BoltMaterial = UMaterialInstanceDynamic::Create(Base, this);
+		BoltMaterial->SetVectorParameterValue(TEXT("Color"), WeatherManagerBoltColor);
+		BoltMesh = NewObject<UInstancedStaticMeshComponent>(this);
+		BoltMesh->SetStaticMesh(Plane);
+		BoltMesh->SetMaterial(0, BoltMaterial);
+		BoltMesh->SetMobility(EComponentMobility::Movable);
+		BoltMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		BoltMesh->SetCastShadow(false);
+		BoltMesh->SetAbsolute(true, true, true);
+		BoltMesh->SetupAttachment(GetRootComponent());
+		BoltMesh->RegisterComponent();
+		BoltLight = NewObject<UPointLightComponent>(this);
+		BoltLight->SetAbsolute(true, true, true);
+		BoltLight->SetupAttachment(GetRootComponent());
+		BoltLight->SetIntensityUnits(ELightUnits::Candelas);
+		BoltLight->SetAttenuationRadius(WeatherManagerBoltLightRadius);
+		BoltLight->SetLightColor(FLinearColor(0.75f, 0.82f, 1.f));
+		BoltLight->SetCastShadows(false);
+		BoltLight->RegisterComponent();
+	}
+
+	// The main channel comes down from the clouds well to one side, broken again and again into shorter crooked lengths.
+	FRandomStream Stream(static_cast<int32>(Seed * 1000000.f) + 17);
+	BoltPoints.Reset();
+	BoltWidths.Reset();
+	const auto Crooked = [&Stream](const FVector& From, const FVector& To, int32 Levels, TArray<FVector>& OutPath)
+	{
+		OutPath = { From, To };
+		for (int32 Level = 0; Level < Levels; ++Level)
+		{
+			TArray<FVector> Finer;
+			for (int32 Index = 0; Index + 1 < OutPath.Num(); ++Index)
+			{
+				const FVector A = OutPath[Index];
+				const FVector B = OutPath[Index + 1];
+				const float Length = static_cast<float>(FVector::Dist(A, B));
+				Finer.Add(A);
+				Finer.Add((A + B) * 0.5 + Stream.VRand() * (Length * 0.22f));
+			}
+			Finer.Add(OutPath.Last());
+			OutPath = MoveTemp(Finer);
+		}
+	};
+	const FVector Top = StrikeLocation + FVector(Stream.FRandRange(-1800.f, 1800.f), Stream.FRandRange(-1800.f, 1800.f), Stream.FRandRange(5500.f, 7500.f));
+	TArray<FVector> Main;
+	Crooked(Top, StrikeLocation, 7, Main);
+	for (int32 Index = 0; Index + 1 < Main.Num(); ++Index)
+	{
+		BoltPoints.Add(Main[Index]);
+		BoltPoints.Add(Main[Index + 1]);
+		BoltWidths.Add(WeatherManagerBoltWidthCm);
+	}
+	// Forks break off the upper part and die out on the way down.
+	const int32 Forks = Stream.RandRange(2, 4);
+	for (int32 Fork = 0; Fork < Forks; ++Fork)
+	{
+		const FVector From = Main[Stream.RandRange(Main.Num() / 8, Main.Num() * 2 / 3)];
+		const float Drop = static_cast<float>(From.Z - StrikeLocation.Z) * Stream.FRandRange(0.2f, 0.45f);
+		const FVector To = From + FVector(Stream.FRandRange(-1.f, 1.f) * Drop, Stream.FRandRange(-1.f, 1.f) * Drop, -Drop);
+		TArray<FVector> Branch;
+		Crooked(From, To, 5, Branch);
+		for (int32 Index = 0; Index + 1 < Branch.Num(); ++Index)
+		{
+			BoltPoints.Add(Branch[Index]);
+			BoltPoints.Add(Branch[Index + 1]);
+			BoltWidths.Add(WeatherManagerBoltWidthCm * 0.4f * (1.f - static_cast<float>(Index) / Branch.Num()));
+		}
+	}
+
+	const int32 Segments = BoltWidths.Num();
+	if (BoltMesh->GetInstanceCount() < Segments)
+	{
+		TArray<FTransform> More;
+		More.Init(FTransform(FQuat::Identity, FVector::ZeroVector, FVector(0.f)), Segments - BoltMesh->GetInstanceCount());
+		BoltMesh->AddInstances(More, false, true);
+	}
+	BoltLight->SetWorldLocation(StrikeLocation + FVector(0.f, 0.f, 800.f));
+	BoltAge = 0.f;
+}
+
+void AAedirWeatherManager::StepBolt(float DeltaSeconds)
+{
+	if (!BoltMesh || BoltAge > WeatherManagerBoltLife + 1.f)
+	{
+		return;
+	}
+	BoltAge += DeltaSeconds;
+	// It strikes, fades, strikes again down the same channel, and is gone.
+	const float Flicker = BoltAge < 0.06f ? 1.f : BoltAge < 0.14f ? 0.25f : BoltAge < 0.22f ? 0.9f : BoltAge < WeatherManagerBoltLife ? FMath::Max(0.f, 0.6f * (1.f - (BoltAge - 0.22f) / (WeatherManagerBoltLife - 0.22f))) : 0.f;
+	const bool bShown = Flicker > 0.f;
+	BoltMesh->SetVisibility(bShown);
+	BoltLight->SetIntensity(WeatherManagerBoltLightCandelas * Flicker);
+	BoltLight->SetVisibility(bShown);
+	if (!bShown)
+	{
+		BoltAge = WeatherManagerBoltLife + 2.f;
+		return;
+	}
+	BoltMaterial->SetScalarParameterValue(TEXT("Strength"), Flicker);
+
+	FVector Eye = BoltPoints.Num() > 0 ? BoltPoints[0] : FVector::ZeroVector;
+	if (const APlayerController* LocalController = GetWorld()->GetFirstPlayerController())
+	{
+		if (LocalController->PlayerCameraManager)
+		{
+			Eye = LocalController->PlayerCameraManager->GetCameraLocation();
+		}
+	}
+	TArray<FTransform> Transforms;
+	Transforms.Init(FTransform(FQuat::Identity, FVector::ZeroVector, FVector(0.f)), BoltMesh->GetInstanceCount());
+	for (int32 Segment = 0; Segment < BoltWidths.Num(); ++Segment)
+	{
+		const FVector A = BoltPoints[Segment * 2];
+		const FVector B = BoltPoints[Segment * 2 + 1];
+		const FVector Middle = (A + B) * 0.5;
+		const FVector Along = (B - A).GetSafeNormal();
+		// A little longer than the segment so the joints between them do not show.
+		const float Length = static_cast<float>(FVector::Dist(A, B)) * 1.3f + BoltWidths[Segment];
+		Transforms[Segment] = FTransform(FRotationMatrix::MakeFromXZ(Along, (Eye - Middle).GetSafeNormal()).ToQuat(), Middle,
+			FVector(Length / WeatherManagerBoltPlaneCm, BoltWidths[Segment] / WeatherManagerBoltPlaneCm, 1.f));
+	}
+	BoltMesh->BatchUpdateInstancesTransforms(0, Transforms, true, true, true);
+}
+
 void AAedirWeatherManager::MulticastLightning_Implementation(FVector StrikeLocation, float Seed)
 {
 	UWorld* World = GetWorld();
@@ -296,6 +444,10 @@ void AAedirWeatherManager::MulticastLightning_Implementation(FVector StrikeLocat
 		FRandomStream BoltStream(static_cast<int32>(Seed * 1000000.f));
 		const FRotator BoltRotation(0.f, BoltStream.FRandRange(0.f, 360.f), 0.f);
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, BoltSystem, StrikeLocation, BoltRotation);
+	}
+	else
+	{
+		BuildBolt(StrikeLocation, Seed);
 	}
 
 	if (!Settings->ThunderSound.IsNull())

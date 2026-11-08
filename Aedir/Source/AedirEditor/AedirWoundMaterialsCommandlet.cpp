@@ -224,7 +224,7 @@ namespace
 
 		// Piecewise ramp: fresh -> dark violet -> violet -> yellow-green -> nearly nothing.
 		UMaterialExpression* Stage1 = B.Lerp(
-			B.Constant3(FLinearColor(0.28f, 0.05f, 0.22f)),
+			B.Constant3(FLinearColor(0.32f, 0.09f, 0.14f)),
 			B.Constant3(FLinearColor(0.18f, 0.12f, 0.30f)),
 			WoundMatRamp(B, Age, 0.0f, 0.35f));
 		UMaterialExpression* Stage2 = B.Lerp(
@@ -242,11 +242,11 @@ namespace
 		UMaterialExpression* Opacity = B.Unary<UMaterialExpressionSaturate>(
 			B.Binary<UMaterialExpressionMultiply>(
 				B.Binary<UMaterialExpressionMultiply>(Mask, Severity),
-				B.Binary<UMaterialExpressionMultiply>(AgeFade, B.Constant(0.75f))));
+				B.Binary<UMaterialExpressionMultiply>(AgeFade, B.Constant(0.42f))));
 
 		B.Output(Colour, MP_BaseColor);
 		B.Output(Opacity, MP_Opacity);
-		B.Output(B.Constant(0.8f), MP_Roughness);
+		B.Output(B.Constant(0.5f), MP_Roughness);
 	}
 
 	void WoundMatBuildCut(FWoundMatBuilder& B)

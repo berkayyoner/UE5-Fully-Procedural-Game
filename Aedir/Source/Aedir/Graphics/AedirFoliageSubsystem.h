@@ -21,6 +21,9 @@ public:
 	// A meadow and trees planted in the editor and saved in the level are taken up as if planted now.
 	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
 
+	// Whether the first solid thing over a point is the ground, not a rock, a prop or a roof.
+	static bool IsBareGround(const UWorld& InWorld, const FVector& Point);
+
 	// The actor the grass and trees are planted on wears this tag; in the editor it is saved with the level.
 	static const FName MeadowTag;
 

@@ -124,7 +124,7 @@ namespace
 		switch (Type)
 		{
 		case EAedirWoundType::Bruise:
-			return FMath::Lerp(6.f, 16.f, Alpha);
+			return FMath::Lerp(2.5f, 7.f, Alpha);
 		case EAedirWoundType::Cut:
 			return FMath::Lerp(4.f, 10.f, Alpha);
 		case EAedirWoundType::Puncture:

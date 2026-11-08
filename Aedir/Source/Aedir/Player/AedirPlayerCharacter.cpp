@@ -55,6 +55,7 @@
 #include "UI/AedirJournalSubsystem.h"
 #include "UI/AedirMenuSubsystem.h"
 #include "Weather/AedirWeatherEffectsComponent.h"
+#include "Weather/AedirWeatherManager.h"
 
 namespace
 {
@@ -1266,6 +1267,14 @@ void AAedirPlayerCharacter::WarpTo(float XMetres, float YMetres, float Yaw)
 void AAedirPlayerCharacter::ShotCam(const FString& CameraArgs)
 {
 	RunDevCommand(TEXT("ShotCam"), CameraArgs, false);
+}
+
+void AAedirPlayerCharacter::LightningNow()
+{
+	for (TActorIterator<AAedirWeatherManager> It(GetWorld()); It; ++It)
+	{
+		It->StrikeLightningNow();
+	}
 }
 
 void AAedirPlayerCharacter::ShapeInfo()
