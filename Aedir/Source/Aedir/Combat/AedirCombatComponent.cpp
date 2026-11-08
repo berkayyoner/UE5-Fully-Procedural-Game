@@ -2,6 +2,7 @@
 
 #include "Aedir.h"
 #include "Components/PrimitiveComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirGroupSubsystem.h"
@@ -189,6 +190,21 @@ namespace
 	// A clash of weapons: the fastest a blade's tip counts, and how much of the push the struck hand takes.
 	constexpr float AedirClashMaxSpeed = 1500.f;
 	constexpr float AedirClashHandShare = 0.6f;
+
+	// The mouse moves the hand: around its own shoulder (two hands on one grip around the middle of the chest), the mouse's
+	// side to side turning it around the body and its up and down raising it from low to over the head.
+	static TAutoConsoleVariable<int32> CVarAedirHandLedSwing(TEXT("aedir.HandLedSwing"), 1, TEXT("The mouse moves the hand and the blade follows it by its weight (1), or swings go through set poses (0)."));
+	constexpr float AedirHandLedYawShare = 1.1f;
+	constexpr float AedirHandLedInwardYaw = 12.f;
+	constexpr float AedirHandLedRestPitch = -22.f;
+	constexpr float AedirHandLedPitchMin = -75.f;
+	constexpr float AedirHandLedPitchMax = 78.f;
+	constexpr float AedirHandLedNearCm = 42.f;
+	constexpr float AedirHandLedFarCm = 58.f;
+	constexpr float AedirHandLedBehindShorterCm = 10.f;
+	constexpr float AedirHandLedTwoHandSideCm = 6.f;
+	// The blade stands out of the fist this far above the line of the arm; weight and tiredness let it sink.
+	constexpr float AedirHandLedBladeRaise = 50.f;
 	// Blades only resting on each other are not worth a line in the log.
 	constexpr float AedirClashLogSpeed = 200.f;
 	constexpr float AedirBladePushShare = 0.15f;
@@ -1217,6 +1233,10 @@ FVector UAedirCombatComponent::ComputeWeaponTargetDir(EAedirHand Hand, const FAe
 		ComputePolearmPose(Hand, Arm, Item, PolearmHand, PolearmDir);
 		StanceDir = Creature->GetActorTransform().TransformVectorNoScale(PolearmDir);
 	}
+	else if (UsesHandLedSwing(Hand))
+	{
+		StanceDir = ComputeHandLedBladeDir(Hand, Arm, Item);
+	}
 	else
 	{
 		// One smooth curve through the poses of the swing, from behind the body on one side to behind it on the other.
@@ -1233,6 +1253,51 @@ FVector UAedirCombatComponent::ComputeWeaponTargetDir(EAedirHand Hand, const FAe
 		StanceDir = FMath::Lerp(SwingDir, RaisedDir, RaiseShare).GetSafeNormal();
 	}
 	return HalfSwordAlpha > 0.f ? FMath::Lerp(StanceDir, ComputeHalfSwordDir(Hand, Arm), CombatSmoothStep01(HalfSwordAlpha)).GetSafeNormal() : StanceDir;
+}
+
+bool UAedirCombatComponent::UsesHandLedSwing(EAedirHand Hand) const
+{
+	const AAedirItemActor* Item = GetHeldItem(Hand);
+	return CVarAedirHandLedSwing.GetValueOnGameThread() != 0 && !bThrustMode && !(bTwoHandGrip && IsPolearm(Item)) && !GetArm(Hand).bScriptedControl;
+}
+
+FVector UAedirCombatComponent::ComputeHandLedPivotLocal(EAedirHand Hand) const
+{
+	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
+	return FVector(0.f, Side * (bTwoHandGrip ? AedirHandLedTwoHandSideCm : AedirShoulderLateral), AedirShoulderHeight);
+}
+
+FVector UAedirCombatComponent::ComputeHandLedHandLocal(EAedirHand Hand, const FAedirArmDynamics& Arm) const
+{
+	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
+	const FVector2D Aim = Arm.PoseAimDeg;
+	const float Yaw = static_cast<float>(Aim.X) * AedirHandLedYawShare - Side * AedirHandLedInwardYaw;
+	const float Pitch = FMath::Clamp(AedirHandLedRestPitch + static_cast<float>(Aim.Y), AedirHandLedPitchMin, AedirHandLedPitchMax);
+	// The wheel sets how far out the hand is held, a quick throw takes it all the way, and round behind the body the arm
+	// cannot reach as far.
+	const float Out = FMath::Lerp(FMath::Clamp(Arm.Extension, 0.f, 1.f), 1.f, Arm.PunchBlend);
+	const float Behind = FMath::Clamp((FMath::Abs(Yaw) - 70.f) / 40.f, 0.f, 1.f);
+	const float Reach = FMath::Lerp(AedirHandLedNearCm, AedirHandLedFarCm, Out) - Behind * AedirHandLedBehindShorterCm;
+	FVector Hand3 = ComputeHandLedPivotLocal(Hand) + FRotator(Pitch, Yaw, 0.f).Vector() * Reach;
+	Hand3.Z -= Creature->Stats ? Creature->Stats->GetFatigue() * AedirFatigueDroopCm : 0.f;
+	return Hand3;
+}
+
+FVector UAedirCombatComponent::ComputeHandLedBladeDir(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const
+{
+	// The blade comes out of the fist at an angle above the line of the arm: up from a hand held low or to the side, back
+	// over the head from a hand raised overhead. Swinging the hand round, its weight trails and swings on through the wrist.
+	const FVector ArmLine = (ComputeHandLedHandLocal(Hand, Arm) - ComputeHandLedPivotLocal(Hand)).GetSafeNormal();
+	FVector Up = FVector::VectorPlaneProject(FVector::UpVector, ArmLine).GetSafeNormal();
+	if (Up.IsNearlyZero())
+	{
+		Up = -FVector::ForwardVector;
+	}
+	const float Droop = (Item && Item->bTwoHanded && !bTwoHandGrip ? AedirOneHandedDroopPitch : 0.f) + (Creature->Stats ? Creature->Stats->GetFatigue() * AedirFatigueDroopPitch : 0.f)
+		+ (Item ? Item->Weight * (bTwoHandGrip ? 0.5f : 1.f) * AedirWeaponWeightDroopPerKg : 0.f);
+	const float Raise = FMath::DegreesToRadians(FMath::Max(AedirHandLedBladeRaise - Droop, 0.f));
+	const FVector Local = ArmLine * FMath::Cos(Raise) + Up * FMath::Sin(Raise);
+	return FRotator(0.0, Creature->GetActorRotation().Yaw, 0.0).RotateVector(Local).GetSafeNormal();
 }
 
 FVector2D UAedirCombatComponent::ComputeSwingBladeKey(EAedirHand Hand, const AAedirItemActor* Item, float Travel) const
@@ -1358,6 +1423,11 @@ FVector UAedirCombatComponent::ComputeStanceHandLocal(EAedirHand Hand, const FAe
 		FVector PolearmDir;
 		ComputePolearmPose(Hand, Arm, Item, PolearmHand, PolearmDir);
 		return PolearmHand;
+	}
+
+	if (UsesHandLedSwing(Hand))
+	{
+		return ComputeHandLedHandLocal(Hand, Arm);
 	}
 
 	// Where the hand is with the mouse in the middle.
@@ -1541,7 +1611,8 @@ void UAedirCombatComponent::UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& 
 
 	// In a fight the arm points the blade and the wrist does not give: the weight of the weapon is already in how slowly
 	// the arm comes round, so the blade goes where the arm takes it and nowhere else.
-	if (Arm.WeaponDir.IsNearlyZero() || GetArmLedShare(Hand) > 0.f)
+	// The mouse moving the hand, the blade's own weight carries it: it trails a quick move and swings on past the end of it.
+	if (Arm.WeaponDir.IsNearlyZero() || (GetArmLedShare(Hand) > 0.f && !(IsWeaponStance(Hand) && UsesHandLedSwing(Hand))))
 	{
 		Arm.WeaponDir = Target;
 		Arm.WeaponDirSpeed = FVector::ZeroVector;

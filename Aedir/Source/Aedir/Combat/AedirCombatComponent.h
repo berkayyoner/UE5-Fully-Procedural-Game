@@ -586,6 +586,11 @@ private:
 	void ResolveHeldCollision(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& PrevHand, const FVector& PrevDir, float DeltaTime);
 	FVector ComputeHalfSwordHand(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
 	FVector ComputeStanceHandLocal(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
+	// The mouse moves the hand around the shoulder and the blade follows by its weight.
+	bool UsesHandLedSwing(EAedirHand Hand) const;
+	FVector ComputeHandLedPivotLocal(EAedirHand Hand) const;
+	FVector ComputeHandLedHandLocal(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
+	FVector ComputeHandLedBladeDir(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
 	FVector ComputeSwingHandKey(EAedirHand Hand, const FVector& Rest, float Travel) const;
 	FVector2D ComputeSwingBladeKey(EAedirHand Hand, const AAedirItemActor* Item, float Travel) const;
 	void ComputePolearmPose(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item, FVector& OutHandLocal, FVector& OutDirLocal) const;
