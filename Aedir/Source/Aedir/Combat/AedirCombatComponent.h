@@ -603,6 +603,15 @@ private:
 
 	EAedirHand GetAIWeaponHand() const;
 	bool UpdateAIWeaponStrike(EAedirHand Hand, float Distance, float Reach, float DeltaTime);
+	// Bare fists thrown the way the player throws them: drawn back or out, then at the head or the body of the enemy.
+	void UpdateAIFistStrike(float Distance, float Reach, float DeltaTime);
+	// The aim that points a fist from its shoulder at a point, as the player's mouse would set it.
+	FVector2D ComputeFistAimAt(EAedirHand Hand, const FVector& PointWorld) const;
+	// Where on the enemy a blow goes: 0 the head, 1 the body, 2 the legs.
+	FVector GetAITargetPoint(int32 Part) const;
+	EAedirHand AIFistHand = EAedirHand::Right;
+	int32 AIFistPart = 0;
+	FVector2D AIFistWindup = FVector2D::ZeroVector;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirCreature> AIGrudge;

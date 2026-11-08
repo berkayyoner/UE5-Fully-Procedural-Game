@@ -3,6 +3,7 @@
 #include "Aedir.h"
 #include "Components/PrimitiveComponent.h"
 #include "HAL/IConsoleManager.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirGroupSubsystem.h"
@@ -402,6 +403,17 @@ namespace
 	// Armed, it keeps the length of its weapon: closer than this share of its reach it steps back, before the bodies touch.
 	constexpr float AedirAIBackOffShare = 0.75f;
 	constexpr float AedirAIBackOffInput = 0.85f;
+	// Room kept between the bodies, armed and bare-handed, and how wide the band is in which it neither closes nor gives way.
+	constexpr float AedirAIArmedRoomCm = 30.f;
+	constexpr float AedirAIUnarmedRoomCm = 8.f;
+	constexpr float AedirAIKeepBandCm = 15.f;
+	// A bare fist: how long a hook or an uppercut is drawn, a jab barely; how long the throw lasts and the fist comes back.
+	constexpr float AedirAIFistWindupSeconds = 0.22f;
+	constexpr float AedirAIJabWindupSeconds = 0.05f;
+	constexpr float AedirAIFistThrowSeconds = 0.22f;
+	constexpr float AedirAIFistRecoverSeconds = 0.3f;
+	// How much of the rise or fall from the shoulder to the part aimed at a weapon blow follows.
+	constexpr float AedirAIStrikeRiseShare = 0.8f;
 	constexpr float AedirAIRunBeyondCm = 500.f;
 	constexpr float AedirAIWindupSeconds = 0.4f;
 	constexpr float AedirAIStrikeSeconds = 0.35f;
@@ -3009,16 +3021,20 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		SetGuardInternal(OtherHand, !bArmed);
 	}
 
-	if (Distance > Reach * AedirAICloseInShare)
+	// The bodies never come closer than their own width and a little room, the weapon's length when there is one.
+	const float BodiesApart = (Creature->GetCapsuleComponent()->GetScaledCapsuleRadius() + (AITarget->GetCapsuleComponent() ? AITarget->GetCapsuleComponent()->GetScaledCapsuleRadius() : 0.f))
+		+ (bArmed ? AedirAIArmedRoomCm : AedirAIUnarmedRoomCm) * Scale;
+	const float KeepAt = FMath::Max(bArmed ? Reach * AedirAIBackOffShare : 0.f, BodiesApart);
+	if (Distance > FMath::Max(Reach * AedirAICloseInShare, KeepAt + AedirAIKeepBandCm * Scale))
 	{
 		Creature->WalkTowards(TargetLocation, DeltaTime, AedirAITurnSpeed);
 	}
 	else
 	{
 		Creature->TurnBodyTo(FacingYaw, DeltaTime, AedirAITurnSpeed);
-		if (Distance < Reach * AedirAIBackOffShare && bArmed)
+		if (Distance < KeepAt && !bAITargetDown)
 		{
-			Creature->AddMovementInput(Creature->GetActorForwardVector(), -AedirAIBackOffInput);
+			Creature->AddMovementInput(Creature->GetActorForwardVector(), -AedirAIBackOffInput * FMath::Clamp((KeepAt - Distance) / (AedirAIKeepBandCm * Scale) + 0.4f, 0.f, 1.f));
 		}
 	}
 
@@ -3029,48 +3045,109 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 			return;
 		}
 	}
-
-	if (Distance > Reach)
+	else
 	{
-		AIAttackTimer = 0.f;
-		return;
+		UpdateAIFistStrike(Distance, Reach, DeltaTime);
 	}
+}
 
-	AIAttackTimer += DeltaTime;
-	if (AIAttackTimer < AIAttackInterval)
+FVector UAedirCombatComponent::GetAITargetPoint(int32 Part) const
+{
+	const AAedirCreature* Target = AITarget.Get();
+	const USkeletalMeshComponent* Body = Target ? Target->GetMesh() : nullptr;
+	if (!Body)
 	{
-		return;
+		return Target ? Target->GetActorLocation() : FVector::ZeroVector;
 	}
+	const TCHAR* Bone = Part == 0 ? TEXT("head") : Part == 1 ? TEXT("spine_03") : (FMath::RandBool() ? TEXT("thigh_l") : TEXT("thigh_r"));
+	return Body->GetBoneLocation(FName(Bone));
+}
 
-	AIAttackTimer = 0.f;
+FVector2D UAedirCombatComponent::ComputeFistAimAt(EAedirHand Hand, const FVector& PointWorld) const
+{
+	// The inverse of how a fist's target is made from its aim: the turn from the body and the rise from where the eyes look,
+	// with the small pull to the middle the guard gives it.
+	const float Out = Hand == EAedirHand::Right ? 1.f : -1.f;
+	const FRotator Toward = (PointWorld - ComputeArmShoulder(Hand)).Rotation();
+	const float Yaw = FRotator::NormalizeAxis(static_cast<float>(Toward.Yaw - Creature->GetActorRotation().Yaw));
+	const float Centre = 1.f - FMath::Clamp(Yaw * Out / AedirArmOutwardYawLimit, 0.f, 1.f);
+	const float CameraPitch = FRotator::NormalizeAxis(static_cast<float>(Creature->GetControlRotation().Pitch));
+	const float AimX = FMath::Clamp((Yaw + Out * AedirArmConvergeYawDegrees * Centre) * Out, -AedirArmAcrossYawLimit - 25.f, AedirArmOutwardYawLimit) * Out;
+	const float AimY = FMath::Clamp(static_cast<float>(Toward.Pitch) - CameraPitch - AedirArmHeadHeightPitchDegrees * Centre, AedirArmAimPitchMin, AedirFistAimPitchMax);
+	return FVector2D(AimX, AimY);
+}
 
-	if (Distance <= AedirAIContactRange && !GetSwingState(EAedirHand::Left).bActive && !GetSwingState(EAedirHand::Right).bActive)
+void UAedirCombatComponent::UpdateAIFistStrike(float Distance, float Reach, float DeltaTime)
+{
+	// Bare fists go the way the player's do: both up in a guard, then one drawn back or out and thrown at the head or the body.
+	FAedirArmDynamics& Arm = GetArm(AIFistHand);
+	AIStrikeTimer += DeltaTime;
+	switch (AIStrikePhase)
 	{
-		if (FMath::FRand() < AedirAIShoveChance)
+	case 0:
+	{
+		for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
 		{
-			StartShove();
+			FAedirArmDynamics& Guard = GetArm(Hand);
+			Guard.PunchBlend = 0.f;
+			Guard.AimOffsetDeg = ComputeFistAimAt(Hand, GetAITargetPoint(0)) * FVector2D(0.5f, 1.f) + FVector2D(0.f, -10.f);
 		}
-
-		if (FMath::FRand() < AedirAIKickChance)
+		const bool bTired = Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare;
+		if (!bTired && Distance <= Reach + AedirAIContactRange * 0.25f && AIStrikeTimer >= AIAttackInterval)
 		{
-			StartKick();
+			// At grips a shove or a kick now and then.
+			if (Distance <= AedirAIContactRange)
+			{
+				if (FMath::FRand() < AedirAIShoveChance)
+				{
+					StartShove();
+				}
+				else if (FMath::FRand() < AedirAIKickChance)
+				{
+					StartKick();
+				}
+			}
+			AIFistHand = bAINextLeft ? EAedirHand::Left : EAedirHand::Right;
+			bAINextLeft = !bAINextLeft;
+			AIFistPart = FMath::FRand() < 0.55f ? 0 : 1;
+			const float Out = AIFistHand == EAedirHand::Right ? 1.f : -1.f;
+			const FVector2D Aim = ComputeFistAimAt(AIFistHand, GetAITargetPoint(AIFistPart));
+			// A jab straight from the guard, a hook drawn out to the side, an uppercut dropped low first.
+			const int32 Kind = Distance < AedirAICloseRange ? FMath::RandRange(1, 2) : FMath::RandRange(0, 2);
+			AIFistWindup = Kind == 0 ? Aim : Kind == 1 ? FVector2D(Out * AedirArmOutwardYawLimit * 0.75f, Aim.Y) : FVector2D(Aim.X, AedirArmAimPitchMin * 0.6f);
+			AIStrikeEnd = FVector2D(Kind == 0 ? 0.f : AedirAIFistWindupSeconds - AedirAIJabWindupSeconds, 0.f);
+			AIStrikePhase = 1;
+			AIStrikeTimer = 0.f;
 		}
+		break;
 	}
-
-	const EAedirSwingType Type = Distance < AedirAICloseRange
-		? (FMath::RandBool() ? EAedirSwingType::Hook : EAedirSwingType::Uppercut)
-		: EAedirSwingType::Jab;
-
-	const EAedirHand FirstHand = bAINextLeft ? EAedirHand::Left : EAedirHand::Right;
-	const EAedirHand SecondHand = bAINextLeft ? EAedirHand::Right : EAedirHand::Left;
-
-	if (StartSwing(FirstHand, Type))
-	{
-		bAINextLeft = false;
-	}
-	else if (StartSwing(SecondHand, Type))
-	{
-		bAINextLeft = true;
+	case 1:
+		Arm.AimOffsetDeg = AIFistWindup;
+		Arm.PunchBlend = 0.f;
+		if (AIStrikeTimer >= AedirAIJabWindupSeconds + static_cast<float>(AIStrikeEnd.X))
+		{
+			AIStrikePhase = 2;
+			AIStrikeTimer = 0.f;
+		}
+		break;
+	case 2:
+		// Thrown, it keeps going for the part it was meant for, wherever that has moved.
+		Arm.AimOffsetDeg = ComputeFistAimAt(AIFistHand, GetAITargetPoint(AIFistPart));
+		Arm.PunchBlend = 1.f;
+		if (AIStrikeTimer >= AedirAIFistThrowSeconds)
+		{
+			Arm.PunchBlend = 0.f;
+			AIStrikePhase = 3;
+			AIStrikeTimer = 0.f;
+		}
+		break;
+	default:
+		if (AIStrikeTimer >= AedirAIFistRecoverSeconds)
+		{
+			AIStrikePhase = 0;
+			AIStrikeTimer = 0.f;
+		}
+		break;
 	}
 }
 
@@ -3135,6 +3212,22 @@ bool UAedirCombatComponent::UpdateAIWeaponStrike(EAedirHand Hand, float Distance
 				Arm.AimOffsetDeg = FVector2D(Side * 10.f, AedirWeaponRaiseFullDegrees);
 				AIStrikeEnd = FVector2D(-Side * 5.f, -25.f);
 				break;
+			}
+			// The blow is laid on the part of the enemy it is meant for: the way it stands from here and how high that part is,
+			// a low blow at the legs, one from overhead at the head, the rest at the body.
+			if (Style >= 0)
+			{
+				const int32 Part = Style == 1 ? 2 : (Style == 2 || Style >= 4) ? 0 : 1;
+				const FRotator Toward = (GetAITargetPoint(Part) - ComputeArmShoulder(Hand)).Rotation();
+				const float Bearing = FMath::Clamp(FRotator::NormalizeAxis(static_cast<float>(Toward.Yaw - Creature->GetActorRotation().Yaw)), -40.f, 40.f);
+				const float Rise = FRotator::NormalizeAxis(static_cast<float>(Toward.Pitch)) * AedirAIStrikeRiseShare;
+				const auto Laid = [Bearing, Rise](const FVector2D& Aim)
+				{
+					return FVector2D(FMath::Clamp(static_cast<float>(Aim.X) + Bearing, -AedirWeaponYawLimit, AedirWeaponYawLimit),
+						FMath::Clamp(static_cast<float>(Aim.Y) + Rise, AedirWeaponPitchMin, AedirWeaponRaiseFullDegrees));
+				};
+				Arm.AimOffsetDeg = Laid(Arm.AimOffsetDeg);
+				AIStrikeEnd = Laid(AIStrikeEnd);
 			}
 			AIStrikePhase = 1;
 			AIStrikeTimer = 0.f;
