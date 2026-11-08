@@ -211,6 +211,10 @@ public:
 	UFUNCTION(Exec)
 	void ShotCam(const FString& CameraArgs);
 
+	// Logs the collision filter of every physical shape of the hands, welded weapons included.
+	UFUNCTION(Exec)
+	void ShapeInfo();
+
 	// Takes a blow on the chest from the front, or on the back from behind, to see how the body answers it.
 	UFUNCTION(Exec)
 	void StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec, int32 FromBehind = 0);

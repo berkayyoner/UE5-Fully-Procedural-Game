@@ -1,6 +1,7 @@
 #include "Wounds/AedirWoundComponent.h"
 
 #include "Creature/AedirCreature.h"
+#include "Combat/AedirCombatComponent.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Physics/AedirBalanceComponent.h"
 #include "Wounds/AedirSever.h"
@@ -22,6 +23,8 @@
 namespace
 {
 	constexpr float AedirWoundPulseSeconds = 0.8f;
+	// How much more than its cutting energy a single blow needs to take off a limb that has not been hurt yet.
+	constexpr float AedirSeverSoundLimbScale = 3.f;
 	constexpr int32 AedirWoundPulseDrops = 5;
 	constexpr float AedirWoundPoolSeconds = 1.5f;
 	constexpr float AedirWoundPoolGrowth = 0.25f;
@@ -361,8 +364,13 @@ bool UAedirWoundComponent::TrySever(FName HitBone, const FVector& PlanePoint, co
 		return false;
 	}
 
-	// Armour turns most of an edge. A limb already hurt gives way sooner.
-	const float Needed = AedirSever::GetSeverJoules(Bone) / FMath::Max(1.f - ArmorProtection, 0.1f);
+	// A sound limb takes several good cuts before it parts: one blow alone has to be far beyond what cuts it through. Every
+	// blow it has taken weakens it, until a last ordinary one takes it off. Armour turns most of an edge.
+	const AAedirCreature* Owner = Cast<AAedirCreature>(GetOwner());
+	EAedirLimb Limb;
+	const float Injury = Owner && Owner->Combat && UAedirCombatComponent::GetBoneLimb(Bone, Limb) ? Owner->Combat->GetLimbInjury(Limb) : 0.f;
+	const float Needed = AedirSever::GetSeverJoules(Bone) * FMath::Lerp(AedirSeverSoundLimbScale, 1.f, FMath::Clamp(Injury, 0.f, 1.f))
+		/ FMath::Max(1.f - ArmorProtection, 0.1f);
 	if (EnergyJoules < Needed)
 	{
 		return false;

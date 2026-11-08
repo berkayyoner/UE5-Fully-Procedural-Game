@@ -128,10 +128,10 @@ public:
 
 	// How quickly the hips are pulled back to where they belong (rad/s) and how much that pull is damped (1 = no overshoot).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
-	float PelvisHoldFrequency = 11.f;
+	float PelvisHoldFrequency = 16.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
-	float PelvisHoldDamping = 0.9f;
+	float PelvisHoldDamping = 1.f;
 
 	// The same for keeping them turned upright and facing the way the body faces.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
@@ -191,6 +191,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	FName HeadBoneName = FName(TEXT("head"));
+
+	// A body with a leg gone still tries to get up, and falls again this far through it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float LegLostGetUpGivesWayAt = 0.55f;
 
 	// Over this first share of getting up the hips, hands and feet go from where they lay to where the moves start.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")

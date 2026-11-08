@@ -1,4 +1,4 @@
-﻿#include "AedirBalanceComponent.h"
+#include "AedirBalanceComponent.h"
 
 #include "AnimationRuntime.h"
 #include "Animation/AedirGaitComponent.h"
@@ -69,7 +69,7 @@ namespace
 	// The blow moves the part it lands on, not the whole body through the air.
 	constexpr float GrippedArmMotorShare = 0.3f;
 	constexpr float BalanceArmMuscleShare = 0.5f;
-	constexpr float BalanceTrunkMuscleShare = 0.7f;
+	constexpr float BalanceTrunkMuscleShare = 1.f;
 	// A standing body is never quite still: it drifts about its balance, more when tired or hurt.
 	constexpr float BalanceSwayDegrees = 1.1f;
 	constexpr float BalanceSwayTiredDegrees = 2.2f;
@@ -1152,7 +1152,9 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	const UWorld* World = GetWorld();
 	const double Now = World ? World->GetTimeSeconds() : 0.0;
 
-	if (!bIsRagdoll && (bDead || bLegLost || TimeBelowThreshold >= FallDelaySeconds))
+	// One leg short, a body only ever gets as far as its knees before it goes down again.
+	const bool bLegGivesWay = bLegLost && (!IsGettingUp() || GetGetUpProgress() >= LegLostGetUpGivesWayAt);
+	if (!bIsRagdoll && (bDead || bLegGivesWay || TimeBelowThreshold >= FallDelaySeconds))
 	{
 		EnterRagdoll(MinRagdollSeconds);
 	}
@@ -1160,7 +1162,7 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	{
 		LyingStyle = ReadLyingStyle();
 		const bool bWasReady = bReadyToGetUp;
-		bReadyToGetUp = !bDead && !bLegLost && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds;
+		bReadyToGetUp = !bDead && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds;
 		if (bReadyToGetUp && !bWasReady && BodyMesh)
 		{
 			UE_LOG(LogAedir, Verbose, TEXT("[GetUp] %s can get up, lies %s, head %s from the pelvis."), *GetNameSafe(GetOwner()),

@@ -39,6 +39,7 @@
 #include "Graphics/AedirFoliageSubsystem.h"
 #include "UI/SAedirConsole.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Player/AedirCameraBoom.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Physics/AedirBalanceComponent.h"
 #include "GameFramework/PlayerController.h"
@@ -111,7 +112,7 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 {
 	PrimaryActorTick.bCanEverTick = true;
 
-	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
+	CameraBoom = CreateDefaultSubobject<UAedirCameraBoom>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(GetCapsuleComponent());
 	CameraBoom->SetRelativeLocation(FVector(0.f, 0.f, 60.f));
 	CameraBoom->TargetArmLength = ThirdPersonArmLength;
@@ -1265,6 +1266,11 @@ void AAedirPlayerCharacter::WarpTo(float XMetres, float YMetres, float Yaw)
 void AAedirPlayerCharacter::ShotCam(const FString& CameraArgs)
 {
 	RunDevCommand(TEXT("ShotCam"), CameraArgs, false);
+}
+
+void AAedirPlayerCharacter::ShapeInfo()
+{
+	RunDevCommand(TEXT("ShapeInfo"), FString(), false);
 }
 
 void AAedirPlayerCharacter::HolsterTest(int32 RightHand)

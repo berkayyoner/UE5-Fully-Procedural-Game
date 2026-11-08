@@ -21,12 +21,12 @@ namespace
 	constexpr float AedirPunchLeanInterpSpeed = 14.f;
 	// Trunk inertia: degrees of lean per cm/s2 of the body's change of speed, the spring that brings it back and how far
 	// it may go. Underdamped, so a hard stop rocks the chest forward and back once before it settles.
-	constexpr float AedirInertiaDegreesPerAccel = 0.022f;
+	constexpr float AedirInertiaDegreesPerAccel = 0.012f;
 	constexpr float AedirInertiaSideShare = 0.35f;
 	constexpr float AedirInertiaFrequency = 7.5f;
-	constexpr float AedirInertiaDamping = 0.42f;
-	constexpr float AedirInertiaMaxPitch = 12.f;
-	constexpr float AedirInertiaMaxRoll = 6.f;
+	constexpr float AedirInertiaDamping = 0.8f;
+	constexpr float AedirInertiaMaxPitch = 6.f;
+	constexpr float AedirInertiaMaxRoll = 3.f;
 	constexpr float AedirInertiaAccelSmoothing = 14.f;
 	constexpr float AedirInertiaHeadShare = 0.5f;
 	// Above this the speed jumped (a teleport, a respawn): no inertia from it.

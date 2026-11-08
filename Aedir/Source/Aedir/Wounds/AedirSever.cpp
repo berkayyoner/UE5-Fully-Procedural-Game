@@ -100,26 +100,15 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 		return nullptr;
 	}
 
-	const FSkeletalMeshLODRenderData& Lod = RenderData->LODRenderData[0];
-	const FReferenceSkeleton& Skeleton = Asset->GetRefSkeleton();
-
-	// Which bones go with the limb.
-	TArray<bool> InLimb;
-	InLimb.Init(false, Skeleton.GetNum());
-	for (int32 Bone = 0; Bone < Skeleton.GetNum(); ++Bone)
+	// What is worn over the limb goes with it: every piece of armour or clothing that follows the body's pose.
+	TArray<USkeletalMeshComponent*> Layers = { Body };
+	for (USceneComponent* Child : Body->GetAttachChildren())
 	{
-		InLimb[Bone] = Bone == RootIndex || (Skeleton.GetParentIndex(Bone) != INDEX_NONE && InLimb[Skeleton.GetParentIndex(Bone)]);
-	}
-
-	// The vertices as the body stands this very moment.
-	TArray<FMatrix44f> RefToLocals;
-	Body->CacheRefToLocalMatrices(RefToLocals);
-	TArray<FVector3f> Skinned;
-	USkeletalMeshComponent::ComputeSkinnedPositions(Body, Skinned, RefToLocals, Lod, Lod.SkinWeightVertexBuffer);
-	if (Skinned.IsEmpty())
-	{
-		UE_LOG(LogAedir, Warning, TEXT("Sever: %s cannot be read on the CPU, run the content commandlet."), *Asset->GetName());
-		return nullptr;
+		USkeletalMeshComponent* Worn = Cast<USkeletalMeshComponent>(Child);
+		if (Worn && Worn->LeaderPoseComponent.Get() == Body && Worn->IsVisible() && Worn->GetSkeletalMeshAsset())
+		{
+			Layers.Add(Worn);
+		}
 	}
 
 	FActorSpawnParameters Params;
@@ -136,11 +125,47 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 	Mesh->SetWorldTransform(Body->GetComponentTransform());
 	Mesh->RegisterComponent();
 
+	TArray<FVector> HullPoints;
+	int32 MadeSections = 0;
+	for (USkeletalMeshComponent* Layer : Layers)
+	{
+	USkeletalMesh* LayerAsset = Layer->GetSkeletalMeshAsset();
+	FSkeletalMeshRenderData* LayerRender = LayerAsset ? LayerAsset->GetResourceForRendering() : nullptr;
+	const int32 LayerRoot = LayerAsset ? LayerAsset->GetRefSkeleton().FindBoneIndex(SeverBone) : INDEX_NONE;
+	if (!LayerRender || LayerRender->LODRenderData.IsEmpty() || LayerRoot == INDEX_NONE)
+	{
+		continue;
+	}
+	const FSkeletalMeshLODRenderData& Lod = LayerRender->LODRenderData[0];
+	const FReferenceSkeleton& Skeleton = LayerAsset->GetRefSkeleton();
+
+	// Which bones go with the limb.
+	TArray<bool> InLimb;
+	InLimb.Init(false, Skeleton.GetNum());
+	for (int32 Bone = 0; Bone < Skeleton.GetNum(); ++Bone)
+	{
+		InLimb[Bone] = Bone == LayerRoot || (Skeleton.GetParentIndex(Bone) != INDEX_NONE && InLimb[Skeleton.GetParentIndex(Bone)]);
+	}
+
+	// The vertices as the body stands this very moment, put into the frame of the body.
+	TArray<FMatrix44f> RefToLocals;
+	Layer->CacheRefToLocalMatrices(RefToLocals);
+	TArray<FVector3f> Skinned;
+	USkeletalMeshComponent::ComputeSkinnedPositions(Layer, Skinned, RefToLocals, Lod, Lod.SkinWeightVertexBuffer);
+	if (Skinned.IsEmpty())
+	{
+		UE_LOG(LogAedir, Warning, TEXT("Sever: %s cannot be read on the CPU, run the content commandlet."), *LayerAsset->GetName());
+		continue;
+	}
+	const FTransform LayerToBody = Layer->GetComponentTransform().GetRelativeTransform(Body->GetComponentTransform());
+	for (FVector3f& Point : Skinned)
+	{
+		Point = FVector3f(LayerToBody.TransformPosition(FVector(Point)));
+	}
+
 	const FRawStaticIndexBuffer16or32Interface* Indices = Lod.MultiSizeIndexContainer.GetIndexBuffer();
 	const FSkinWeightVertexBuffer& Weights = Lod.SkinWeightVertexBuffer;
 	const FStaticMeshVertexBuffer& Static = Lod.StaticVertexBuffers.StaticMeshVertexBuffer;
-	TArray<FVector> HullPoints;
-	int32 MadeSections = 0;
 
 	for (int32 SectionIndex = 0; SectionIndex < Lod.RenderSections.Num(); ++SectionIndex)
 	{
@@ -184,9 +209,9 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 				if (!Known)
 				{
 					const int32 New = Vertices.Add(FVector(Skinned[Corner]));
-					Normals.Add(FVector(FVector3f(Static.VertexTangentZ(Corner))));
+					Normals.Add(LayerToBody.TransformVectorNoScale(FVector(FVector3f(Static.VertexTangentZ(Corner)))));
 					UV.Add(FVector2D(Static.GetVertexUV(Corner, 0)));
-					Tangents.Add(FProcMeshTangent(FVector(FVector3f(Static.VertexTangentX(Corner))), false));
+					Tangents.Add(FProcMeshTangent(LayerToBody.TransformVectorNoScale(FVector(FVector3f(Static.VertexTangentX(Corner)))), false));
 					Known = &Remap.Add(Corner, New);
 				}
 				Triangles.Add(*Known);
@@ -196,7 +221,7 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 		if (!Triangles.IsEmpty())
 		{
 			Mesh->CreateMeshSection(MadeSections, Vertices, Triangles, Normals, UV, TArray<FColor>(), Tangents, false);
-			Mesh->SetMaterial(MadeSections, Body->GetMaterial(Section.MaterialIndex));
+			Mesh->SetMaterial(MadeSections, Layer->GetMaterial(Section.MaterialIndex));
 			++MadeSections;
 			const int32 Step = FMath::Max(Vertices.Num() / SeverHullPoints, 1);
 			for (int32 Index = 0; Index < Vertices.Num(); Index += Step)
@@ -204,6 +229,7 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 				HullPoints.Add(Vertices[Index]);
 			}
 		}
+	}
 	}
 
 	if (MadeSections == 0)
@@ -294,6 +320,30 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 		}
 	}
 
+	// Whatever is strapped onto a bone of the limb (a bracer, a greave, what the hand holds) goes with the limb.
+	TArray<USceneComponent*> OnLimb;
+	for (USceneComponent* Child : Body->GetAttachChildren())
+	{
+		const FName Socket = Child ? Child->GetAttachSocketName() : NAME_None;
+		const FName SocketBone = Socket.IsNone() ? NAME_None : Body->GetSocketBoneName(Socket);
+		if (!SocketBone.IsNone() && (SocketBone == SeverBone || Body->BoneIsChildOf(SocketBone, SeverBone)))
+		{
+			OnLimb.Add(Child);
+		}
+	}
+	for (USceneComponent* Strapped : OnLimb)
+	{
+		Strapped->AttachToComponent(Mesh, FAttachmentTransformRules::KeepWorldTransform);
+	}
+
 	Body->HideBoneByName(SeverBone, PBO_Term);
+	// The armour over the lost limb went with it, and is gone from the body.
+	for (USkeletalMeshComponent* Layer : Layers)
+	{
+		if (Layer != Body && Layer->GetBoneIndex(SeverBone) != INDEX_NONE)
+		{
+			Layer->HideBoneByName(SeverBone, PBO_None);
+		}
+	}
 	return Piece;
 }

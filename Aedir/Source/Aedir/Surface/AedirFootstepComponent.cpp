@@ -295,7 +295,7 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 	const TCHAR* SystemName = bSnow ? TEXT("PSN_SnowLight_Surface") : bWet ? TEXT("PSN_WaterLight_Surface") : Surface == SurfaceType1 ? TEXT("PSN_Grass_Surface") : TEXT("PSN_Dirt_Surface");
 	if (UNiagaraSystem* System = FindStepEffect(SystemName))
 	{
-		// A walking step only now and then stirs a little; a running one more often, a landing always.
+		// Every step stirs a little, more the faster it is; a landing most.
 		const float Pace = FMath::Clamp(Speed2D / AedirStepRunSpeed, 0.f, 1.5f);
 		const float Scale = FMath::Lerp(StepEffectWalkScale, StepEffectRunScale, FMath::Square(FMath::Min(Pace, 1.f))) * (bStepIsLanding ? 1.6f : 1.f);
 		const float Chance = FMath::Lerp(StepEffectWalkChance, StepEffectRunChance, FMath::Clamp(Pace, 0.f, 1.f));

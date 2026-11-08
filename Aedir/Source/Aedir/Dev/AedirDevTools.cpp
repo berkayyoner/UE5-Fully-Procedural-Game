@@ -100,6 +100,8 @@ int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const F
 #include "Weather/AedirWeatherSubsystem.h"
 #include "Wounds/AedirBloodSubsystem.h"
 #include "Wounds/AedirWoundComponent.h"
+#include "Physics/PhysicsInterfaceCore.h"
+#include "PhysicsEngine/BodyInstance.h"
 
 namespace
 {
@@ -289,6 +291,32 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		GripInfo(Player, Args);
 	}
+	else if (Command == TEXT("ShapeInfo"))
+	{
+		// What each physical shape of the player's hands and of the item they hold is, for collision: its own channel and the
+		// channels it blocks.
+		USkeletalMeshComponent* Mesh = Player->GetMesh();
+		for (const TCHAR* Bone : { TEXT("hand_r"), TEXT("hand_l"), TEXT("lowerarm_r") })
+		{
+			FBodyInstance* Body = Mesh ? Mesh->GetBodyInstance(FName(Bone)) : nullptr;
+			if (!Body)
+			{
+				continue;
+			}
+			FPhysicsCommand::ExecuteRead(Body->ActorHandle, [&](const FPhysicsActorHandle& Actor)
+			{
+				TArray<FPhysicsShapeHandle> Shapes;
+				Body->GetAllShapes_AssumesLocked(Shapes);
+				for (const FPhysicsShapeHandle& Shape : Shapes)
+				{
+					const FCollisionFilterData Sim = FPhysicsInterface::GetSimulationFilter(Shape);
+					const FCollisionFilterData Query = FPhysicsInterface::GetQueryFilter(Shape);
+					UE_LOG(LogAedir, Display, TEXT("[ShapeInfo] %s shape sim w0=%08x w1=%08x w2=%08x w3=%08x (channel %u) query w1=%08x w3=%08x"), Bone,
+						Sim.Word0, Sim.Word1, Sim.Word2, Sim.Word3, Sim.Word3 >> 24, Query.Word1, Query.Word3);
+				}
+			});
+		}
+	}
 	else
 	{
 		DevToolsReport(FString::Printf(TEXT("Unknown dev command %s"), *Command));
@@ -321,6 +349,22 @@ void UAedirDevTools::SpawnItem(AAedirPlayerCharacter* Player, const FString& Arg
 	if (!Item)
 	{
 		DevToolsReport(FString::Printf(TEXT("Could not spawn %s"), *Tokens[0]));
+		return;
+	}
+
+	// "npcwear": the nearest NPC puts it on.
+	if (Tokens.IsValidIndex(1) && DevToolsIsToken(Tokens[1], TEXT("npcwear")))
+	{
+		AAedirNpc* Nearest = nullptr;
+		for (TActorIterator<AAedirNpc> It(World); It; ++It)
+		{
+			if (!Nearest || FVector::DistSquared(It->GetActorLocation(), Player->GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), Player->GetActorLocation()))
+			{
+				Nearest = *It;
+			}
+		}
+		const bool bWorn = Nearest && Nearest->Interaction && Nearest->Interaction->EquipImmediate(EAedirHand::Left, Item) && Nearest->Interaction->WearItem(Item, EAedirHand::Left);
+		DevToolsReport(FString::Printf(TEXT("%s %s on %s"), *Tokens[0], bWorn ? TEXT("worn") : TEXT("could not be worn"), Nearest ? *Nearest->GetName() : TEXT("nobody")));
 		return;
 	}
 
@@ -747,6 +791,13 @@ void UAedirDevTools::GaitInfo(AAedirPlayerCharacter* Player, const FString& Args
 			State.HipOffsetZ, State.SpineLeanPitch,
 			Interaction ? Interaction->GetPelvisLowerZ() : 0.f, Interaction ? Interaction->GetReachLeanDegrees() : 0.f, Interaction ? Interaction->GetReachHipForward() : 0.f,
 			HandToItem, Interaction && Interaction->GetHeldItem(EAedirHand::Left) ? 1 : 0, Interaction && Interaction->GetHeldItem(EAedirHand::Right) ? 1 : 0);
+		// How the trunk really stands over the hips: forward lean of the line from the pelvis to the neck, in degrees, and where
+		// the pelvis and the chest are ahead of the capsule, against what the pose asks.
+		const FVector Trunk = Mesh->GetBoneLocation(FName(TEXT("neck_01"))) - Mesh->GetBoneLocation(FName(TEXT("pelvis")));
+		const float TrunkLean = FMath::RadiansToDegrees(FMath::Atan2(static_cast<float>(FVector::DotProduct(Trunk, Forward)), static_cast<float>(Trunk.Z)));
+		UE_LOG(LogAedir, Display, TEXT("[GaitInfo]   trunkLean=%.1f pelvisAhead=%.1f chestAhead=%.1f pelvisZ=%.1f | pose pelvisPitch=%.1f spinePitch=%.1f hipZ=%.1f"),
+			TrunkLean, Ahead(TEXT("pelvis")), Ahead(TEXT("spine_05")), Height(TEXT("pelvis")),
+			State.PelvisRotation.Pitch, State.SpineLeanPitch, State.HipOffsetZ);
 
 		*Elapsed += Interval;
 		if (*Elapsed >= Seconds)

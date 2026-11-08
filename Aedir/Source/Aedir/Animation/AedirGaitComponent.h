@@ -383,7 +383,7 @@ public:
 	float HipRunLoweringCm = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float HipBounceCm = 6.f;
+	float HipBounceCm = 3.f;
 
 	// Factor on the pelvis bounce at a full run.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
@@ -478,7 +478,7 @@ public:
 	float KneeBendMaxDegrees = 40.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxRunForwardLeanDegrees = 14.f;
+	float MaxRunForwardLeanDegrees = 8.f;
 
 	// Roll of the torso towards the side the body is travelling to, scaled by speed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
@@ -656,11 +656,11 @@ public:
 
 	// Forward lean in degrees under full forward acceleration, and backward lean under full braking.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
-	float InertiaLeanPitchDegrees = 9.f;
+	float InertiaLeanPitchDegrees = 0.f;
 
 	// Roll lean in degrees under full lateral acceleration.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
-	float InertiaLeanRollDegrees = 5.f;
+	float InertiaLeanRollDegrees = 2.f;
 
 	// Extra roll lean in degrees at a full turn rate.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Inertia")
