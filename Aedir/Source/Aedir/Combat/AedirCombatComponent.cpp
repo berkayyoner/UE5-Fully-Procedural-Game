@@ -383,7 +383,9 @@ namespace
 	constexpr float AedirAIWeaponReachShare = 0.85f;
 	constexpr float AedirAIStanceExtraCm = 280.f;
 	constexpr float AedirAICloseInShare = 0.9f;
-	constexpr float AedirAIBackOffShare = 0.45f;
+	// Armed, it keeps the length of its weapon: closer than this share of its reach it steps back, before the bodies touch.
+	constexpr float AedirAIBackOffShare = 0.75f;
+	constexpr float AedirAIBackOffInput = 0.85f;
 	constexpr float AedirAIRunBeyondCm = 500.f;
 	constexpr float AedirAIWindupSeconds = 0.4f;
 	constexpr float AedirAIStrikeSeconds = 0.35f;
@@ -2945,7 +2947,7 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		Creature->TurnBodyTo(FacingYaw, DeltaTime, AedirAITurnSpeed);
 		if (Distance < Reach * AedirAIBackOffShare && bArmed)
 		{
-			Creature->AddMovementInput(Creature->GetActorForwardVector(), -0.6f);
+			Creature->AddMovementInput(Creature->GetActorForwardVector(), -AedirAIBackOffInput);
 		}
 	}
 

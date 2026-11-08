@@ -126,6 +126,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
 	bool bActivePelvis = true;
 
+	// The whole body is simulated, the hips too: they are tied to the capsule by a joint free in every direction, whose
+	// motors pull them where the legs would carry them, as hard as the body is strong. Every other part is held by its joint
+	// to the part above it, so weight and blows travel through the body. Off, the hips are a simulated mass moved by hand.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	bool bPhysicalHips = true;
+
+	// The hip joint's pull: how stiff the spring to where the hips belong is and how hard it damps, for position and for
+	// turning, at full strength. Force per cm and per degree, in the units of a physics constraint drive.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float HipJointLinearStiffness = 30000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float HipJointLinearDamping = 2500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float HipJointAngularStiffness = 60000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float HipJointAngularDamping = 4000.f;
+
 	// How quickly the hips are pulled back to where they belong (rad/s) and how much that pull is damped (1 = no overshoot).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
 	float PelvisHoldFrequency = 16.f;
@@ -425,6 +445,14 @@ private:
 	void UpdateGetUp(float DeltaTime);
 	// Pulls the physical hips towards where the pose and the capsule want them, as hard as the body is strong.
 	void HoldPelvis(float DeltaTime);
+	// Physical hips: the joint to the capsule, made once, and its pull set every frame.
+	bool UsesPhysicalHips() const;
+	void SetupHipJoint();
+	void DriveHipJoint(const FVector& TargetLocation, const FQuat& TargetRotation, float Strength, float DeltaTime);
+	FTransform HipJointFrame = FTransform::Identity;
+	bool bHipJointActive = false;
+	UPROPERTY(Transient)
+	TObjectPtr<class UPhysicsConstraintComponent> HipJoint;
 	void PushHips(const FVector& Impulse);
 	bool bHipsInitialized = false;
 	FVector HipsLocation = FVector::ZeroVector;

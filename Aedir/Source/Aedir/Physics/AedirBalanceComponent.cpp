@@ -21,6 +21,7 @@
 #include "Net/UnrealNetwork.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/PhysicalAnimationComponent.h"
+#include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "TimerManager.h"
 
@@ -77,6 +78,8 @@ namespace
 	constexpr float BalanceSwayRate = 0.32f;
 	TAutoConsoleVariable<int32> CVarAedirActivePelvis(TEXT("aedir.ActivePelvis"), 1, TEXT("Hold the physical hips up by force (1) or move them with the pose (0)."));
 	TAutoConsoleVariable<float> CVarAedirArmDamping(TEXT("aedir.ArmDamping"), 1.f, TEXT("Scale of the arm muscles' damping."));
+	TAutoConsoleVariable<int32> CVarAedirPhysicalHips(TEXT("aedir.PhysicalHips"), -1, TEXT("Hips tied to the capsule by a motorised joint, limbs held by their joints: 1 on, 0 off, -1 as each body is set. Read when a body is made."));
+	TAutoConsoleVariable<int32> CVarAedirHipVelocityTarget(TEXT("aedir.HipVelocityTarget"), 1, TEXT("The hip joint damps towards the capsule's own speed (1) or towards standing still against it (0)."));
 	constexpr float HitReactionBoneImpulseScale = 0.12f;
 	constexpr float HitReactionBoneImpulseMax = 4500.f;
 	// Part of a blow goes on into the trunk, which turns away from it; the one who takes it feels it in the eyes as well.
@@ -332,6 +335,54 @@ void UAedirBalanceComponent::HoldPelvis(float DeltaTime)
 		BodyMassKg = FMath::Max(BodyMesh->GetMass(), 1.f);
 		bHipsInitialized = true;
 	}
+	// Getting up off the ground the hips are carried through the moves; the joint takes them over once the body is up.
+	if (bHipJointActive && bGettingUp && Pelvis->IsInstanceSimulatingPhysics())
+	{
+		Pelvis->SetInstanceSimulatePhysics(false);
+	}
+	// Physical hips: the joint pulls them there as hard as the body is strong, and everything else hangs on them.
+	if (bHipJointActive && !bGettingUp)
+	{
+		if (!Pelvis->IsInstanceSimulatingPhysics())
+		{
+			Pelvis->SetInstanceSimulatePhysics(true);
+			Pelvis->SetLinearVelocity(CharacterOwner->GetVelocity(), false);
+			// A body that changes between moved and simulated has to be tied to the joint again.
+			if (HipJoint)
+			{
+				HipJoint->BreakConstraint();
+				HipJoint->SetConstrainedComponents(BodyCapsule, NAME_None, BodyMesh, PelvisBoneName);
+			}
+		}
+		const FVector Now = Pelvis->GetUnrealWorldTransform().GetLocation();
+		// Moved at once, by a teleport or a respawn, the whole body goes along.
+		if (FVector::DistSquared(Now, TargetLocation) > FMath::Square(HipsTeleportCm))
+		{
+			const FVector Shift = TargetLocation - Now;
+			for (FBodyInstance* Body : BodyMesh->Bodies)
+			{
+				if (Body)
+				{
+					FTransform Moved = Body->GetUnrealWorldTransform();
+					Moved.AddToTranslation(Shift);
+					Body->SetBodyTransform(Moved, ETeleportType::TeleportPhysics);
+					Body->SetLinearVelocity(CharacterOwner->GetVelocity(), false);
+				}
+			}
+		}
+		DriveHipJoint(TargetLocation, TargetRotation, FMath::Max(Strength, PelvisMinHoldShare), DeltaTime);
+		const FVector Drift(Now.X - TargetLocation.X, Now.Y - TargetLocation.Y, 0.f);
+		if (IsAuthoritative() && !bGettingUp)
+		{
+			const float Beyond = static_cast<float>(Drift.Size()) - PelvisDriftFreeCm;
+			if (Beyond > 0.f)
+			{
+				ApplyBalanceImpact(Drift.GetSafeNormal(), Beyond / PelvisDriftLossCm * DeltaTime * (1.5f - Strength));
+			}
+		}
+		return;
+	}
+
 	// Getting up, the hands, knees and feet on the ground carry the hips along the way up: they are where the body puts them.
 	if (bGettingUp)
 	{
@@ -367,6 +418,84 @@ void UAedirBalanceComponent::HoldPelvis(float DeltaTime)
 			ApplyBalanceImpact(Drift.GetSafeNormal(), Beyond / PelvisDriftLossCm * DeltaTime * (1.5f - Strength));
 		}
 	}
+}
+
+bool UAedirBalanceComponent::UsesPhysicalHips() const
+{
+	const int32 Forced = CVarAedirPhysicalHips.GetValueOnGameThread();
+	return bActivePelvis && (Forced < 0 ? bPhysicalHips : Forced != 0);
+}
+
+void UAedirBalanceComponent::SetupHipJoint()
+{
+	const USkeletalMesh* Model = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	const int32 PelvisIndex = Model ? Model->GetRefSkeleton().FindBoneIndex(PelvisBoneName) : INDEX_NONE;
+	FBodyInstance* Pelvis = BodyMesh ? BodyMesh->GetBodyInstance(PelvisBoneName) : nullptr;
+	if (PelvisIndex == INDEX_NONE || !Pelvis || !BodyCapsule)
+	{
+		return;
+	}
+
+	// Where the hips stand on the legs, in the frame of the capsule: the joint's rest, which every pull is measured from.
+	const FTransform RefPelvis = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), PelvisIndex);
+	const FTransform Capsule = BodyCapsule->GetComponentTransform();
+	const FTransform RestWorld = RefPelvis * MeshRestRelative * Capsule;
+	HipJointFrame = FTransform(Capsule.GetRotation().Inverse() * RestWorld.GetRotation(), Capsule.InverseTransformPositionNoScale(RestWorld.GetLocation()));
+
+	if (!HipJoint)
+	{
+		HipJoint = NewObject<UPhysicsConstraintComponent>(CharacterOwner, TEXT("AedirHipJoint"));
+		HipJoint->SetupAttachment(BodyCapsule);
+		HipJoint->RegisterComponent();
+	}
+	else
+	{
+		HipJoint->BreakConstraint();
+	}
+
+	// Free in every direction: only its motors hold the hips, so a blow, a weight or a stumble moves them.
+	FConstraintInstance& Joint = HipJoint->ConstraintInstance;
+	Joint.SetLinearXLimit(LCM_Free, 0.f);
+	Joint.SetLinearYLimit(LCM_Free, 0.f);
+	Joint.SetLinearZLimit(LCM_Free, 0.f);
+	Joint.SetAngularSwing1Limit(ACM_Free, 0.f);
+	Joint.SetAngularSwing2Limit(ACM_Free, 0.f);
+	Joint.SetAngularTwistLimit(ACM_Free, 0.f);
+	Joint.SetDisableCollision(true);
+	Joint.SetRefFrame(EConstraintFrame::Frame1, HipJointFrame);
+	Joint.SetRefFrame(EConstraintFrame::Frame2, FTransform::Identity);
+	Joint.SetLinearPositionDrive(true, true, true);
+	Joint.SetLinearVelocityDrive(true, true, true);
+	Joint.SetAngularDriveMode(EAngularDriveMode::SLERP);
+	Joint.SetOrientationDriveSLERP(true);
+	Joint.SetAngularVelocityDriveSLERP(true);
+	Joint.SetLinearDriveParams(0.f, 0.f, 0.f);
+	Joint.SetAngularDriveParams(0.f, 0.f, 0.f);
+
+	Pelvis->SetInstanceSimulatePhysics(true);
+	HipJoint->SetConstrainedComponents(BodyCapsule, NAME_None, BodyMesh, PelvisBoneName);
+	bHipJointActive = true;
+	UE_LOG(LogAedir, Log, TEXT("%s: hips tied to the capsule %s below its middle."), *GetNameSafe(GetOwner()), *HipJointFrame.GetLocation().ToCompactString());
+}
+
+void UAedirBalanceComponent::DriveHipJoint(const FVector& TargetLocation, const FQuat& TargetRotation, float Strength, float DeltaTime)
+{
+	if (!HipJoint || !BodyCapsule)
+	{
+		return;
+	}
+	FConstraintInstance& Joint = HipJoint->ConstraintInstance;
+	// The legs push as hard as the body is strong; the damping goes with the square root, so a weak body is as steady.
+	const float Hold = FMath::Max(Strength, 0.f);
+	Joint.SetLinearDriveParams(HipJointLinearStiffness * Hold, HipJointLinearDamping * FMath::Sqrt(Hold), 0.f);
+	Joint.SetAngularDriveParams(HipJointAngularStiffness * Hold, HipJointAngularDamping * FMath::Sqrt(Hold), 0.f);
+
+	const FTransform Capsule = BodyCapsule->GetComponentTransform();
+	const FVector FrameLocation = Capsule.TransformPositionNoScale(HipJointFrame.GetLocation());
+	const FQuat FrameRotation = Capsule.GetRotation() * HipJointFrame.GetRotation();
+	Joint.SetLinearPositionTarget(FrameRotation.UnrotateVector(TargetLocation - FrameLocation));
+	Joint.SetLinearVelocityTarget(CVarAedirHipVelocityTarget.GetValueOnGameThread() != 0 ? FrameRotation.UnrotateVector(CharacterOwner->GetVelocity()) : FVector::ZeroVector);
+	Joint.SetAngularOrientationTarget(FrameRotation.Inverse() * TargetRotation);
 }
 
 void UAedirBalanceComponent::PushHips(const FVector& Impulse)
@@ -587,6 +716,10 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 			if (bHipsInitialized)
 			{
 				HipsVelocity += PlanarDirection * (Speed * StaggerHipsShare);
+			}
+			if (FBodyInstance* PhysicalHips = bHipJointActive ? BodyMesh->GetBodyInstance(PelvisBoneName) : nullptr)
+			{
+				PhysicalHips->AddImpulse(PlanarDirection * (Speed * StaggerHipsShare), true);
 			}
 		}
 	}
@@ -1294,6 +1427,12 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	{
 		GetUpLeft = 0.f;
 		bHipsInitialized = false;
+		// Down, nothing holds the hips up any more.
+		if (bHipJointActive && HipJoint)
+		{
+			HipJoint->ConstraintInstance.SetLinearDriveParams(0.f, 0.f, 0.f);
+			HipJoint->ConstraintInstance.SetAngularDriveParams(0.f, 0.f, 0.f);
+		}
 		// The body goes down with the way it was moving, not up: a blow or a slip never throws it into the air.
 		const FVector Carried = CharacterOwner->GetVelocity();
 		if (Pelvis)
@@ -1329,6 +1468,7 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		{
 			Along = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
 		}
+		// The hips are carried through getting up, and only then held by the joint again.
 		Pelvis->SetInstanceSimulatePhysics(false);
 		// Moving the capsule and the mesh back onto it drags the limbs along with them; they are put back where they lay after.
 		TArray<FTransform> Lying;
@@ -1391,6 +1531,12 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	}
 
 	BodyCapsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	// The capsule's own physical body is made anew with its collision, and the hips are tied to that one.
+	if (bHipJointActive && HipJoint)
+	{
+		HipJoint->BreakConstraint();
+		HipJoint->SetConstrainedComponents(BodyCapsule, NAME_None, BodyMesh, PelvisBoneName);
+	}
 	if (Movement)
 	{
 		if (GetUpLeft > 0.f)
@@ -1464,6 +1610,11 @@ void UAedirBalanceComponent::ReshapeBodyPhysics()
 	if (FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName))
 	{
 		Pelvis->SetInstanceSimulatePhysics(false);
+	}
+	// New bodies, so the hips are tied to the capsule again.
+	if (UsesPhysicalHips())
+	{
+		SetupHipJoint();
 	}
 	// New bodies, so the mask that keeps its own weapons off it again.
 	if (AAedirCreature* Creature = Cast<AAedirCreature>(CharacterOwner))
@@ -1842,7 +1993,8 @@ void UAedirBalanceComponent::ApplyMotorGroup(int32 GroupIndex, float Strength)
 	{
 		const FAedirBoneMotor& Motor = GetBoneMotor(BoneName);
 		FPhysicalAnimationData Data;
-		Data.bIsLocalSimulation = bLoose;
+		// With physical hips every part is held by its joint to the part above it, so the body moves as one chain.
+		Data.bIsLocalSimulation = bLoose || bHipJointActive;
 		Data.OrientationStrength = Motor.OrientationStrength * Strength * FMath::Sqrt(Hold);
 		Data.AngularVelocityStrength = Motor.AngularVelocityStrength * Strength * (GroupIndex == 1 || GroupIndex == 2 ? CVarAedirArmDamping.GetValueOnGameThread() : 1.f);
 		Data.PositionStrength = bLoose ? 0.f : Motor.PositionStrength * Strength * Hold;
