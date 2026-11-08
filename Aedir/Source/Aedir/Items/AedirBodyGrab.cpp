@@ -17,7 +17,11 @@ namespace
 	constexpr float BodyGrabForwardCm = 55.f;
 	constexpr float BodyGrabHeightCm = 20.f;
 	constexpr float BodyGrabRadiusCm = 50.f;
-	constexpr float BodyGrabLowCm = -70.f;
+	constexpr float BodyGrabLowCm = -80.f;
+	constexpr float BodyGrabLowRadiusCm = 75.f;
+	constexpr float BodyGrabWideForwardCm = 70.f;
+	constexpr float BodyGrabWideHeightCm = -40.f;
+	constexpr float BodyGrabWideRadiusCm = 140.f;
 	// The hand pulls the part to itself and the part pulls back with all its weight; a strong arm pulls harder.
 	constexpr float BodyGrabStiffnessBase = 20000.f;
 	constexpr float BodyGrabStiffnessPerStrength = 400.f;
@@ -25,7 +29,12 @@ namespace
 	constexpr float BodyGrabTearCm = 100.f;
 	constexpr float BodyGrabDragFromCm = 45.f;
 	constexpr float BodyGrabTearSeconds = 0.35f;
+	constexpr float BodyGrabCloseCm = 22.f;
+	constexpr float BodyGrabReachSeconds = 2.f;
+	constexpr float BodyGrabForceBaseN = 220.f;
+	constexpr float BodyGrabForcePerStrengthN = 6.f;
 	constexpr float BodyGrabAimRangeCm = 230.f;
+	constexpr float BodyGrabAimRadiusCm = 20.f;
 }
 
 bool UAedirInteractionComponent::FindAimedBody(FVector& OutPoint) const
@@ -45,7 +54,7 @@ bool UAedirInteractionComponent::FindAimedBody(FVector& OutPoint) const
 	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirBodyAim), false, Creature);
 	TArray<FHitResult> Hits;
-	World->LineTraceMultiByObjectType(Hits, From, From + Aim * BodyGrabAimRangeCm, Objects, Params);
+	World->SweepMultiByObjectType(Hits, From, From + Aim * BodyGrabAimRangeCm, FQuat::Identity, Objects, FCollisionShape::MakeSphere(BodyGrabAimRadiusCm), Params);
 	for (const FHitResult& Hit : Hits)
 	{
 		const UPrimitiveComponent* Component = Hit.GetComponent();
@@ -66,7 +75,8 @@ bool UAedirInteractionComponent::FindAimedBody(FVector& OutPoint) const
 
 bool UAedirInteractionComponent::IsGrabbingBody(EAedirHand Hand) const
 {
-	return BodyGrabs[static_cast<int32>(Hand)].Joint.IsValid();
+	const FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
+	return Grab.Joint.IsValid() || Grab.bReaching;
 }
 
 bool UAedirInteractionComponent::TryGrabBody(EAedirHand Hand, const FVector* AimedPoint)
@@ -99,8 +109,16 @@ bool UAedirInteractionComponent::TryGrabBody(EAedirHand Hand, const FVector* Aim
 	if (Overlaps.IsEmpty() && !AimedPoint)
 	{
 		Center = Creature->GetActorTransform().TransformPositionNoScale(FVector(BodyGrabForwardCm, 0.f, BodyGrabLowCm) * Scale);
-		World->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity, Objects, FCollisionShape::MakeSphere(BodyGrabRadiusCm * Scale), Params);
+		World->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity, Objects, FCollisionShape::MakeSphere(BodyGrabLowRadiusCm * Scale), Params);
 	}
+	if (Overlaps.IsEmpty() && !AimedPoint)
+	{
+		// Anything within a step and a bend of the body, the one nearest to where the eyes are turned first.
+		Center = Creature->GetActorTransform().TransformPositionNoScale(FVector(BodyGrabWideForwardCm, 0.f, BodyGrabWideHeightCm) * Scale);
+		World->OverlapMultiByObjectType(Overlaps, Center, FQuat::Identity, Objects, FCollisionShape::MakeSphere(BodyGrabWideRadiusCm * Scale), Params);
+	}
+	const FVector Eyes = Creature->GetPawnViewLocation();
+	const FVector Look = (Creature->Controller ? Creature->GetControlRotation() : Creature->GetActorRotation()).Vector();
 
 	// The nearest simulated part that is not an item: a body's bone, or a piece cut from one.
 	UPrimitiveComponent* Best = nullptr;
@@ -116,8 +134,14 @@ bool UAedirInteractionComponent::TryGrabBody(EAedirHand Hand, const FVector* Aim
 			continue;
 		}
 
+		// A loose part or a prop is taken at the point of its surface nearest to the hand's way, not at its middle.
 		FName Bone = NAME_None;
-		FVector Point = Component->GetComponentLocation();
+		FVector Point = Component->Bounds.Origin;
+		FVector Surface;
+		if (!Cast<USkeletalMeshComponent>(Component) && Component->GetClosestPointOnCollision(Center, Surface) >= 0.f)
+		{
+			Point = Surface;
+		}
 		if (USkeletalMeshComponent* Skeletal = Cast<USkeletalMeshComponent>(Component))
 		{
 			// The closest bone that has a body of its own, walking up from fingers and twist bones.
@@ -134,7 +158,10 @@ bool UAedirInteractionComponent::TryGrabBody(EAedirHand Hand, const FVector* Aim
 			Point = Skeletal->GetBoneLocation(Bone);
 		}
 
-		const double Distance = FVector::DistSquared(Point, Center);
+		const double Off = 1.0 - FVector::DotProduct((Point - Eyes).GetSafeNormal(), Look);
+		// Bodies and the parts cut from them come before props lying about.
+		const bool bBodily = Cast<USkeletalMeshComponent>(Component) || Cast<AAedirCreature>(Component->GetOwner()) || Component->GetOwner()->GetClass() == AActor::StaticClass();
+		const double Distance = FVector::DistSquared(Point, Center) * (1.0 + 4.0 * Off) * (bBodily ? 1.0 : 4.0);
 		if (Distance < BestDistance)
 		{
 			BestDistance = Distance;
@@ -149,8 +176,34 @@ bool UAedirInteractionComponent::TryGrabBody(EAedirHand Hand, const FVector* Aim
 		return false;
 	}
 
+	// The hand reaches for it first; it closes only when it gets there.
+	const FTransform PartWorld = BestBone.IsNone() ? Best->GetComponentTransform() : Cast<USkeletalMeshComponent>(Best)->GetBoneTransform(Cast<USkeletalMeshComponent>(Best)->GetBoneIndex(BestBone));
+	FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
+	Grab = FAedirBodyGrab();
+	Grab.Target = Best;
+	Grab.Bone = BestBone;
+	Grab.LocalPoint = PartWorld.InverseTransformPosition(BestPoint);
+	Grab.bReaching = true;
+	UE_LOG(LogAedir, Log, TEXT("%s reaches for %s %s"), *Creature->GetName(), *GetNameSafe(Best->GetOwner()), *BestBone.ToString());
+	return true;
+}
+
+void UAedirInteractionComponent::CloseHandOnBody(EAedirHand Hand)
+{
+	AAedirCreature* Creature = GetCreature();
+	USkeletalMeshComponent* Own = Creature ? Creature->GetMesh() : nullptr;
+	FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
+	UPrimitiveComponent* Target = Grab.Target.Get();
+	FVector Point;
+	if (!Own || !Target || !GetBodyGrabPoint(Hand, Point))
+	{
+		ReleaseBodyGrab(Hand);
+		return;
+	}
+
+	const FName HandBone = Hand == EAedirHand::Left ? LeftHandBone : RightHandBone;
 	UPhysicsConstraintComponent* Joint = NewObject<UPhysicsConstraintComponent>(Creature);
-	Joint->SetWorldLocation(BestPoint);
+	Joint->SetWorldLocation(Point);
 	Joint->SetDisableCollision(true);
 	Joint->SetLinearXLimit(LCM_Free, 0.f);
 	Joint->SetLinearYLimit(LCM_Free, 0.f);
@@ -161,22 +214,16 @@ bool UAedirInteractionComponent::TryGrabBody(EAedirHand Hand, const FVector* Aim
 	Joint->SetLinearPositionDrive(true, true, true);
 	Joint->SetLinearVelocityDrive(true, true, true);
 	Joint->RegisterComponent();
-	Joint->SetConstrainedComponents(Own, HandBone, Best, BestBone);
+	Joint->SetConstrainedComponents(Own, HandBone, Target, Grab.Bone);
 	// The hand's own frame is its palm, the part's is where it was taken hold of.
 	Joint->SetConstraintReferencePosition(EConstraintFrame::Frame1, FVector::ZeroVector);
-	const FTransform PartWorld = BestBone.IsNone() ? Best->GetComponentTransform() : Cast<USkeletalMeshComponent>(Best)->GetBoneTransform(Cast<USkeletalMeshComponent>(Best)->GetBoneIndex(BestBone));
-	Joint->SetConstraintReferencePosition(EConstraintFrame::Frame2, PartWorld.InverseTransformPosition(BestPoint));
+	Joint->SetConstraintReferencePosition(EConstraintFrame::Frame2, Grab.LocalPoint);
 	Joint->SetLinearPositionTarget(FVector::ZeroVector);
 	Joint->SetLinearVelocityTarget(FVector::ZeroVector);
-
-	FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
 	Grab.Joint = Joint;
-	Grab.Target = Best;
-	Grab.Bone = BestBone;
-	Grab.LocalPoint = PartWorld.InverseTransformPosition(BestPoint);
+	Grab.bReaching = false;
 	Grab.TearSeconds = 0.f;
-	UE_LOG(LogAedir, Log, TEXT("%s took hold of %s %s"), *Creature->GetName(), *GetNameSafe(Best->GetOwner()), *BestBone.ToString());
-	return true;
+	UE_LOG(LogAedir, Log, TEXT("%s took hold of %s %s"), *Creature->GetName(), *GetNameSafe(Target->GetOwner()), *Grab.Bone.ToString());
 }
 
 void UAedirInteractionComponent::ReleaseBodyGrab(EAedirHand Hand)
@@ -194,7 +241,7 @@ bool UAedirInteractionComponent::GetBodyGrabPoint(EAedirHand Hand, FVector& OutW
 {
 	const FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
 	const UPrimitiveComponent* Target = Grab.Target.Get();
-	if (!Grab.Joint.IsValid() || !Target)
+	if ((!Grab.Joint.IsValid() && !Grab.bReaching) || !Target)
 	{
 		return false;
 	}
@@ -213,7 +260,7 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
 		FAedirBodyGrab& Grab = BodyGrabs[Index];
-		if (!Grab.Joint.IsValid())
+		if (!Grab.Joint.IsValid() && !Grab.bReaching)
 		{
 			continue;
 		}
@@ -226,12 +273,29 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 			continue;
 		}
 
-		const float Stiffness = (BodyGrabStiffnessBase + Strength * BodyGrabStiffnessPerStrength) * FMath::Lerp(0.5f, 1.f, StaminaShare);
-		Grab.Joint->SetLinearDriveParams(Stiffness, Stiffness * BodyGrabDampingShare, 0.f);
-
-		// Pulled out of the hand by weight or by the other body tearing itself away.
 		const FVector HandWorld = Own->GetBoneLocation(Hand == EAedirHand::Left ? LeftHandBone : RightHandBone);
 		const float Gap = static_cast<float>(FVector::Dist(Point, HandWorld));
+
+		// Still on its way: it closes on the part when it touches it, and gives up when it cannot get there.
+		if (Grab.bReaching)
+		{
+			Grab.ReachSeconds += DeltaTime;
+			if (Gap <= BodyGrabCloseCm)
+			{
+				CloseHandOnBody(Hand);
+			}
+			else if (Grab.ReachSeconds >= BodyGrabReachSeconds)
+			{
+				ReleaseBodyGrab(Hand);
+			}
+			continue;
+		}
+
+		// The arm pulls as hard as a body of that strength can, and no harder: a cut-off hand comes up with it, a dead man is
+		// dragged along the ground.
+		const float Stiffness = (BodyGrabStiffnessBase + Strength * BodyGrabStiffnessPerStrength) * FMath::Lerp(0.5f, 1.f, StaminaShare);
+		const float MaxForce = (BodyGrabForceBaseN + Strength * BodyGrabForcePerStrengthN) * FMath::Lerp(0.6f, 1.f, StaminaShare) * 100.f;
+		Grab.Joint->SetLinearDriveParams(Stiffness, Stiffness * BodyGrabDampingShare, MaxForce);
 
 		// What is held holds back: walking away from it, the body only gets as far as the arm can drag it.
 		if (UCharacterMovementComponent* Movement = Creature->GetCharacterMovement(); Movement && Gap > BodyGrabDragFromCm)

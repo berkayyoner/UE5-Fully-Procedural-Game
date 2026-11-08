@@ -94,3 +94,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Nobody dies at once unless beheaded: out of health a body lies dying for some seconds and cannot get up; disarmed or maimed NPCs flee and a lost hand takes nothing up.
 - Downward blows reach the ground, the trunk bending into them and arching under raised ones.
 - The main menu works after leaving a game: the pause menu no longer stays on top of it and swallows its keys.
+- Taking hold of a body or a cut-off part: the hand reaches and bends down for it and closes only when it gets there, at the nearest point of its surface; it pulls as hard as its strength allows, so parts are lifted and corpses dragged; cut-off parts weigh what they would.

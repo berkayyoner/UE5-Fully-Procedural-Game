@@ -50,6 +50,9 @@ struct FAedirBodyGrab
 	FName Bone = NAME_None;
 	FVector LocalPoint = FVector::ZeroVector;
 	float TearSeconds = 0.f;
+	// Reaching for it, not yet holding it.
+	bool bReaching = false;
+	float ReachSeconds = 0.f;
 };
 
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
@@ -258,6 +261,7 @@ public:
 
 private:
 	void UpdateBodyGrabs(float DeltaTime);
+	void CloseHandOnBody(EAedirHand Hand);
 	FAedirBodyGrab BodyGrabs[2];
 
 	void BeginReach(EAedirHand Hand, AAedirItemActor* Item);

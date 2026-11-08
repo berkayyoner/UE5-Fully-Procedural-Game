@@ -229,7 +229,13 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 
 	Mesh->SetCollisionProfileName(TEXT("PhysicsActor"));
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-	Mesh->SetMassOverrideInKg(NAME_None, 3.f, true);
+	// What the part weighs on a grown man: a whole arm, a forearm, a leg, a head and so on.
+	const FString Part = SeverBone.ToString();
+	const float PartKg = Part.StartsWith(TEXT("upperarm")) ? 4.f : Part.StartsWith(TEXT("lowerarm")) ? 2.2f : Part.StartsWith(TEXT("hand")) ? 0.5f
+		: Part.StartsWith(TEXT("thigh")) ? 12.f : Part.StartsWith(TEXT("calf")) ? 4.5f : Part.StartsWith(TEXT("foot")) ? 1.2f : Part.StartsWith(TEXT("neck")) || Part.StartsWith(TEXT("head")) ? 5.5f : 3.f;
+	Mesh->SetMassOverrideInKg(NAME_None, PartKg, true);
+	Mesh->SetLinearDamping(0.1f);
+	Mesh->SetAngularDamping(0.6f);
 	Mesh->SetSimulatePhysics(true);
 	Mesh->AddImpulseAtLocation(Push.GetClampedToMaxSize(600.0) * SeverPushShare * Mesh->GetMass(), JointWorld);
 	Piece->SetLifeSpan(SeverPieceLifeSeconds);

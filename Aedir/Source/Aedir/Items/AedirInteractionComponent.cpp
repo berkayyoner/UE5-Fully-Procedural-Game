@@ -1176,12 +1176,15 @@ void UAedirInteractionComponent::UpdatePelvisLower(float DeltaTime)
 		{
 			const EAedirHand Hand = static_cast<EAedirHand>(Index);
 			const FAedirHandSlot& Slot = GetSlot(Hand);
-			if (Slot.State != EAedirHandState::Reaching || !Slot.Item || IsPassingHeld(GetOtherHand(Hand)))
+			// A hand going for a body or a part of one on the ground bends the body down to it as for an item.
+			FVector BodyPoint;
+			const bool bBodyReach = BodyGrabs[Index].bReaching && GetBodyGrabPoint(Hand, BodyPoint);
+			if (!bBodyReach && (Slot.State != EAedirHandState::Reaching || !Slot.Item || IsPassingHeld(GetOtherHand(Hand))))
 			{
 				continue;
 			}
 
-			const FVector ItemWorld = GetReachTargetWorld(Hand, Slot.Item);
+			const FVector ItemWorld = bBodyReach ? BodyPoint : GetReachTargetWorld(Hand, Slot.Item);
 			const FVector ItemLocal = ActorTransform.InverseTransformPositionNoScale(ItemWorld);
 			const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
 			const FAedirReachPosture Posture = ComputeReachPosture(
