@@ -750,6 +750,19 @@ private:
 	float SmoothedPunchLean = 0.f;
 	bool bFeetInitialized = false;
 
+	// The trunk carried by its own weight: a damped spring pushed by the body's change of speed, in degrees forward (X) and
+	// to the side (Y), so it lags into a start, pitches on over a stop and swings out of a sudden turn, and settles with a wobble.
+	FVector2D TrunkInertia = FVector2D::ZeroVector;
+	FVector2D TrunkInertiaRate = FVector2D::ZeroVector;
+	FVector2D SmoothedAccel = FVector2D::ZeroVector;
+	FVector PreviousVelocity = FVector::ZeroVector;
+	bool bHasPreviousVelocity = false;
+
+	void UpdateTrunkInertia(float DeltaTime, const FTransform& ActorTransform);
+
+	// Degrees the trunk leans away from a load held in one hand, to keep its weight over the feet.
+	float LoadRoll = 0.f;
+
 	// Seconds of motion time that drive the idle sway and the weight shift.
 	float MotionClock = 0.f;
 	// 0 while walking, turning or in stance, 1 while standing relaxed.

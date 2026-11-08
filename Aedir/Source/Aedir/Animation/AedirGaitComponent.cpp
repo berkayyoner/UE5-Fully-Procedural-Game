@@ -8,6 +8,7 @@
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
 #include "Items/AedirInteractionComponent.h"
+#include "Items/AedirItemActor.h"
 #include "Items/AedirItemTypes.h"
 #include "Movement/AedirCharacterMovementComponent.h"
 #include "Physics/AedirBalanceComponent.h"
@@ -18,6 +19,22 @@ namespace
 	// A turn of the chest starts from the hips. A fist adds its weight forward.
 	constexpr float AedirSwingPelvisShare = 0.3f;
 	constexpr float AedirPunchLeanInterpSpeed = 14.f;
+	// Trunk inertia: degrees of lean per cm/s2 of the body's change of speed, the spring that brings it back and how far
+	// it may go. Underdamped, so a hard stop rocks the chest forward and back once before it settles.
+	constexpr float AedirInertiaDegreesPerAccel = 0.022f;
+	constexpr float AedirInertiaSideShare = 0.35f;
+	constexpr float AedirInertiaFrequency = 7.5f;
+	constexpr float AedirInertiaDamping = 0.42f;
+	constexpr float AedirInertiaMaxPitch = 12.f;
+	constexpr float AedirInertiaMaxRoll = 6.f;
+	constexpr float AedirInertiaAccelSmoothing = 14.f;
+	constexpr float AedirInertiaHeadShare = 0.5f;
+	// Above this the speed jumped (a teleport, a respawn): no inertia from it.
+	constexpr float AedirInertiaMaxAccel = 6000.f;
+	// Leaning away from a load in one hand: degrees per kilogram of difference between the hands per point of strength.
+	constexpr float AedirLoadRollPerRatio = 7.f;
+	constexpr float AedirLoadRollMax = 8.f;
+	constexpr float AedirLoadRollInterpSpeed = 3.f;
 	// The hand eases into and out of holding an item, it does not jump when the item comes or goes.
 	constexpr float AedirWeaponAimFadeSeconds = 0.2f;
 	constexpr float AedirWristLooseDegrees = 28.f;
@@ -529,16 +546,31 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	ResolveArmReach(EAedirHand::Left, Combat, Interaction, ActorTransform, ProtectiveLeftTarget, ProtectiveAlpha, LeftReachTarget, LeftReachAlpha);
 	ResolveArmReach(EAedirHand::Right, Combat, Interaction, ActorTransform, ProtectiveRightTarget, ProtectiveAlpha, RightReachTarget, RightReachAlpha);
 
+	UpdateTrunkInertia(DeltaTime, ActorTransform);
+	{
+		const auto HeldWeight = [Interaction](EAedirHand Hand)
+		{
+			const AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(Hand) : nullptr;
+			return Item ? Item->Weight : 0.f;
+		};
+		const float Left = HeldWeight(EAedirHand::Left);
+		const float Right = HeldWeight(EAedirHand::Right);
+		// One item in both hands is carried in the middle and pulls to no side.
+		const bool bShared = Interaction && Interaction->GetHeldItem(EAedirHand::Left) && Interaction->GetHeldItem(EAedirHand::Left) == Interaction->GetHeldItem(EAedirHand::Right);
+		const float Strength = CreatureOwner->Stats ? FMath::Max(CreatureOwner->Stats->Strength, 1.f) : 10.f;
+		const float RollTarget = bShared ? 0.f : FMath::Clamp((Left - Right) / Strength * AedirLoadRollPerRatio, -AedirLoadRollMax, AedirLoadRollMax);
+		LoadRoll = FMath::FInterpTo(LoadRoll, RollTarget, DeltaTime, AedirLoadRollInterpSpeed);
+	}
 	const FRotator BalanceLean = BalanceComponent ? BalanceComponent->GetPelvisLean() : FRotator::ZeroRotator;
 	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * GaitIntensity;
 	// A low reach hinges at the hips as well as along the spine: half of the bend tips the pelvis forward.
 	const float ReachLean = Interaction ? Interaction->GetReachLeanDegrees() : 0.f;
-	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch - ReachLean * AedirReachHipHingeShare, PelvisYaw + SmoothedSwingTwist * AedirSwingPelvisShare, BalanceLean.Roll);
+	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch - ReachLean * AedirReachHipHingeShare, PelvisYaw + SmoothedSwingTwist * AedirSwingPelvisShare, BalanceLean.Roll + TrunkInertia.Y + LoadRoll);
 
 	const float LookYaw = MovementComponent->GetYawDeltaToControl();
 	const float LookPitch = FMath::Clamp(FRotator::NormalizeAxis(CreatureOwner->GetControlRotation().Pitch), -MaxLookPitchDegrees, MaxLookPitchDegrees);
 
-	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha + BalanceLean.Pitch + LookPitch * SpinePitchShare;
+	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha + BalanceLean.Pitch + LookPitch * SpinePitchShare + TrunkInertia.X;
 	GaitState.SpineLeanPitch -= ReachLean * (1.f - AedirReachHipHingeShare);
 	// Crouching bends the spine forward too, the body does not just sink on its legs.
 	GaitState.SpineLeanPitch -= CrouchSpineLeanDegrees * CrouchAlpha;
@@ -557,7 +589,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineTwistYaw = SmoothedSpineTwist + SmoothedSwingTwist + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f);
 
 	const FRotator HeadTarget(
-		LookPitch * HeadPitchShare,
+		LookPitch * HeadPitchShare + TrunkInertia.X * AedirInertiaHeadShare,
 		FMath::Clamp(LookYaw * HeadYawScale, -HeadYawLimitDegrees, HeadYawLimitDegrees),
 		0.f);
 	const FRotator NeckTarget(
@@ -903,4 +935,44 @@ void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatCom
 
 	OutTargetWorld = Blend.Target;
 	OutAlpha = Blend.Alpha;
+}
+
+void UAedirGaitComponent::UpdateTrunkInertia(float DeltaTime, const FTransform& ActorTransform)
+{
+	if (DeltaTime <= KINDA_SMALL_NUMBER || !CreatureOwner)
+	{
+		return;
+	}
+	const FVector Velocity = CreatureOwner->GetVelocity();
+	FVector2D Accel = FVector2D::ZeroVector;
+	if (bHasPreviousVelocity)
+	{
+		const FVector Change = ActorTransform.InverseTransformVectorNoScale((Velocity - PreviousVelocity) / DeltaTime);
+		Accel = FVector2D(Change.X, Change.Y);
+		if (Accel.Size() > AedirInertiaMaxAccel)
+		{
+			Accel = FVector2D::ZeroVector;
+		}
+	}
+	PreviousVelocity = Velocity;
+	bHasPreviousVelocity = true;
+	SmoothedAccel = FMath::Vector2DInterpTo(SmoothedAccel, Accel, DeltaTime, AedirInertiaAccelSmoothing);
+
+	// Speeding up leaves the chest behind (a lean back, positive), slowing down carries it on (forward, negative); a turn
+	// throws it to the outside. The spring then pulls it back over the hips.
+	const FVector2D Target(
+		FMath::Clamp(SmoothedAccel.X * AedirInertiaDegreesPerAccel, -AedirInertiaMaxPitch, AedirInertiaMaxPitch),
+		FMath::Clamp(-SmoothedAccel.Y * AedirInertiaDegreesPerAccel * AedirInertiaSideShare, -AedirInertiaMaxRoll, AedirInertiaMaxRoll));
+	const float Omega = AedirInertiaFrequency;
+	// Small steps so a long frame cannot blow the spring up.
+	const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime / 0.008f), 1, 8);
+	const float Step = DeltaTime / Steps;
+	for (int32 Index = 0; Index < Steps; ++Index)
+	{
+		const FVector2D Spring = (Target - TrunkInertia) * (Omega * Omega) - TrunkInertiaRate * (2.f * AedirInertiaDamping * Omega);
+		TrunkInertiaRate += Spring * Step;
+		TrunkInertia += TrunkInertiaRate * Step;
+	}
+	TrunkInertia.X = FMath::Clamp(TrunkInertia.X, -AedirInertiaMaxPitch * 1.3f, AedirInertiaMaxPitch * 1.3f);
+	TrunkInertia.Y = FMath::Clamp(TrunkInertia.Y, -AedirInertiaMaxRoll * 1.3f, AedirInertiaMaxRoll * 1.3f);
 }
