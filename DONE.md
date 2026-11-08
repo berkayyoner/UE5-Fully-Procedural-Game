@@ -95,3 +95,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Downward blows reach the ground, the trunk bending into them and arching under raised ones.
 - The main menu works after leaving a game: the pause menu no longer stays on top of it and swallows its keys.
 - Taking hold of a body or a cut-off part: the hand reaches and bends down for it and closes only when it gets there, at the nearest point of its surface; it pulls as hard as its strength allows, so parts are lifted and corpses dragged; cut-off parts weigh what they would.
+- The dialogue screen redone after Skyrim: the speaker's name left of a fading gold rule, the topics to its right sliding so the chosen one sits at a knot on the rule and the others fade away, the reply as a large shadowed subtitle, the view coming in over the shoulder onto the speaker's face; no boxes.
+- NPCs speak outside conversations: remarks to a passing player, taunts in a fight, outrage when struck, and long talks with each other drawn from the lore (the eclipse, the Angas, the dwarves, the dark elves), shown as "Name: line" subtitles within earshot. Spawned NPCs get names of their own.

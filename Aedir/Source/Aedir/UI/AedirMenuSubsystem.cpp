@@ -5,6 +5,8 @@
 #include "UI/SAedirMainMenu.h"
 
 #include "Creature/AedirCreature.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
 #include "EngineUtils.h"
 #include "Npc/AedirNpc.h"
 #include "Weather/AedirWeatherManager.h"
@@ -25,6 +27,14 @@
 namespace
 {
 	constexpr int32 MenuZOrder = 100;
+	// Where the view stands while talking: behind and beside the speaker's own head, looking at the other's face.
+	constexpr float DialogueCameraBackCm = 70.f;
+	constexpr float DialogueCameraSideCm = 38.f;
+	constexpr float DialogueCameraUpCm = 6.f;
+	constexpr float DialogueCameraFov = 55.f;
+	constexpr float DialogueCameraBlendSeconds = 0.45f;
+	constexpr float DialogueCameraAimRightCm = 55.f;
+	constexpr float DialogueCameraAimDownCm = 8.f;
 	constexpr int32 MenuInventoryCategory = 0;
 	constexpr int32 MenuMagicCategory = 1;
 	constexpr int32 MenuSkillsCategory = 2;
@@ -208,6 +218,22 @@ void UAedirMenuSubsystem::OpenDialogue(AAedirNpc* Npc)
 		Npc->BeginConversation(Player);
 		Npc->Speak(Npc->GetGreeting(Player));
 		FreezeWorldFor(Npc, Player);
+
+		// As in Skyrim the view comes in over the shoulder onto the face of the one spoken to.
+		const FVector NpcFace = Npc->GetPawnViewLocation();
+		const FVector Mine = Player->GetPawnViewLocation();
+		const FVector Facing = (NpcFace - Mine).GetSafeNormal2D();
+		const FVector Side = FVector::CrossProduct(FVector::UpVector, Facing);
+		const FVector CameraAt = Mine - Facing * DialogueCameraBackCm + Side * DialogueCameraSideCm + FVector(0.f, 0.f, DialogueCameraUpCm);
+		// The face sits left of the middle, clear of the topics on the right.
+		const FVector LookAt = NpcFace + Side * DialogueCameraAimRightCm - FVector(0.f, 0.f, DialogueCameraAimDownCm);
+		if (ACameraActor* Camera = GetWorld()->SpawnActor<ACameraActor>(CameraAt, (LookAt - CameraAt).Rotation()))
+		{
+			Camera->GetCameraComponent()->SetFieldOfView(DialogueCameraFov);
+			Camera->GetCameraComponent()->bConstrainAspectRatio = false;
+			DialogueCamera = Camera;
+			PlayerController->SetViewTargetWithBlend(Camera, DialogueCameraBlendSeconds, VTBlend_EaseInOut, 2.f);
+		}
 	}
 }
 
@@ -345,6 +371,16 @@ void UAedirMenuSubsystem::CloseMenu()
 			DialogueNpc->EndConversation();
 		}
 		DialogueNpc.Reset();
+		if (ACameraActor* Camera = DialogueCamera.Get())
+		{
+			const ULocalPlayer* Local = GetLocalPlayer();
+			if (APlayerController* Controller = Local ? Local->GetPlayerController(GetWorld()) : nullptr)
+			{
+				Controller->SetViewTargetWithBlend(Controller->GetPawn(), DialogueCameraBlendSeconds, VTBlend_EaseInOut, 2.f);
+			}
+			Camera->SetLifeSpan(DialogueCameraBlendSeconds + 0.1f);
+		}
+		DialogueCamera.Reset();
 	}
 	CloseMap();
 }
@@ -411,7 +447,7 @@ void UAedirMenuSubsystem::TogglePauseMenu(int32 StartTab)
 
 bool UAedirMenuSubsystem::IsMenuOpen() const
 {
-	return MenuWidget.IsValid() || RadialWidget.IsValid() || PauseWidget.IsValid() || MapWidget.IsValid();
+	return MenuWidget.IsValid() || RadialWidget.IsValid() || PauseWidget.IsValid() || MapWidget.IsValid() || DialogueWidget.IsValid();
 }
 
 bool UAedirMenuSubsystem::IsListMenuOpen() const

@@ -1,4 +1,5 @@
 #include "HUD/AedirHUD.h"
+#include "UI/AedirSubtitleSubsystem.h"
 
 #include "Items/AedirItemActor.h"
 #include "Npc/AedirNpc.h"
@@ -33,6 +34,10 @@ namespace
 	constexpr float HudTalkRangeCm = 300.f;
 	constexpr float HudTargetGap = 10.f;
 	constexpr float HudTargetFontSize = 14.f;
+	constexpr float HudSubtitleFontSize = 19.f;
+	constexpr float HudSubtitleWidthShare = 0.62f;
+	constexpr float HudSubtitleBottomMargin = 170.f;
+	constexpr int32 HudSubtitleMaxLines = 2;
 	constexpr float HudTargetBarWidth = 300.f;
 	constexpr float HudTargetBarHeight = 4.f;
 	constexpr float HudTargetBarGap = 3.f;
@@ -279,10 +284,77 @@ void AAedirHUD::DrawHUD()
 	DrawPointMarker(Creature);
 	DrawConsoleSelection(Creature);
 	DrawNeeds(Stats);
+	DrawSubtitles(Pawn);
 
 	if (Stats && Stats->IsDead())
 	{
 		DrawDeathOverlay();
+	}
+}
+
+void AAedirHUD::DrawSubtitles(const APawn* Pawn)
+{
+	const UAedirSubtitleSubsystem* Subtitles = GetWorld() ? GetWorld()->GetSubsystem<UAedirSubtitleSubsystem>() : nullptr;
+	if (!Canvas || !Pawn || !Subtitles)
+	{
+		return;
+	}
+	TArray<FAedirSubtitle> Heard;
+	Subtitles->GetHeard(Pawn->GetActorLocation(), Heard);
+	if (Heard.IsEmpty())
+	{
+		return;
+	}
+
+	// As in Skyrim: low in the middle, the speaker's name dimmed before the words, the newest line at the bottom.
+	using namespace AedirUIStyle;
+	const float Scale = ScaleForHeight(static_cast<float>(Canvas->SizeY));
+	const FSlateFontInfo Font = LightFont(HudSubtitleFontSize * Scale);
+	const float MaxWidth = static_cast<float>(Canvas->SizeX) * HudSubtitleWidthShare;
+	const float CenterX = static_cast<float>(Canvas->SizeX) * 0.5f;
+	float Bottom = static_cast<float>(Canvas->SizeY) - HudSubtitleBottomMargin * Scale;
+	for (int32 Index = Heard.Num() - 1; Index >= 0 && Index >= Heard.Num() - HudSubtitleMaxLines; --Index)
+	{
+		const FString Name = Heard[Index].Speaker.ToString() + TEXT(": ");
+		// Words are wrapped into rows no wider than the share of the screen; the name stands before the first row.
+		TArray<FString> Words;
+		Heard[Index].Line.ToString().ParseIntoArrayWS(Words);
+		TArray<FString> Rows;
+		FString Row = Name;
+		for (const FString& Word : Words)
+		{
+			const FString Tried = Row.IsEmpty() ? Word : Row + TEXT(" ") + Word;
+			if (!Row.IsEmpty() && Row != Name && MeasureText(Tried, Font).X > MaxWidth)
+			{
+				Rows.Add(Row);
+				Row = Word;
+			}
+			else
+			{
+				Row = Row == Name ? Row + Word : Tried;
+			}
+		}
+		Rows.Add(Row);
+
+		const float RowHeight = MeasureText(TEXT("Ag"), Font).Y * 1.15f;
+		Bottom -= RowHeight * Rows.Num();
+		for (int32 RowIndex = 0; RowIndex < Rows.Num(); ++RowIndex)
+		{
+			const float Y = Bottom + RowHeight * RowIndex;
+			const float Width = MeasureText(Rows[RowIndex], Font).X;
+			const float Left = CenterX - Width * 0.5f;
+			if (RowIndex == 0)
+			{
+				const float NameWidth = MeasureText(Name, Font).X;
+				AedirUIStyle::DrawText(*Canvas, Name, Font, FVector2f(Left, Y), TextDim, EAedirTextAlign::Left, 0.9f);
+				AedirUIStyle::DrawText(*Canvas, Rows[RowIndex].RightChop(Name.Len()), Font, FVector2f(Left + NameWidth, Y), IvoryBright, EAedirTextAlign::Left, 0.9f);
+			}
+			else
+			{
+				AedirUIStyle::DrawText(*Canvas, Rows[RowIndex], Font, FVector2f(Left, Y), IvoryBright, EAedirTextAlign::Left, 0.9f);
+			}
+		}
+		Bottom -= RowHeight * 0.4f;
 	}
 }
 

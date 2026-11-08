@@ -97,6 +97,7 @@ private:
 	void FreezeWorldFor(const AActor* Speaker, const AActor* Listener);
 	void ThawWorld();
 	TWeakObjectPtr<AAedirNpc> DialogueNpc;
+	TWeakObjectPtr<class ACameraActor> DialogueCamera;
 	TArray<TWeakObjectPtr<AActor>> FrozenActors;
 	TArray<TWeakObjectPtr<UActorComponent>> FrozenComponents;
 };

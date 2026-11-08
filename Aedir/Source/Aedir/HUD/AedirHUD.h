@@ -76,6 +76,7 @@ private:
 	void DrawConsoleSelection(const AAedirCreature* Creature);
 	void DrawNeeds(const UAedirStatsComponent* Stats);
 	void DrawDeathOverlay();
+	void DrawSubtitles(const APawn* Pawn);
 	void DrawFatigue(const UAedirStatsComponent* Stats);
 	float FatigueShown = 0.f;
 	void UpdateSkillNotifications(float DeltaSeconds, const UAedirStatsComponent* Stats);

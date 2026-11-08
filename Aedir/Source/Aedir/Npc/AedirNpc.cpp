@@ -125,6 +125,7 @@ void AAedirNpc::Tick(float DeltaSeconds)
 	}
 
 	UpdateNeeds(DeltaSeconds);
+	UpdateChatter(DeltaSeconds);
 	if (TalkPartner.IsValid())
 	{
 		UpdateConversation(DeltaSeconds);
@@ -896,6 +897,14 @@ void AAedirNpc::OnAttackedBy(AAedirCreature* Attacker)
 	if (!HasAuthority() || !Attacker)
 	{
 		return;
+	}
+	if (ChatPartner.IsValid())
+	{
+		EndChat();
+	}
+	if (Attacker->IsPlayerControlled())
+	{
+		RemarkOnBlow();
 	}
 
 	if (const APlayerController* AttackerController = Cast<APlayerController>(Attacker->GetController()))

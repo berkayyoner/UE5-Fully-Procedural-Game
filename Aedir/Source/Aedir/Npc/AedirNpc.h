@@ -122,12 +122,29 @@ public:
 	void Speak(const FText& Line);
 	bool IsInConversation() const { return TalkPartner.IsValid(); }
 
+	// Says a line aloud: it shows as a subtitle to anyone within earshot and the head moves with it.
+	void SayLine(const FText& Line);
+	bool IsAlive() const;
+
 	void SetHome(const FVector& Location, float Yaw);
 	const FVector& GetHomeLocation() const { return HomeLocation; }
 	float GetHomeYaw() const { return HomeYaw; }
 
 private:
 	void UpdateConversation(float DeltaSeconds);
+
+	// Remarks to the player, shouts in a fight and talks with other NPCs.
+	void UpdateChatter(float DeltaSeconds);
+	bool IsFreeToChat() const;
+	void EndChat();
+	void RemarkOnBlow();
+	TWeakObjectPtr<AAedirNpc> ChatPartner;
+	int32 ChatTalk = INDEX_NONE;
+	int32 ChatLine = 0;
+	float ChatWait = 0.f;
+	float LineSeconds = 0.f;
+	float RemarkTimer = FMath::FRandRange(5.f, 25.f);
+	float TalkTimer = FMath::FRandRange(8.f, 40.f);
 	TWeakObjectPtr<AAedirCreature> TalkPartner;
 	float SpeakSeconds = 0.f;
 	float TalkSeconds = 0.f;

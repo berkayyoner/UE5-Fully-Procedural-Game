@@ -147,7 +147,11 @@ namespace
 			{
 				const bool bEnemy = Base == FName(TEXT("NpcEnemy"));
 				const bool bFollower = Base == FName(TEXT("NpcFollower"));
-				Npc->InitNpc(bEnemy ? EAedirNpcRole::Enemy : bFollower ? EAedirNpcRole::Follower : EAedirNpcRole::Neutral, FText::FromString(bEnemy ? TEXT("Bandit") : bFollower ? TEXT("Sellsword") : TEXT("Villager")), FText::FromString(TEXT("Nobody you would have heard of.")));
+				// Everyone gets a name of their own, and what they are when it says nothing else.
+				static const TCHAR* const Names[] = { TEXT("Hedda"), TEXT("Orvan"), TEXT("Brisk"), TEXT("Maelis"), TEXT("Tull"), TEXT("Vessa"), TEXT("Garrick"), TEXT("Ilse"), TEXT("Dovan"), TEXT("Runa"), TEXT("Calder"), TEXT("Neve") };
+				const FString Given = Names[FMath::RandRange(0, UE_ARRAY_COUNT(Names) - 1)];
+				const FString Name = bEnemy ? Given + TEXT(" the Bandit") : bFollower ? Given + TEXT(" the Sellsword") : Given;
+				Npc->InitNpc(bEnemy ? EAedirNpcRole::Enemy : bFollower ? EAedirNpcRole::Follower : EAedirNpcRole::Neutral, FText::FromString(Name), FText::FromString(TEXT("Nobody you would have heard of.")));
 				Spawned = Npc;
 			}
 			if (Spawned)
