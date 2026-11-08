@@ -481,10 +481,10 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	}
 	const FVector Drift(Now.X - Target.X, Now.Y - Target.Y, 0.f);
 	const float Beyond = static_cast<float>(Drift.Size()) - PelvisDriftFreeCm;
-	UE_CLOG(CharacterOwner->IsPlayerControlled(), LogAedir, VeryVerbose, TEXT("[Body] pelvis %s target %s balance %.2f upright %.2f sim %d pose %d"), *(Now - CharacterOwner->GetActorLocation()).ToCompactString(),
-		*(Target - CharacterOwner->GetActorLocation()).ToCompactString(), Balance, Upright, Pelvis->IsInstanceSimulatingPhysics() ? 1 : 0, Pose.bProceduralActive ? 1 : 0);
 	if (Beyond > 0.f)
 	{
+		UE_LOG(LogAedir, Verbose, TEXT("[Fall] %s hips drift %s cm, balance %.2f, at %s speed %.0f, hips Z %.1f over target."), *GetNameSafe(GetOwner()), *(Actor.InverseTransformVectorNoScale(Drift)).ToCompactString(), Balance,
+			*CharacterOwner->GetActorLocation().ToCompactString(), CharacterOwner->GetVelocity().Size(), Now.Z - Target.Z);
 		ApplyBalanceImpact(Drift.GetSafeNormal(), Beyond / PelvisDriftLossCm * DeltaTime * (1.5f - Upright));
 	}
 }
@@ -1358,6 +1358,7 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	const bool bLegGivesWay = bLegLost && (!IsGettingUp() || GetGetUpProgress() >= LegLostGetUpGivesWayAt);
 	if (!bIsRagdoll && (bDead || bLegGivesWay || TimeBelowThreshold >= FallDelaySeconds))
 	{
+		UE_LOG(LogAedir, Log, TEXT("[Fall] %s goes down: dead %d, leg %d, balance %.2f."), *GetNameSafe(GetOwner()), bDead ? 1 : 0, bLegGivesWay ? 1 : 0, Balance);
 		EnterRagdoll(MinRagdollSeconds);
 	}
 	else if (bIsRagdoll)
@@ -1618,6 +1619,10 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		HipJoint->BreakConstraint();
 		HipJoint->SetConstrainedComponents(BodyCapsule, NAME_None, BodyMesh, PelvisBoneName);
 	}
+	if (BodyControl)
+	{
+		BodyControl->RebindHips(BodyCapsule);
+	}
 	if (Movement)
 	{
 		if (GetUpLeft > 0.f)
@@ -1813,6 +1818,12 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 	{
 		return;
 	}
+	// A weapon in someone's hand hurts only by what its blow does to the body, which the fight works out; brushing the
+	// capsule with it is no second blow.
+	if (const AAedirItemActor* Item = Cast<AAedirItemActor>(OtherActor); Item && Item->IsHeld())
+	{
+		return;
+	}
 
 	UAedirStatsComponent* StatsComponent = FindStats();
 	const float Athletism = StatsComponent ? StatsComponent->Athletism : 0.f;
@@ -1845,6 +1856,7 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 
 			if (StatsComponent)
 			{
+				UE_LOG(LogAedir, Log, TEXT("%s was struck by %s, score %.0f, %.1f damage."), *GetNameSafe(Owner), *GetNameSafe(OtherActor), ImpactScore, ImpactScore * AedirObjectImpactDamagePerScore);
 				StatsComponent->ApplyDamage(ImpactScore * AedirObjectImpactDamagePerScore);
 			}
 		}

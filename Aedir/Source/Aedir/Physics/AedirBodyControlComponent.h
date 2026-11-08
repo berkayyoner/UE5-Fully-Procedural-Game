@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "PhysicsControlData.h"
 #include "AedirBodyControlComponent.generated.h"
 
 class UCapsuleComponent;
@@ -10,8 +11,10 @@ class USkeletalMeshComponent;
 
 // The muscles of a fully physical body, on the engine's physics control: every part is simulated and pulled towards the pose
 // by its joint to the part above it, mass-independent and critically damped, so weight, blows and momentum go through the
-// body as a chain. The hips are held to the capsule by their own control, the mesh stays on the capsule, and a foot on the
-// ground is locked where the pose plants it until it lifts. Strength follows stamina and health; down, everything goes limp.
+// body as a chain. The joints alone cannot carry the weight of everything above them, so the trunk is also turned upright
+// in the world, the feet are led to where the steps set them, and a standing body carries only part of its weight. The hips
+// are held to the capsule by their own control and the mesh stays on the capsule. Strength follows stamina and health;
+// down, everything goes limp and carries its full weight.
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
 class AEDIR_API UAedirBodyControlComponent : public UActorComponent
 {
@@ -35,10 +38,22 @@ public:
 
 	// The hips' hold on the capsule: where they are and how they are turned.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float HipLinearStrength = 5.f;
+	float HipLinearStrength = 10.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float HipAngularStrength = 7.f;
+
+	// How strongly the trunk and head are turned upright in the world, in Hz.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float PostureStrength = 6.f;
+
+	// How strongly each foot is pulled to where the pose sets it, in Hz.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float FootStrength = 10.f;
+
+	// Share of its weight a body carries while standing at full strength; down it carries all of it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float StandingGravity = 0.5f;
 
 	// What is left of every muscle in a body that is down.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -64,8 +79,12 @@ public:
 	// A foot on the ground stays where the pose plants it; lifted, it swings free.
 	void SetFeetPlanted(bool bLeft, bool bRight);
 
+	// The capsule's physical body was made anew (its collision turned back on): the hips are tied to the new one.
+	void RebindHips(UCapsuleComponent* InCapsule);
+
 	// The body was moved at once (a teleport, a respawn): every part is put where the pose has it, at rest.
 	void Teleported();
+
 
 private:
 	void ApplyMultipliers();
@@ -77,11 +96,14 @@ private:
 	TObjectPtr<USkeletalMeshComponent> Mesh;
 
 	TArray<FName> SpineControls;
+	TArray<FName> PostureControls;
+	TArray<FName> FootControls;
 	TArray<FName> HeadControls;
 	TArray<FName> LeftArmControls;
 	TArray<FName> RightArmControls;
 	TArray<FName> LegControls;
 	FName HipControl;
+	FPhysicsControlData HipData;
 	FName HipModifier;
 	FName LeftFootModifiers[2];
 	FName RightFootModifiers[2];

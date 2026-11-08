@@ -26,6 +26,8 @@ namespace
 	constexpr float AedirCombatStatMax = 100.f;
 	constexpr float AedirDefaultStat = 10.f;
 	constexpr float AedirGuardBlendSpeed = 6.f;
+	// How long a weapon must be off a body before touching it again counts as a new blow.
+	constexpr float AedirFreshContactSeconds = 0.12f;
 	constexpr float AedirArmRampInSeconds = 0.1f;
 	constexpr float AedirArmRampOutSeconds = 0.2f;
 	constexpr float AedirMinSwingDuration = 0.05f;
@@ -2709,7 +2711,12 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 			const int32 Index = HandIndex(Hand);
 			const bool bPassing = PassVictim[Index].Get() == Victim && Now < PassUntil[Index];
 			const float RelativeSpeed = FMath::Max(0.f, static_cast<float>(FVector::DotProduct(TipVelocity - Victim->GetVelocity(), -Hit.ImpactNormal)));
-			if (IsImpactOnCooldown(Hand, HitActor, Now) || RelativeSpeed < MinImpactSpeed)
+			// A blade that has stayed against the body since it last struck presses or grinds; only one that comes off
+			// and strikes again lands a new blow.
+			const bool bFreshContact = TouchVictim[Index].Get() != Victim || Now - TouchTime[Index] > AedirFreshContactSeconds;
+			TouchVictim[Index] = Victim;
+			TouchTime[Index] = Now;
+			if (IsImpactOnCooldown(Hand, HitActor, Now) || RelativeSpeed < MinImpactSpeed || !bFreshContact)
 			{
 				if (!bPassing && !Arm.LodgedIn.IsValid())
 				{

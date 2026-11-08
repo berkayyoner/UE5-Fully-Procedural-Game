@@ -8,6 +8,15 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/PhysicsAsset.h"
 
+static TAutoConsoleVariable<float> CVarAedirBodyPosture(TEXT("aedir.BodyPosture"), -1.f, TEXT("Hz of the trunk's upright hold in the world; below 0 uses the component's own."));
+static TAutoConsoleVariable<float> CVarAedirBodyGravity(TEXT("aedir.BodyGravity"), -1.f, TEXT("Share of its weight a standing body carries; below 0 uses the component's own."));
+
+static TAutoConsoleVariable<int32> CVarAedirBodyPlant(TEXT("aedir.BodyPlant"), 0, TEXT("Whether a planted foot is held by the pose rather than its muscles."));
+
+static TAutoConsoleVariable<float> CVarAedirBodyFoot(TEXT("aedir.BodyFoot"), -1.f, TEXT("Hz of the feet's hold on where the pose sets them; below 0 uses the component's own."));
+
+static TAutoConsoleVariable<float> CVarAedirBodyHips(TEXT("aedir.BodyHips"), -1.f, TEXT("Hz of the hips' hold on the capsule; below 0 uses the component's own."));
+
 namespace
 {
 	// Which part of the body a bone belongs to, by its name on the standard skeleton.
@@ -60,6 +69,8 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		Control->RegisterComponent();
 	}
 	SpineControls.Reset();
+	PostureControls.Reset();
+	FootControls.Reset();
 	HeadControls.Reset();
 	LeftArmControls.Reset();
 	RightArmControls.Reset();
@@ -124,6 +135,19 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 			continue;
 		}
 		const FName Name = Control->CreateControl(Mesh, Parent, Mesh, Bone, Muscle, FPhysicsControlTarget(), TEXT("Muscles"));
+		if (BoneText == TEXT("foot_l") || BoneText == TEXT("foot_r"))
+		{
+			// A foot finds where the pose sets it down, in the world: the leg's joints alone carry it too late.
+			FPhysicsControlData Step = Muscle;
+			Step.LinearStrength = 1.f;
+			FootControls.Add(Control->CreateControl(nullptr, NAME_None, Mesh, Bone, Step, FPhysicsControlTarget(), TEXT("Feet")));
+		}
+		if (Part == EAedirBodyPart::Spine || Part == EAedirBodyPart::Head)
+		{
+			// The trunk's sense of up: each part turned towards the pose in the world, which the joints alone cannot do
+			// against the weight of everything above them.
+			PostureControls.Add(Control->CreateControl(nullptr, NAME_None, Mesh, Bone, Muscle, FPhysicsControlTarget(), TEXT("Posture")));
+		}
 		switch (Part)
 		{
 		case EAedirBodyPart::Head: HeadControls.Add(Name); break;
@@ -134,13 +158,11 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		}
 	}
 
-	// The hips are held where the pose has them on the capsule, in place and in turn.
-	FPhysicsControlData Hold = Muscle;
-	Hold.LinearStrength = 1.f;
-	Hold.MaxForce = 0.f;
-	HipControl = Control->CreateControl(InCapsule, NAME_None, Mesh, TEXT("pelvis"), Hold, FPhysicsControlTarget(), TEXT("Hips"));
-
-	bReady = !HipControl.IsNone();
+	HipData = Muscle;
+	HipData.LinearStrength = 1.f;
+	HipData.MaxForce = 0.f;
+	HipControl = NAME_None;
+	RebindHips(InCapsule);
 	AppliedKey = -1.f;
 	ApplyMultipliers();
 	UE_LOG(LogAedir, Log, TEXT("%s: physical body with %d spine, %d head, %d+%d arm and %d leg muscles."), *GetNameSafe(GetOwner()),
@@ -183,8 +205,9 @@ void UAedirBodyControlComponent::SetFeetPlanted(bool bLeft, bool bRight)
 		return;
 	}
 	// Down, no foot holds anything.
-	const bool bWantLeft = bLeft && !bLimp;
-	const bool bWantRight = bRight && !bLimp;
+	const bool bPlanting = CVarAedirBodyPlant.GetValueOnGameThread() != 0;
+	const bool bWantLeft = bLeft && !bLimp && bPlanting;
+	const bool bWantRight = bRight && !bLimp && bPlanting;
 	if (bWantLeft != bLeftPlanted)
 	{
 		bLeftPlanted = bWantLeft;
@@ -207,6 +230,23 @@ void UAedirBodyControlComponent::SetFeetPlanted(bool bLeft, bool bRight)
 			}
 		}
 	}
+}
+
+void UAedirBodyControlComponent::RebindHips(UCapsuleComponent* InCapsule)
+{
+	if (!Control || !Mesh || !InCapsule)
+	{
+		return;
+	}
+	if (!HipControl.IsNone())
+	{
+		Control->DestroyControl(HipControl);
+	}
+	// The hips are held where the pose has them on the capsule, in place and in turn.
+	HipControl = Control->CreateControl(InCapsule, NAME_None, Mesh, TEXT("pelvis"), HipData, FPhysicsControlTarget(), TEXT("Hips"));
+	bReady = !HipControl.IsNone();
+	AppliedKey = -1.f;
+	ApplyMultipliers();
 }
 
 void UAedirBodyControlComponent::Teleported()
@@ -251,6 +291,23 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	Apply(RightArmControls, ArmStrength * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare)), 0.f);
 	// Down, the hips are free; carried, the pose places them and the control rests.
 	const bool bHold = !bLimp && !bHipsCarried;
-	Apply({ HipControl }, bHold ? HipAngularStrength * Body : 0.f, bHold ? HipLinearStrength * Body : 0.f);
+	const float Hips = CVarAedirBodyHips.GetValueOnGameThread() >= 0.f ? CVarAedirBodyHips.GetValueOnGameThread() : HipLinearStrength;
+	Apply({ HipControl }, bHold ? HipAngularStrength * Body : 0.f, bHold ? Hips * Body : 0.f);
 	Control->SetControlEnabled(HipControl, bHold);
+
+	// The trunk is kept upright as a whole, and standing it carries only part of its weight.
+	const float Posture = CVarAedirBodyPosture.GetValueOnGameThread() >= 0.f ? CVarAedirBodyPosture.GetValueOnGameThread() : PostureStrength;
+	Apply(PostureControls, bLimp ? 0.f : Posture * Body, 0.f);
+	for (const FName& Name : PostureControls)
+	{
+		Control->SetControlEnabled(Name, !bLimp && Posture > 0.f);
+	}
+	const float Foot = CVarAedirBodyFoot.GetValueOnGameThread() >= 0.f ? CVarAedirBodyFoot.GetValueOnGameThread() : FootStrength;
+	Apply(FootControls, bLimp ? 0.f : Foot * Body, bLimp ? 0.f : Foot * Body);
+	for (const FName& Name : FootControls)
+	{
+		Control->SetControlEnabled(Name, !bLimp && Foot > 0.f);
+	}
+	const float Weight = CVarAedirBodyGravity.GetValueOnGameThread() >= 0.f ? CVarAedirBodyGravity.GetValueOnGameThread() : StandingGravity;
+	Control->SetBodyModifiersInSetGravityMultiplier(TEXT("Body"), bLimp ? 1.f : FMath::Lerp(1.f, Weight, Upright));
 }

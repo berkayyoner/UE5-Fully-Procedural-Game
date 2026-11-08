@@ -133,9 +133,10 @@ public:
 	bool bPhysicalHips = false;
 
 	// The whole body on the engine's physics control (see UAedirBodyControlComponent): every part simulated and held by its
-	// joint, the hips by a control to the capsule, planted feet locked. Off, the older motors and hand-moved hips are used.
+	// joint, the trunk kept upright and the feet led to their steps in the world, the hips by a control to the capsule.
+	// Off, the older motors and hand-moved hips are used.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
-	bool bUseBodyControl = false;
+	bool bUseBodyControl = true;
 
 	// The hip joint's pull: how stiff the spring to where the hips belong is and how hard it damps, for position and for
 	// turning, at full strength. Force per cm and per degree, in the units of a physics constraint drive.
