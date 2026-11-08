@@ -3,6 +3,12 @@
 #include "AedirEditor.h"
 #include "AedirTestMapBuilder.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Engine/Blueprint.h"
+#include "Engine/BlueprintGeneratedClass.h"
+#include "Items/AedirCatalogItem.h"
+#include "Kismet2/KismetEditorUtilities.h"
+#include "Npc/AedirNpc.h"
+#include "Npc/AedirTrainingDummy.h"
 #include "Editor.h"
 #include "Engine/StaticMesh.h"
 #include "PhysicsEngine/BodySetup.h"
@@ -455,6 +461,41 @@ namespace
 	}
 }
 
+namespace
+{
+	// A Blueprint for each class the game spawns people and things from, so they can be opened, changed and extended in the
+	// editor. One that is already there is kept as it is, with whatever was done to it.
+	void ContentMakeBlueprints()
+	{
+		const TPair<UClass*, const TCHAR*> Made[] = {
+			{ AAedirNpc::StaticClass(), TEXT("BP_AedirNpc") },
+			{ AAedirCatalogItem::StaticClass(), TEXT("BP_AedirItem") },
+			{ AAedirTrainingDummy::StaticClass(), TEXT("BP_AedirTrainingDummy") },
+		};
+		TArray<UPackage*> ToSave;
+		for (const TPair<UClass*, const TCHAR*>& One : Made)
+		{
+			const FString PackageName = FString::Printf(TEXT("/Game/Aedir/Blueprints/%s"), One.Value);
+			if (FPackageName::DoesPackageExist(PackageName))
+			{
+				continue;
+			}
+			UPackage* Package = CreatePackage(*PackageName);
+			if (UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(One.Key, Package, One.Value, BPTYPE_Normal, UBlueprint::StaticClass(), UBlueprintGeneratedClass::StaticClass()))
+			{
+				FAssetRegistryModule::AssetCreated(Blueprint);
+				FKismetEditorUtilities::CompileBlueprint(Blueprint);
+				ToSave.Add(Package);
+				UE_LOG(LogAedirEditor, Display, TEXT("Made %s from %s."), One.Value, *One.Key->GetName());
+			}
+		}
+		if (!ToSave.IsEmpty())
+		{
+			UEditorLoadingAndSavingUtils::SavePackages(ToSave, false);
+		}
+	}
+}
+
 UAedirContentCommandlet::UAedirContentCommandlet()
 {
 	IsEditor = true;
@@ -471,6 +512,14 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 	{
 		ContentBuildPrecip(ToSave);
 		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
+	if (Only == TEXT("Blueprints") || Only == TEXT("TestMap"))
+	{
+		ContentMakeBlueprints();
+	}
+	if (Only == TEXT("Blueprints"))
+	{
+		return 0;
 	}
 	if (Only == TEXT("TestMap"))
 	{

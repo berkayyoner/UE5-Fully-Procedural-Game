@@ -104,8 +104,12 @@ public:
 	UPROPERTY(ReplicatedUsing=OnRep_Worn, BlueprintReadOnly, Category="Aedir|Item")
 	bool bWorn = false;
 
-	// How the item looks once it is on the body.
+	// How the item looks once it is on the body, and how it looks again once taken off.
 	virtual void ApplyWornLook() {}
+	virtual void ClearWornLook() {}
+
+	// Server only. No longer worn; the caller decides where it goes next.
+	void TakeOff();
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	TObjectPtr<UMaterialInterface> HighlightOverlayMaterial;
@@ -206,12 +210,27 @@ private:
 	void OnRep_Stowed();
 
 	UFUNCTION()
-	void OnRep_Worn() { ApplyWornLook(); }
+	void OnRep_Worn()
+	{
+		if (bWorn)
+		{
+			ApplyWornLook();
+		}
+		else
+		{
+			ClearWornLook();
+		}
+	}
 
 	void ApplyStowed(bool bNewStowed);
 
 	void AttachToBone(AAedirCreature* Creature, FName BoneName, const FTransform& HoldOffset);
 	void SetFreePhysics(bool bFree);
+
+	// Solid in the hand of a creature, pushing what it meets, but not against the body that holds it.
+	void ApplyHeldCollision(const AAedirCreature* Creature);
+	bool bHeldCollision = false;
+	TEnumAsByte<ECollisionResponse> FreePawnResponse = ECR_Block;
 	void ApplyItemMass();
 	FTransform ComputeHoldTransform(const FTransform& HoldOffset) const;
 	FTransform ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const;

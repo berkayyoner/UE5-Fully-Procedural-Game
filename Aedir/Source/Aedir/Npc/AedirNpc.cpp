@@ -86,6 +86,22 @@ void AAedirNpc::BeginPlay()
 	{
 		SetHome(GetActorLocation(), static_cast<float>(GetActorRotation().Yaw));
 	}
+
+	// Placed in a level with a name: who they are and what they carry come from what was set on them there.
+	if (HasAuthority() && !NpcName.IsEmpty())
+	{
+		InitNpc(Role_Npc, NpcName, Biography);
+		if (!StartWeapon.IsNone() && Interaction)
+		{
+			if (AAedirCatalogItem* Weapon = AAedirCatalogItem::SpawnCatalogItem(GetWorld(), StartWeapon, FTransform(GetActorLocation() + FVector(0.f, 0.f, 80.f))))
+			{
+				if (!Interaction->HolsterImmediate(0, Weapon))
+				{
+					Interaction->EquipImmediate(EAedirHand::Right, Weapon);
+				}
+			}
+		}
+	}
 }
 
 void AAedirNpc::SetHome(const FVector& Location, float Yaw)

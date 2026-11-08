@@ -17,7 +17,9 @@ namespace
 	constexpr float ChatterRemarkMaxSeconds = 70.f;
 	constexpr float ChatterTauntMinSeconds = 7.f;
 	constexpr float ChatterTauntMaxSeconds = 14.f;
-	constexpr float ChatterTalkRangeCm = 650.f;
+	// Two people talk only when they stand together, close enough to talk at an ordinary voice, and stop when one walks off.
+	constexpr float ChatterTalkRangeCm = 250.f;
+	constexpr float ChatterTalkLeaveCm = 380.f;
 	constexpr float ChatterTalkMinSeconds = 50.f;
 	constexpr float ChatterTalkMaxSeconds = 120.f;
 	constexpr float ChatterPauseSeconds = 0.6f;
@@ -43,6 +45,16 @@ namespace
 		TEXT("I'm with you. Wherever this goes."),
 		TEXT("If we live through the day, the first drink is on you."),
 	};
+	const TCHAR* const ChatterFarewells[] =
+	{
+		TEXT("Well, I'll leave you to it."),
+		TEXT("Take care of yourself."),
+		TEXT("Gods keep you."),
+		TEXT("Back to work, then."),
+		TEXT("Mind how you go."),
+		TEXT("Till later."),
+	};
+
 	const TCHAR* const ChatterEnemyTaunts[] =
 	{
 		TEXT("Come on then! Come on!"),
@@ -151,7 +163,7 @@ void AAedirNpc::UpdateChatter(float DeltaSeconds)
 	// Leading a talk with another: each line in turn, a short pause between them.
 	if (AAedirNpc* Other = ChatPartner.Get())
 	{
-		const bool bStillTalking = TalkPartner.Get() == Other && Other->TalkPartner.Get() == this && Other->IsAlive();
+		const bool bStillTalking = TalkPartner.Get() == Other && Other->TalkPartner.Get() == this && Other->IsAlive() && FVector::Dist(Other->GetActorLocation(), GetActorLocation()) <= ChatterTalkLeaveCm;
 		if (!bStillTalking || !ChatterTalks().IsValidIndex(ChatTalk))
 		{
 			EndChat();
@@ -163,13 +175,15 @@ void AAedirNpc::UpdateChatter(float DeltaSeconds)
 			return;
 		}
 		const TArray<const TCHAR*>& Lines = ChatterTalks()[ChatTalk].Lines;
-		if (!Lines.IsValidIndex(ChatLine))
+		// When the talk is done each says goodbye, the one who did not speak last first, and only then do they go their ways.
+		const int32 Farewell = ChatLine - Lines.Num();
+		if (Farewell >= 2)
 		{
 			EndChat();
 			return;
 		}
 		AAedirNpc* Speaker = ChatLine % 2 == 0 ? this : Other;
-		Speaker->SayLine(FText::FromString(Lines[ChatLine]));
+		Speaker->SayLine(Farewell >= 0 ? ChatterPick(ChatterFarewells) : FText::FromString(Lines[ChatLine]));
 		ChatWait = Speaker->LineSeconds + ChatterPauseSeconds;
 		++ChatLine;
 		return;

@@ -18,6 +18,12 @@ public:
 	virtual TStatId GetStatId() const override;
 	virtual bool ShouldCreateSubsystem(UObject* Outer) const override { return true; }
 
+	// A meadow and trees planted in the editor and saved in the level are taken up as if planted now.
+	virtual void OnWorldBeginPlay(UWorld& InWorld) override;
+
+	// The actor the grass and trees are planted on wears this tag; in the editor it is saved with the level.
+	static const FName MeadowTag;
+
 	// Covers a stretch of ground, skipping what stands on it. Around is the middle, on the ground.
 	void PlantMeadow(const FVector& Around, float HalfSizeCm, float DensityPerSquareMeter, int32 RandomSeed);
 
@@ -44,6 +50,9 @@ private:
 	void UpdateBending();
 	void UpdateWind(float DeltaTime);
 	void EnsureMeadowActor();
+	// Keeps a component made at run time out of the level file, and one made in the editor in it.
+	void AddToMeadow(USceneComponent* Component);
+	void EnsureTreeWindData();
 	void CrushUnderFeet();
 	void Recover(float DeltaTime);
 	void SetInstanceFlatness(FCrushed& Entry);

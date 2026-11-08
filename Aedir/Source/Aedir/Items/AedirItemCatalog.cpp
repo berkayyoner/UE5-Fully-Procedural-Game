@@ -110,6 +110,24 @@ namespace
 		AddFood(TEXT("WaterJug"), TEXT("Jug of Water"), 2.2f, FLinearColor(0.3f, 0.26f, 0.18f), FVector(0.2, 0.2, 0.3), 0.f, 40.f, 3, TEXT("/Game/Megascans/3D_Assets/JuteJug/SM_JuteJug.SM_JuteJug"));
 		AddFood(TEXT("Carafe"), TEXT("Wooden Carafe"), 1.1f, FLinearColor(0.3f, 0.2f, 0.1f), FVector(0.12, 0.12, 0.26), 0.f, 30.f, 2, TEXT("/Game/Megascans/3D_Assets/OldWoodenCarafe/SM_OldWoodenCarafe.SM_OldWoodenCarafe"));
 
+		// Odds and ends of a yard: everything that can be picked up is an item, nothing small stands fixed in the world.
+		// Big things are carried in both arms and do not fit in a backpack; small ones are stowed like anything else.
+		const auto AddThing = [&Definitions](const TCHAR* Id, const TCHAR* Name, float WeightKg, const FVector& Scale, const TCHAR* Mesh, bool bBig)
+		{
+			FAedirItemDef Item = CatalogMakeMisc(Id, Name, bBig ? EAedirItemClass::Object : EAedirItemClass::Unusable, WeightKg, FLinearColor(0.2f, 0.2f, 0.2f), Scale);
+			Item.MeshPath = Mesh;
+			// Long tools lie along their length; everything else stands as it was made.
+			Item.bStandsUpright = Scale.X < Scale.Z * 2.0;
+			Definitions.Add(Item);
+		};
+		AddThing(TEXT("Bucket"), TEXT("Wooden Bucket"), 3.f, FVector(0.3, 0.3, 0.32), TEXT("/Game/Megascans/3D_Assets/OldWoodenBucketA/SM_OldWoodenBucketA.SM_OldWoodenBucketA"), true);
+		AddThing(TEXT("Chains"), TEXT("Pile of Chains"), 7.f, FVector(0.42, 0.42, 0.12), TEXT("/Game/Megascans/3D_Assets/PileOfChains/SM_PileOfChains.SM_PileOfChains"), true);
+		AddThing(TEXT("Coal"), TEXT("Lump of Coal"), 0.6f, FVector(0.12, 0.1, 0.08), TEXT("/Game/Megascans/3D_Assets/CoalA/SM_CoalA.SM_CoalA"), false);
+		AddThing(TEXT("EmptyBucket"), TEXT("Wooden Bucket"), 2.f, FVector(0.3, 0.3, 0.32), TEXT("/Game/Megascans/3D_Assets/OldWoodenBucketB/SM_OldWoodenBucketB.SM_OldWoodenBucketB"), true);
+		AddThing(TEXT("MetalPot"), TEXT("Iron Pot"), 2.4f, FVector(0.28, 0.28, 0.2), TEXT("/Game/Megascans/3D_Assets/OldMetalPotA/SM_OldMetalPotA.SM_OldMetalPotA"), false);
+		AddThing(TEXT("Shovel"), TEXT("Old Shovel"), 1.8f, FVector(1.1, 0.2, 0.05), TEXT("/Game/Megascans/3D_Assets/OldShovel/SM_OldShovel.SM_OldShovel"), false);
+		AddThing(TEXT("Tongs"), TEXT("Smith's Tongs"), 1.2f, FVector(0.5, 0.08, 0.04), TEXT("/Game/Megascans/3D_Assets/BlacksmithTongs/SM_BlacksmithTongs.SM_BlacksmithTongs"), false);
+
 		const auto SetMesh = [&Definitions](const TCHAR* Id, const TCHAR* Mesh)
 		{
 			for (FAedirItemDef& Item : Definitions)
@@ -198,6 +216,14 @@ namespace
 		Shrink(TEXT("Warhammer"), 0.82f);
 		Shrink(TEXT("Club"), 0.9f);
 		Shrink(TEXT("Halberd"), 0.92f);
+		// The great axe model stands for a halberd: a real one is a slim shaft with a narrow head.
+		for (FAedirItemDef& Item : Definitions)
+		{
+			if (Item.Id == FName(TEXT("Halberd")))
+			{
+				Item.ModelThickShare = 0.5f;
+			}
+		}
 
 		return Definitions;
 	}

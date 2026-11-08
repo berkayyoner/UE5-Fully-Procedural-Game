@@ -68,11 +68,16 @@ class AEDIR_API AAedirNpc : public AAedirCreature
 public:
 	AAedirNpc(const FObjectInitializer& ObjectInitializer);
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Npc")
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
 	EAedirNpcRole Role_Npc = EAedirNpcRole::Neutral;
 
-	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Npc")
+	// A placed NPC with a name takes its role, biography and weapon from these when the game starts.
+	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
 	FText NpcName;
+
+	// The catalog id of the weapon they carry from the start, or none.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
+	FName StartWeapon;
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Npc")
 	EAedirNpcOrder Order = EAedirNpcOrder::Routine;
@@ -84,6 +89,7 @@ public:
 	TArray<FAedirNpcRelationship> Relationships;
 
 	// Who they are, what they say about themselves.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc", meta=(MultiLine=true))
 	FText Biography;
 
 	virtual void BeginPlay() override;

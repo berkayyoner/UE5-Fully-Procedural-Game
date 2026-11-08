@@ -354,6 +354,9 @@ public:
 	// How firmly the wrist keeps its angle: in a fight the arm does the moving, in a thrust the blade lies along the forearm.
 	float GetWristFirmShare(EAedirHand Hand) const;
 
+	// How far the arm alone aims the weapon, the wrist held at one angle: all of it in a fight with a blade in hand.
+	float GetArmLedShare(EAedirHand Hand) const;
+
 	// The angle between the forearm and a weapon that only hangs from the hand.
 	float GetHangWristDegrees(EAedirHand Hand) const;
 
@@ -597,6 +600,7 @@ private:
 	TObjectPtr<AAedirCreature> AIGrudge;
 	double AIGrudgeUntil = 0.0;
 	int32 AIStrikePhase = 0;
+	bool bAITargetDown = false;
 	float AIStrikeTimer = 0.f;
 	FVector2D AIStrikeEnd = FVector2D::ZeroVector;
 

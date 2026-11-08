@@ -53,6 +53,19 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> SplashMaterial;
 
+	// The droplets a drop breaks into on the ground: two or three that hop up and fall back.
+	UPROPERTY(Transient)
+	TObjectPtr<UInstancedStaticMeshComponent> DropletMesh;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> DropletMaterial;
+
+	FFall Droplets;
+	TArray<float> DropletFloor;
+	int32 NextDroplet = 0;
+	void LaunchDroplets(const FVector& Where);
+	void StepDroplets(float DeltaTime, const FVector& Eye);
+
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> RainMaterial;
 

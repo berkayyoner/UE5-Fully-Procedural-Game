@@ -83,9 +83,29 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	}
 }
 
+void AAedirCreature::ApplyBodyMask()
+{
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		Body->BodyInstance.SetMaskFilter(BodyMaskBit);
+		for (FBodyInstance* Part : Body->Bodies)
+		{
+			if (Part)
+			{
+				Part->SetMaskFilter(BodyMaskBit);
+			}
+		}
+	}
+}
+
 void AAedirCreature::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// The player's body has a bit of its own; the others share four, so a weapon can tell its own body from anyone else's.
+	static uint8 NextCreatureBit = 0;
+	BodyMaskBit = IsPlayerControlled() ? 1 : static_cast<uint8>(1 << (1 + NextCreatureBit++ % 4));
+	ApplyBodyMask();
 
 	if (Stats)
 	{

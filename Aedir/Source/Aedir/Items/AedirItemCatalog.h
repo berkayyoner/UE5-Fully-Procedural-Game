@@ -74,6 +74,13 @@ struct AEDIR_API FAedirItemDef
 	// The model's top is the working end, as on an axe standing on its handle. Swords stand on their point instead.
 	bool bModelTopForward = false;
 
+	// The model stands as it was made, open side up, instead of being laid along its longest side: a bucket, a pot.
+	bool bStandsUpright = false;
+
+	// How thick the model is made against how long, as a share of its own proportions: below 1 a stout model is slimmed
+	// to the shaft of the real weapon.
+	float ModelThickShare = 1.f;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	FLinearColor Color = FLinearColor::Gray;
 

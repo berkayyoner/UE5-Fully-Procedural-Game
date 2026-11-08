@@ -74,8 +74,19 @@ private:
 	void ApplySceneLighting(const FAedirWeatherProfile& Profile);
 	void UpdateSurfaceCoupling(const FAedirWeatherProfile& Profile, float DeltaSeconds);
 
+	// The volumetric clouds follow the weather: how much of the sky they cover, how thick and how dark.
+	void ApplyClouds(const FAedirWeatherProfile& Profile);
+
 	UFUNCTION()
 	void OnRep_Weather();
+
+	TWeakObjectPtr<class UVolumetricCloudComponent> CloudComponent;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> CloudMaterial;
+
+	float AppliedCloudCover = -100.f;
+	float AppliedCloudStorm = -100.f;
 
 	TWeakObjectPtr<ADirectionalLight> SunLight;
 	TWeakObjectPtr<AExponentialHeightFog> HeightFog;

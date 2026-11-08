@@ -112,6 +112,7 @@ void AAedirItemActor::AttachToCreatureHand(AAedirCreature* Creature, EAedirHand 
 	Holder = Creature;
 	HeldHand = Hand;
 	bHolstered = false;
+	ApplyHeldCollision(Creature);
 }
 
 void AAedirItemActor::SettleIntoCreatureHand(AAedirCreature* Creature, EAedirHand Hand)
@@ -450,6 +451,10 @@ bool AAedirItemActor::IsPickable(const AAedirItemActor* Item)
 void AAedirItemActor::OnRep_Holder()
 {
 	SetFreePhysics(Holder == nullptr);
+	if (Holder && IsHeld())
+	{
+		ApplyHeldCollision(Holder);
+	}
 }
 
 void AAedirItemActor::OnRep_Stowed()
@@ -496,6 +501,16 @@ void AAedirItemActor::AttachToWornBone(AAedirCreature* Creature)
 	ApplyWornLook();
 }
 
+void AAedirItemActor::TakeOff()
+{
+	if (!HasAuthority() || !bWorn)
+	{
+		return;
+	}
+	bWorn = false;
+	ClearWornLook();
+}
+
 void AAedirItemActor::SetFreePhysics(bool bFree)
 {
 	if (!Mesh)
@@ -505,6 +520,31 @@ void AAedirItemActor::SetFreePhysics(bool bFree)
 
 	Mesh->SetCollisionEnabled(bFree ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
 	Mesh->SetSimulatePhysics(bFree);
+	if (bHeldCollision)
+	{
+		bHeldCollision = false;
+		Mesh->SetCollisionResponseToChannel(ECC_Pawn, FreePawnResponse);
+		Mesh->BodyInstance.SetMaskFilter(0);
+	}
+}
+
+void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
+{
+	if (!Mesh || !Creature || bWorn || bHolstered || bStowed)
+	{
+		return;
+	}
+	// In the hand it is solid but moved by the hand, not by its own weight: it shoves loose things and the limbs of others
+	// out of its way. It passes the body that holds it, and the standing bodies' capsules, which only the blow itself reaches.
+	if (!bHeldCollision)
+	{
+		FreePawnResponse = Mesh->GetCollisionResponseToChannel(ECC_Pawn);
+	}
+	bHeldCollision = true;
+	Mesh->SetSimulatePhysics(false);
+	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	Mesh->BodyInstance.SetMaskFilter(Creature->GetBodyMaskBit());
 }
 
 void AAedirItemActor::ApplyItemMass()

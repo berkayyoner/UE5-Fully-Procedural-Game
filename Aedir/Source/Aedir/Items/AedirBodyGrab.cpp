@@ -1,4 +1,4 @@
-﻿#include "Items/AedirInteractionComponent.h"
+#include "Items/AedirInteractionComponent.h"
 
 #include "Aedir.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -23,7 +23,7 @@ namespace
 	constexpr float BodyGrabWideHeightCm = -40.f;
 	constexpr float BodyGrabWideRadiusCm = 140.f;
 	// The hand pulls the part to itself and the part pulls back with all its weight; a strong arm pulls harder.
-	constexpr float BodyGrabStiffnessBase = 20000.f;
+	constexpr float BodyGrabStiffnessBase = 40000.f;
 	constexpr float BodyGrabStiffnessPerStrength = 400.f;
 	constexpr float BodyGrabDampingShare = 0.08f;
 	constexpr float BodyGrabTearCm = 100.f;
@@ -31,8 +31,9 @@ namespace
 	constexpr float BodyGrabTearSeconds = 0.35f;
 	constexpr float BodyGrabCloseCm = 22.f;
 	constexpr float BodyGrabReachSeconds = 2.f;
-	constexpr float BodyGrabForceBaseN = 220.f;
-	constexpr float BodyGrabForcePerStrengthN = 6.f;
+	// A grown man drags a body of his own weight over grass, about 400 N of friction, at a walk; a strong one easily.
+	constexpr float BodyGrabForceBaseN = 520.f;
+	constexpr float BodyGrabForcePerStrengthN = 14.f;
 	constexpr float BodyGrabAimRangeCm = 230.f;
 	constexpr float BodyGrabAimRadiusCm = 20.f;
 }

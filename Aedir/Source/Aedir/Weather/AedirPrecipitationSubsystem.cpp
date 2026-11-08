@@ -43,6 +43,18 @@ namespace
 	constexpr float PrecipSplashStrength = 0.45f;
 	const FLinearColor PrecipSplashColor(0.7f, 0.74f, 0.8f);
 	constexpr float PrecipSnowStrength = 0.9f;
+	// Droplets thrown up where a drop lands: how many, how fast out and up (cm/s), how big, and within what distance of the
+	// eye they are thrown at all.
+	constexpr int32 PrecipDropletsMin = 2;
+	constexpr int32 PrecipDropletsMax = 3;
+	constexpr float PrecipDropletOutMin = 25.f;
+	constexpr float PrecipDropletOutMax = 70.f;
+	constexpr float PrecipDropletUpMin = 70.f;
+	constexpr float PrecipDropletUpMax = 140.f;
+	constexpr float PrecipDropletGravity = 980.f;
+	constexpr float PrecipDropletSizeCm = 0.7f;
+	constexpr float PrecipDropletRadiusCm = 600.f;
+	constexpr float PrecipDropletStrength = 0.6f;
 }
 
 TStatId UAedirPrecipitationSubsystem::GetStatId() const
@@ -102,6 +114,62 @@ void UAedirPrecipitationSubsystem::EnsureMeshes()
 	SplashPlaces.SetNumZeroed(PrecipSplashCount);
 	SplashAges.Init(PrecipSplashLife, PrecipSplashCount);
 	SplashTransforms = MoveTemp(SplashFall.Transforms);
+	Make(DropletMesh, DropletMaterial, Droplets, PrecipSplashCount * PrecipDropletsMax, PrecipSplashColor);
+	DropletFloor.Init(BIG_NUMBER, PrecipSplashCount * PrecipDropletsMax);
+}
+
+void UAedirPrecipitationSubsystem::LaunchDroplets(const FVector& Where)
+{
+	const int32 Count = Random.RandRange(PrecipDropletsMin, PrecipDropletsMax);
+	for (int32 One = 0; One < Count; ++One)
+	{
+		const int32 Index = NextDroplet;
+		NextDroplet = (NextDroplet + 1) % Droplets.Positions.Num();
+		const FVector Out = FRotator(0.f, Random.FRandRange(0.f, 360.f), 0.f).Vector() * Random.FRandRange(PrecipDropletOutMin, PrecipDropletOutMax);
+		Droplets.Positions[Index] = Where;
+		Droplets.Velocities[Index] = Out + FVector(0.f, 0.f, Random.FRandRange(PrecipDropletUpMin, PrecipDropletUpMax));
+		DropletFloor[Index] = static_cast<float>(Where.Z);
+	}
+}
+
+void UAedirPrecipitationSubsystem::StepDroplets(float DeltaTime, const FVector& Eye)
+{
+	bool bAny = false;
+	for (int32 Index = 0; Index < Droplets.Positions.Num(); ++Index)
+	{
+		FVector& Where = Droplets.Positions[Index];
+		FVector& Velocity = Droplets.Velocities[Index];
+		if (DropletFloor[Index] >= BIG_NUMBER)
+		{
+			Droplets.Transforms[Index].SetScale3D(FVector(0.f));
+			continue;
+		}
+		Velocity.Z -= PrecipDropletGravity * DeltaTime;
+		Where += Velocity * DeltaTime;
+		// Back on the ground it is gone.
+		if (Where.Z < DropletFloor[Index] && Velocity.Z < 0.f)
+		{
+			DropletFloor[Index] = BIG_NUMBER;
+			Droplets.Transforms[Index].SetScale3D(FVector(0.f));
+			continue;
+		}
+		bAny = true;
+		const FVector ToEye = (Eye - Where).GetSafeNormal();
+		const FVector Along = Velocity.GetSafeNormal();
+		// Stretched a little along the way it flies, as a quick drop looks.
+		const float Length = PrecipDropletSizeCm * (1.f + FMath::Min(static_cast<float>(Velocity.Size()) / 300.f, 1.5f));
+		Droplets.Transforms[Index] = FTransform(FRotationMatrix::MakeFromXZ(Along.IsNearlyZero() ? FVector::UpVector : Along, ToEye).ToQuat(), Where, FVector(Length / PrecipPlaneCm, PrecipDropletSizeCm / PrecipPlaneCm, 1.f));
+	}
+	if (DropletMesh->IsVisible() != bAny)
+	{
+		DropletMesh->SetVisibility(bAny);
+	}
+	if (bAny || Droplets.Active > 0)
+	{
+		DropletMesh->BatchUpdateInstancesTransforms(0, Droplets.Transforms, true, true, true);
+		DropletMaterial->SetScalarParameterValue(TEXT("Strength"), PrecipDropletStrength);
+	}
+	Droplets.Active = bAny ? 1 : 0;
 }
 
 void UAedirPrecipitationSubsystem::Spawn(FFall& Fall, int32 Index, const FVector& Center, bool bAnyHeight, const FVector& Wind, float FallSpeed, float Sideways)
@@ -190,6 +258,11 @@ void UAedirPrecipitationSubsystem::StepSplashes(float DeltaTime, const FVector& 
 			SplashPlaces[NextSplash] = Hit.ImpactPoint + FVector(0.f, 0.f, 0.5f);
 			SplashAges[NextSplash] = 0.f;
 			NextSplash = (NextSplash + 1) % PrecipSplashCount;
+			// Close by, where it can be seen, the drop also breaks into a few that hop up and fall back.
+			if (Distance < PrecipDropletRadiusCm)
+			{
+				LaunchDroplets(Hit.ImpactPoint + FVector(0.f, 0.f, 1.f));
+			}
 		}
 	}
 
@@ -253,6 +326,7 @@ void UAedirPrecipitationSubsystem::Tick(float DeltaTime)
 	Step(Rain, RainMesh, RainMaterial, WantedRain, DeltaTime, Eye, Wind, PrecipRainSpeed, PrecipRainSideways, PrecipRainSize, true);
 	Step(Snow, SnowMesh, SnowMaterial, WantedSnow, DeltaTime, Eye, Wind * 0.6f, PrecipSnowSpeed, PrecipSnowSideways, PrecipSnowSize, false);
 	StepSplashes(DeltaTime, Eye);
+	StepDroplets(DeltaTime, Eye);
 	RainMaterial->SetScalarParameterValue(TEXT("Strength"), PrecipRainStrength);
 	SnowMaterial->SetScalarParameterValue(TEXT("Strength"), PrecipSnowStrength);
 }

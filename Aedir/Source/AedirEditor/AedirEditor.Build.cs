@@ -1,4 +1,4 @@
-﻿using UnrealBuildTool;
+using UnrealBuildTool;
 
 public class AedirEditor : ModuleRules
 {
@@ -15,6 +15,7 @@ public class AedirEditor : ModuleRules
 			"UnrealEd",
 			"MaterialEditor",
 			"RHI",
+			"RenderCore",
 			"AssetRegistry",
 			"AssetTools",
 			"EditorSubsystem",

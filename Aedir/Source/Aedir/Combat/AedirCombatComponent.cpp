@@ -383,6 +383,9 @@ namespace
 	constexpr float AedirAIWindupSeconds = 0.4f;
 	constexpr float AedirAIStrikeSeconds = 0.35f;
 	constexpr float AedirAIRecoverSeconds = 0.35f;
+	// One on the ground is struck down at this steeply, from as close as this, bent over it.
+	constexpr float AedirAIGroundStrikePitch = -70.f;
+	constexpr float AedirAIStoopCm = 200.f;
 	constexpr float AedirAIGrudgeSeconds = 25.f;
 	constexpr float AedirAIContactRange = 110.f;
 	constexpr float AedirAIShoveChance = 0.12f;
@@ -1410,6 +1413,18 @@ float UAedirCombatComponent::GetWristFirmShare(EAedirHand Hand) const
 	return IsWeaponStance(Hand) && !bThrustMode && !(bTwoHandGrip && IsPolearm(GetHeldItem(Hand))) ? GetFightShare() * (1.f - AedirHalfSwordWristLoose * GetHalfSwordShare()) : 0.f;
 }
 
+float UAedirCombatComponent::GetArmLedShare(EAedirHand Hand) const
+{
+	// A blade swung in one hand, or by the carrying hand of two, is pointed by the arm. A thrust lays it along the forearm
+	// and a long shaft is steered by both hands, so those keep their own wrists.
+	const AAedirItemActor* Item = GetHeldItem(Hand);
+	if (!Item || !IsWeaponStance(Hand) || IsSecondaryGripHand(Hand) || bThrustMode || (bTwoHandGrip && IsPolearm(Item)) || GetArm(Hand).bScriptedControl)
+	{
+		return 0.f;
+	}
+	return GetFightShare() * (1.f - GetHalfSwordShare());
+}
+
 float UAedirCombatComponent::GetHangWristDegrees(EAedirHand Hand) const
 {
 	const FVector Carried = ComputeCarriedDir(Hand);
@@ -1483,7 +1498,9 @@ void UAedirCombatComponent::UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& 
 		}
 	}
 
-	if (Arm.WeaponDir.IsNearlyZero())
+	// In a fight the arm points the blade and the wrist does not give: the weight of the weapon is already in how slowly
+	// the arm comes round, so the blade goes where the arm takes it and nowhere else.
+	if (Arm.WeaponDir.IsNearlyZero() || GetArmLedShare(Hand) > 0.f)
 	{
 		Arm.WeaponDir = Target;
 		Arm.WeaponDirSpeed = FVector::ZeroVector;
@@ -2817,8 +2834,19 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	}
 
 	const FVector OwnerLocation = Creature->GetActorLocation();
-	const FVector TargetLocation = AITarget->GetActorLocation();
+	// One who is down lies where the hips are, not where it stood; it is closed on and struck at down there, bent over it.
+	bAITargetDown = AITarget->Balance && (AITarget->Balance->IsRagdoll() || AITarget->Balance->IsGettingUp());
+	const FVector TargetLocation = bAITargetDown && AITarget->GetMesh() ? AITarget->GetMesh()->GetBoneLocation(TEXT("pelvis")) : AITarget->GetActorLocation();
 	const float Distance = static_cast<float>(FVector::Dist2D(OwnerLocation, TargetLocation));
+	const bool bStoop = bAITargetDown && Distance < AedirAIStoopCm * static_cast<float>(Creature->GetActorScale3D().X);
+	if (bStoop && !Creature->bIsCrouched && Creature->CanCrouch())
+	{
+		Creature->Crouch();
+	}
+	else if (!bStoop && Creature->bIsCrouched)
+	{
+		Creature->UnCrouch();
+	}
 
 	const float FacingYaw = static_cast<float>((TargetLocation - OwnerLocation).Rotation().Yaw);
 
@@ -2965,10 +2993,37 @@ bool UAedirCombatComponent::UpdateAIWeaponStrike(EAedirHand Hand, float Distance
 		}
 		else if (Distance <= Reach && AIStrikeTimer >= AIAttackInterval)
 		{
-			const int32 Style = FMath::RandRange(0, 2);
+			// Blows come from every side and height: across at the body or low at the legs, down on a slant, rising from below,
+			// straight down from overhead. One lying on the ground is struck down at from over it.
 			const float Side = FMath::RandBool() ? 1.f : -1.f;
-			Arm.AimOffsetDeg = Style == 2 ? FVector2D(0.f, AedirWeaponRaiseFullDegrees) : FVector2D(Side * 85.f, 15.f);
-			AIStrikeEnd = Style == 2 ? FVector2D(0.f, -25.f) : FVector2D(-Side * 70.f, 0.f);
+			const int32 Style = bAITargetDown ? -1 : FMath::RandRange(0, 5);
+			switch (Style)
+			{
+			case -1:
+				Arm.AimOffsetDeg = FVector2D(Side * 15.f, AedirWeaponRaiseFullDegrees);
+				AIStrikeEnd = FVector2D(0.f, AedirAIGroundStrikePitch);
+				break;
+			case 0:
+				Arm.AimOffsetDeg = FVector2D(Side * 85.f, 15.f);
+				AIStrikeEnd = FVector2D(-Side * 70.f, 0.f);
+				break;
+			case 1:
+				Arm.AimOffsetDeg = FVector2D(Side * 80.f, -15.f);
+				AIStrikeEnd = FVector2D(-Side * 60.f, -30.f);
+				break;
+			case 2:
+				Arm.AimOffsetDeg = FVector2D(Side * 70.f, 50.f);
+				AIStrikeEnd = FVector2D(-Side * 50.f, -35.f);
+				break;
+			case 3:
+				Arm.AimOffsetDeg = FVector2D(Side * 65.f, -30.f);
+				AIStrikeEnd = FVector2D(-Side * 45.f, 45.f);
+				break;
+			default:
+				Arm.AimOffsetDeg = FVector2D(Side * 10.f, AedirWeaponRaiseFullDegrees);
+				AIStrikeEnd = FVector2D(-Side * 5.f, -25.f);
+				break;
+			}
 			AIStrikePhase = 1;
 			AIStrikeTimer = 0.f;
 		}

@@ -1,4 +1,5 @@
-﻿#include "Game/AedirWorldDirector.h"
+#include "Game/AedirWorldDirector.h"
+#include "Game/AedirClasses.h"
 
 #include "Engine/CollisionProfile.h"
 
@@ -83,26 +84,24 @@ namespace
 	{
 		// Facing away from the middle of the map, so the three of them have their backs to each other.
 		const float Yaw = static_cast<float>((Ground - LookFrom).Rotation().Yaw);
-		FActorSpawnParameters Params;
-		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-		AAedirNpc* Npc = World->SpawnActor<AAedirNpc>(AAedirNpc::StaticClass(), Ground + FVector(0.f, 0.f, 100.f), FRotator(0.f, Yaw, 0.f), Params);
+		// Set up the way one placed in the editor is: the NPC takes who it is and its weapon from these as it begins play.
+		const FTransform Where(FRotator(0.f, Yaw, 0.f), Ground + FVector(0.f, 0.f, 100.f));
+		AAedirNpc* Npc = World->SpawnActorDeferred<AAedirNpc>(AedirClasses::Find<AAedirNpc>(TEXT("BP_AedirNpc")), Where, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
 		if (!Npc)
 		{
 			return nullptr;
 		}
-
-		Npc->InitNpc(Role, Name, Biography);
-		Npc->SetHome(Npc->GetActorLocation(), Yaw);
-		if (WeaponId && Npc->Interaction)
+		Npc->Role_Npc = Role;
+		Npc->NpcName = Name;
+		Npc->Biography = Biography;
+		Npc->StartWeapon = WeaponId ? FName(WeaponId) : NAME_None;
+		Npc->FinishSpawning(Where);
+#if WITH_EDITOR
+		if (!World->IsGameWorld())
 		{
-			if (AAedirCatalogItem* Weapon = AAedirCatalogItem::SpawnCatalogItem(World, FName(WeaponId), FTransform(Npc->GetActorLocation() + FVector(0.f, 0.f, 80.f))))
-			{
-				if (!Npc->Interaction->HolsterImmediate(0, Weapon))
-				{
-					Npc->Interaction->EquipImmediate(EAedirHand::Right, Weapon);
-				}
-			}
+			Npc->SetActorLabel(Name.ToString());
 		}
+#endif
 		UE_LOG(LogAedir, Log, TEXT("Placed %s at %s, facing %.0f"), *Name.ToString(), *Ground.ToString(), Yaw);
 		return Npc;
 	}
@@ -192,7 +191,7 @@ void AedirWorldDirector::PopulateTestMap(UWorld* World)
 			Foliage->PlantMeadow(Ground, DirectorMeadowHalfCm, DirectorMeadowDensity, DirectorMeadowSeed);
 			Foliage->PlantTrees(Ground, DirectorTreesInnerCm, DirectorTreesOuterCm, DirectorTreeCount, DirectorMeadowSeed);
 		}
-		World->SpawnActor<AAedirTrainingDummy>(AAedirTrainingDummy::StaticClass(), Ground, FRotator::ZeroRotator);
+		World->SpawnActor<AAedirTrainingDummy>(AedirClasses::Find<AAedirTrainingDummy>(TEXT("BP_AedirTrainingDummy")), Ground, FRotator::ZeroRotator);
 		for (const FDirectorDecor& Decor : DirectorYard)
 		{
 			UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, Decor.Path);
@@ -261,6 +260,12 @@ namespace
 		Prop->SetActorScale3D(FVector(Scale));
 		Prop->GetStaticMeshComponent()->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
 		AedirScannedMaterial::Apply(Prop->GetStaticMeshComponent(), AedirScannedMaterial::FolderOfPath(FString(DirectorScanned) + Name + TEXT("/")));
+#if WITH_EDITOR
+		if (!World->IsGameWorld())
+		{
+			Prop->SetActorLabel(Name);
+		}
+#endif
 		return Prop;
 	}
 
@@ -273,7 +278,15 @@ namespace
 	// Lays a catalog item down at a point, lying along a yaw.
 	void DirectorLayItem(UWorld* World, const TCHAR* Id, const FVector& Where, float Yaw)
 	{
-		AAedirCatalogItem::SpawnCatalogItem(World, FName(Id), FTransform(FRotator(0.f, Yaw, 0.f), Where));
+		AAedirCatalogItem* Item = AAedirCatalogItem::SpawnCatalogItem(World, FName(Id), FTransform(FRotator(0.f, Yaw, 0.f), Where));
+#if WITH_EDITOR
+		if (Item && !World->IsGameWorld())
+		{
+			Item->SetActorLabel(FString(TEXT("Item_")) + Id);
+		}
+#else
+		(void)Item;
+#endif
 	}
 }
 
@@ -283,7 +296,19 @@ void AedirWorldDirector::PopulateNatureMap(UWorld* World)
 	{
 		return;
 	}
+	// A level that was laid out in the editor keeps what was placed there, as it was edited.
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if (It->ActorHasTag(LaidOutTag))
+		{
+			return;
+		}
+	}
+	LayOutNatureMap(World);
+}
 
+void AedirWorldDirector::LayOutNatureMap(UWorld* World)
+{
 	FVector Start = FVector::ZeroVector;
 	FRotator Facing = FRotator::ZeroRotator;
 	for (TActorIterator<APlayerStart> It(World); It; ++It)
@@ -347,18 +372,18 @@ void AedirWorldDirector::PopulateNatureMap(UWorld* World)
 	DirectorLayItem(World, TEXT("LeatherArmor"), At(300.f, -720.f) + FVector(0.f, 0.f, 40.f), Flat.Yaw);
 	DirectorPlaceProp(World, TEXT("BarrelOnStand"), At(800.f, 520.f), Random.FRandRange(0.f, 360.f));
 	DirectorPlaceProp(World, TEXT("OldWoodenTrough"), At(900.f, 120.f), Flat.Yaw + 75.f);
-	DirectorPlaceProp(World, TEXT("OldWoodenBucketA"), At(860.f, 30.f), 0.f);
+	DirectorLayItem(World, TEXT("Bucket"), At(860.f, 30.f) + FVector(0.f, 0.f, 60.f), 0.f);
 	DirectorPlaceProp(World, TEXT("OldWoodenChest"), At(520.f, -180.f), Flat.Yaw + 100.f);
-	DirectorPlaceProp(World, TEXT("PileOfChains"), At(300.f, -450.f), 30.f);
+	DirectorLayItem(World, TEXT("Chains"), At(300.f, -450.f) + FVector(0.f, 0.f, 60.f), 30.f);
 	DirectorPlaceProp(World, TEXT("BlacksmithAnvilA"), At(150.f, -800.f), Flat.Yaw + 20.f);
-	DirectorPlaceProp(World, TEXT("CoalA"), At(60.f, -880.f), 0.f);
+	DirectorLayItem(World, TEXT("Coal"), At(60.f, -880.f) + FVector(0.f, 0.f, 60.f), 0.f);
 	DirectorPlaceProp(World, TEXT("HorseHitchingPost"), At(1000.f, -200.f), Flat.Yaw + 90.f);
 
 	// The pell to try blows on.
 	FVector Pell;
 	if (DirectorGroundUnder(World, At(300.f, 650.f), Pell))
 	{
-		World->SpawnActor<AAedirTrainingDummy>(AAedirTrainingDummy::StaticClass(), Pell, FRotator::ZeroRotator);
+		World->SpawnActor<AAedirTrainingDummy>(AedirClasses::Find<AAedirTrainingDummy>(TEXT("BP_AedirTrainingDummy")), Pell, FRotator::ZeroRotator);
 	}
 
 	// People: the keeper of the camp and a sellsword at hand, two villagers who talk, and cutthroats out on the hill.

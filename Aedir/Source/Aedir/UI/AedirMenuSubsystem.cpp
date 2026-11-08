@@ -7,6 +7,7 @@
 #include "Creature/AedirCreature.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "EngineUtils.h"
 #include "Npc/AedirNpc.h"
 #include "Weather/AedirWeatherManager.h"
@@ -33,8 +34,10 @@ namespace
 	constexpr float DialogueCameraUpCm = 6.f;
 	constexpr float DialogueCameraFov = 55.f;
 	constexpr float DialogueCameraBlendSeconds = 0.45f;
-	constexpr float DialogueCameraAimRightCm = 55.f;
-	constexpr float DialogueCameraAimDownCm = 8.f;
+	// The aim falls a little below the face, so the face sits a little above the middle of the screen, as in Skyrim.
+	constexpr float DialogueCameraAimDownCm = 6.f;
+	// The head bone sits at the base of the skull; the face is this much above it.
+	constexpr float DialogueFaceAboveHeadCm = 7.f;
 	constexpr int32 MenuInventoryCategory = 0;
 	constexpr int32 MenuMagicCategory = 1;
 	constexpr int32 MenuSkillsCategory = 2;
@@ -220,13 +223,15 @@ void UAedirMenuSubsystem::OpenDialogue(AAedirNpc* Npc)
 		FreezeWorldFor(Npc, Player);
 
 		// As in Skyrim the view comes in over the shoulder onto the face of the one spoken to.
-		const FVector NpcFace = Npc->GetPawnViewLocation();
+		// The face itself, wherever the head is, not where the eyes would be on a body of standard height.
+		const USkeletalMeshComponent* NpcBody = Npc->GetMesh();
+		const FVector NpcFace = NpcBody && NpcBody->GetBoneIndex(TEXT("head")) != INDEX_NONE ? NpcBody->GetBoneLocation(TEXT("head")) + FVector(0.f, 0.f, DialogueFaceAboveHeadCm) : Npc->GetPawnViewLocation();
 		const FVector Mine = Player->GetPawnViewLocation();
 		const FVector Facing = (NpcFace - Mine).GetSafeNormal2D();
 		const FVector Side = FVector::CrossProduct(FVector::UpVector, Facing);
 		const FVector CameraAt = Mine - Facing * DialogueCameraBackCm + Side * DialogueCameraSideCm + FVector(0.f, 0.f, DialogueCameraUpCm);
-		// The face sits left of the middle, clear of the topics on the right.
-		const FVector LookAt = NpcFace + Side * DialogueCameraAimRightCm - FVector(0.f, 0.f, DialogueCameraAimDownCm);
+		// The face sits in the middle of the view, a little above it, as in Skyrim.
+		const FVector LookAt = NpcFace - FVector(0.f, 0.f, DialogueCameraAimDownCm);
 		if (ACameraActor* Camera = GetWorld()->SpawnActor<ACameraActor>(CameraAt, (LookAt - CameraAt).Rotation()))
 		{
 			Camera->GetCameraComponent()->SetFieldOfView(DialogueCameraFov);

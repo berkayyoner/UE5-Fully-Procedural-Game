@@ -63,6 +63,12 @@ public:
 	virtual void BeginPlay() override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	uint8 BodyMaskBit = 0;
+
+	// The collision mask the body and what it holds share, so its own weapon and fists pass through it.
+	uint8 GetBodyMaskBit() const { return BodyMaskBit; }
+	void ApplyBodyMask();
+
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category="Aedir|Groups")
 	void SetGroupId(FName NewGroupId);
 

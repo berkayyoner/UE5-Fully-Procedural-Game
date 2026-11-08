@@ -33,6 +33,9 @@ public:
 	static AAedirCatalogItem* SpawnCatalogItem(UWorld* World, FName Id, const FTransform& Transform);
 
 	virtual void BeginPlay() override;
+
+	// In the editor the item shows as it will in the game, so it can be placed by eye.
+	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	// Armor is worn on the server. Every other item uses the base behaviour.
@@ -69,7 +72,14 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class USkeletalMeshComponent> WornMesh;
 
+	// A piece of armour lying on the ground: its worn model laid out on its back, a pair side by side, instead of a box.
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<class UPoseableMeshComponent>> LaidPieces;
+
+	bool BuildLaidArmour(const FAedirItemDef& Def);
+
 	virtual void ApplyWornLook() override;
+	virtual void ClearWornLook() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	FName AppliedCatalogId = NAME_None;

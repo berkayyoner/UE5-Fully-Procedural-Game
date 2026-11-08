@@ -47,6 +47,8 @@ struct FAedirMenuRow
 	bool bIsHand = false;
 	// Inventory only: true for a backpack entry (Index is the backpack index).
 	bool bIsBackpack = false;
+	// Inventory only: true for a piece of armour being worn (Index is its place among the worn items).
+	bool bIsWorn = false;
 	// Hand index, waist slot, skill enum value or marker index depending on the category.
 	int32 Index = INDEX_NONE;
 	FName QuestId;
@@ -54,7 +56,7 @@ struct FAedirMenuRow
 	bool operator==(const FAedirMenuRow& Other) const
 	{
 		return Name == Other.Name && Value == Other.Value && SubText == Other.SubText && bDimmed == Other.bDimmed
-			&& bIsHand == Other.bIsHand && bIsBackpack == Other.bIsBackpack && Index == Other.Index && QuestId == Other.QuestId;
+			&& bIsHand == Other.bIsHand && bIsBackpack == Other.bIsBackpack && bIsWorn == Other.bIsWorn && Index == Other.Index && QuestId == Other.QuestId;
 	}
 };
 

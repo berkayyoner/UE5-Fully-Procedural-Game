@@ -78,7 +78,7 @@ public:
 	float ReachSpeed = 160.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
-	float ReachTimeout = 4.f;
+	float ReachTimeout = 1.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	float UseHoldTime = 0.4f;
@@ -109,6 +109,7 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void StartReachForItem(EAedirHand Hand, AAedirItemActor* Item);
+
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void CancelReach(EAedirHand Hand);
@@ -235,6 +236,12 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void DropFromWaist(int32 SlotIndex);
 
+	// Takes off a worn piece of armour, by its place among the worn items, and puts it in the backpack.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
+	void TakeOffWorn(int32 WornIndex);
+
+	TArray<AAedirItemActor*> GetWornItemsCopy() const;
+
 	// Entries keep their backpack index, destroyed items show up as null.
 	TArray<AAedirItemActor*> GetBackpackItemsCopy() const;
 
@@ -339,11 +346,17 @@ private:
 	UFUNCTION(Server, Reliable)
 	void ServerDropFromWaist(int32 SlotIndex);
 
+	UFUNCTION(Server, Reliable)
+	void ServerTakeOffWorn(int32 WornIndex);
+
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirItemActor> HighlightedItem;
 
 	float HighlightTimer = 0.f;
 	float ReachBlend[2] = { 0.f, 0.f };
+	// How close each reaching hand has come to its target, and how long it has gone without coming closer.
+	float ReachBestGap[2] = { 0.f, 0.f };
+	float ReachStallSeconds[2] = { 0.f, 0.f };
 	FVector ReachTargetCache[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	float PelvisLowerZ = 0.f;
 	float ReachLeanDegrees = 0.f;

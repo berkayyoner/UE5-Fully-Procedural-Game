@@ -83,7 +83,7 @@ public:
 	float GetUpBalanceThreshold = 0.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float MinRagdollSeconds = 2.f;
+	float MinRagdollSeconds = 2.5f;
 
 	// Muscles per part of the body, at full strength.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
@@ -115,7 +115,7 @@ public:
 	float RagdollMotorShare = 0.04f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float WallImpactSpeedThreshold = 300.f;
+	float WallImpactSpeedThreshold = 230.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float ObjectImpactMassSpeedThreshold = 2000.f;
@@ -205,6 +205,13 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	bool IsStaggering() const;
 
+	// While a body that was down gets back on its feet: how much of the way it still has to come, 1 just off the ground.
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
+	float GetGetUpShare() const;
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
+	bool IsGettingUp() const { return GetUpLeft > 0.f; }
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	bool IsDazed() const;
 
@@ -254,6 +261,16 @@ private:
 	void ApplyRagdollPhysics(bool bRagdoll);
 	void ApplyBodyContacts(bool bRagdoll);
 	void ApplyLegPhysics(bool bRagdoll);
+	void UpdateGetUp(float DeltaTime);
+	void BumpInto(class AAedirCreature* Other, const FHitResult& Hit);
+	void ApplyGetUpPose();
+	float GetUpLeft = 0.f;
+	float GetUpTotal = 0.f;
+	float GetUpDropCm = 0.f;
+	// How the body was moving the frame before, since by the time a hit is reported the movement has already stopped it.
+	FVector LastVelocity = FVector::ZeroVector;
+	// When this body last ran into another, so one shove is not counted on every frame of the contact.
+	double LastBumpTime = -100.0;
 	bool bLegLost = false;
 	void ReshapeBodyPhysics();
 	float PhysicsShapeScale = 0.f;

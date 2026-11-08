@@ -350,6 +350,10 @@ void AAedirPlayerCharacter::HandleMouseX(float Value)
 	const FAedirGameplaySettings& Settings = UAedirSettingsSubsystem::GetValues();
 	const float CameraValue = Value * Settings.MouseSensitivity;
 	AddControllerYawInput(bFighting ? CameraValue * FightCameraMouseScale : CameraValue);
+	if (!FMath::IsNearlyZero(Value))
+	{
+		LastLookInputSeconds = 0.f;
+	}
 
 	PendingMouseDelta.X += Value * Settings.WeaponSensitivity;
 }
@@ -360,6 +364,10 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 	const FAedirGameplaySettings& Settings = UAedirSettingsSubsystem::GetValues();
 	const float CameraValue = (Settings.bInvertMouseY ? Value : -Value) * Settings.MouseSensitivity;
 	AddControllerPitchInput(bFighting ? CameraValue * FightCameraMouseScale : CameraValue);
+	if (!FMath::IsNearlyZero(Value))
+	{
+		LastLookInputSeconds = 0.f;
+	}
 
 	PendingMouseDelta.Y += Value * Settings.WeaponSensitivity;
 }
@@ -457,6 +465,7 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, CameraZoomTargetCm, DeltaSeconds, 10.f);
 	}
 
+	LastLookInputSeconds += DeltaSeconds;
 	if (CameraBoom && Gait && GetCharacterMovement())
 	{
 		// The capsule changes size at once when crouching; the boom pivot is eased so the camera sinks with the pelvis.
@@ -474,6 +483,16 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 				// A fallen or dead body keeps the camera: the pivot follows the pelvis wherever the ragdoll goes.
 				TargetRelative = GetActorTransform().InverseTransformPositionNoScale(PelvisWorld + FVector(0.f, 0.f, CameraRagdollRaiseCm));
 				FollowSpeed = CameraRagdollFollowSpeed;
+				// Down on the ground the view comes round behind the body, looking along it from its back, unless the mouse
+				// is turning it.
+				const FVector HeadWorld = BodyMesh->GetBoneLocation(TEXT("head"), EBoneSpaces::WorldSpace);
+				const FVector Along = (HeadWorld - PelvisWorld).GetSafeNormal2D();
+				if (Balance->IsRagdoll() && !Along.IsNearlyZero() && GetController() && LastLookInputSeconds > CameraRagdollFollowAfterSeconds)
+				{
+					const FRotator Current = GetControlRotation();
+					const FRotator Wanted(CameraRagdollPitch, Along.Rotation().Yaw, 0.f);
+					GetController()->SetControlRotation(FMath::RInterpTo(Current, Wanted, DeltaSeconds, CameraRagdollTurnSpeed));
+				}
 			}
 			else
 			{

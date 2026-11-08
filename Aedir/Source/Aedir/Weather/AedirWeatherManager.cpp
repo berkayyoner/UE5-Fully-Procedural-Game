@@ -5,6 +5,8 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
+#include "Components/VolumetricCloudComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Components/SkyLightComponent.h"
 #include "Creature/AedirCreature.h"
 #include "EngineUtils.h"
@@ -30,6 +32,16 @@ namespace
 {
 	constexpr float WeatherManagerSceneSearchInterval = 5.f;
 	constexpr float WeatherManagerSkyLightApplyInterval = 0.25f;
+	// The engine's cloud material and how the weather's cover maps onto its controls: negative coverage thins the sky to
+	// wisps, positive closes it.
+	const TCHAR* const WeatherManagerCloudMaterial = TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst");
+	constexpr float WeatherManagerCloudClearCover = -0.55f;
+	constexpr float WeatherManagerCloudFullCover = 0.85f;
+	constexpr float WeatherManagerCloudThinDensity = 0.7f;
+	constexpr float WeatherManagerCloudThickDensity = 1.6f;
+	constexpr float WeatherManagerCloudStormFrom = 0.7f;
+	constexpr float WeatherManagerCloudChange = 0.01f;
+	const FLinearColor WeatherManagerCloudStormAlbedo(0.42f, 0.44f, 0.48f);
 	constexpr float WeatherManagerSkyLightChangeFraction = 0.03f;
 	constexpr float WeatherManagerLightningFlashDuration = 0.35f;
 	constexpr float WeatherManagerLightningFlashLux = 30.f;
@@ -548,6 +560,8 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 		}
 	}
 
+	ApplyClouds(Profile);
+
 	if (ASkyLight* Sky = SkyLight.Get())
 	{
 		if (USkyLightComponent* SkyComponent = Sky->GetLightComponent())
@@ -564,6 +578,49 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 				NextSkyLightApplyTime = WorldTime + WeatherManagerSkyLightApplyInterval;
 			}
 		}
+	}
+}
+
+void AAedirWeatherManager::ApplyClouds(const FAedirWeatherProfile& Profile)
+{
+	UWorld* World = GetWorld();
+	if (!CloudComponent.IsValid() && World)
+	{
+		for (TActorIterator<AVolumetricCloud> It(World); It; ++It)
+		{
+			CloudComponent = It->FindComponentByClass<UVolumetricCloudComponent>();
+			break;
+		}
+	}
+	UVolumetricCloudComponent* Clouds = CloudComponent.Get();
+	if (!Clouds)
+	{
+		return;
+	}
+	if (!CloudMaterial)
+	{
+		UMaterialInterface* Base = Clouds->Material ? Clouds->Material.Get() : LoadObject<UMaterialInterface>(nullptr, WeatherManagerCloudMaterial);
+		if (!Base)
+		{
+			return;
+		}
+		CloudMaterial = UMaterialInstanceDynamic::Create(Base, this);
+		Clouds->SetMaterial(CloudMaterial);
+	}
+
+	// Clear skies thin the cover out to a few wisps, an overcast one closes it, and a storm darkens and thickens it into
+	// rain clouds. The sky changes as slowly as the weather does.
+	const float Cover = FMath::Lerp(WeatherManagerCloudClearCover, WeatherManagerCloudFullCover, Profile.CloudCoverage);
+	const float Storm = FMath::Clamp((Profile.CloudCoverage - WeatherManagerCloudStormFrom) / (1.f - WeatherManagerCloudStormFrom), 0.f, 1.f) * FMath::Max(Profile.RainIntensity, Profile.SnowIntensity * 0.5f);
+	const float Density = FMath::Lerp(WeatherManagerCloudThinDensity, WeatherManagerCloudThickDensity, Profile.CloudCoverage);
+	if (FMath::Abs(Cover - AppliedCloudCover) > WeatherManagerCloudChange || FMath::Abs(Storm - AppliedCloudStorm) > WeatherManagerCloudChange)
+	{
+		CloudMaterial->SetScalarParameterValue(TEXT("Cloud_GlobalCoverage"), Cover);
+		CloudMaterial->SetScalarParameterValue(TEXT("Cloud_GlobalDensity"), Density);
+		CloudMaterial->SetScalarParameterValue(TEXT("StormClouds"), Storm);
+		CloudMaterial->SetVectorParameterValue(TEXT("Cloud_AlbedoColor"), FMath::Lerp(FLinearColor::White, WeatherManagerCloudStormAlbedo, Storm));
+		AppliedCloudCover = Cover;
+		AppliedCloudStorm = Storm;
 	}
 }
 

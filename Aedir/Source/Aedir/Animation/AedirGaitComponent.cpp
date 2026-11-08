@@ -646,6 +646,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	};
 	ReadArmShape(EAedirHand::Left, GaitState.LeftWristMinDegrees, GaitState.LeftElbowHint, GaitState.LeftElbowHintAlpha);
 	ReadArmShape(EAedirHand::Right, GaitState.RightWristMinDegrees, GaitState.RightElbowHint, GaitState.RightElbowHintAlpha);
+	GaitState.LeftArmLedShare = FMath::FInterpConstantTo(GaitState.LeftArmLedShare, Combat ? Combat->GetArmLedShare(EAedirHand::Left) : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
+	GaitState.RightArmLedShare = FMath::FInterpConstantTo(GaitState.RightArmLedShare, Combat ? Combat->GetArmLedShare(EAedirHand::Right) : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.KickLeftLeg = bKickLeftLeg;
 	GaitState.KickSoleAlpha = 0.f;
 	GaitState.ObjectAlpha = 0.f;

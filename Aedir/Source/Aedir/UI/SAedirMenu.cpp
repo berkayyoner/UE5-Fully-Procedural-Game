@@ -108,6 +108,18 @@ namespace
 		Lines.Add(Line);
 	}
 
+	FString MenuWornPlaceName(EAedirBodyZone Zone)
+	{
+		switch (Zone)
+		{
+		case EAedirBodyZone::Head: return TEXT("Worn on the head");
+		case EAedirBodyZone::Torso: return TEXT("Worn on the body");
+		case EAedirBodyZone::Arm: return TEXT("Worn on the arms");
+		case EAedirBodyZone::Leg: return TEXT("Worn on the legs");
+		default: return TEXT("Worn");
+		}
+	}
+
 	AAedirItemActor* MenuFindRowItem(const AAedirCreature* Pawn, const FAedirMenuRow& Row)
 	{
 		const UAedirInteractionComponent* Interaction = Pawn ? Pawn->Interaction.Get() : nullptr;
@@ -121,7 +133,7 @@ namespace
 			return Interaction->GetHeldItem(static_cast<EAedirHand>(Row.Index));
 		}
 
-		const TArray<AAedirItemActor*> Items = Row.bIsBackpack ? Interaction->GetBackpackItemsCopy() : Interaction->GetWaistItemsCopy();
+		const TArray<AAedirItemActor*> Items = Row.bIsWorn ? Interaction->GetWornItemsCopy() : Row.bIsBackpack ? Interaction->GetBackpackItemsCopy() : Interaction->GetWaistItemsCopy();
 		return Items.IsValidIndex(Row.Index) ? Items[Row.Index] : nullptr;
 	}
 
@@ -767,7 +779,14 @@ FReply SAedirMenu::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKey
 		const AAedirCreature* Pawn = Creature.Get();
 		if (CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory) && Rows.IsValidIndex(RowIndex) && !Rows[RowIndex].bIsBackpack && RowHasItem(Rows[RowIndex]) && Pawn && Pawn->Interaction)
 		{
-			Pawn->Interaction->AddToBackpack(GetRowItem(Rows[RowIndex]));
+			if (Rows[RowIndex].bIsWorn)
+			{
+				Pawn->Interaction->TakeOffWorn(Rows[RowIndex].Index);
+			}
+			else
+			{
+				Pawn->Interaction->AddToBackpack(GetRowItem(Rows[RowIndex]));
+			}
 		}
 		return FReply::Handled();
 	}
@@ -861,6 +880,22 @@ TArray<FAedirMenuRow> SAedirMenu::BuildRows() const
 			Row.bDimmed = !IsValid(Item);
 			Row.bIsHand = false;
 			Row.Index = SlotIndex;
+			Result.Add(Row);
+		}
+
+		// What is worn on the body, each piece by where it sits; using one takes it off into the backpack.
+		const TArray<AAedirItemActor*> Worn = Interaction ? Interaction->GetWornItemsCopy() : TArray<AAedirItemActor*>();
+		for (int32 WornIndex = 0; WornIndex < Worn.Num(); ++WornIndex)
+		{
+			if (!IsValid(Worn[WornIndex]))
+			{
+				continue;
+			}
+			FAedirMenuRow Row;
+			Row.Name = MenuWornPlaceName(Worn[WornIndex]->ArmorZone);
+			Row.Value = Worn[WornIndex]->ItemName.ToString();
+			Row.bIsWorn = true;
+			Row.Index = WornIndex;
 			Result.Add(Row);
 		}
 		break;
@@ -1026,7 +1061,11 @@ void SAedirMenu::ActivateSelected(bool bFromClick)
 			break;
 		}
 
-		if (Row.bIsBackpack)
+		if (Row.bIsWorn)
+		{
+			Interaction->TakeOffWorn(Row.Index);
+		}
+		else if (Row.bIsBackpack)
 		{
 			// Stowed items are taken in a free hand, the right one first.
 			const EAedirHand Hand = Interaction->GetHandState(EAedirHand::Right) == EAedirHandState::Idle ? EAedirHand::Right : EAedirHand::Left;
@@ -1084,7 +1123,11 @@ void SAedirMenu::DropRow(int32 RowIndex)
 		return;
 	}
 
-	if (Row.bIsBackpack)
+	if (Row.bIsWorn)
+	{
+		Interaction->TakeOffWorn(Row.Index);
+	}
+	else if (Row.bIsBackpack)
 	{
 		Interaction->DropFromBackpack(Row.Index);
 	}
@@ -1104,7 +1147,7 @@ void SAedirMenu::HandleRowClick(int32 Index, const FGeometry& RowGeometry, const
 
 	// A belt item goes straight to the hand of the button: the left button is the right hand, as everywhere in the game.
 	const bool bInventory = CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory);
-	if (bInventory && Rows.IsValidIndex(Index) && !Rows[Index].bIsBackpack && !Rows[Index].bIsHand && RowHasItem(Rows[Index]))
+	if (bInventory && Rows.IsValidIndex(Index) && !Rows[Index].bIsBackpack && !Rows[Index].bIsHand && !Rows[Index].bIsWorn && RowHasItem(Rows[Index]))
 	{
 		const AAedirCreature* Pawn = Creature.Get();
 		const FKey Button = MouseEvent.GetEffectingButton();
@@ -1176,7 +1219,11 @@ void SAedirMenu::RunContextAction()
 		return;
 	}
 
-	if (Row.bIsBackpack)
+	if (Row.bIsWorn)
+	{
+		Interaction->TakeOffWorn(Row.Index);
+	}
+	else if (Row.bIsBackpack)
 	{
 		Interaction->DropFromBackpack(Row.Index);
 	}
@@ -1211,7 +1258,8 @@ int32 SAedirMenu::GetHoveredRow() const
 FText SAedirMenu::GetContextText() const
 {
 	const bool bBackpack = Rows.IsValidIndex(ContextRow) && Rows[ContextRow].bIsBackpack;
-	return FText::FromString(bBackpack ? TEXT("Drop") : TEXT("Stow in backpack"));
+	const bool bWorn = Rows.IsValidIndex(ContextRow) && Rows[ContextRow].bIsWorn;
+	return FText::FromString(bWorn ? TEXT("Take off") : bBackpack ? TEXT("Drop") : TEXT("Stow in backpack"));
 }
 
 FText SAedirMenu::GetHintText() const

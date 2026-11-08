@@ -92,6 +92,11 @@ struct AEDIR_API FAedirGaitState
 	float LeftElbowHintAlpha = 0.f;
 	float RightElbowHintAlpha = 0.f;
 
+	// How far the arm, not the wrist, points the weapon: the blade keeps one angle to the forearm and the elbow and shoulder
+	// turn the forearm to aim it.
+	float LeftArmLedShare = 0.f;
+	float RightArmLedShare = 0.f;
+
 	// How far the second hand has turned over to lie on top of the weapon, for half-swording.
 	float GripOverhand = 0.f;
 

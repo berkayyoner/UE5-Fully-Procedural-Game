@@ -1,4 +1,4 @@
-﻿#include "AedirBalanceComponent.h"
+#include "AedirBalanceComponent.h"
 
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
@@ -37,6 +37,15 @@ namespace
 	constexpr float ObjectImpactMinHeightCm = 50.f;
 	constexpr float AedirObjectImpactDamagePerScore = 0.002f;
 	constexpr float AedirWallImpactDamagePerSpeed = 0.01f;
+	// Impulse on the chest, in kg cm/s per cm/s of the speed it met a wall at.
+	constexpr float WallImpactBodyImpulsePerSpeed = 9.f;
+	// Running into another body: from what closing speed it counts, what balance it costs per cm/s beyond that, how hard
+	// the trunks jolt, and how long one shove lasts.
+	constexpr float BumpMinSpeed = 180.f;
+	constexpr float BumpLossPerSpeed = 0.0015f;
+	constexpr float BumpMaxLoss = 0.6f;
+	constexpr float BumpImpulsePerSpeed = 7.f;
+	constexpr double BumpRepeatSeconds = 0.6;
 
 	constexpr float HitReactionAthleticsCap = 100.f;
 	constexpr float HitReactionAthleticsLossScale = 0.5f;
@@ -62,8 +71,8 @@ namespace
 	constexpr float BalanceSwayHurtDegrees = 2.5f;
 	constexpr float BalanceSwayRate = 0.32f;
 	TAutoConsoleVariable<float> CVarAedirArmDamping(TEXT("aedir.ArmDamping"), 1.f, TEXT("Scale of the arm muscles' damping."));
-	constexpr float HitReactionBoneImpulseScale = 0.22f;
-	constexpr float HitReactionBoneImpulseMax = 9000.f;
+	constexpr float HitReactionBoneImpulseScale = 0.12f;
+	constexpr float HitReactionBoneImpulseMax = 4500.f;
 	// Part of a blow goes on into the trunk, which turns away from it; the one who takes it feels it in the eyes as well.
 	constexpr float HitReactionTrunkShare = 0.5f;
 	constexpr float HitReactionViewDegreesPerJoule = 0.04f;
@@ -72,6 +81,16 @@ namespace
 	constexpr float StumbleCatchShare = 0.75f;
 	constexpr float StumbleCatchTiredShare = 0.35f;
 	constexpr float StumbleStaggerSeconds = 0.35f;
+	// Getting up off the ground: how long it takes a fresh body and how much longer a tired or hurt one, how low the hips
+	// may start, how far over the trunk is bent at first and how weak the limbs are then.
+	constexpr float GetUpBaseSeconds = 1.7f;
+	constexpr float GetUpTiredShare = 0.6f;
+	constexpr float GetUpHurtShare = 0.9f;
+	constexpr float GetUpMaxDropCm = 70.f;
+	constexpr float GetUpBendDegrees = 50.f;
+	constexpr float GetUpMuscleShare = 0.45f;
+	// Going down, no part of the body is thrown upwards faster than this, in cm/s.
+	constexpr float RagdollEntryMaxRiseSpeed = 60.f;
 
 	constexpr float ComBalanceSampleIntervalSeconds = 0.1f;
 	constexpr float ComBalanceGroundToleranceCm = 12.f;
@@ -231,6 +250,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		UpdateServerState(DeltaTime);
 	}
 
+	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
 	UpdateMotors(DeltaTime, false);
 	UpdateLegBlend(DeltaTime);
@@ -239,6 +259,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	{
 		DrivePelvis();
 	}
+	LastVelocity = CharacterOwner->GetVelocity();
 }
 
 void UAedirBalanceComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -341,7 +362,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 
 	const UWorld* World = GetWorld();
 	const double Now = World ? World->GetTimeSeconds() : 0.0;
-	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone) || Balance < FallBalanceThreshold;
+	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone);
 	bool bStaggered = false;
 
 	if (bKnockedDown)
@@ -391,10 +412,12 @@ float UAedirBalanceComponent::GetKnockdownEnergy(EAedirBodyZone Zone)
 {
 	switch (Zone)
 	{
-	case EAedirBodyZone::Head: return 200.f;
-	case EAedirBodyZone::Torso: return 450.f;
-	case EAedirBodyZone::Arm: return 800.f;
-	case EAedirBodyZone::Leg: return 170.f;
+	// A blow that lays a man out at once: a club full on the head, a charge into the chest. Lesser blows unbalance him and he
+	// goes down only if he cannot catch himself.
+	case EAedirBodyZone::Head: return 440.f;
+	case EAedirBodyZone::Torso: return 1000.f;
+	case EAedirBodyZone::Arm: return 1800.f;
+	case EAedirBodyZone::Leg: return 380.f;
 	default: checkNoEntry(); return 220.f;
 	}
 }
@@ -966,7 +989,8 @@ void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
 	const float Hurt = Stats ? 1.f - FMath::Clamp(Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
 	const float Sway = bIsRagdoll ? 0.f : BalanceSwayDegrees + Tired * BalanceSwayTiredDegrees + Hurt * BalanceSwayHurtDegrees;
 	SwayClock += DeltaTime * BalanceSwayRate;
-	const double Pitch = LeanDirection.X * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock + SwaySeed);
+	// Getting up, the trunk comes up last: bent far over at first, straightening as the legs push up.
+	const double Pitch = LeanDirection.X * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock + SwaySeed) - GetUpBendDegrees * GetGetUpShare();
 	const double Roll = -LeanDirection.Y * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock * 1.3f + SwaySeed + 17.f);
 
 	CurrentLean = FMath::RInterpTo(CurrentLean, FRotator(Pitch, 0.0, Roll), DeltaTime, AedirLeanInterpSpeed);
@@ -1015,9 +1039,21 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 
 	if (bRagdoll)
 	{
+		GetUpLeft = 0.f;
+		// The body goes down with the way it was moving, not up: a blow or a slip never throws it into the air.
+		const FVector Carried = CharacterOwner->GetVelocity();
 		if (Pelvis)
 		{
 			Pelvis->SetInstanceSimulatePhysics(true);
+		}
+		for (FBodyInstance* Body : BodyMesh->Bodies)
+		{
+			if (Body && Body->IsInstanceSimulatingPhysics())
+			{
+				FVector Velocity = Body->GetUnrealWorldVelocity();
+				Velocity.Z = FMath::Min(Velocity.Z, FMath::Max(Carried.Z, 0.0) + RagdollEntryMaxRiseSpeed);
+				Body->SetLinearVelocity(Velocity, false);
+			}
 		}
 
 		if (Movement)
@@ -1048,14 +1084,66 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 			BodyMesh->AttachToComponent(BodyCapsule, FAttachmentTransformRules::KeepRelativeTransform);
 		}
 		BodyMesh->SetRelativeTransform(MeshRestRelative, false, nullptr, ETeleportType::ResetPhysics);
-	}
 
-	if (Movement)
-	{
-		Movement->SetMovementMode(MOVE_Walking);
+		// Standing up on the spot the capsule now stands on, from as low as the hips lay, bent over and slowly, longer for a
+		// tired or hurt body.
+		const float StandPelvisZ = static_cast<float>(BodyCapsule->GetComponentLocation().Z) - BodyCapsule->GetScaledCapsuleHalfHeight() + PelvisRestHeight * static_cast<float>(BodyMesh->GetComponentScale().Z);
+		GetUpDropCm = FMath::Clamp(static_cast<float>(PelvisLocation.Z) - StandPelvisZ, -GetUpMaxDropCm, 0.f);
+		const UAedirStatsComponent* StatsComponent = FindStats();
+		const float Tired = StatsComponent ? StatsComponent->GetFatigue() : 0.f;
+		const float Hurt = StatsComponent ? 1.f - FMath::Clamp(StatsComponent->GetHealth() / FMath::Max(StatsComponent->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
+		GetUpTotal = GetUpBaseSeconds * (1.f + Tired * GetUpTiredShare + Hurt * GetUpHurtShare);
+		GetUpLeft = GetUpTotal;
+		ApplyGetUpPose();
 	}
 
 	BodyCapsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	if (Movement)
+	{
+		if (GetUpLeft > 0.f)
+		{
+			Movement->DisableMovement();
+		}
+		else
+		{
+			Movement->SetMovementMode(MOVE_Walking);
+		}
+	}
+}
+
+float UAedirBalanceComponent::GetGetUpShare() const
+{
+	return GetUpLeft > 0.f && GetUpTotal > 0.f ? 1.f - FMath::SmoothStep(0.f, 1.f, 1.f - GetUpLeft / GetUpTotal) : 0.f;
+}
+
+void UAedirBalanceComponent::ApplyGetUpPose()
+{
+	if (!BodyMesh)
+	{
+		return;
+	}
+	// The body is lowered towards where it lay and rises with the share left; the feet stay on the ground, so the knees bend.
+	FTransform Lowered = MeshRestRelative;
+	Lowered.AddToTranslation(FVector(0.f, 0.f, GetUpDropCm * GetGetUpShare()));
+	BodyMesh->SetRelativeTransform(Lowered, false, nullptr, ETeleportType::None);
+}
+
+void UAedirBalanceComponent::UpdateGetUp(float DeltaTime)
+{
+	if (GetUpLeft <= 0.f)
+	{
+		return;
+	}
+	GetUpLeft = FMath::Max(GetUpLeft - DeltaTime, 0.f);
+	ApplyGetUpPose();
+	if (GetUpLeft <= 0.f)
+	{
+		if (UCharacterMovementComponent* Movement = CharacterOwner ? CharacterOwner->GetCharacterMovement() : nullptr)
+		{
+			Movement->SetMovementMode(MOVE_Walking);
+		}
+		UpdateMotors(0.f, true);
+	}
 }
 
 void UAedirBalanceComponent::ApplyBodyContacts(bool bRagdoll)
@@ -1096,6 +1184,11 @@ void UAedirBalanceComponent::ReshapeBodyPhysics()
 	if (FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName))
 	{
 		Pelvis->SetInstanceSimulatePhysics(false);
+	}
+	// New bodies, so the mask that keeps its own weapons off it again.
+	if (AAedirCreature* Creature = Cast<AAedirCreature>(CharacterOwner))
+	{
+		Creature->ApplyBodyMask();
 	}
 	if (MotorComponent)
 	{
@@ -1182,9 +1275,14 @@ const FAedirBoneMotor& UAedirBalanceComponent::GetBoneMotor(FName BoneName) cons
 void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent* OtherComponent, const FHitResult& Hit)
 {
 	AActor* Owner = GetOwner();
-	// Creatures hurt each other through combat; walking into or over a body, a ragdoll included, is no impact.
-	if (!IsAuthoritative() || OtherActor == Owner || Cast<AAedirCreature>(OtherActor))
+	if (!IsAuthoritative() || OtherActor == Owner)
 	{
+		return;
+	}
+	// Running into someone shoves both: each loses balance by how fast they met, and the trunks jolt apart.
+	if (AAedirCreature* Other = Cast<AAedirCreature>(OtherActor))
+	{
+		BumpInto(Other, Hit);
 		return;
 	}
 
@@ -1196,7 +1294,8 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 
 	UAedirStatsComponent* StatsComponent = FindStats();
 	const float Athletism = StatsComponent ? StatsComponent->Athletism : 0.f;
-	const FVector OwnerVelocity = Owner->GetVelocity();
+	// The movement has already stopped the body by now; what it hit with is how fast it was going just before.
+	const FVector OwnerVelocity = LastVelocity.SizeSquared() > Owner->GetVelocity().SizeSquared() ? LastVelocity : Owner->GetVelocity();
 
 	if (OtherComponent && OtherComponent->IsSimulatingPhysics())
 	{
@@ -1244,11 +1343,45 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 
 	const float Excess = ApproachSpeed - WallImpactSpeedThreshold;
 	ApplyBalanceImpact(OwnerVelocity.GetSafeNormal(), FMath::Clamp(Excess / WallImpactSpeedThreshold, 0.f, AedirWallImpactMaxLoss));
+	// The chest and head carry on into the wall and are thrown back off it.
+	if (BodyMesh && BodyMesh->IsAnySimulatingPhysics())
+	{
+		const FVector Rebound = Hit.ImpactNormal * (ApproachSpeed * WallImpactBodyImpulsePerSpeed);
+		MulticastBoneImpulse(TEXT("spine_03"), Rebound, Hit.ImpactPoint);
+		MulticastBoneImpulse(TEXT("head"), Rebound * 0.4f, Hit.ImpactPoint);
+	}
 
 	if (StatsComponent)
 	{
 		StatsComponent->ApplyDamage(Excess * AedirWallImpactDamagePerSpeed * (1.f - Athletism / AedirAthletismDamageScale));
 	}
+}
+
+void UAedirBalanceComponent::BumpInto(AAedirCreature* Other, const FHitResult& Hit)
+{
+	UAedirBalanceComponent* OtherBalance = Other ? Other->Balance.Get() : nullptr;
+	const UWorld* World = GetWorld();
+	if (!OtherBalance || !World || bIsRagdoll || OtherBalance->IsRagdoll() || World->GetTimeSeconds() - LastBumpTime < BumpRepeatSeconds)
+	{
+		return;
+	}
+	const FVector Mine = LastVelocity.SizeSquared() > GetOwner()->GetVelocity().SizeSquared() ? LastVelocity : GetOwner()->GetVelocity();
+	const FVector Theirs = Other->GetVelocity();
+	const FVector Toward = (Other->GetActorLocation() - GetOwner()->GetActorLocation()).GetSafeNormal2D();
+	const float Closing = static_cast<float>(FVector::DotProduct(Mine - Theirs, Toward));
+	if (Closing < BumpMinSpeed)
+	{
+		return;
+	}
+	LastBumpTime = World->GetTimeSeconds();
+	OtherBalance->LastBumpTime = LastBumpTime;
+
+	// Whoever runs in loses less than whoever is run into, as a charge goes.
+	const float Excess = Closing - BumpMinSpeed;
+	OtherBalance->ApplyBalanceImpact(Toward, FMath::Min(Excess * BumpLossPerSpeed * 1.4f, BumpMaxLoss));
+	ApplyBalanceImpact(-Toward, FMath::Min(Excess * BumpLossPerSpeed * 0.6f, BumpMaxLoss));
+	MulticastBoneImpulse(TEXT("spine_03"), -Toward * (Closing * BumpImpulsePerSpeed * 0.6f), Hit.ImpactPoint);
+	OtherBalance->MulticastBoneImpulse(TEXT("spine_03"), Toward * (Closing * BumpImpulsePerSpeed), Hit.ImpactPoint);
 }
 
 void UAedirBalanceComponent::OnRep_Ragdoll()
@@ -1352,6 +1485,8 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	{
 		Common *= 0.7f;
 	}
+	// Coming up off the ground the limbs are still heavy and find their strength as the body rises.
+	Common *= FMath::Lerp(1.f, GetUpMuscleShare, GetGetUpShare());
 	if (bIsRagdoll || (Stats && Stats->IsDead()))
 	{
 		Common = RagdollMotorShare;

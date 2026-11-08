@@ -65,6 +65,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float CameraRagdollRaiseCm = 45.f;
 
+	// Lying on the ground the view swings round behind the body, at this pitch and speed, once the mouse has been still this long.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraRagdollPitch = -28.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraRagdollTurnSpeed = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraRagdollFollowAfterSeconds = 0.8f;
+
+	float LastLookInputSeconds = 100.f;
+
 	FVector CameraRelative = FVector::ZeroVector;
 	FVector CameraPelvisBaseline = FVector::ZeroVector;
 	bool bCameraStateInitialized = false;

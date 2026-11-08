@@ -69,15 +69,86 @@ int32 UAedirFoliageSubsystem::GetInstanceCount() const
 	return Count;
 }
 
+const FName UAedirFoliageSubsystem::MeadowTag(TEXT("AedirMeadow"));
+
 void UAedirFoliageSubsystem::EnsureMeadowActor()
 {
-	if (!MeadowActor)
+	if (MeadowActor)
 	{
-		FActorSpawnParameters Params;
-		Params.Name = TEXT("AedirMeadow");
-		MeadowActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, Params);
-		MeadowActor->SetRootComponent(NewObject<USceneComponent>(MeadowActor));
-		MeadowActor->GetRootComponent()->RegisterComponent();
+		return;
+	}
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (It->ActorHasTag(MeadowTag))
+		{
+			MeadowActor = *It;
+			return;
+		}
+	}
+	FActorSpawnParameters Params;
+	Params.Name = TEXT("AedirMeadow");
+	MeadowActor = GetWorld()->SpawnActor<AActor>(AActor::StaticClass(), FTransform::Identity, Params);
+	MeadowActor->Tags.Add(MeadowTag);
+	USceneComponent* Root = NewObject<USceneComponent>(MeadowActor, TEXT("Root"));
+	MeadowActor->SetRootComponent(Root);
+	Root->RegisterComponent();
+	if (!GetWorld()->IsGameWorld())
+	{
+		MeadowActor->AddInstanceComponent(Root);
+#if WITH_EDITOR
+		MeadowActor->SetActorLabel(TEXT("AedirMeadow"));
+#endif
+	}
+}
+
+void UAedirFoliageSubsystem::AddToMeadow(USceneComponent* Component)
+{
+	Component->SetupAttachment(MeadowActor->GetRootComponent());
+	Component->RegisterComponent();
+	if (!GetWorld()->IsGameWorld())
+	{
+		MeadowActor->AddInstanceComponent(Component);
+	}
+}
+
+void UAedirFoliageSubsystem::EnsureTreeWindData()
+{
+	// The wind reaches the branches through this data, which the plugin keeps to itself.
+	if (!TreeWindData)
+	{
+		if (UClass* WindClass = LoadClass<UObject>(nullptr, FoliageWindDataClass))
+		{
+			TreeWindData = NewObject<UObject>(this, WindClass);
+		}
+	}
+}
+
+void UAedirFoliageSubsystem::OnWorldBeginPlay(UWorld& InWorld)
+{
+	Super::OnWorldBeginPlay(InWorld);
+	for (TActorIterator<AActor> It(&InWorld); It; ++It)
+	{
+		if (!It->ActorHasTag(MeadowTag))
+		{
+			continue;
+		}
+		MeadowActor = *It;
+		EnsureTreeWindData();
+		TArray<UInstancedStaticMeshComponent*> Grass;
+		It->GetComponents(Grass);
+		for (UInstancedStaticMeshComponent* Patch : Grass)
+		{
+			Patches.AddUnique(Patch);
+		}
+		TArray<UInstancedSkinnedMeshComponent*> Trees;
+		It->GetComponents(Trees);
+		for (UInstancedSkinnedMeshComponent* Tree : Trees)
+		{
+			Tree->SetTransformProvider(Cast<UTransformProviderData>(TreeWindData));
+			TreeMeshes.AddUnique(Tree);
+			TreeCount += Tree->GetInstanceCount();
+		}
+		UE_LOG(LogAedir, Log, TEXT("Took up the saved meadow: %d grass patches, %d trees."), Patches.Num(), TreeCount);
 	}
 }
 
@@ -105,14 +176,7 @@ void UAedirFoliageSubsystem::PlantTrees(const FVector& Around, float InnerCm, fl
 	}
 	EnsureMeadowActor();
 
-	// The wind reaches the branches through this data, which the plugin keeps to itself.
-	if (!TreeWindData)
-	{
-		if (UClass* WindClass = LoadClass<UObject>(nullptr, FoliageWindDataClass))
-		{
-			TreeWindData = NewObject<UObject>(this, WindClass);
-		}
-	}
+	EnsureTreeWindData();
 
 	FRandomStream Random(RandomSeed);
 	TMap<USkeletalMesh*, UInstancedSkinnedMeshComponent*> ByModel;
@@ -137,9 +201,12 @@ void UAedirFoliageSubsystem::PlantTrees(const FVector& Around, float InnerCm, fl
 			Trees->SetSkinnedAsset(Model);
 			Trees->SetMobility(EComponentMobility::Movable);
 			Trees->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			Trees->SetTransformProvider(Cast<UTransformProviderData>(TreeWindData));
-			Trees->SetupAttachment(MeadowActor->GetRootComponent());
-			Trees->RegisterComponent();
+			// The wind data lives with the game; a tree saved in the level gets it when the game begins.
+			if (World->IsGameWorld())
+			{
+				Trees->SetTransformProvider(Cast<UTransformProviderData>(TreeWindData));
+			}
+			AddToMeadow(Trees);
 			TreeMeshes.Add(Trees);
 		}
 		const float Scale = Random.FRandRange(0.85f, 1.15f);
@@ -150,8 +217,7 @@ void UAedirFoliageSubsystem::PlantTrees(const FVector& Around, float InnerCm, fl
 		Trunk->InitCapsuleSize(FoliageTrunkRadiusCm * Scale, FoliageTrunkHalfCm);
 		Trunk->SetCollisionProfileName(TEXT("BlockAll"));
 		Trunk->SetWorldLocation(Ground + FVector(0.f, 0.f, FoliageTrunkHalfCm));
-		Trunk->SetupAttachment(MeadowActor->GetRootComponent());
-		Trunk->RegisterComponent();
+		AddToMeadow(Trunk);
 		++TreeCount;
 	}
 	UE_LOG(LogAedir, Log, TEXT("Planted %d trees around %s, wind data %s"), TreeCount, *Around.ToCompactString(), *GetNameSafe(TreeWindData));
@@ -238,8 +304,7 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 			Patch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Patch->SetCastShadow(false);
 			Patch->SetCullDistances(FoliageCullFromCm, FoliageCullToCm);
-			Patch->SetupAttachment(MeadowActor->GetRootComponent());
-			Patch->RegisterComponent();
+			AddToMeadow(Patch);
 			Patches.Add(Patch);
 		}
 		return Patch;

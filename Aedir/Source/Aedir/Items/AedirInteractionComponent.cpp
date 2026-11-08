@@ -18,6 +18,10 @@ namespace
 {
 	constexpr int32 WaistSlotsPerSide = 3;
 	constexpr float ReachBlendInSeconds = 0.15f;
+	// A reach that has not brought the hand this much closer for this long has failed.
+	constexpr float ReachProgressCm = 3.f;
+	constexpr float ReachStallLimitSeconds = 0.45f;
+	constexpr float ReachStallGraceSeconds = 0.4f;
 	constexpr float ReachBlendOutSeconds = 0.2f;
 	constexpr float PelvisLowerInterpSpeed = 2.6f;
 	constexpr float PelvisRiseInterpSpeed = 1.8f;
@@ -49,9 +53,9 @@ namespace
 	constexpr float HolsterOverSide = 0.35f;
 	constexpr float HolsterDrawSettleSeconds = 0.6f;
 	// Passing a weapon: both hands come together before the chest and the other hand takes it there.
-	constexpr float PassHandSeconds = 0.95f;
+	constexpr float PassHandSeconds = 0.35f;
 	constexpr float PassGiveUpSeconds = 1.5f;
-	constexpr float PassBlendInSeconds = 0.55f;
+	constexpr float PassBlendInSeconds = 0.4f;
 	constexpr float PassMeetForwardCm = 32.f;
 	constexpr float PassMeetUpCm = 18.f;
 	constexpr float WaistSlotRadiusCm = 22.f;
@@ -188,6 +192,13 @@ void UAedirInteractionComponent::StartReach(EAedirHand Hand)
 	if (IsGrabbingBody(Hand))
 	{
 		ReleaseBodyGrab(Hand);
+		return;
+	}
+
+	// Pressing again while the hand is still reaching calls it back.
+	if (State == EAedirHandState::Reaching)
+	{
+		CancelReach(Hand);
 		return;
 	}
 
@@ -1055,9 +1066,23 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 		return;
 	}
 
+	// A hand that has stopped getting closer, held back by the arm's length or something in the way, gives up soon rather
+	// than straining on.
+	const float HandGap = static_cast<float>(FVector::Dist(GetHandWorld(Hand), ItemCenter));
+	const int32 Index = static_cast<int32>(Hand);
+	if (Slot.ReachElapsed <= DeltaTime || HandGap < ReachBestGap[Index] - ReachProgressCm)
+	{
+		ReachBestGap[Index] = HandGap;
+		ReachStallSeconds[Index] = 0.f;
+	}
+	else
+	{
+		ReachStallSeconds[Index] += DeltaTime;
+	}
+	const bool bStalled = !bPassing && Slot.ReachElapsed > ReachStallGraceSeconds && ReachStallSeconds[Index] >= ReachStallLimitSeconds;
 	const bool bTimedOut = Slot.ReachElapsed >= ReachTimeout;
 	const bool bOutOfRange = FVector::Dist(Creature->GetActorLocation(), ItemCenter) > PickupRange * ReachRangeMultiplier;
-	if (bTimedOut || bOutOfRange)
+	if (bTimedOut || bOutOfRange || bStalled)
 	{
 		ResetSlot(Slot);
 	}
@@ -1823,4 +1848,44 @@ void UAedirInteractionComponent::ServerDropFromBackpack_Implementation(int32 Ind
 void UAedirInteractionComponent::ServerDropFromWaist_Implementation(int32 SlotIndex)
 {
 	DropFromWaist(SlotIndex);
+}
+
+void UAedirInteractionComponent::ServerTakeOffWorn_Implementation(int32 WornIndex)
+{
+	TakeOffWorn(WornIndex);
+}
+
+TArray<AAedirItemActor*> UAedirInteractionComponent::GetWornItemsCopy() const
+{
+	TArray<AAedirItemActor*> Copy;
+	for (const TObjectPtr<AAedirItemActor>& Worn : WornItems)
+	{
+		Copy.Add(Worn.Get());
+	}
+	return Copy;
+}
+
+void UAedirInteractionComponent::TakeOffWorn(int32 WornIndex)
+{
+	if (!IsAuthoritative())
+	{
+		ServerTakeOffWorn(WornIndex);
+		return;
+	}
+
+	AAedirCreature* Creature = GetCreature();
+	AAedirItemActor* Item = WornItems.IsValidIndex(WornIndex) ? WornItems[WornIndex].Get() : nullptr;
+	if (!Creature || !Item)
+	{
+		return;
+	}
+
+	WornItems.RemoveAt(WornIndex);
+	Item->TakeOff();
+	// What is still worn on that part of the body is all that protects it now.
+	if (Creature->Combat)
+	{
+		Creature->Combat->SetArmorProtection(Item->ArmorZone, GetWornArmorProtection(Item->ArmorZone));
+	}
+	StowNewItem(Item);
 }

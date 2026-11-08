@@ -1,7 +1,11 @@
+#include "Items/AedirCatalogItem.h"
+#include "Game/AedirClasses.h"
+
+#include "AnimationRuntime.h"
+#include "Components/PoseableMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Engine/SkeletalMesh.h"
-#include "Items/AedirCatalogItem.h"
 #include "Graphics/AedirScannedMaterial.h"
 #include "Creature/AedirStatsComponent.h"
 
@@ -30,6 +34,9 @@ namespace
 	// Crossguard, grip and pommel sizes of the swords, in cm.
 	constexpr float CatalogItemPommelSize = 3.f;
 	constexpr float CatalogItemGuardThickness = 1.4f;
+
+	// Armour laid on the ground is this share as thick as it is deep when worn.
+	constexpr float CatalogLaidThickShare = 0.6f;
 
 	EAedirCatalogShape CatalogItemRootShape(FName Id)
 	{
@@ -68,7 +75,7 @@ AAedirCatalogItem* AAedirCatalogItem::SpawnCatalogItem(UWorld* World, FName Id, 
 		return nullptr;
 	}
 
-	AAedirCatalogItem* Item = World->SpawnActorDeferred<AAedirCatalogItem>(AAedirCatalogItem::StaticClass(), Transform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	AAedirCatalogItem* Item = World->SpawnActorDeferred<AAedirCatalogItem>(AedirClasses::Find<AAedirCatalogItem>(TEXT("BP_AedirItem")), Transform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 	if (!Item)
 	{
 		return nullptr;
@@ -170,6 +177,13 @@ void AAedirCatalogItem::ApplyWornLook()
 			Detail->SetVisibility(false);
 		}
 	}
+	for (const TObjectPtr<UPoseableMeshComponent>& Piece : LaidPieces)
+	{
+		if (Piece)
+		{
+			Piece->SetVisibility(false);
+		}
+	}
 }
 
 void AAedirCatalogItem::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -225,6 +239,11 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 {
 	ClearDetails();
 
+	if (Def.MeshPath.IsEmpty() && !Def.WornMeshPath.IsEmpty() && BuildLaidArmour(Def))
+	{
+		return;
+	}
+
 	if (!Def.MeshPath.IsEmpty())
 	{
 		if (UStaticMesh* Scanned = LoadObject<UStaticMesh>(nullptr, *Def.MeshPath))
@@ -235,20 +254,27 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 			FRotator Turn = FRotator::ZeroRotator;
 			double Longest = Size.X;
 			if (Size.Y > Longest) { Longest = Size.Y; Turn = FRotator(0.f, -90.f, 0.f); }
-			if (Size.Z > Longest) { Longest = Size.Z; Turn = FRotator(Def.DrinkValue > 0.f || Def.bModelTopForward ? -90.f : 90.f, 0.f, 0.f); } // A jug has its top towards the front of the item, where it is drunk from.
+			// A bucket or a pot keeps standing the way it was made.
+			const bool bSquat = Def.bStandsUpright;
+			if (Size.Z > Longest && !bSquat) { Longest = Size.Z; Turn = FRotator(Def.DrinkValue > 0.f || Def.bModelTopForward ? -90.f : 90.f, 0.f, 0.f); } // A jug has its top towards the front of the item, where it is drunk from.
+			Longest = FMath::Max(Longest, Size.Z * (bSquat ? 1.0 : 0.0));
 			const double Wanted = Def.ModelLengthCm > 0.f ? Def.ModelLengthCm : Def.WeaponLengthCm > 0.f ? Def.WeaponLengthCm : FMath::Max3(Def.BodyScale.X, Def.BodyScale.Y, Def.BodyScale.Z) * 100.0;
 			const float ModelScale = static_cast<float>(Wanted / FMath::Max(Longest, 1.0));
 			Mesh->SetStaticMesh(GetShapeMesh(EAedirCatalogShape::Cube));
 			Mesh->SetMaterial(0, nullptr);
 			Mesh->SetRelativeScale3D(BodyScale);
 			Mesh->SetVisibility(false, false);
-			if (UStaticMeshComponent* Model = NewObject<UStaticMeshComponent>(this))
+			if (UStaticMeshComponent* Model = NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transient))
 			{
 				Model->SetupAttachment(Mesh);
 				Model->SetAbsolute(false, false, true);
 				Model->SetStaticMesh(Scanned);
 				Model->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-				Model->SetWorldScale3D(FVector(ModelScale));
+				// The length is the weapon's own; across it the model may be slimmed.
+				FVector Scale3D(ModelScale * Def.ModelThickShare);
+				const int32 LongAxis = Longest == Size.X ? 0 : Longest == Size.Y ? 1 : 2;
+				Scale3D[LongAxis] = ModelScale;
+				Model->SetWorldScale3D(Scale3D);
 				Model->SetRelativeRotation(Turn);
 				Model->SetRelativeLocation((Turn.RotateVector(-Box.GetCenter() * ModelScale) + FVector(Def.ModelCenterCm, 0.f, 0.f)) / BodyScale);
 				Model->RegisterComponent();
@@ -350,7 +376,7 @@ void AAedirCatalogItem::BuildDetails(FName Id)
 
 void AAedirCatalogItem::AddDetail(EAedirCatalogShape Shape, const FVector& CenterCm, const FVector& SizeCm, const FRotator& Rotation, const FLinearColor& Color)
 {
-	UStaticMeshComponent* Detail = NewObject<UStaticMeshComponent>(this);
+	UStaticMeshComponent* Detail = NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transient);
 	Detail->SetStaticMesh(GetShapeMesh(Shape));
 	Detail->SetupAttachment(Mesh);
 	Detail->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -378,6 +404,122 @@ void AAedirCatalogItem::ClearDetails()
 	}
 
 	DetailMeshes.Reset();
+	for (const TObjectPtr<UPoseableMeshComponent>& Piece : LaidPieces)
+	{
+		if (Piece)
+		{
+			Piece->DestroyComponent();
+		}
+	}
+	LaidPieces.Reset();
+}
+
+bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
+{
+	USkeletalMesh* Model = LoadObject<USkeletalMesh>(nullptr, *Def.WornMeshPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!Model)
+	{
+		return false;
+	}
+	const FReferenceSkeleton& Skeleton = Model->GetRefSkeleton();
+
+	// A piece worn on one side of the body comes as a pair, one on each arm or leg; each is laid out on its own, side by side.
+	TArray<FName> Pieces;
+	const FString Bone = Def.ArmorAttachBone.ToString();
+	if (Bone.EndsWith(TEXT("_l")) || Bone.EndsWith(TEXT("_r")))
+	{
+		const FString Stem = Bone.LeftChop(2);
+		Pieces = { FName(Stem + TEXT("_l")), FName(Stem + TEXT("_r")) };
+	}
+	else
+	{
+		Pieces = { Def.ArmorAttachBone };
+	}
+
+	// The body faces +Y in the model and stands along +Z: laid on its back, its front looks up and its head points along
+	// the item's length.
+	const FRotator OnItsBack = FMatrix(FVector(0.f, 1.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(1.f, 0.f, 0.f), FVector::ZeroVector).Rotator();
+	const FVector Size = Def.BodyScale * 100.f;
+	BodyScale = FVector(Size.Z, Size.Y * Pieces.Num(), Size.X * CatalogLaidThickShare) / 100.f;
+	Mesh->SetStaticMesh(GetShapeMesh(EAedirCatalogShape::Cube));
+	Mesh->SetMaterial(0, nullptr);
+	Mesh->SetRelativeScale3D(BodyScale);
+	Mesh->SetVisibility(false, false);
+
+	for (int32 Index = 0; Index < Pieces.Num(); ++Index)
+	{
+		const int32 BoneIndex = Skeleton.FindBoneIndex(Pieces[Index]);
+		if (BoneIndex == INDEX_NONE)
+		{
+			continue;
+		}
+		// The middle of the piece: halfway down the limb to the next joint, or the bone itself on the trunk.
+		FVector Middle = FAnimationRuntime::GetComponentSpaceTransformRefPose(Skeleton, BoneIndex).GetLocation();
+		const FString Name = Pieces[Index].ToString();
+		const TCHAR* const Joints[][2] = { { TEXT("lowerarm"), TEXT("hand") }, { TEXT("upperarm"), TEXT("lowerarm") }, { TEXT("thigh"), TEXT("calf") }, { TEXT("calf"), TEXT("foot") } };
+		for (const auto& Joint : Joints)
+		{
+			if (Name.StartsWith(Joint[0]))
+			{
+				const int32 Next = Skeleton.FindBoneIndex(FName(Name.Replace(Joint[0], Joint[1])));
+				if (Next != INDEX_NONE)
+				{
+					Middle = (Middle + FAnimationRuntime::GetComponentSpaceTransformRefPose(Skeleton, Next).GetLocation()) * 0.5;
+				}
+			}
+		}
+
+		UPoseableMeshComponent* Piece = NewObject<UPoseableMeshComponent>(this, NAME_None, RF_Transient);
+		Piece->SetSkinnedAssetAndUpdate(Model);
+		Piece->SetupAttachment(Mesh);
+		Piece->SetAbsolute(false, false, true);
+		Piece->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Piece->SetCastShadow(true);
+		const float Side = Pieces.Num() > 1 ? (Index == 0 ? -0.5f : 0.5f) * Size.Y : 0.f;
+		Piece->SetRelativeRotation(OnItsBack);
+		Piece->SetRelativeLocation((FVector(0.f, Side, 0.f) - OnItsBack.RotateVector(Middle)) / BodyScale);
+		Piece->RegisterComponent();
+		for (int32 Other = 0; Other < Pieces.Num(); ++Other)
+		{
+			if (Other != Index)
+			{
+				Piece->HideBoneByName(Pieces[Other], PBO_None);
+			}
+		}
+		const TArray<FSkeletalMaterial>& Slots = Model->GetMaterials();
+		for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
+		{
+			if (UMaterialInterface* Material = AedirScannedMaterial::Make(Piece, Slots[Slot].MaterialSlotName.ToString()))
+			{
+				Piece->SetMaterial(Slot, Material);
+			}
+		}
+		LaidPieces.Add(Piece);
+	}
+	return !LaidPieces.IsEmpty();
+}
+
+void AAedirCatalogItem::OnConstruction(const FTransform& Transform)
+{
+	Super::OnConstruction(Transform);
+	const UWorld* World = GetWorld();
+	if (World && !World->IsGameWorld())
+	{
+		AppliedCatalogId = NAME_None;
+		ApplyDefinition();
+	}
+}
+
+void AAedirCatalogItem::ClearWornLook()
+{
+	if (WornMesh)
+	{
+		WornMesh->DestroyComponent();
+		WornMesh = nullptr;
+	}
+	// Built again as it lies on the ground or sits in a hand.
+	AppliedCatalogId = NAME_None;
+	ApplyDefinition();
 }
 
 UStaticMesh* AAedirCatalogItem::GetShapeMesh(EAedirCatalogShape Shape) const

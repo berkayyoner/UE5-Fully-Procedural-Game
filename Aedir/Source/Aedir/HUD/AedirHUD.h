@@ -18,7 +18,7 @@ public:
 
 	// Fraction of the screen width used by the compass strip. The sizes below are for a 1080p screen and scale with its height.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
-	float CompassWidthFraction = 0.2f;
+	float CompassWidthFraction = 0.24f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
 	float CompassTopMargin = 22.f;
