@@ -93,3 +93,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Blows stop on bodies unless they cut through, also between blows and when merely pushed; a held blade turns aside from its own body; looser muscles and a slow sway that grows with fatigue and wounds.
 - Nobody dies at once unless beheaded: out of health a body lies dying for some seconds and cannot get up; disarmed or maimed NPCs flee and a lost hand takes nothing up.
 - Downward blows reach the ground, the trunk bending into them and arching under raised ones.
+- The main menu works after leaving a game: the pause menu no longer stays on top of it and swallows its keys.

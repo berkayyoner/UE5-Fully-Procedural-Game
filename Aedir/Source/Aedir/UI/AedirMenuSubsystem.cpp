@@ -266,6 +266,15 @@ void UAedirMenuSubsystem::ThawWorld()
 
 void UAedirMenuSubsystem::OpenMainMenu()
 {
+	// Whatever was open when the game went back to the title, the pause menu above all, would sit on top of it and take its keys.
+	if (MenuWidget.IsValid() || RadialWidget.IsValid() || PauseWidget.IsValid() || MapWidget.IsValid() || DialogueWidget.IsValid() || CreationWidget.IsValid())
+	{
+		CloseMenu();
+		CloseCharacterCreation();
+	}
+	ThawWorld();
+	bPausedByMenu = false;
+
 	const ULocalPlayer* Local = GetLocalPlayer();
 	APlayerController* PlayerController = Local ? Local->GetPlayerController(GetWorld()) : nullptr;
 	if (!PlayerController || !GEngine || !GEngine->GameViewport)
