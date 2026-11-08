@@ -71,6 +71,7 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	SpineControls.Reset();
 	PostureControls.Reset();
 	FootControls.Reset();
+	LegModifiers.Reset();
 	HeadControls.Reset();
 	LeftArmControls.Reset();
 	RightArmControls.Reset();
@@ -108,7 +109,18 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 			continue;
 		}
 		const EAedirBodyPart Part = BodyPartOf(Bone);
-		const FName Modifier = Control->CreateBodyModifier(Mesh, Bone, TEXT("Body"), Simulated);
+		// Standing, the legs are set on the ground by the steps: the floor, a step's edge or a weapon hanging at the side
+		// would only push them out of place. Down, they lie on the ground like everything else.
+		FPhysicsControlModifierData PartData = Simulated;
+		if (Part == EAedirBodyPart::Leg)
+		{
+			PartData.CollisionType = bLimp ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::QueryOnly;
+		}
+		const FName Modifier = Control->CreateBodyModifier(Mesh, Bone, TEXT("Body"), PartData);
+		if (Part == EAedirBodyPart::Leg)
+		{
+			LegModifiers.Add(Modifier);
+		}
 		const FString BoneText = Bone.ToString();
 		if (Part == EAedirBodyPart::Hips)
 		{
@@ -177,11 +189,27 @@ void UAedirBodyControlComponent::SetStrengths(float InUpright, float LeftArm, fl
 	ApplyMultipliers();
 }
 
+void UAedirBodyControlComponent::SetAirborne(bool bInAirborne)
+{
+	if (bAirborne != bInAirborne)
+	{
+		bAirborne = bInAirborne;
+		ApplyMultipliers();
+	}
+}
+
 void UAedirBodyControlComponent::SetLimp(bool bInLimp)
 {
 	if (bLimp != bInLimp)
 	{
 		bLimp = bInLimp;
+		if (Control)
+		{
+			for (const FName& Modifier : LegModifiers)
+			{
+				Control->SetBodyModifierCollisionType(Modifier, bLimp ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::QueryOnly);
+			}
+		}
 		AppliedKey = -1.f;
 		ApplyMultipliers();
 	}
@@ -232,6 +260,11 @@ void UAedirBodyControlComponent::SetFeetPlanted(bool bLeft, bool bRight)
 	}
 }
 
+FVector UAedirBodyControlComponent::GetPoseLocation(FName Bone) const
+{
+	return Control && Mesh ? Control->GetCachedBoneTransform(Mesh, Bone).GetLocation() : FVector::ZeroVector;
+}
+
 void UAedirBodyControlComponent::RebindHips(UCapsuleComponent* InCapsule)
 {
 	if (!Control || !Mesh || !InCapsule)
@@ -249,14 +282,26 @@ void UAedirBodyControlComponent::RebindHips(UCapsuleComponent* InCapsule)
 	ApplyMultipliers();
 }
 
-void UAedirBodyControlComponent::Teleported()
+void UAedirBodyControlComponent::Teleported(const FVector& Offset)
 {
-	if (Control && bReady)
+	if (!Control || !bReady || !Mesh)
 	{
-		Control->UpdateTargetCaches(0.f);
-		Control->SetCachedBoneVelocitiesToZero();
-		Control->ResetBodyModifiersInSetToCachedBoneTransforms(TEXT("All"));
+		return;
 	}
+	// The whole body is carried over as it is, every part by the same move, and set at rest: whatever speed the parts had
+	// from being torn after the capsule goes with it.
+	for (FBodyInstance* Body : Mesh->Bodies)
+	{
+		if (Body && Body->IsValidBodyInstance())
+		{
+			FTransform Moved = Body->GetUnrealWorldTransform();
+			Moved.AddToTranslation(Offset);
+			Body->SetBodyTransform(Moved, ETeleportType::TeleportPhysics);
+		}
+	}
+	Mesh->SetAllPhysicsLinearVelocity(FVector::ZeroVector);
+	Mesh->SetAllPhysicsAngularVelocityInRadians(FVector::ZeroVector);
+	Control->SetCachedBoneVelocitiesToZero();
 }
 
 void UAedirBodyControlComponent::ApplyMultipliers()
@@ -266,7 +311,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 		return;
 	}
 	// Only when something changed enough to matter.
-	const float Key = (bLimp ? 1000.f : 0.f) + (bHipsCarried ? 2000.f : 0.f) + FMath::RoundToFloat(Upright * 50.f) + FMath::RoundToFloat(LeftArmShare * 50.f) * 0.01f + FMath::RoundToFloat(RightArmShare * 50.f) * 0.0001f;
+	const float Key = (bLimp ? 1000.f : 0.f) + (bHipsCarried ? 2000.f : 0.f) + (bAirborne ? 4000.f : 0.f) + FMath::RoundToFloat(Upright * 50.f) + FMath::RoundToFloat(LeftArmShare * 50.f) * 0.01f + FMath::RoundToFloat(RightArmShare * 50.f) * 0.0001f;
 	if (FMath::IsNearlyEqual(Key, AppliedKey))
 	{
 		return;
@@ -309,5 +354,6 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 		Control->SetControlEnabled(Name, !bLimp && Foot > 0.f);
 	}
 	const float Weight = CVarAedirBodyGravity.GetValueOnGameThread() >= 0.f ? CVarAedirBodyGravity.GetValueOnGameThread() : StandingGravity;
-	Control->SetBodyModifiersInSetGravityMultiplier(TEXT("Body"), bLimp ? 1.f : FMath::Lerp(1.f, Weight, Upright));
+	// The feet carry part of the weight only while they stand on something; in the air it all falls alike.
+	Control->SetBodyModifiersInSetGravityMultiplier(TEXT("Body"), bLimp || bAirborne ? 1.f : FMath::Lerp(1.f, Weight, Upright));
 }

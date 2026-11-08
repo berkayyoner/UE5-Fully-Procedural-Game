@@ -456,6 +456,9 @@ private:
 	void UpdateBodyControl(float DeltaTime);
 	UPROPERTY(Transient)
 	TObjectPtr<class UAedirBodyControlComponent> BodyControl;
+
+	// The capsule size the hips were last tied to.
+	float BoundCapsuleHalfHeight = -1.f;
 	// Physical hips: the joint to the capsule, made once, and its pull set every frame.
 	bool UsesPhysicalHips() const;
 	void SetupHipJoint();

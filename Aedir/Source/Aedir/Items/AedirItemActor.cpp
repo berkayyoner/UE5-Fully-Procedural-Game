@@ -53,6 +53,8 @@ AAedirItemActor::AAedirItemActor()
 	SetRootComponent(Mesh);
 	Mesh->SetMobility(EComponentMobility::Movable);
 	Mesh->SetCollisionProfileName(TEXT("PhysicsActor"));
+	// Loose things are walked round or pushed, never stood on: the body could not follow the capsule up onto them.
+	Mesh->CanCharacterStepUpOn = ECB_No;
 	Mesh->SetSimulatePhysics(true);
 	Mesh->SetUseCCD(true);
 	Mesh->SetLinearDamping(ItemLinearDamping);

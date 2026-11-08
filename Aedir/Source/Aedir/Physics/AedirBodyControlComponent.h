@@ -70,6 +70,9 @@ public:
 	// Every frame: how strong the body holds itself up (0..1), and how strong each arm is.
 	void SetStrengths(float Upright, float LeftArm, float RightArm);
 
+	// Jumping or falling, the body carries all its weight.
+	void SetAirborne(bool bInAirborne);
+
 	// A body down on the ground: limp, every part loose. Back up, it is tied to the capsule again.
 	void SetLimp(bool bInLimp);
 
@@ -79,11 +82,14 @@ public:
 	// A foot on the ground stays where the pose plants it; lifted, it swings free.
 	void SetFeetPlanted(bool bLeft, bool bRight);
 
+	// Where the pose has a bone this frame, in the world: where its muscles are pulling it.
+	FVector GetPoseLocation(FName Bone) const;
+
 	// The capsule's physical body was made anew (its collision turned back on): the hips are tied to the new one.
 	void RebindHips(UCapsuleComponent* InCapsule);
 
 	// The body was moved at once (a teleport, a respawn): every part is put where the pose has it, at rest.
-	void Teleported();
+	void Teleported(const FVector& Offset);
 
 
 private:
@@ -98,6 +104,7 @@ private:
 	TArray<FName> SpineControls;
 	TArray<FName> PostureControls;
 	TArray<FName> FootControls;
+	TArray<FName> LegModifiers;
 	TArray<FName> HeadControls;
 	TArray<FName> LeftArmControls;
 	TArray<FName> RightArmControls;
@@ -110,6 +117,7 @@ private:
 
 	bool bReady = false;
 	bool bLimp = false;
+	bool bAirborne = false;
 	bool bHipsCarried = false;
 	bool bLeftPlanted = false;
 	bool bRightPlanted = false;

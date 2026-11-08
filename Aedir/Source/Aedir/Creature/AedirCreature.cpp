@@ -56,6 +56,8 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	{
 		Movement->bOrientRotationToMovement = false;
 		Movement->bUseControllerDesiredRotation = false;
+		// No higher than a leg lifts in a step: anything taller, the body would be left hanging on as the capsule went up.
+		Movement->MaxStepHeight = 35.f;
 	}
 
 	Stats = CreateDefaultSubobject<UAedirStatsComponent>(TEXT("Stats"));

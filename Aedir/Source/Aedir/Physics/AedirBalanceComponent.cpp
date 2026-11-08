@@ -47,10 +47,15 @@ namespace
 	constexpr double BumpRepeatSeconds = 0.6;
 	// Hips further than this from where they belong were not knocked there: the body was moved.
 	constexpr float HipsTeleportCm = 250.f;
+	// The same for a fully physical body, whose hips the pose sets exactly: no stride or blow carries them this far
+	// from it while it stands.
+	constexpr float BodyTeleportCm = 90.f;
 	// A get-up key counts this long after it was last held.
 	constexpr double AedirGetUpRequestHoldSeconds = 0.3;
 	// A foot lifted less than this share of its step counts as standing on the ground.
 	constexpr float AedirPlantedFootLift = 0.12f;
+	// A frame longer than the physics steps through (six substeps of a sixtieth of a second).
+	constexpr float AedirBodyHitchSeconds = 0.1f;
 	// Toppled over, parts of the body below this share of its height are pushed back against the blow.
 	constexpr float AedirToppleFootHoldShare = 0.3f;
 	// Seconds a body that starts to get up takes to tense its limbs.
@@ -446,6 +451,13 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	const float LeftArm = 1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::LeftArm) : 0.f);
 	const float RightArm = 1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::RightArm) : 0.f);
 	const float Upright = GetUprightStrength();
+	// A crouch remakes the capsule's physical body at its new size: the hips are tied to the new one.
+	const float CapsuleHalfHeight = BodyCapsule ? BodyCapsule->GetUnscaledCapsuleHalfHeight() : 0.f;
+	if (!FMath::IsNearlyEqual(CapsuleHalfHeight, BoundCapsuleHalfHeight))
+	{
+		BoundCapsuleHalfHeight = CapsuleHalfHeight;
+		BodyControl->RebindHips(BodyCapsule);
+	}
 	BodyControl->SetStrengths(Upright, LeftArm, RightArm);
 	const bool bGettingUp = IsGettingUp();
 	BodyControl->SetHipsCarried(bGettingUp);
@@ -458,6 +470,7 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	}
 	const UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
 	const bool bOnGround = Pose.bProceduralActive && Movement && !Movement->IsFalling();
+	BodyControl->SetAirborne(Movement && Movement->IsFalling());
 	BodyControl->SetFeetPlanted(bOnGround && Pose.LeftFootLift < AedirPlantedFootLift, bOnGround && Pose.RightFootLift < AedirPlantedFootLift);
 
 	// Hips pushed off where the legs would carry them tip the body over them and cost balance, the more the weaker it is.
@@ -469,14 +482,15 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 		return;
 	}
 	const FTransform Actor = CharacterOwner->GetActorTransform();
-	const FTransform RestFrame = MeshRestRelative * BodyCapsule->GetComponentTransform();
-	const FTransform RefPelvis = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), PelvisIndex);
-	const FVector Target = RestFrame.TransformPosition(RefPelvis.GetLocation()) + Actor.TransformVectorNoScale(FVector(Pose.HipForwardOffset, Pose.HipLateralOffset, Pose.HipOffsetZ));
+	// Where the pose has the hips this frame, crouched, reaching or leaning as it is.
+	const FVector Target = BodyControl->GetPoseLocation(PelvisBoneName);
 	const FVector Now = Pelvis->GetUnrealWorldTransform().GetLocation();
-	// Moved at once, by a teleport or a respawn, the whole body goes along instead of being torn after the capsule.
-	if (FVector::DistSquared(Now, Target) > FMath::Square(HipsTeleportCm))
+	// Moved at once, by a teleport or a respawn, the whole body goes along instead of being torn after the capsule. So it
+	// does after a frame longer than the physics can step through: the capsule went the whole way, the body could not.
+	if (FVector::DistSquared(Now, Target) > FMath::Square(BodyTeleportCm) || DeltaTime > AedirBodyHitchSeconds)
 	{
-		BodyControl->Teleported();
+		UE_LOG(LogAedir, Verbose, TEXT("[Fall] %s's body put back in its pose: hips %.0f cm off, frame %.3f s."), *GetNameSafe(GetOwner()), FVector::Dist(Now, Target), DeltaTime);
+		BodyControl->Teleported(Target - Now);
 		return;
 	}
 	const FVector Drift(Now.X - Target.X, Now.Y - Target.Y, 0.f);
