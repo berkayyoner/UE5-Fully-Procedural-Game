@@ -37,11 +37,6 @@ namespace
 	constexpr float AedirStepLifeSeconds = 45.f;
 	constexpr float AedirStepRunSpeed = 380.f;
 	constexpr float AedirStepSnowShare = 0.3f;
-	constexpr float AedirStepEffectWalkScale = 0.05f;
-	constexpr float AedirStepEffectRunScale = 0.12f;
-	// The share of walking and of running steps that kick up dust.
-	constexpr float AedirStepEffectWalkChance = 0.15f;
-	constexpr float AedirStepEffectRunChance = 0.45f;
 	constexpr float AedirStepSoundShare = 0.35f;
 	constexpr float AedirStepGrassRadiusCm = 18.f;
 	constexpr float AedirFootGroundOffsetCm = 10.f;
@@ -302,8 +297,8 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 	{
 		// A walking step only now and then stirs a little; a running one more often, a landing always.
 		const float Pace = FMath::Clamp(Speed2D / AedirStepRunSpeed, 0.f, 1.5f);
-		const float Scale = FMath::Lerp(AedirStepEffectWalkScale, AedirStepEffectRunScale, FMath::Square(FMath::Min(Pace, 1.f))) * (bStepIsLanding ? 1.6f : 1.f);
-		const float Chance = FMath::Lerp(AedirStepEffectWalkChance, AedirStepEffectRunChance, FMath::Clamp(Pace, 0.f, 1.f));
+		const float Scale = FMath::Lerp(StepEffectWalkScale, StepEffectRunScale, FMath::Square(FMath::Min(Pace, 1.f))) * (bStepIsLanding ? 1.6f : 1.f);
+		const float Chance = FMath::Lerp(StepEffectWalkChance, StepEffectRunChance, FMath::Clamp(Pace, 0.f, 1.f));
 		if (bStepIsLanding || FMath::FRand() < Chance)
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, System, Point, FRotationMatrix::MakeFromZ(Normal).Rotator(), FVector(Scale));

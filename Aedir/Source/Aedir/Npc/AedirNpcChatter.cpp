@@ -12,17 +12,8 @@
 
 namespace
 {
-	constexpr float ChatterRemarkRangeCm = 420.f;
-	constexpr float ChatterRemarkMinSeconds = 30.f;
-	constexpr float ChatterRemarkMaxSeconds = 70.f;
 	constexpr float ChatterTauntMinSeconds = 7.f;
 	constexpr float ChatterTauntMaxSeconds = 14.f;
-	// Two people talk only when they stand together, close enough to talk at an ordinary voice, and stop when one walks off.
-	constexpr float ChatterTalkRangeCm = 250.f;
-	constexpr float ChatterTalkLeaveCm = 380.f;
-	constexpr float ChatterTalkMinSeconds = 50.f;
-	constexpr float ChatterTalkMaxSeconds = 120.f;
-	constexpr float ChatterPauseSeconds = 0.6f;
 	constexpr float ChatterSeeDot = 0.25f;
 
 	// Remarks made in passing to whoever walks by, by how the speaker stands with the world.

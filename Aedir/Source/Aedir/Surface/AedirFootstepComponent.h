@@ -25,6 +25,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface", meta=(ClampMin=0))
 	float DefaultWetnessDryRatePerSecond = 0.03f;
 
+	// Dust or spray kicked up by a step: its size at a walk and at a run, and the share of walking and running steps that
+	// throw any up. A landing always does.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
+	float StepEffectWalkScale = 0.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
+	float StepEffectRunScale = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
+	float StepEffectWalkChance = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
+	float StepEffectRunChance = 0.45f;
+
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 

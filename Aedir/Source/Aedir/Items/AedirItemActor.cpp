@@ -7,11 +7,13 @@
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInterface.h"
 #include "Net/UnrealNetwork.h"
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarAedirWeldHeld(TEXT("aedir.WeldHeld"), 1, TEXT("Make a held item part of the hand's physical body."));
 	constexpr int32 AedirHighlightStencilValue = 250;
 }
 
@@ -126,6 +128,8 @@ void AAedirItemActor::SettleIntoCreatureHand(AAedirCreature* Creature, EAedirHan
 
 	// Seen from the hand, where it was and where the grip wants it; it goes from one to the other, never through a jump.
 	SettleTo = GetRootComponent()->GetRelativeTransform();
+	// It slides into the grip first and becomes part of the hand once it is there.
+	UnweldFromHand();
 	SetActorTransform(Before);
 	SettleFrom = GetRootComponent()->GetRelativeTransform();
 	SettleAlpha = 0.f;
@@ -231,6 +235,10 @@ void AAedirItemActor::Tick(float DeltaSeconds)
 		FTransform Now;
 		Now.Blend(SettleFrom, SettleTo, Share);
 		SetActorRelativeTransform(Now);
+		if (SettleAlpha >= 1.f && !bHolstered)
+		{
+			WeldToHand();
+		}
 		return;
 	}
 	SettleAlpha = 1.f;
@@ -518,6 +526,7 @@ void AAedirItemActor::SetFreePhysics(bool bFree)
 		return;
 	}
 
+	UnweldFromHand();
 	Mesh->SetCollisionEnabled(bFree ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
 	Mesh->SetSimulatePhysics(bFree);
 	if (bHeldCollision)
@@ -545,6 +554,30 @@ void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	Mesh->BodyInstance.SetMaskFilter(Creature->GetBodyMaskBit());
+	if (SettleAlpha >= 1.f)
+	{
+		WeldToHand();
+	}
+}
+
+void AAedirItemActor::WeldToHand()
+{
+	// Held, the item becomes part of the hand's own body: its weight is in the arm, it stops against a wall or a shield, and
+	// it shoves whatever it meets as hard as the arm behind it.
+	USceneComponent* Parent = Mesh ? Mesh->GetAttachParent() : nullptr;
+	if (!bHeldCollision || !Parent || Mesh->IsWelded() || CVarAedirWeldHeld.GetValueOnGameThread() == 0)
+	{
+		return;
+	}
+	Mesh->WeldTo(Parent, Mesh->GetAttachSocketName());
+}
+
+void AAedirItemActor::UnweldFromHand()
+{
+	if (Mesh && Mesh->IsWelded())
+	{
+		Mesh->UnWeldFromParent();
+	}
 }
 
 void AAedirItemActor::ApplyItemMass()

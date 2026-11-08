@@ -1,4 +1,8 @@
-#include "AedirBalanceComponent.h"
+﻿#include "AedirBalanceComponent.h"
+
+#include "AnimationRuntime.h"
+#include "Animation/AedirGaitComponent.h"
+#include "Engine/SkeletalMesh.h"
 
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
@@ -37,14 +41,7 @@ namespace
 	constexpr float ObjectImpactMinHeightCm = 50.f;
 	constexpr float AedirObjectImpactDamagePerScore = 0.002f;
 	constexpr float AedirWallImpactDamagePerSpeed = 0.01f;
-	// Impulse on the chest, in kg cm/s per cm/s of the speed it met a wall at.
-	constexpr float WallImpactBodyImpulsePerSpeed = 9.f;
-	// Running into another body: from what closing speed it counts, what balance it costs per cm/s beyond that, how hard
-	// the trunks jolt, and how long one shove lasts.
-	constexpr float BumpMinSpeed = 180.f;
-	constexpr float BumpLossPerSpeed = 0.0015f;
-	constexpr float BumpMaxLoss = 0.6f;
-	constexpr float BumpImpulsePerSpeed = 7.f;
+	// One shove from running into another body lasts this long.
 	constexpr double BumpRepeatSeconds = 0.6;
 
 	constexpr float HitReactionAthleticsCap = 100.f;
@@ -70,6 +67,7 @@ namespace
 	constexpr float BalanceSwayTiredDegrees = 2.2f;
 	constexpr float BalanceSwayHurtDegrees = 2.5f;
 	constexpr float BalanceSwayRate = 0.32f;
+	TAutoConsoleVariable<int32> CVarAedirActivePelvis(TEXT("aedir.ActivePelvis"), 1, TEXT("Hold the physical hips up by force (1) or move them with the pose (0)."));
 	TAutoConsoleVariable<float> CVarAedirArmDamping(TEXT("aedir.ArmDamping"), 1.f, TEXT("Scale of the arm muscles' damping."));
 	constexpr float HitReactionBoneImpulseScale = 0.12f;
 	constexpr float HitReactionBoneImpulseMax = 4500.f;
@@ -81,17 +79,6 @@ namespace
 	constexpr float StumbleCatchShare = 0.75f;
 	constexpr float StumbleCatchTiredShare = 0.35f;
 	constexpr float StumbleStaggerSeconds = 0.35f;
-	// Getting up off the ground: how long it takes a fresh body and how much longer a tired or hurt one, how low the hips
-	// may start, how far over the trunk is bent at first and how weak the limbs are then.
-	constexpr float GetUpBaseSeconds = 1.7f;
-	constexpr float GetUpTiredShare = 0.6f;
-	constexpr float GetUpHurtShare = 0.9f;
-	constexpr float GetUpMaxDropCm = 70.f;
-	constexpr float GetUpBendDegrees = 50.f;
-	constexpr float GetUpMuscleShare = 0.45f;
-	// Going down, no part of the body is thrown upwards faster than this, in cm/s.
-	constexpr float RagdollEntryMaxRiseSpeed = 60.f;
-
 	constexpr float ComBalanceSampleIntervalSeconds = 0.1f;
 	constexpr float ComBalanceGroundToleranceCm = 12.f;
 	constexpr float ComBalanceTraceUpCm = 20.f;
@@ -257,9 +244,105 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	if (!bIsRagdoll)
 	{
-		DrivePelvis();
+		if (bActivePelvis && CVarAedirActivePelvis.GetValueOnGameThread() != 0)
+		{
+			HoldPelvis(DeltaTime);
+		}
+		else
+		{
+			DrivePelvis();
+		}
 	}
 	LastVelocity = CharacterOwner->GetVelocity();
+}
+
+float UAedirBalanceComponent::GetUprightStrength() const
+{
+	const UAedirStatsComponent* Stats = FindStats();
+	if (bIsRagdoll || (Stats && (Stats->IsDead() || Stats->IsDying())))
+	{
+		return 0.f;
+	}
+	const float Stamina = Stats ? FMath::Clamp(Stats->GetStaminaFraction(), 0.f, 1.f) : 1.f;
+	const float Health = Stats ? FMath::Clamp(Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 1.f;
+	return FMath::Lerp(UprightExhaustedShare, 1.f, Stamina) * FMath::Lerp(UprightDyingShare, 1.f, Health)
+		* (1.f - 0.5f * GetDazeFactor()) * FMath::Lerp(1.f, GetUpMuscleShare, GetGetUpShare());
+}
+
+void UAedirBalanceComponent::HoldPelvis(float DeltaTime)
+{
+	FBodyInstance* Pelvis = BodyMesh ? BodyMesh->GetBodyInstance(PelvisBoneName) : nullptr;
+	const USkeletalMesh* Model = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	const int32 PelvisIndex = Model ? Model->GetRefSkeleton().FindBoneIndex(PelvisBoneName) : INDEX_NONE;
+	if (!Pelvis || PelvisIndex == INDEX_NONE || DeltaTime <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	// Where the hips belong: on the legs under the capsule, as the pose of the steps moves them, and lower while getting up.
+	const FTransform Actor = CharacterOwner->GetActorTransform();
+	const FTransform RestFrame = MeshRestRelative * BodyCapsule->GetComponentTransform();
+	const FTransform RefPelvis = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), PelvisIndex);
+	FAedirGaitState Pose;
+	if (const UAedirGaitComponent* Gait = CharacterOwner->FindComponentByClass<UAedirGaitComponent>())
+	{
+		Pose = Gait->GetGaitState();
+	}
+	const float Strength = GetUprightStrength();
+	// A weak body cannot hold itself all the way up: the knees give and the hips sink.
+	const FVector TargetLocation = RestFrame.TransformPosition(RefPelvis.GetLocation())
+		+ Actor.TransformVectorNoScale(FVector(Pose.HipForwardOffset, Pose.HipLateralOffset, Pose.HipOffsetZ + GetUpDropCm * GetGetUpShare() - (1.f - Strength) * PelvisWeakSagCm));
+	FRotator PoseTurn = Pose.PelvisRotation;
+	PoseTurn.Roll += Pose.PelvisRollDegrees;
+	const FQuat ActorQuat = Actor.GetRotation();
+	const FQuat TargetRotation = ActorQuat * PoseTurn.Quaternion() * ActorQuat.Inverse() * RestFrame.GetRotation() * RefPelvis.GetRotation();
+
+	// The hips are a mass carried on the legs: a spring pulls them to where they belong, as stiff as the body is strong and
+	// never harder than the legs can push, and blows knock them off it. They move with their own speed, so they lag into a
+	// start, carry on over a stop and swing back after a shove.
+	if (!bHipsInitialized)
+	{
+		HipsLocation = TargetLocation;
+		HipsVelocity = CharacterOwner->GetVelocity();
+		BodyMassKg = FMath::Max(BodyMesh->GetMass(), 1.f);
+		bHipsInitialized = true;
+	}
+	const float Hold = FMath::Max(Strength, PelvisMinHoldShare);
+	const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime / 0.008f), 1, 8);
+	const float Step = DeltaTime / Steps;
+	for (int32 Index = 0; Index < Steps; ++Index)
+	{
+		const FVector Accel = ((TargetLocation - HipsLocation) * FMath::Square(PelvisHoldFrequency * Hold)
+			- (HipsVelocity - CharacterOwner->GetVelocity()) * (2.f * PelvisHoldDamping * PelvisHoldFrequency * Hold)).GetClampedToMaxSize(PelvisMaxAccel * Hold);
+		HipsVelocity += Accel * Step;
+		HipsLocation += HipsVelocity * Step;
+	}
+	const FVector Offset = HipsLocation - TargetLocation;
+
+	// Hips pushed off their legs tip the body over them, and cost balance the more the weaker the body: a blow a fresh man
+	// takes in his stride puts a spent one on the ground.
+	const FVector Drift(Offset.X, Offset.Y, 0.f);
+	const FVector Tip = FVector::CrossProduct(FVector::UpVector, Drift.GetSafeNormal());
+	const float TipRadians = FMath::Atan2(static_cast<float>(Drift.Size()), PelvisTipLeverCm);
+	const FQuat Rotation = FQuat(Tip.IsNearlyZero() ? FVector::UpVector : Tip, TipRadians) * TargetRotation;
+	Pelvis->SetBodyTransform(FTransform(Rotation, HipsLocation), ETeleportType::None);
+	if (IsAuthoritative())
+	{
+		const float Beyond = static_cast<float>(Drift.Size()) - PelvisDriftFreeCm;
+		if (Beyond > 0.f)
+		{
+			ApplyBalanceImpact(Drift.GetSafeNormal(), Beyond / PelvisDriftLossCm * DeltaTime * (1.5f - Strength));
+		}
+	}
+}
+
+void UAedirBalanceComponent::PushHips(const FVector& Impulse)
+{
+	// A blow on the body moves the hips by what it carries over the body's own weight.
+	if (bHipsInitialized && !bIsRagdoll)
+	{
+		HipsVelocity += FVector(Impulse.X, Impulse.Y, 0.f) / FMath::Max(BodyMassKg, 1.f);
+	}
 }
 
 void UAedirBalanceComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -976,6 +1059,7 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 	{
 		BodyMesh->AddImpulseAtLocation(Impulse, Location, Bone);
 	}
+	PushHips(Impulse);
 }
 
 void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
@@ -1040,6 +1124,7 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	if (bRagdoll)
 	{
 		GetUpLeft = 0.f;
+		bHipsInitialized = false;
 		// The body goes down with the way it was moving, not up: a blow or a slip never throws it into the air.
 		const FVector Carried = CharacterOwner->GetVelocity();
 		if (Pelvis)
@@ -1083,7 +1168,8 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		{
 			BodyMesh->AttachToComponent(BodyCapsule, FAttachmentTransformRules::KeepRelativeTransform);
 		}
-		BodyMesh->SetRelativeTransform(MeshRestRelative, false, nullptr, ETeleportType::ResetPhysics);
+		// Physical hips stay where they lay and are pulled up from there; pose-driven ones are put back on the legs at once.
+		BodyMesh->SetRelativeTransform(MeshRestRelative, false, nullptr, bActivePelvis ? ETeleportType::None : ETeleportType::ResetPhysics);
 
 		// Standing up on the spot the capsule now stands on, from as low as the hips lay, bent over and slowly, longer for a
 		// tired or hurt body.
@@ -1118,7 +1204,8 @@ float UAedirBalanceComponent::GetGetUpShare() const
 
 void UAedirBalanceComponent::ApplyGetUpPose()
 {
-	if (!BodyMesh)
+	// Physical hips are lowered through where they are pulled to instead.
+	if (!BodyMesh || bActivePelvis)
 	{
 		return;
 	}

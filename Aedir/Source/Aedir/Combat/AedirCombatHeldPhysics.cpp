@@ -89,8 +89,14 @@ void UAedirCombatComponent::UpdateHeldWeight(float DeltaTime)
 		const float Leverage = Item->bTwoHanded && !bShared ? HeldOneHandedTwoHanderShare : 1.f;
 		const FVector Force = (FVector(0.f, 0.f, GravityZ) - State.Accel) * (Item->Weight * Leverage);
 		const float Share = bShared ? 0.5f : 1.f;
-		Body->AddForceAtLocation(Force * Share, Center, HandBone);
-		if (bShared)
+		// A weapon made part of the hand already weighs on it through the physics; only a loose one is added by hand here.
+		const UPrimitiveComponent* ItemBody = Cast<UPrimitiveComponent>(Item->GetRootComponent());
+		const bool bWelded = ItemBody && ItemBody->IsWelded();
+		if (!bWelded)
+		{
+			Body->AddForceAtLocation(Force * Share, Center, HandBone);
+		}
+		if (bShared && !bWelded)
 		{
 			const FName OtherBone = Hand == EAedirHand::Left ? Interaction->RightHandBone : Interaction->LeftHandBone;
 			Body->AddForceAtLocation(Force * (1.f - Share), Center, OtherBone);

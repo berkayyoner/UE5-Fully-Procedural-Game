@@ -110,6 +110,107 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
 	FAedirBoneMotor FootMotor = { 60000.f, 6000.f, 60000.f, 6000.f, 0.f, 0.f };
 
+	// The hips are physical too, held up and upright by a pull towards where the legs would carry them. Off, they follow the
+	// pose exactly and only the rest of the body is physical.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	bool bActivePelvis = true;
+
+	// How quickly the hips are pulled back to where they belong (rad/s) and how much that pull is damped (1 = no overshoot).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisHoldFrequency = 11.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisHoldDamping = 0.9f;
+
+	// The same for keeping them turned upright and facing the way the body faces.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisTurnFrequency = 14.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisTurnDamping = 1.f;
+
+	// The most acceleration the legs can give the hips at full strength, in cm/s2.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisMaxAccel = 3500.f;
+
+	// How much of its strength to stand a body keeps with no stamina left, and with no health left.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float UprightExhaustedShare = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float UprightDyingShare = 0.45f;
+
+	// Hips pushed this far off where the legs carry them start to cost balance, all of it per second at the second distance,
+	// and faster for a weak body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisDriftFreeCm = 18.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisDriftLossCm = 45.f;
+
+	// How far the hips of a body with no strength left sink, the least share of its pull a weak body keeps, and how far below
+	// the hips the feet are, which sets how far a shove tips the body over them.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisWeakSagCm = 12.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisMinHoldShare = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	float PelvisTipLeverCm = 90.f;
+
+	// Seconds a fresh body takes to get up off the ground.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpBaseSeconds = 1.7f;
+
+	// How much longer it takes with no stamina left, as a share.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpTiredShare = 0.6f;
+
+	// How much longer it takes with no health left, as a share.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpHurtShare = 0.9f;
+
+	// How far below standing the hips may start when getting up.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpMaxDropCm = 70.f;
+
+	// How far over the trunk is bent at the start of getting up.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpBendDegrees = 50.f;
+
+	// How weak the muscles are at the start of getting up.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpMuscleShare = 0.45f;
+
+	// Going down, no part of the body is thrown upwards faster than this, in cm/s.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float RagdollEntryMaxRiseSpeed = 60.f;
+
+	// Impulse on the chest per cm/s of the speed a wall is met at.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float WallImpactBodyImpulsePerSpeed = 9.f;
+
+	// Running into another body: from what closing speed in cm/s it counts.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float BumpMinSpeed = 180.f;
+
+	// Balance it costs per cm/s beyond that.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float BumpLossPerSpeed = 0.0015f;
+
+	// The most balance one shove costs.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float BumpMaxLoss = 0.6f;
+
+	// How hard the trunks jolt per cm/s.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float BumpImpulsePerSpeed = 7.f;
+
+	// How hard the body holds itself up now, 0 to 1: health, stamina, a daze and getting up all take from it; down, none.
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance|Upright")
+	float GetUprightStrength() const;
+
 	// The hit a loose body gets on top of its faint muscles.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
 	float RagdollMotorShare = 0.04f;
@@ -262,6 +363,13 @@ private:
 	void ApplyBodyContacts(bool bRagdoll);
 	void ApplyLegPhysics(bool bRagdoll);
 	void UpdateGetUp(float DeltaTime);
+	// Pulls the physical hips towards where the pose and the capsule want them, as hard as the body is strong.
+	void HoldPelvis(float DeltaTime);
+	void PushHips(const FVector& Impulse);
+	bool bHipsInitialized = false;
+	FVector HipsLocation = FVector::ZeroVector;
+	FVector HipsVelocity = FVector::ZeroVector;
+	float BodyMassKg = 70.f;
 	void BumpInto(class AAedirCreature* Other, const FHitResult& Hit);
 	void ApplyGetUpPose();
 	float GetUpLeft = 0.f;

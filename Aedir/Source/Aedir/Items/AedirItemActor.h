@@ -230,6 +230,8 @@ private:
 	// Solid in the hand of a creature, pushing what it meets, but not against the body that holds it.
 	void ApplyHeldCollision(const AAedirCreature* Creature);
 	bool bHeldCollision = false;
+	void WeldToHand();
+	void UnweldFromHand();
 	TEnumAsByte<ECollisionResponse> FreePawnResponse = ECR_Block;
 	void ApplyItemMass();
 	FTransform ComputeHoldTransform(const FTransform& HoldOffset) const;

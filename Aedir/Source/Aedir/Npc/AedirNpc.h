@@ -79,6 +79,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
 	FName StartWeapon;
 
+	// A word to someone passing within this distance, looking this way, every so many seconds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter")
+	float ChatterRemarkRangeCm = 420.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter")
+	float ChatterRemarkMinSeconds = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter")
+	float ChatterRemarkMaxSeconds = 70.f;
+
+	// Two idle people closer than this stop and talk, every so many seconds, and break off when one is further than the
+	// second distance; between lines a short pause.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter")
+	float ChatterTalkRangeCm = 250.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter")
+	float ChatterTalkLeaveCm = 380.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter")
+	float ChatterTalkMinSeconds = 50.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter")
+	float ChatterTalkMaxSeconds = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter")
+	float ChatterPauseSeconds = 0.6f;
+
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Npc")
 	EAedirNpcOrder Order = EAedirNpcOrder::Routine;
 
