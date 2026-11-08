@@ -89,3 +89,7 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Rain has a sound of its own, made from noise by Scripts/MakeWeatherSounds.py and imported with -run=AedirContent -Only=Sounds; wind and thunder keep theirs.
 - Talking is as in Skyrim: the view turns to the NPC, everyone else and the sky hold still, the NPC turns to face you and its head drifts and nods as it speaks; topics stand right of centre between gold rules, its words as a subtitle below.
 - Realistic Nanite meadow grass in a denser meadow; footsteps from Essential Footsteps SFX by surface, snow, wetness and gait, with the Footstep VFX pack's dust, snow and water at each step.
+- Farewell ends a talk; enemies show only their health; Shift runs in the fight stance; a boulder is let go with both hands; carried blades point forward, not at the ground; looser running arms; a two-hander in one hand drags the arm down; quieter footsteps matched to grass, stone, wood, gravel, sand, snow and wet ground, with small effects that grow with the pace.
+- Blows stop on bodies unless they cut through, also between blows and when merely pushed; a held blade turns aside from its own body; looser muscles and a slow sway that grows with fatigue and wounds.
+- Nobody dies at once unless beheaded: out of health a body lies dying for some seconds and cannot get up; disarmed or maimed NPCs flee and a lost hand takes nothing up.
+- Downward blows reach the ground, the trunk bending into them and arching under raised ones.

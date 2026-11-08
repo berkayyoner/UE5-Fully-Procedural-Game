@@ -322,6 +322,10 @@ private:
 	FRotator CurrentLean = FRotator::ZeroRotator;
 	float TimeBelowThreshold = 0.f;
 
+	// Where the slow drift of a standing body is, and what sets one body's drift apart from another's.
+	float SwayClock = 0.f;
+	float SwaySeed = FMath::FRandRange(0.f, 100.f);
+
 	// Balance a blow took beyond what there was to lose. A stumbling body has to win this back before it stands again.
 	float StumbleDebt = 0.f;
 	double RagdollStartTime = 0.0;

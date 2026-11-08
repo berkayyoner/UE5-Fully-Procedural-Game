@@ -119,7 +119,7 @@ void AAedirNpc::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	if (!HasAuthority() || !Stats || Stats->IsDead() || (Balance && Balance->IsRagdoll()))
+	if (!HasAuthority() || !Stats || Stats->IsDead() || Stats->IsDying() || (Balance && Balance->IsRagdoll()))
 	{
 		return;
 	}
@@ -802,7 +802,7 @@ void AAedirNpc::BuildTopics(const AAedirPlayerCharacter* Player, TArray<FAedirDi
 
 	Add(NSLOCTEXT("AedirNpc", "Compliment", "You seem to know this place well."), NSLOCTEXT("AedirNpc", "ComplimentAnswer", "Better than most. Kind of you to notice."), EAedirNpcAction::Compliment);
 	Add(NSLOCTEXT("AedirNpc", "Threaten", "Stay out of my way, or else."), NSLOCTEXT("AedirNpc", "ThreatenAnswer", "Is that so. I'll remember you said it."), EAedirNpcAction::Threaten);
-	Add(NSLOCTEXT("AedirNpc", "Goodbye", "Goodbye."), NSLOCTEXT("AedirNpc", "GoodbyeAnswer", "Walk well."), EAedirNpcAction::None, true);
+	Add(NSLOCTEXT("AedirNpc", "Goodbye", "Farewell."), NSLOCTEXT("AedirNpc", "GoodbyeAnswer", "Walk well."), EAedirNpcAction::None, true);
 }
 
 void AAedirNpc::PerformAction(AAedirPlayerCharacter* Player, EAedirNpcAction Action)

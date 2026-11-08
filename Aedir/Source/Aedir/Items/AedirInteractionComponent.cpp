@@ -12,6 +12,7 @@
 #include "Items/AedirItemActor.h"
 #include "Math/UnrealMathUtility.h"
 #include "Net/UnrealNetwork.h"
+#include "Wounds/AedirWoundComponent.h"
 
 namespace
 {
@@ -267,16 +268,17 @@ void UAedirInteractionComponent::DropHeld(EAedirHand Hand)
 		return;
 	}
 
-	// A two-handed weapon gripped by both hands is let go by one hand only; the other hand keeps holding it.
+	// A two-handed weapon gripped by both hands is let go by one hand only; the other hand keeps holding it. A big object
+	// carried in both arms is let go by both at once: one hand alone could not hold it anyway.
 	const EAedirHand OtherHand = GetOtherHand(Hand);
-	if (GetHeldItem(OtherHand) == Item)
+	if (GetHeldItem(OtherHand) == Item && Item->ItemClass == EAedirItemClass::Object)
+	{
+		ResetSlot(GetSlot(OtherHand));
+	}
+	else if (GetHeldItem(OtherHand) == Item)
 	{
 		ResetSlot(GetSlot(Hand));
-		if (Item->ItemClass == EAedirItemClass::Object)
-		{
-			Item->AttachToHandInPlace(Creature, OtherHand);
-		}
-		else if (Item->HeldHand == Hand)
+		if (Item->HeldHand == Hand)
 		{
 			Item->AttachToCreatureHand(Creature, OtherHand);
 		}
@@ -895,7 +897,9 @@ void UAedirInteractionComponent::BeginReach(EAedirHand Hand, AAedirItemActor* It
 	FAedirHandSlot& Slot = GetSlot(Hand);
 	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
 	const bool bJoiningOtherHand = Item && Other.State == EAedirHandState::Holding && Other.Item.Get() == Item;
-	if (!Creature || !Item || (!AAedirItemActor::IsPickable(Item) && !bJoiningOtherHand))
+	// A hand that is no longer there takes nothing.
+	const bool bHandGone = Creature && Creature->Wounds && Creature->Wounds->HasLostArm(Hand == EAedirHand::Left);
+	if (!Creature || !Item || bHandGone || (!AAedirItemActor::IsPickable(Item) && !bJoiningOtherHand))
 	{
 		return;
 	}

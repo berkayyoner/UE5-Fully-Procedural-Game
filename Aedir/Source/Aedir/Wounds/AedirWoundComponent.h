@@ -73,6 +73,21 @@ public:
 	bool TrySever(FName HitBone, const FVector& PlanePoint, const FVector& PlaneNormal, const FVector& Push, float EnergyJoules, float ArmorProtection);
 	bool IsSevered(FName Bone) const { return SeveredBones.Contains(Bone); }
 
+	// Whether the arm on that side is gone, at the shoulder, the elbow or the wrist.
+	bool HasLostArm(bool bLeft) const
+	{
+		const TCHAR* Side = bLeft ? TEXT("_l") : TEXT("_r");
+		for (const FName& Bone : SeveredBones)
+		{
+			const FString Name = Bone.ToString();
+			if (Name.EndsWith(Side) && (Name.StartsWith(TEXT("upperarm")) || Name.StartsWith(TEXT("lowerarm")) || Name.StartsWith(TEXT("hand"))))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+
 	// A bandage: the worst of the open wounds stop running. Server only.
 	void StopBleedingSome();
 

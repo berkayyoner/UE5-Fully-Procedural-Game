@@ -25,7 +25,7 @@ namespace
 	constexpr float AedirFootLooseGain = 3.f;
 	constexpr float AedirWristFollowShare = 0.25f;
 	// A bent elbow carries the forearm in across the belly, as a runner's does.
-	constexpr float AedirForearmInwardShare = 0.4f;
+	constexpr float AedirForearmInwardShare = 0.22f;
 	constexpr float AedirClavicleFollowShare = 0.25f;
 	constexpr float AedirReachAlphaThreshold = 0.001f;
 	constexpr float AedirElbowOutwardDistance = 60.f;

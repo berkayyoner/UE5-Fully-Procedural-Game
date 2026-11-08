@@ -19,7 +19,6 @@ namespace
 	constexpr int32 ConsoleMaxAmount = 200;
 	constexpr float ConsoleSpawnAheadCm = 160.f;
 	constexpr float ConsoleSpawnUpCm = 60.f;
-	constexpr float ConsoleLethalDamage = 1.0e6f;
 
 	const TCHAR* const ConsoleVerbs[] = { TEXT("help"), TEXT("player.additem"), TEXT("additem"), TEXT("player.removeitem"), TEXT("removeitem"), TEXT("spawn"), TEXT("placeatme"), TEXT("player.placeatme"), TEXT("enable"), TEXT("disable"), TEXT("delete"), TEXT("markfordelete"), TEXT("prid"), TEXT("kill"), TEXT("moveto"), TEXT("player.moveto"), TEXT("getpos"), TEXT("setscale"), TEXT("player.setav"), TEXT("player.getav"), TEXT("player.setstats"), TEXT("player.addstats"), TEXT("player.removestats"), TEXT("tgm"), TEXT("sw"), TEXT("setweather"), TEXT("showinventory"), TEXT("player.showinventory") };
 	const TCHAR* const ConsoleRefVerbs[] = { TEXT("enable"), TEXT("disable"), TEXT("delete"), TEXT("markfordelete"), TEXT("kill"), TEXT("moveto"), TEXT("player.moveto"), TEXT("getpos"), TEXT("setscale") };
@@ -586,7 +585,10 @@ void AedirConsoleCommands::Run(AAedirPlayerCharacter* Player, const FString& Lin
 	{
 		if (AAedirCreature* Creature = Cast<AAedirCreature>(ConsoleFindRef(Player, Words, 1)))
 		{
-			Creature->ReceiveCreatureDamage(ConsoleLethalDamage);
+			if (Creature->Stats)
+			{
+				Creature->Stats->Die();
+			}
 		}
 	}
 	else if (Verb == TEXT("moveto") || Verb == TEXT("player.moveto"))

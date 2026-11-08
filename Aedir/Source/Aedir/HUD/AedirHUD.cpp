@@ -667,15 +667,13 @@ void AAedirHUD::DrawLookTarget(const AAedirCreature* Creature)
 		const float TextHeight = MeasureText(Name, Font).Y;
 		AedirUIStyle::DrawText(*Canvas, Name, Font, FVector2f(CenterX, Top), Ivory, EAedirTextAlign::Center, 1.f);
 
-		// Under it, thinner, how much breath and magicka it has left: a tired foe is one to press.
+		// Only its life shows; its breath and magicka are its own to know.
 		const UAedirStatsComponent* NpcStats = Npc->Stats.Get();
 		const auto Share = [](float Value, float Max) { return FMath::Clamp(Value / FMath::Max(Max, 1.f), 0.f, 1.f); };
 		struct FTargetBar { float Fraction; float HeightShare; FLinearColor Color; };
 		const FTargetBar Bars[] =
 		{
 			{ NpcStats ? Share(NpcStats->GetHealth(), NpcStats->GetMaxHealth()) : 0.f, 1.f, FLinearColor(0.52f, 0.03f, 0.02f) },
-			{ NpcStats ? Share(NpcStats->GetStamina(), NpcStats->GetMaxStamina()) : 0.f, 0.6f, FLinearColor(0.12f, 0.42f, 0.1f) },
-			{ NpcStats ? Share(NpcStats->GetMana(), NpcStats->GetMaxMana()) : 0.f, 0.6f, FLinearColor(0.08f, 0.2f, 0.55f) },
 		};
 		const float HalfWidth = HudTargetBarWidth * 0.5f * Scale;
 		float Y = Top + TextHeight + HudTargetBarGap * Scale;

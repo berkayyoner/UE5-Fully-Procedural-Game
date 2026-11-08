@@ -381,7 +381,7 @@ bool UAedirWoundComponent::TrySever(FName HitBone, const FVector& PlanePoint, co
 	SeverBleedPerSecond += Name.StartsWith(TEXT("neck")) ? 100.f : (Name.StartsWith(TEXT("thigh")) || Name.StartsWith(TEXT("upperarm")) ? 5.f : 2.5f);
 	if (Name.StartsWith(TEXT("neck")) && Creature->Stats)
 	{
-		Creature->Stats->ApplyDamage(Creature->Stats->GetHealth() + 1.f);
+		Creature->Stats->Die();
 	}
 	else if (Name.Contains(TEXT("arm")) || Name.StartsWith(TEXT("hand")))
 	{

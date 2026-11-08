@@ -463,7 +463,7 @@ public:
 	float ElbowBendWalkDegrees = 5.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ElbowBendRunDegrees = 68.f;
+	float ElbowBendRunDegrees = 48.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float KneeBendMaxDegrees = 40.f;
@@ -746,6 +746,7 @@ private:
 	float DynamicHipOffset = 0.f;
 	float SmoothedSpineTwist = 0.f;
 	float SmoothedSwingTwist = 0.f;
+	float SmoothedSwingBend = 0.f;
 	float SmoothedPunchLean = 0.f;
 	bool bFeetInitialized = false;
 

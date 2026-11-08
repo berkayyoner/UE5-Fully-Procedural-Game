@@ -366,6 +366,9 @@ public:
 
 	// How far the spine turns with a weapon pulled to the side.
 	float GetSwingTwistDegrees() const;
+
+	// How far the trunk bends forward with the weapon (negative: back), from how low or high the arm has it.
+	float GetSwingBendDegrees() const;
 	bool HasAITarget() const { return AITarget != nullptr; }
 	void SetAIGrudge(AAedirCreature* Attacker);
 	float GetPunchLeanDegrees() const;
@@ -515,6 +518,17 @@ private:
 
 	// Holds a stuck blade where it is lodged until the time is up or the arm tears it out.
 	void UpdateLodged(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
+
+	// The arm is stopped where it met a body: it goes back to where it was before this frame's move and loses its speed,
+	// a share of it thrown back the other way.
+	void BlockAgainstBody(FAedirArmDynamics& Arm, float Bounce);
+
+	// What the hand holds is kept out of the body that holds it: the blade turns aside from the trunk, the head and the legs.
+	void KeepOutOfOwnBody(EAedirHand Hand, FAedirArmDynamics& Arm);
+
+	// A body a blade has just cut clean through, which it may pass on through for a moment.
+	TWeakObjectPtr<AActor> PassVictim[2];
+	double PassUntil[2] = { 0.0, 0.0 };
 	void ApplyRemoteArmState(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	void PublishArmState(EAedirHand Hand, const FAedirArmDynamics& Arm);
 	void SendArmAimToServer(float DeltaTime);
@@ -648,4 +662,7 @@ private:
 	double AILastSeenTime = 0.0;
 	bool bAIApproaching = false;
 	bool bAINextLeft = true;
+
+	// Whether this creature has fought with a weapon in hand; one that has lost it, or its arms, runs for its life.
+	bool bAIHadWeapon = false;
 };

@@ -28,6 +28,9 @@ public:
 	int32 GetCrushedCount() const { return Crushed.Num(); }
 	int32 GetInstanceCount() const;
 
+	// Whether grass grows within the radius of the point, for what a step on it sounds like.
+	bool IsGrassAt(const FVector& Point, float RadiusCm) const;
+
 private:
 	struct FCrushed
 	{

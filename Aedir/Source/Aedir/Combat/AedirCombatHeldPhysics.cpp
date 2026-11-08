@@ -26,6 +26,7 @@ namespace
 	constexpr float HeldGripTiredShare = 0.6f;
 	constexpr float HeldGripTwoHandShare = 1.8f;
 	constexpr float HeldStrainSeconds = 0.25f;
+	constexpr float HeldOneHandedTwoHanderShare = 1.8f;
 	constexpr float HeldStrainDecay = 2.f;
 	// The second hand on a weapon is pulled onto its grip and held there, and lets go when it is torn off.
 	constexpr float GripJointMinAlpha = 0.3f;
@@ -83,8 +84,10 @@ void UAedirCombatComponent::UpdateHeldWeight(float DeltaTime)
 		State.bHasVelocity = true;
 
 		// What it takes to hold it up and to move it, applied where its weight is, so a long blade twists the wrist as well.
-		const FVector Force = (FVector(0.f, 0.f, GravityZ) - State.Accel) * Item->Weight;
 		const bool bShared = bTwoHandGrip && GetHeldItem(Hand == EAedirHand::Left ? EAedirHand::Right : EAedirHand::Left) == Item;
+		// A weapon made for two hands, held out in one, hangs far from the wrist and pulls it down much harder.
+		const float Leverage = Item->bTwoHanded && !bShared ? HeldOneHandedTwoHanderShare : 1.f;
+		const FVector Force = (FVector(0.f, 0.f, GravityZ) - State.Accel) * (Item->Weight * Leverage);
 		const float Share = bShared ? 0.5f : 1.f;
 		Body->AddForceAtLocation(Force * Share, Center, HandBone);
 		if (bShared)

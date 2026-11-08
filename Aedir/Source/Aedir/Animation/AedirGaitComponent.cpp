@@ -548,6 +548,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineLeanPitch += KickSpineLeanDegrees * KickAlpha;
 	SmoothedPunchLean = FMath::FInterpTo(SmoothedPunchLean, Combat ? Combat->GetPunchLeanDegrees() : 0.f, DeltaTime, AedirPunchLeanInterpSpeed);
 	GaitState.SpineLeanPitch -= SmoothedPunchLean;
+	// The spine gives with a vertical blow: it bends into one that goes down and arches under one raised overhead.
+	SmoothedSwingBend = FMath::FInterpTo(SmoothedSwingBend, Combat ? Combat->GetSwingBendDegrees() : 0.f, DeltaTime, AedirSwingTwistInterpSpeed);
+	GaitState.SpineLeanPitch -= SmoothedSwingBend;
 	const float TwistTarget = FMath::Clamp(LookYaw * SpineTwistScale, -SpineTwistLimitDegrees, SpineTwistLimitDegrees);
 	SmoothedSpineTwist = FMath::FInterpTo(SmoothedSpineTwist, TwistTarget, DeltaTime, LookInterpSpeed);
 	SmoothedSwingTwist = FMath::FInterpTo(SmoothedSwingTwist, Combat ? Combat->GetSwingTwistDegrees() : 0.f, DeltaTime, AedirSwingTwistInterpSpeed);

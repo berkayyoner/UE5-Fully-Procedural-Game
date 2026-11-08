@@ -54,6 +54,13 @@ namespace
 	constexpr float HitReactionKnockdownExtraSeconds = 0.8f;
 	// The blow moves the part it lands on, not the whole body through the air.
 	constexpr float GrippedArmMotorShare = 0.3f;
+	constexpr float BalanceArmMuscleShare = 0.5f;
+	constexpr float BalanceTrunkMuscleShare = 0.7f;
+	// A standing body is never quite still: it drifts about its balance, more when tired or hurt.
+	constexpr float BalanceSwayDegrees = 1.1f;
+	constexpr float BalanceSwayTiredDegrees = 2.2f;
+	constexpr float BalanceSwayHurtDegrees = 2.5f;
+	constexpr float BalanceSwayRate = 0.32f;
 	TAutoConsoleVariable<float> CVarAedirArmDamping(TEXT("aedir.ArmDamping"), 1.f, TEXT("Scale of the arm muscles' damping."));
 	constexpr float HitReactionBoneImpulseScale = 0.22f;
 	constexpr float HitReactionBoneImpulseMax = 9000.f;
@@ -870,7 +877,8 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 {
 	UAedirStatsComponent* StatsComponent = FindStats();
 	const float Athletism = StatsComponent ? StatsComponent->Athletism : 0.f;
-	const bool bDead = StatsComponent && StatsComponent->IsDead();
+	// A dying body is down for good: it does not get up again.
+	const bool bDead = StatsComponent && (StatsComponent->IsDead() || StatsComponent->IsDying());
 
 	const AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
 	const float MaxLegInjury = Creature && Creature->Combat
@@ -953,8 +961,13 @@ void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
 
 	// Positive pitch raises the nose, moving the top of the pelvis toward -X; positive roll moves it toward +Y.
 	// The lean therefore points opposite to the disturbance on both axes.
-	const double Pitch = LeanDirection.X * Disturbance * MaxLeanDegrees;
-	const double Roll = -LeanDirection.Y * Disturbance * MaxLeanDegrees;
+	const UAedirStatsComponent* Stats = FindStats();
+	const float Tired = Stats ? Stats->GetFatigue() : 0.f;
+	const float Hurt = Stats ? 1.f - FMath::Clamp(Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
+	const float Sway = bIsRagdoll ? 0.f : BalanceSwayDegrees + Tired * BalanceSwayTiredDegrees + Hurt * BalanceSwayHurtDegrees;
+	SwayClock += DeltaTime * BalanceSwayRate;
+	const double Pitch = LeanDirection.X * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock + SwaySeed);
+	const double Roll = -LeanDirection.Y * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock * 1.3f + SwaySeed + 17.f);
 
 	CurrentLean = FMath::RInterpTo(CurrentLean, FRotator(Pitch, 0.0, Roll), DeltaTime, AedirLeanInterpSpeed);
 }
@@ -1400,14 +1413,19 @@ void UAedirBalanceComponent::ApplyMotorGroup(int32 GroupIndex, float Strength)
 	const UAedirStatsComponent* Stats = FindStats();
 	const bool bLoose = bIsRagdoll || (Stats && Stats->IsDead());
 
+	// Muscles that hold a pose loosely enough for weight, momentum and blows to show: the legs firm to stand on, the trunk
+	// and the head give, the arms most of all.
+	const bool bArm = GroupIndex == 1 || GroupIndex == 2;
+	const bool bLeg = GroupIndex == 3 || GroupIndex == 4;
+	const float Hold = bLoose ? 1.f : bArm ? BalanceArmMuscleShare : bLeg ? 1.f : BalanceTrunkMuscleShare;
 	for (const FName& BoneName : MotorGroupBones[GroupIndex])
 	{
 		const FAedirBoneMotor& Motor = GetBoneMotor(BoneName);
 		FPhysicalAnimationData Data;
 		Data.bIsLocalSimulation = bLoose;
-		Data.OrientationStrength = Motor.OrientationStrength * Strength;
+		Data.OrientationStrength = Motor.OrientationStrength * Strength * FMath::Sqrt(Hold);
 		Data.AngularVelocityStrength = Motor.AngularVelocityStrength * Strength * (GroupIndex == 1 || GroupIndex == 2 ? CVarAedirArmDamping.GetValueOnGameThread() : 1.f);
-		Data.PositionStrength = bLoose ? 0.f : Motor.PositionStrength * Strength;
+		Data.PositionStrength = bLoose ? 0.f : Motor.PositionStrength * Strength * Hold;
 		Data.VelocityStrength = bLoose ? 0.f : Motor.VelocityStrength * Strength * (GroupIndex == 1 || GroupIndex == 2 ? CVarAedirArmDamping.GetValueOnGameThread() : 1.f);
 		Data.MaxLinearForce = Motor.MaxLinearForce;
 		Data.MaxAngularForce = Motor.MaxAngularForce;

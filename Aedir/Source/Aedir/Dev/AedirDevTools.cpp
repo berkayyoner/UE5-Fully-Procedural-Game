@@ -112,7 +112,6 @@ namespace
 	constexpr float DevToolsSkillDefaultAmount = 10.f;
 	constexpr float DevToolsHurtDefaultAmount = 20.f;
 	constexpr float DevToolsScreenMessageSeconds = 8.f;
-	constexpr double DevToolsLethalDamage = 1.0e6;
 
 	void DevToolsReport(const FString& Message)
 	{
@@ -387,7 +386,7 @@ void UAedirDevTools::KillAll(AAedirPlayerCharacter* Player, const FString& Args)
 			continue;
 		}
 
-		Creature->ReceiveCreatureDamage(static_cast<float>(DevToolsLethalDamage));
+		Creature->Stats->Die();
 		++Targets;
 	}
 

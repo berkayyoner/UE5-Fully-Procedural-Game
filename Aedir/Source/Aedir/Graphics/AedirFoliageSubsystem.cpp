@@ -277,6 +277,18 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 	UE_LOG(LogAedir, Log, TEXT("Planted %d grass and flowers around %s"), Planted, *Around.ToCompactString());
 }
 
+bool UAedirFoliageSubsystem::IsGrassAt(const FVector& Point, float RadiusCm) const
+{
+	for (const TObjectPtr<UInstancedStaticMeshComponent>& Patch : Patches)
+	{
+		if (Patch && Patch->Bounds.GetSphere().IsInside(Point, RadiusCm) && !Patch->GetInstancesOverlappingSphere(Point, RadiusCm, false).IsEmpty())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 void UAedirFoliageSubsystem::Tick(float DeltaTime)
 {
 	UWorld* World = GetWorld();

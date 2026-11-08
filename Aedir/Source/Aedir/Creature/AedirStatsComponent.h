@@ -62,6 +62,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_IsDead, Category="Aedir|Stats")
 	bool bIsDead = false;
 
+	// Out of health but not yet dead: down, unable to rise, slipping away over some seconds unless healed.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
+	bool bIsDying = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
 	float HealthRegenPerSecond = 0.5f;
 
@@ -203,6 +207,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	bool IsDead() const;
+	bool IsDying() const { return bIsDying; }
+
+	// Death at once, as when the head is off. Everything else that empties the health leaves a creature dying first.
+	void Die();
 
 	// Server only. Restores persisted values, clamping them to the valid ranges, and rebroadcasts the change delegates.
 	void ApplySavedState(float InHealth, float InMaxHealth, float InMana, float InMaxMana, float InStamina, float InMaxStamina, float InStrength, float InAthletism, const TArray<float>& InSkills);
@@ -221,6 +229,8 @@ private:
 
 	UFUNCTION()
 	void OnRep_IsDead();
+
+	float DyingSeconds = 0.f;
 
 	double LastStaminaConsumptionTime = -1000000.0;
 	float StrengthExperienceBank = 0.f;

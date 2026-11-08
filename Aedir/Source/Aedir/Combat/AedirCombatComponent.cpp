@@ -88,10 +88,15 @@ namespace
 	constexpr float AedirFistAimPitchMax = 85.f;
 	// Weapon stance. The hand stays in front of the chest and moves little; the blade sweeps much further around it.
 	constexpr float AedirWeaponYawLimit = 100.f;
-	constexpr float AedirWeaponPitchMin = -75.f;
+	constexpr float AedirWeaponPitchMin = -95.f;
+	// All the way down the point goes to the ground in front of the feet, for a blow at someone lying there.
+	constexpr float AedirWeaponDownPitch = -82.f;
+	// The trunk bends into a downward blow and arches back under a raised one.
+	constexpr float AedirSwingBendDownDegrees = 34.f;
+	constexpr float AedirSwingBendUpDegrees = 9.f;
 	constexpr float AedirWeaponMouseShare = 1.8f;
 	// With no button held the point hangs down and across the body.
-	constexpr float AedirWeaponGuardPitch = -30.f;
+	constexpr float AedirWeaponGuardPitch = -14.f;
 	constexpr float AedirWeaponGuardInwardYaw = 34.f;
 	constexpr float AedirWeaponChestHeightCm = 28.f;
 	constexpr float AedirWeaponChestSideCm = 10.f;
@@ -142,7 +147,7 @@ namespace
 	constexpr float AedirSwingEndHeightCm = 44.f;
 	constexpr float AedirSwingAcrossForwardCm = 12.f;
 	constexpr float AedirSwingThrowCm = 12.f;
-	constexpr float AedirWeaponLowerHandPerDegree = 0.35f;
+	constexpr float AedirWeaponLowerHandPerDegree = 0.42f;
 	// The second half opens the blade outwards and takes it round behind the body, with the hand up beside the shoulder.
 	constexpr float AedirWeaponBackYaw = 165.f;
 	constexpr float AedirWeaponBackPitch = 18.f;
@@ -170,10 +175,10 @@ namespace
 	constexpr float AedirWeaponRaisedDown = 0.28f;
 	constexpr float AedirWeaponRaisedYawShare = 0.3f;
 	// A weapon carried in the loose arm hangs from the hand. A long one leans forward so its point stays off the ground.
-	constexpr float AedirCarryHangPitch = 68.f;
+	constexpr float AedirCarryHangPitch = 30.f;
 	constexpr float AedirCarryHandHeightCm = 72.f;
 	// A two-handed weapon in one hand: the arm has to bear all of it, far from the hand.
-	constexpr float AedirOneHandedStrainMass = 2.4f;
+	constexpr float AedirOneHandedStrainMass = 3.4f;
 	constexpr float AedirOneHandedDroopCm = 8.f;
 	constexpr float AedirOneHandedDroopPitch = 30.f;
 	// Held items stop at what they hit. Only what is light enough gives way.
@@ -286,14 +291,23 @@ namespace
 	constexpr float AedirImpactFullFlatJoules = 120.f;
 	constexpr float AedirImpactMaxHealthShare = 0.6f;
 	constexpr float AedirAIRestStaminaShare = 0.15f;
+	constexpr float AedirAIFleeCm = 1500.f;
 	constexpr float AedirImpactMaxSpeed = 5000.f;
+	// Room the own body takes up, which a held blade keeps out of.
+	constexpr float AedirOwnTrunkRadiusCm = 17.f;
+	constexpr float AedirOwnHeadRadiusCm = 13.f;
+	constexpr float AedirOwnThighRadiusCm = 9.f;
+	constexpr float AedirOwnBladeGuardCm = 12.f;
+	// How a blow that does not get through comes off the body, and how long a clean cut may carry on through.
+	constexpr float AedirBluntBounce = 0.2f;
+	constexpr double AedirPassThroughSeconds = 0.35;
 	// How fast a caught blade has to have been going to tear itself out of the hand.
 	constexpr float AedirWrenchSpeedBase = 2600.f;
 	constexpr float AedirWrenchSpeedPerStrength = 12.f;
 	constexpr float AedirWrenchTwoHandShare = 1.6f;
 	// An edge needs this much energy, before armour, to go right through each part of the body. A blow well short of it
 	// glances off, one in between bites in and sticks, and anything past it carries on.
-	constexpr float AedirCutHeadJoules = 160.f;
+	constexpr float AedirCutHeadJoules = 320.f;
 	constexpr float AedirCutTorsoJoules = 340.f;
 	constexpr float AedirCutArmJoules = 120.f;
 	constexpr float AedirCutLegJoules = 190.f;
@@ -922,6 +936,29 @@ void UAedirCombatComponent::SetWeaponDirNow(EAedirHand Hand, const FVector& Dire
 	GetArm(Hand).WeaponDirSpeed = FVector::ZeroVector;
 }
 
+float UAedirCombatComponent::GetSwingBendDegrees() const
+{
+	// Forward is positive: the trunk follows the weapon arm down, and leans back a little as it goes up overhead.
+	float Bend = 0.f;
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		const EAedirHand Hand = static_cast<EAedirHand>(Index);
+		if (!IsWeaponStance(Hand) || IsSecondaryGripHand(Hand))
+		{
+			continue;
+		}
+		const float AimY = static_cast<float>(GetArm(Hand).PoseAimDeg.Y);
+		const float Down = FMath::Clamp(-AimY / -AedirWeaponPitchMin, 0.f, 1.f);
+		const float Up = CombatRaiseShare(AimY, AedirWeaponRaiseFullDegrees);
+		Bend = FMath::Max(Bend, Down * AedirSwingBendDownDegrees - Up * AedirSwingBendUpDegrees);
+		if (Bend <= 0.f)
+		{
+			Bend = FMath::Min(Bend, Down * AedirSwingBendDownDegrees - Up * AedirSwingBendUpDegrees);
+		}
+	}
+	return Bend * GetFightShare();
+}
+
 float UAedirCombatComponent::GetSwingTwistDegrees() const
 {
 	// The spine turns with a swing, as far as the weapon is pulled to the side, and with a punch, as hard as it is thrown.
@@ -1141,7 +1178,8 @@ FVector UAedirCombatComponent::ComputeWeaponTargetDir(EAedirHand Hand, const FAe
 		// One smooth curve through the poses of the swing, from behind the body on one side to behind it on the other.
 		const FVector2D Angles = CombatSwingSpline<FVector2D>(FMath::Clamp(static_cast<float>(Aim.X) / AedirWeaponYawLimit, -1.f, 1.f), [this, Hand, Item](float Travel) { return ComputeSwingBladeKey(Hand, Item, Travel); });
 		const float Droop = (Item && Item->bTwoHanded && !bTwoHandGrip ? AedirOneHandedDroopPitch : 0.f) + (Creature->Stats ? Creature->Stats->GetFatigue() * AedirFatigueDroopPitch : 0.f) + (Item ? Item->Weight * (bTwoHandGrip ? 0.5f : 1.f) * AedirWeaponWeightDroopPerKg : 0.f);
-		const float Pitch = static_cast<float>(Angles.X) + FMath::Min(static_cast<float>(Aim.Y), 0.f) * AedirWeaponLowerPitchShare - Droop;
+		const float DownShare = FMath::Clamp(-FMath::Min(static_cast<float>(Aim.Y), 0.f) / -AedirWeaponPitchMin, 0.f, 1.f);
+		const float Pitch = FMath::Lerp(static_cast<float>(Angles.X), AedirWeaponDownPitch, FMath::Pow(DownShare, 0.8f)) - Droop;
 		const FVector SwingDir = FRotator(Pitch, ActorYaw + Angles.Y, 0.0).Vector();
 
 		// Mouse up goes through the upright blade to one lying straight back behind the raised hands.
@@ -2104,7 +2142,74 @@ void UAedirCombatComponent::IntegrateArm(EAedirHand Hand, FAedirArmDynamics& Arm
 
 	UpdateWeaponDir(Hand, Arm, DeltaTime, StrengthFactor, WeaponWeight);
 	ResolveHeldCollision(Hand, Arm, PrevHand, PrevDir, DeltaTime);
+	KeepOutOfOwnBody(Hand, Arm);
 	UpdateLodged(Hand, Arm, DeltaTime);
+}
+
+void UAedirCombatComponent::BlockAgainstBody(FAedirArmDynamics& Arm, float Bounce)
+{
+	Arm.HandWorld = Arm.PrevHandWorld;
+	const FVector Before = (Arm.PrevTipWorld - Arm.PrevHandWorld).GetSafeNormal();
+	if (!Before.IsNearlyZero())
+	{
+		Arm.WeaponDir = Before;
+	}
+	Arm.HandVelocity *= -Bounce;
+	Arm.WeaponDirSpeed *= -Bounce;
+	Arm.PoseAimSpeed *= -Bounce;
+}
+
+void UAedirCombatComponent::KeepOutOfOwnBody(EAedirHand Hand, FAedirArmDynamics& Arm)
+{
+	const AAedirItemActor* Item = GetHeldItem(Hand);
+	const USkeletalMeshComponent* Body = Creature->GetMesh();
+	if (!Item || !Body || Item->ItemClass != EAedirItemClass::Weapon || IsSecondaryGripHand(Hand) || Arm.WeaponDir.IsNearlyZero() || Arm.LodgedIn.IsValid())
+	{
+		return;
+	}
+
+	struct FBodyPart { const TCHAR* From; const TCHAR* To; float RadiusCm; };
+	static const FBodyPart Parts[] =
+	{
+		{ TEXT("pelvis"), TEXT("spine_05"), AedirOwnTrunkRadiusCm },
+		{ TEXT("neck_01"), TEXT("head"), AedirOwnHeadRadiusCm },
+		{ TEXT("thigh_l"), TEXT("calf_l"), AedirOwnThighRadiusCm },
+		{ TEXT("thigh_r"), TEXT("calf_r"), AedirOwnThighRadiusCm },
+	};
+	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
+	const float Length = GetEffectiveWeaponLength(Hand) * Scale;
+	for (int32 Pass = 0; Pass < 2; ++Pass)
+	{
+		for (const FBodyPart& Part : Parts)
+		{
+			const FVector BladeFrom = Arm.HandWorld + Arm.WeaponDir * (AedirOwnBladeGuardCm * Scale);
+			const FVector BladeTo = Arm.HandWorld + Arm.WeaponDir * Length;
+			FVector OnBlade;
+			FVector OnBody;
+			FMath::SegmentDistToSegmentSafe(BladeFrom, BladeTo, Body->GetBoneLocation(Part.From), Body->GetBoneLocation(Part.To), OnBlade, OnBody);
+			const FVector Apart = OnBlade - OnBody;
+			const double Gap = Apart.Size();
+			const double Radius = Part.RadiusCm * Scale;
+			if (Gap >= Radius)
+			{
+				continue;
+			}
+			// The blade turns about the hand until the part it touched lies outside the body.
+			const FVector Out = Gap > KINDA_SMALL_NUMBER ? Apart / Gap : FVector::CrossProduct(Arm.WeaponDir, FVector::UpVector).GetSafeNormal();
+			const double Reach = FMath::Max(FVector::Dist(OnBlade, Arm.HandWorld), 5.0);
+			const FVector Tip = BladeTo + Out * ((Radius - Gap) * (Length / Reach));
+			const FVector NewDir = (Tip - Arm.HandWorld).GetSafeNormal();
+			if (!NewDir.IsNearlyZero())
+			{
+				Arm.WeaponDir = NewDir;
+				const double Into = FVector::DotProduct(Arm.WeaponDirSpeed, -Out);
+				if (Into > 0.0)
+				{
+					Arm.WeaponDirSpeed += Out * Into;
+				}
+			}
+		}
+	}
 }
 
 void UAedirCombatComponent::UpdateLodged(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime)
@@ -2446,7 +2551,7 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 	for (const FHitResult& Hit : Hits)
 	{
 		AActor* HitActor = Hit.GetActor();
-		if (!HitActor || HitActor == Creature || HitActor == HeldItem || IsImpactOnCooldown(Hand, HitActor, Now))
+		if (!HitActor || HitActor == Creature || HitActor == HeldItem)
 		{
 			continue;
 		}
@@ -2458,15 +2563,31 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 				continue;
 			}
 
+			// A body is solid: whatever does not cut through it stops against it, also between blows and when merely pushed.
+			const int32 Index = HandIndex(Hand);
+			const bool bPassing = PassVictim[Index].Get() == Victim && Now < PassUntil[Index];
 			const float RelativeSpeed = FMath::Max(0.f, static_cast<float>(FVector::DotProduct(TipVelocity - Victim->GetVelocity(), -Hit.ImpactNormal)));
+			if (IsImpactOnCooldown(Hand, HitActor, Now) || RelativeSpeed < MinImpactSpeed)
+			{
+				if (!bPassing && !Arm.LodgedIn.IsValid())
+				{
+					BlockAgainstBody(Arm, 0.f);
+				}
+				continue;
+			}
 			// Faster than any arm can move is a body that was just put somewhere else, not a blow.
-			if (RelativeSpeed < MinImpactSpeed || RelativeSpeed > AedirImpactMaxSpeed)
+			if (RelativeSpeed > AedirImpactMaxSpeed)
 			{
 				continue;
 			}
 
 			RegisterImpact(Hand, Victim, Now);
 			ApplyCreatureImpact(Hand, Arm, Victim, Hit, TipVelocity, RelativeSpeed, MassEff, AxialAlignment);
+			continue;
+		}
+
+		if (IsImpactOnCooldown(Hand, HitActor, Now))
+		{
 			continue;
 		}
 
@@ -2572,23 +2693,24 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	const TCHAR* Outcome = TEXT("stuck");
 	if (!bEdged)
 	{
-		Arm.HandVelocity *= AedirImpactRecoilScale;
+		// A fist, a haft or a hammer head lands and stops on what it hit.
+		BlockAgainstBody(Arm, AedirBluntBounce);
 		Outcome = TEXT("blunt");
 	}
 	else if (bGlance)
 	{
 		Outcome = TEXT("glanced off");
 		// Not enough behind it: the edge skips off and the arm is thrown back.
-		Arm.HandVelocity *= -AedirGlanceBounce;
-		Arm.WeaponDirSpeed *= -AedirGlanceBounce;
-		Arm.PoseAimSpeed *= -AedirGlanceBounce;
+		BlockAgainstBody(Arm, AedirGlanceBounce);
 	}
 	else if (bSevered || CutShare >= 1.f || !VictimBody || Bone.IsNone())
 	{
-		// Clean through: it slows, but the swing carries on.
+		// Clean through: it slows, but the swing carries on through the body.
 		Outcome = TEXT("went through");
 		Arm.HandVelocity *= AedirCutThroughKeep;
 		Arm.PoseAimSpeed *= AedirCutThroughKeep;
+		PassVictim[HandIndex(Hand)] = Victim;
+		PassUntil[HandIndex(Hand)] = GetWorld()->GetTimeSeconds() + AedirPassThroughSeconds;
 	}
 	else
 	{
@@ -2690,6 +2812,7 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 
 		bAIApproaching = false;
 		AIAttackTimer = 0.f;
+		bAIHadWeapon = false;
 		return;
 	}
 
@@ -2702,6 +2825,21 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	const EAedirHand WeaponHand = GetAIWeaponHand();
 	const AAedirItemActor* Weapon = GetHeldItem(WeaponHand);
 	const bool bArmed = Weapon && Weapon->ItemClass == EAedirItemClass::Weapon;
+	bAIHadWeapon |= bArmed;
+	const bool bLeftGone = Creature->Wounds && Creature->Wounds->HasLostArm(true);
+	const bool bRightGone = Creature->Wounds && Creature->Wounds->HasLostArm(false);
+	const bool bCanRearm = Creature->Interaction && Creature->Interaction->FindWaistWeaponSlot() != INDEX_NONE;
+	if ((bLeftGone && bRightGone) || (bAIHadWeapon && !bArmed && !bCanRearm) || ((bLeftGone || bRightGone) && !bArmed && !bCanRearm))
+	{
+		// Disarmed or maimed: it turns and runs from the one it was fighting.
+		CancelSwing(EAedirHand::Left);
+		CancelSwing(EAedirHand::Right);
+		SetGuardInternal(EAedirHand::Left, false);
+		SetGuardInternal(EAedirHand::Right, false);
+		Creature->SetWantsToRun(true);
+		Creature->WalkTowards(OwnerLocation + (OwnerLocation - TargetLocation).GetSafeNormal2D() * AedirAIFleeCm, DeltaTime, AedirAITurnSpeed);
+		return;
+	}
 	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
 	const float Reach = (AedirAIArmReachCm + (bArmed ? Weapon->GetWeaponLength() * AedirAIWeaponReachShare : 0.f)) * Scale;
 

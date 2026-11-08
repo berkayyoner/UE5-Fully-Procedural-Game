@@ -54,6 +54,10 @@ private:
 	float FootWetness[2] = { 0.f, 0.f };
 	float PreviousLift[2] = { 0.f, 0.f };
 
+	// What the step came down on, and the family of sounds it makes when it has no surface type of its own.
+	TWeakObjectPtr<UPrimitiveComponent> StepGround;
+	FString GuessStepFamily(const FVector& Point) const;
+
 	// Whether the step being made is a landing from a fall or a jump.
 	bool bStepIsLanding = false;
 

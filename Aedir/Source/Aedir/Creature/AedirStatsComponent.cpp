@@ -17,6 +17,10 @@ namespace
 	constexpr float StatsAthletismMaxStaminaGain = 0.8f;
 	constexpr float StatsAthletismRegenGain = 1.2f;
 	constexpr float StatsStarveDamagePerSecond = 0.25f;
+	// Out of health, a body lies dying this long before it is dead; every further point of damage takes this much off.
+	constexpr float StatsDyingMinSeconds = 8.f;
+	constexpr float StatsDyingMaxSeconds = 18.f;
+	constexpr float StatsDyingSecondsPerDamage = 0.15f;
 	constexpr float AedirStatMin = 1.f;
 	constexpr float AedirStatMax = 100.f;
 	constexpr float AedirSkillMin = 0.f;
@@ -64,6 +68,17 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	}
 
 	bool bChanged = false;
+
+	// Dying, nothing comes back; the time left runs out.
+	if (bIsDying)
+	{
+		DyingSeconds -= DeltaTime;
+		if (DyingSeconds <= 0.f)
+		{
+			Die();
+		}
+		return;
+	}
 
 	// A body at work burns through both faster. Thirst comes first.
 	const AActor* Body = GetOwner();
@@ -148,6 +163,7 @@ void UAedirStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(UAedirStatsComponent, Skills);
 	DOREPLIFETIME(UAedirStatsComponent, RaceSizeMultiplier);
 	DOREPLIFETIME(UAedirStatsComponent, bIsDead);
+	DOREPLIFETIME(UAedirStatsComponent, bIsDying);
 
 	DOREPLIFETIME_CONDITION(UAedirStatsComponent, HealthRegenPerSecond, COND_InitialOnly);
 	DOREPLIFETIME_CONDITION(UAedirStatsComponent, ManaRegenPerSecond, COND_InitialOnly);
@@ -205,18 +221,42 @@ float UAedirStatsComponent::ApplyDamage(float Amount)
 		return 0.f;
 	}
 
+	// A body already failing slips away faster with every further wound.
+	if (bIsDying)
+	{
+		DyingSeconds -= Amount * StatsDyingSecondsPerDamage;
+		if (DyingSeconds <= 0.f)
+		{
+			Die();
+		}
+		return 0.f;
+	}
+
 	const float AppliedDamage = FMath::Min(Amount, Health);
 	Health -= AppliedDamage;
 
 	if (Health <= 0.f)
 	{
 		Health = 0.f;
-		bIsDead = true;
-		OnDeath.Broadcast();
+		bIsDying = true;
+		DyingSeconds = FMath::FRandRange(StatsDyingMinSeconds, StatsDyingMaxSeconds);
 	}
 
 	OnStatChanged.Broadcast();
 	return AppliedDamage;
+}
+
+void UAedirStatsComponent::Die()
+{
+	if (!IsAuthoritative() || bIsDead)
+	{
+		return;
+	}
+	Health = 0.f;
+	bIsDying = false;
+	bIsDead = true;
+	OnDeath.Broadcast();
+	OnStatChanged.Broadcast();
 }
 
 void UAedirStatsComponent::Heal(float Amount)
@@ -227,6 +267,7 @@ void UAedirStatsComponent::Heal(float Amount)
 	}
 
 	Health = FMath::Min(MaxHealth, Health + Amount);
+	bIsDying = bIsDying && Health <= 0.f;
 	OnStatChanged.Broadcast();
 }
 
@@ -241,6 +282,7 @@ void UAedirStatsComponent::RestoreAll()
 	Mana = MaxMana;
 	Stamina = GetMaxStamina();
 	bIsDead = false;
+	bIsDying = false;
 
 	OnStatChanged.Broadcast();
 }

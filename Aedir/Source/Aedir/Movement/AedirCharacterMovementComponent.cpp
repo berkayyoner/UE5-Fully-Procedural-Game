@@ -16,6 +16,8 @@ namespace
 	constexpr float AedirSideArcDegrees = 90.f;
 	constexpr float AedirBackArcDegrees = 135.f;
 	constexpr double AedirRunMinSpeedSquared = 100.0;
+	// Running in the fight stance is still slower than an open run, but not held to a walk.
+	constexpr float AedirFightStanceRunShare = 0.8f;
 	constexpr float AedirBodyMovingSpeed = 20.f;
 	constexpr float AedirTurnInPlaceFinishYaw = 5.f;
 	constexpr float AedirJumpFireRemainingShare = 0.2f;
@@ -167,7 +169,7 @@ void UAedirCharacterMovementComponent::TickComponent(float DeltaTime, ELevelTick
 		return;
 	}
 
-	if (IsCrouching() || bWantsFightStance || !IsMovingOnGround() || Velocity.SizeSquared2D() <= AedirRunMinSpeedSquared)
+	if (IsCrouching() || !IsMovingOnGround() || Velocity.SizeSquared2D() <= AedirRunMinSpeedSquared)
 	{
 		return;
 	}
@@ -285,7 +287,7 @@ float UAedirCharacterMovementComponent::GetMaxSpeed() const
 
 	if (bWantsFightStance)
 	{
-		Speed *= FightStanceSpeedMultiplier;
+		Speed *= IsRunningNow() ? FMath::Max(FightStanceSpeedMultiplier, AedirFightStanceRunShare) : FightStanceSpeedMultiplier;
 	}
 
 	Speed *= GetDirectionalSpeedMultiplier();
@@ -399,7 +401,8 @@ bool UAedirCharacterMovementComponent::CanRunNow() const
 
 bool UAedirCharacterMovementComponent::IsRunningNow() const
 {
-	return bWantsToRun && !bWantsFightStance && !IsCrouching() && CanRunNow();
+	// Shift runs in the fight stance too, to close in or get away.
+	return bWantsToRun && !IsCrouching() && CanRunNow();
 }
 
 bool UAedirCharacterMovementComponent::IsTurningInPlace() const

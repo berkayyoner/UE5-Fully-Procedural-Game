@@ -1,4 +1,4 @@
-#include "Surface/AedirFootstepComponent.h"
+﻿#include "Surface/AedirFootstepComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
@@ -13,6 +13,7 @@
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
+#include "Graphics/AedirFoliageSubsystem.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInterface.h"
@@ -36,8 +37,11 @@ namespace
 	constexpr float AedirStepLifeSeconds = 45.f;
 	constexpr float AedirStepRunSpeed = 380.f;
 	constexpr float AedirStepSnowShare = 0.3f;
-	constexpr float AedirStepEffectWalkScale = 0.35f;
-	constexpr float AedirStepEffectRunScale = 0.6f;
+	constexpr float AedirStepEffectWalkScale = 0.08f;
+	constexpr float AedirStepEffectRunScale = 0.22f;
+	constexpr float AedirStepEffectMinPace = 0.15f;
+	constexpr float AedirStepSoundShare = 0.35f;
+	constexpr float AedirStepGrassRadiusCm = 18.f;
 	constexpr float AedirFootGroundOffsetCm = 10.f;
 	constexpr float AedirSurfaceQueryInterval = 0.1f;
 	constexpr float AedirPlantLiftHigh = 0.15f;
@@ -190,6 +194,7 @@ void UAedirFootstepComponent::ProcessFootPlant(int32 FootIndex, const FVector& F
 		return;
 	}
 
+	StepGround = bHit ? Hit.GetComponent() : nullptr;
 	LeaveStepMarks(FootIndex, Point, Normal, Speed2D, Volume, SurfaceWetness, bHit ? Hit.PhysMaterial.Get() : nullptr);
 
 	if (!Material)
@@ -281,11 +286,11 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 	if (!Own || Own->FootstepSound.IsNull())
 	{
 		static const TCHAR* const Families[] = { TEXT("Dirt/Footstep_Dirt_Boots"), TEXT("Leaves/Footstep_FootstepLeaves_Boots"), TEXT("Concrete/Footstep_Concrete_Boots"), TEXT("Wood/Footstep_Wood_Boots") };
-		const FString Family = bSnow ? TEXT("Snow/Footstep_Snow") : bWet ? TEXT("Slush/Footstep_Slush_Boots") : Families[FMath::Clamp(static_cast<int32>(Surface), 0, 3)];
+		const FString Family = bSnow ? TEXT("Snow/Footstep_Snow") : bWet ? TEXT("Slush/Footstep_Slush_Boots") : Surface != SurfaceType_Default ? Families[FMath::Clamp(static_cast<int32>(Surface), 0, 3)] : GuessStepFamily(Point);
 		const TCHAR* Gait = bStepIsLanding ? TEXT("Land") : Speed2D > AedirStepRunSpeed ? TEXT("Run") : TEXT("Walk");
 		if (USoundBase* Sound = FindStepSound(Family, Gait))
 		{
-			UGameplayStatics::PlaySoundAtLocation(this, Sound, Point, Volume * UAedirSettingsSubsystem::GetValues().FootstepVolume);
+			UGameplayStatics::PlaySoundAtLocation(this, Sound, Point, Volume * AedirStepSoundShare * UAedirSettingsSubsystem::GetValues().FootstepVolume);
 		}
 	}
 
@@ -293,9 +298,49 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 	const TCHAR* SystemName = bSnow ? TEXT("PSN_SnowLight_Surface") : bWet ? TEXT("PSN_WaterLight_Surface") : Surface == SurfaceType1 ? TEXT("PSN_Grass_Surface") : TEXT("PSN_Dirt_Surface");
 	if (UNiagaraSystem* System = FindStepEffect(SystemName))
 	{
-		const float Scale = FMath::Lerp(AedirStepEffectWalkScale, AedirStepEffectRunScale, FMath::Clamp(Speed2D / AedirStepRunSpeed, 0.f, 1.f)) * (bStepIsLanding ? 1.5f : 1.f);
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, System, Point, FRotationMatrix::MakeFromZ(Normal).Rotator(), FVector(Scale));
+		// A slow step barely stirs the ground; the harder and faster the foot comes down, the more it throws.
+		const float Pace = FMath::Clamp(Speed2D / AedirStepRunSpeed, 0.f, 1.5f);
+		const float Scale = FMath::Lerp(AedirStepEffectWalkScale, AedirStepEffectRunScale, FMath::Square(FMath::Min(Pace, 1.f))) * (bStepIsLanding ? 1.6f : 1.f);
+		if (Pace > AedirStepEffectMinPace || bStepIsLanding)
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, System, Point, FRotationMatrix::MakeFromZ(Normal).Rotator(), FVector(Scale));
+		}
 	}
+}
+
+FString UAedirFootstepComponent::GuessStepFamily(const FVector& Point) const
+{
+	// Grass underfoot rustles whatever lies beneath it.
+	const UAedirFoliageSubsystem* Foliage = GetWorld() ? GetWorld()->GetSubsystem<UAedirFoliageSubsystem>() : nullptr;
+	if (Foliage && Foliage->IsGrassAt(Point, AedirStepGrassRadiusCm))
+	{
+		return TEXT("Leaves/Footstep_FootstepLeaves_Boots");
+	}
+
+	// A surface without a type of its own is told by what its material is called.
+	const UPrimitiveComponent* Ground = StepGround.Get();
+	const UMaterialInterface* Material = Ground ? Ground->GetMaterial(0) : nullptr;
+	const FString Name = Material ? Material->GetName() : FString();
+	struct FFamilyWord { const TCHAR* Word; const TCHAR* Family; };
+	static const FFamilyWord Words[] =
+	{
+		{ TEXT("Wood"), TEXT("Wood/Footstep_Wood_Boots") }, { TEXT("Plank"), TEXT("Wood/Footstep_Wood_Boots") },
+		{ TEXT("Gravel"), TEXT("Gravel/Footstep_Gravel_Boots") }, { TEXT("Sand"), TEXT("Sand/Footstep_Sand_Boots") },
+		{ TEXT("Metal"), TEXT("Metal/Footstep_Metal_Boots") }, { TEXT("Grass"), TEXT("Leaves/Footstep_FootstepLeaves_Boots") },
+		{ TEXT("Moss"), TEXT("Leaves/Footstep_FootstepLeaves_Boots") }, { TEXT("Leaves"), TEXT("Leaves/Footstep_FootstepLeaves_Boots") },
+		{ TEXT("Stone"), TEXT("Concrete/Footstep_Concrete_Boots") }, { TEXT("Rock"), TEXT("Concrete/Footstep_Concrete_Boots") },
+		{ TEXT("Cobble"), TEXT("Concrete/Footstep_Concrete_Boots") }, { TEXT("Concrete"), TEXT("Concrete/Footstep_Concrete_Boots") },
+		{ TEXT("Tile"), TEXT("Concrete/Footstep_Concrete_Boots") }, { TEXT("Grid"), TEXT("Concrete/Footstep_Concrete_Boots") },
+		{ TEXT("Floor"), TEXT("Concrete/Footstep_Concrete_Boots") }, { TEXT("Brick"), TEXT("Concrete/Footstep_Concrete_Boots") },
+	};
+	for (const FFamilyWord& Entry : Words)
+	{
+		if (Name.Contains(Entry.Word))
+		{
+			return Entry.Family;
+		}
+	}
+	return TEXT("Dirt/Footstep_Dirt_Boots");
 }
 
 USoundBase* UAedirFootstepComponent::FindStepSound(const FString& Family, const TCHAR* Gait)
