@@ -91,7 +91,7 @@ namespace
 	constexpr float TestClearingRadiusM = 55.f;
 	constexpr float TestClearingEdgeM = 140.f;
 	// How far the ground's scanned height pushes the surface in and out, in cm.
-	constexpr float TestDisplacementCm = 10.f;
+	constexpr float TestDisplacementCm = 25.f;
 
 	template <typename TExpression>
 	TExpression* TestNode(UMaterial* Material, int32 X, int32 Y)
