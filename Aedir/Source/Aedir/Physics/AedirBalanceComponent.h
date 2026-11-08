@@ -132,6 +132,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
 	bool bPhysicalHips = false;
 
+	// The whole body on the engine's physics control (see UAedirBodyControlComponent): every part simulated and held by its
+	// joint, the hips by a control to the capsule, planted feet locked. Off, the older motors and hand-moved hips are used.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
+	bool bUseBodyControl = false;
+
 	// The hip joint's pull: how stiff the spring to where the hips belong is and how hard it damps, for position and for
 	// turning, at full strength. Force per cm and per degree, in the units of a physics constraint drive.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
@@ -445,6 +450,11 @@ private:
 	void UpdateGetUp(float DeltaTime);
 	// Pulls the physical hips towards where the pose and the capsule want them, as hard as the body is strong.
 	void HoldPelvis(float DeltaTime);
+	// The body on physics control: whether it is used, and its update every frame while standing.
+	bool UsesBodyControl() const;
+	void UpdateBodyControl(float DeltaTime);
+	UPROPERTY(Transient)
+	TObjectPtr<class UAedirBodyControlComponent> BodyControl;
 	// Physical hips: the joint to the capsule, made once, and its pull set every frame.
 	bool UsesPhysicalHips() const;
 	void SetupHipJoint();

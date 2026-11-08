@@ -20,6 +20,7 @@ public class Aedir : ModuleRules
 			"InputCore",
 			"EnhancedInput",
 			"PhysicsCore",
+			"PhysicsControl",
 			"Niagara",
 			"DynamicWind",
 			"Landscape",

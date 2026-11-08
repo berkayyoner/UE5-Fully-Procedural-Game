@@ -22,6 +22,7 @@
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/PhysicalAnimationComponent.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
+#include "Physics/AedirBodyControlComponent.h"
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "TimerManager.h"
 
@@ -48,6 +49,8 @@ namespace
 	constexpr float HipsTeleportCm = 250.f;
 	// A get-up key counts this long after it was last held.
 	constexpr double AedirGetUpRequestHoldSeconds = 0.3;
+	// A foot lifted less than this share of its step counts as standing on the ground.
+	constexpr float AedirPlantedFootLift = 0.12f;
 	// Toppled over, parts of the body below this share of its height are pushed back against the blow.
 	constexpr float AedirToppleFootHoldShare = 0.3f;
 	// Seconds a body that starts to get up takes to tense its limbs.
@@ -78,6 +81,7 @@ namespace
 	constexpr float BalanceSwayRate = 0.32f;
 	TAutoConsoleVariable<int32> CVarAedirActivePelvis(TEXT("aedir.ActivePelvis"), 1, TEXT("Hold the physical hips up by force (1) or move them with the pose (0)."));
 	TAutoConsoleVariable<float> CVarAedirArmDamping(TEXT("aedir.ArmDamping"), 1.f, TEXT("Scale of the arm muscles' damping."));
+	TAutoConsoleVariable<int32> CVarAedirBodyControl(TEXT("aedir.BodyControl"), -1, TEXT("The whole body on the engine's physics control: 1 on, 0 off (older motors), -1 as each body is set. Read when a body is made."));
 	TAutoConsoleVariable<int32> CVarAedirPhysicalHips(TEXT("aedir.PhysicalHips"), -1, TEXT("Hips tied to the capsule by a motorised joint, limbs held by their joints: 1 on, 0 off, -1 as each body is set. Read when a body is made."));
 	TAutoConsoleVariable<int32> CVarAedirHipVelocityTarget(TEXT("aedir.HipVelocityTarget"), 1, TEXT("The hip joint damps towards the capsule's own speed (1) or towards standing still against it (0)."));
 	constexpr float HitReactionBoneImpulseScale = 0.12f;
@@ -229,7 +233,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 
 	// The muscles pull towards the pose, so they start once a body spawned in mid-game has one.
-	if (!MotorComponent && !BodyMesh->GetEditableComponentSpaceTransforms().IsEmpty())
+	if (!MotorComponent && !BodyControl && !BodyMesh->GetEditableComponentSpaceTransforms().IsEmpty())
 	{
 		SetupMotors();
 	}
@@ -261,7 +265,11 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	UpdateMotors(DeltaTime, false);
 	UpdateLegBlend(DeltaTime);
 
-	if (!bIsRagdoll)
+	if (!bIsRagdoll && BodyControl)
+	{
+		UpdateBodyControl(DeltaTime);
+	}
+	else if (!bIsRagdoll)
 	{
 		if (bActivePelvis && CVarAedirActivePelvis.GetValueOnGameThread() != 0)
 		{
@@ -417,6 +425,67 @@ void UAedirBalanceComponent::HoldPelvis(float DeltaTime)
 		{
 			ApplyBalanceImpact(Drift.GetSafeNormal(), Beyond / PelvisDriftLossCm * DeltaTime * (1.5f - Strength));
 		}
+	}
+}
+
+bool UAedirBalanceComponent::UsesBodyControl() const
+{
+	const int32 Forced = CVarAedirBodyControl.GetValueOnGameThread();
+	return Forced < 0 ? bUseBodyControl : Forced != 0;
+}
+
+void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
+{
+	if (!BodyControl || !BodyControl->IsReady())
+	{
+		return;
+	}
+	// Strength from stamina, health, a daze and getting up; each arm loses what its wounds take.
+	const AAedirCreature* Creature = Cast<AAedirCreature>(CharacterOwner);
+	const UAedirCombatComponent* Combat = Creature ? Creature->Combat.Get() : nullptr;
+	const float LeftArm = 1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::LeftArm) : 0.f);
+	const float RightArm = 1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::RightArm) : 0.f);
+	const float Upright = GetUprightStrength();
+	BodyControl->SetStrengths(Upright, LeftArm, RightArm);
+	const bool bGettingUp = IsGettingUp();
+	BodyControl->SetHipsCarried(bGettingUp);
+
+	// A foot the steps have put down stays there; one in the air, or both while jumping or falling, swings free.
+	FAedirGaitState Pose;
+	if (const UAedirGaitComponent* Gait = CharacterOwner->FindComponentByClass<UAedirGaitComponent>())
+	{
+		Pose = Gait->GetGaitState();
+	}
+	const UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
+	const bool bOnGround = Pose.bProceduralActive && Movement && !Movement->IsFalling();
+	BodyControl->SetFeetPlanted(bOnGround && Pose.LeftFootLift < AedirPlantedFootLift, bOnGround && Pose.RightFootLift < AedirPlantedFootLift);
+
+	// Hips pushed off where the legs would carry them tip the body over them and cost balance, the more the weaker it is.
+	const USkeletalMesh* Model = BodyMesh->GetSkeletalMeshAsset();
+	const int32 PelvisIndex = Model ? Model->GetRefSkeleton().FindBoneIndex(PelvisBoneName) : INDEX_NONE;
+	const FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName);
+	if (!Pelvis || PelvisIndex == INDEX_NONE || bGettingUp || !IsAuthoritative())
+	{
+		return;
+	}
+	const FTransform Actor = CharacterOwner->GetActorTransform();
+	const FTransform RestFrame = MeshRestRelative * BodyCapsule->GetComponentTransform();
+	const FTransform RefPelvis = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), PelvisIndex);
+	const FVector Target = RestFrame.TransformPosition(RefPelvis.GetLocation()) + Actor.TransformVectorNoScale(FVector(Pose.HipForwardOffset, Pose.HipLateralOffset, Pose.HipOffsetZ));
+	const FVector Now = Pelvis->GetUnrealWorldTransform().GetLocation();
+	// Moved at once, by a teleport or a respawn, the whole body goes along instead of being torn after the capsule.
+	if (FVector::DistSquared(Now, Target) > FMath::Square(HipsTeleportCm))
+	{
+		BodyControl->Teleported();
+		return;
+	}
+	const FVector Drift(Now.X - Target.X, Now.Y - Target.Y, 0.f);
+	const float Beyond = static_cast<float>(Drift.Size()) - PelvisDriftFreeCm;
+	UE_CLOG(CharacterOwner->IsPlayerControlled(), LogAedir, VeryVerbose, TEXT("[Body] pelvis %s target %s balance %.2f upright %.2f sim %d pose %d"), *(Now - CharacterOwner->GetActorLocation()).ToCompactString(),
+		*(Target - CharacterOwner->GetActorLocation()).ToCompactString(), Balance, Upright, Pelvis->IsInstanceSimulatingPhysics() ? 1 : 0, Pose.bProceduralActive ? 1 : 0);
+	if (Beyond > 0.f)
+	{
+		ApplyBalanceImpact(Drift.GetSafeNormal(), Beyond / PelvisDriftLossCm * DeltaTime * (1.5f - Upright));
 	}
 }
 
@@ -1427,6 +1496,12 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	{
 		GetUpLeft = 0.f;
 		bHipsInitialized = false;
+		if (BodyControl)
+		{
+			BodyControl->SetHipsCarried(false);
+			BodyControl->SetLimp(true);
+			BodyControl->SetFeetPlanted(false, false);
+		}
 		// Down, nothing holds the hips up any more.
 		if (bHipJointActive && HipJoint)
 		{
@@ -1528,6 +1603,12 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		{
 			Gait->BeginGetUpPose();
 		}
+		// The muscles come back, and the hips are carried through the moves until the body is up.
+		if (BodyControl)
+		{
+			BodyControl->SetLimp(false);
+			BodyControl->SetHipsCarried(true);
+		}
 	}
 
 	BodyCapsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -1611,8 +1692,18 @@ void UAedirBalanceComponent::ReshapeBodyPhysics()
 	{
 		Pelvis->SetInstanceSimulatePhysics(false);
 	}
-	// New bodies, so the hips are tied to the capsule again.
-	if (UsesPhysicalHips())
+	// New bodies, so the muscles are made on them again, or the hips are tied to the capsule again.
+	if (UsesBodyControl())
+	{
+		if (!BodyControl)
+		{
+			BodyControl = NewObject<UAedirBodyControlComponent>(CharacterOwner, TEXT("AedirBodyMuscles"));
+			BodyControl->RegisterComponent();
+		}
+		BodyControl->Setup(BodyMesh, BodyCapsule);
+		BodyControl->SetLimp(bIsRagdoll);
+	}
+	else if (UsesPhysicalHips())
 	{
 		SetupHipJoint();
 	}

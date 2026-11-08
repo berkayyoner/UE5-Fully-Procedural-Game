@@ -341,7 +341,8 @@ namespace
 	constexpr float AedirLodgedMinSeconds = 0.25f;
 	constexpr float AedirLodgedMaxSeconds = 0.9f;
 	constexpr float AedirLodgedTearCm = 32.f;
-	constexpr float AedirImpactMinFlatShare = 0.12f;
+	// Below this many joules a blow does no harm at all.
+	constexpr float AedirImpactNoHarmJoules = 25.f;
 	// Most of a blow goes into the wound. This share of it is what pushes the body off its feet.
 	constexpr float AedirImpactBodyEnergyShare = 0.35f;
 	constexpr float AedirImpactInjuryPerDamage = 0.012f;
@@ -2769,12 +2770,15 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	const EAedirBodyZone Zone = ClassifyBodyZone(Bone);
 	const EAedirDamageType DamageType = HeldItem ? HeldItem->GetDamageType() : EAedirDamageType::Blunt;
 	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
-	const float FlatDamage = (HeldItem ? HeldItem->GetDamage() : FistDamage) * FMath::Clamp(Energy / AedirImpactFullFlatJoules, AedirImpactMinFlatShare, 1.f);
 	const float VictimZoneProtection = Victim->Combat ? Victim->Combat->GetArmorProtection(Zone) : 0.f;
 	const float ArmorFactor = 1.f - VictimZoneProtection;
+	// Only a real blow hurts: a touch, blades resting on each other or bodies rubbing shake the balance and do no harm; from
+	// there the harm grows smoothly to the full of a hard blow.
+	const float Harm = FMath::SmoothStep(AedirImpactNoHarmJoules, AedirImpactFullFlatJoules, Energy * ArmorFactor);
+	const float FlatDamage = (HeldItem ? HeldItem->GetDamage() : FistDamage) * Harm;
 
 	// One blow to the body or a limb leaves the victim alive however hard it was; only the head can be finished at once.
-	const float RawDamage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(DamageType, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor + FlatDamage;
+	const float RawDamage = (Energy * ImpactDamageScale * ComputeDamageTypeFactor(DamageType, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor + FlatDamage) * Harm;
 	// How far an edge or a point gets depends on how fast it came: short of enough it glances off, between it bites and
 	// sticks, past it it goes on through.
 	float CutJoules = AedirCutTorsoJoules;

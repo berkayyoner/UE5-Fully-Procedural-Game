@@ -257,7 +257,7 @@ public:
 
 	// Minimum tip speed in cm/s for a contact to count as a hit rather than a touch.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
-	float MinImpactSpeed = 150.f;
+	float MinImpactSpeed = 250.f;
 
 	// Time in seconds before the same victim can be hit again by the same hand.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
