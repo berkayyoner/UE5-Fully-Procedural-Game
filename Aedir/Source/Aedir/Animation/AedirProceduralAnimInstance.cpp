@@ -46,8 +46,13 @@ namespace
 	constexpr int32 AedirArmLedSteps = 48;
 	// How much a far move of the elbow, and an elbow raised over the shoulder or tucked in behind it, count against a pose.
 	constexpr double AedirArmLedStayShare = 0.15;
-	constexpr double AedirArmLedHighElbowCost = 0.4;
-	constexpr double AedirArmLedInsideElbowCost = 0.25;
+	constexpr double AedirArmLedHighElbowCost = 2.0;
+	constexpr double AedirArmLedInsideElbowCost = 1.0;
+	constexpr double AedirArmLedBehindElbowCost = 1.5;
+	// The wrist gives that angle up to this far either way rather than throw the elbow somewhere no arm goes; every degree of
+	// it counts against a pose like this many cm of elbow.
+	constexpr double AedirArmLedWristGiveDegrees = 30.0;
+	constexpr double AedirArmLedWristGiveCost = 0.12;
 	// However the blade and the forearm come to lie, a hand turns no faster than this.
 	constexpr float AedirHandMaxTurnDegrees = 1000.f;
 	constexpr float AedirElbowHintDistanceCm = 50.f;
@@ -551,19 +556,27 @@ FVector FAedirProceduralAnimProxy::ApplyArmLedBlade(FCSPose<FCompactPose>& CSPos
 	const FVector Third = FVector::CrossProduct(Blade, Across);
 	FVector BestElbow = Elbow;
 	double BestError = UE_BIG_NUMBER;
-	for (int32 Step = 0; Step < AedirArmLedSteps; ++Step)
+	double BestAngle = Fixed;
+	for (const double Give : { 0.0, -0.5, 0.5, -1.0, 1.0 })
 	{
-		const double Turn = UE_TWO_PI * Step / AedirArmLedSteps;
-		const FVector Forearm = Blade * FMath::Cos(Fixed) + (Across * FMath::Cos(Turn) + Third * FMath::Sin(Turn)) * FMath::Sin(Fixed);
-		const FVector Candidate = Wrist - Forearm * ForeCm;
-		// An elbow up above the shoulder or tucked in behind the back is not how anyone swings.
-		const double Awkward = FMath::Max(FVector::DotProduct(Candidate - Shoulder, -DownMesh), 0.0) * AedirArmLedHighElbowCost
-			+ FMath::Max(FVector::DotProduct(Candidate - Shoulder, -OutwardMesh), 0.0) * AedirArmLedInsideElbowCost;
-		const double Error = FMath::Abs((Candidate - Shoulder).Size() - UpperCm) + (Candidate - Elbow).Size() * AedirArmLedStayShare + Awkward;
-		if (Error < BestError)
+		const double Angle = Fixed + FMath::DegreesToRadians(Give * AedirArmLedWristGiveDegrees);
+		for (int32 Step = 0; Step < AedirArmLedSteps; ++Step)
 		{
-			BestError = Error;
-			BestElbow = Candidate;
+			const double Turn = UE_TWO_PI * Step / AedirArmLedSteps;
+			const FVector Forearm = Blade * FMath::Cos(Angle) + (Across * FMath::Cos(Turn) + Third * FMath::Sin(Turn)) * FMath::Sin(Angle);
+			const FVector Candidate = Wrist - Forearm * ForeCm;
+			// An elbow up above the shoulder, tucked in across the chest or thrown back behind the body is not how anyone swings.
+			const double Awkward = FMath::Max(FVector::DotProduct(Candidate - Shoulder, -DownMesh), 0.0) * AedirArmLedHighElbowCost
+				+ FMath::Max(FVector::DotProduct(Candidate - Shoulder, -OutwardMesh), 0.0) * AedirArmLedInsideElbowCost
+				+ FMath::Max(FVector::DotProduct(Candidate - Shoulder, -ForwardMesh) - ForeCm * 0.5, 0.0) * AedirArmLedBehindElbowCost;
+			const double Error = FMath::Abs((Candidate - Shoulder).Size() - UpperCm) + (Candidate - Elbow).Size() * AedirArmLedStayShare + Awkward
+				+ FMath::Abs(Give) * AedirArmLedWristGiveDegrees * AedirArmLedWristGiveCost;
+			if (Error < BestError)
+			{
+				BestError = Error;
+				BestElbow = Candidate;
+				BestAngle = Angle;
+			}
 		}
 	}
 
@@ -580,7 +593,7 @@ FVector FAedirProceduralAnimProxy::ApplyArmLedBlade(FCSPose<FCompactPose>& CSPos
 	{
 		return DirectionWorld;
 	}
-	const FVector Held = Forearm * FMath::Cos(Fixed) + Out * FMath::Sin(Fixed);
+	const FVector Held = Forearm * FMath::Cos(BestAngle) + Out * FMath::Sin(BestAngle);
 	return MeshToWorld.TransformVectorNoScale(FMath::Lerp(Blade, Held, static_cast<double>(FMath::Clamp(Share, 0.f, 1.f))).GetSafeNormal());
 }
 

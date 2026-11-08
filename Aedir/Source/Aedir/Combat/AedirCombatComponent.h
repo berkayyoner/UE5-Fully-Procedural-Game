@@ -379,6 +379,9 @@ public:
 	// Puts the blade of that hand there at once, when it takes over a weapon from elsewhere.
 	void SetWeaponDirNow(EAedirHand Hand, const FVector& DirectionWorld);
 
+	// Another blade struck the weapon in that hand, carrying this much of its speed into it.
+	void ReceiveClash(EAedirHand Hand, const FVector& Push);
+
 	// Local player only. Mouse wheel steps change how far the arm reaches, 0..1.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat")
 	void AddExtensionInput(EAedirHand Hand, float WheelDelta);

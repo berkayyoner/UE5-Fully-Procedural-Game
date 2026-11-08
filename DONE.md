@@ -107,3 +107,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - A body getting up sets out from where its hands, feet and hips lay, and its limbs are no longer dragged when the capsule is moved under it, so getting up starts without a jolt.
 - DLSS 4.5 (8.9.0) and XeSS 3.2.0 plugins for UE 5.8 installed and enabled next to FSR 4.1.1; the camera is only pulled in by the fixed world; dust on every step, small; a sound limb needs several cuts to part and a severed limb takes its armour with it; a body with a leg gone still tries to get up; the trunk follows the hips firmly.
 - Nanite tessellation on the ground is visible: the landscape displacement goes 25 cm in and out instead of 10 cm.
+- Blades meet each other: every swing, an NPC's played-out attack too, stops on a weapon in its way and knocks it aside by its speed and weight; the wrist gives up to 30 degrees so a swinging arm never throws its elbow over the head or behind the back.

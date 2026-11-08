@@ -186,6 +186,11 @@ namespace
 	constexpr float AedirBladeRadiusCm = 2.5f;
 	constexpr float AedirBladeBlockMassKg = 40.f;
 	constexpr float AedirBladePushMaxSpeed = 500.f;
+	// A clash of weapons: the fastest a blade's tip counts, and how much of the push the struck hand takes.
+	constexpr float AedirClashMaxSpeed = 1500.f;
+	constexpr float AedirClashHandShare = 0.6f;
+	// Blades only resting on each other are not worth a line in the log.
+	constexpr float AedirClashLogSpeed = 200.f;
 	constexpr float AedirBladePushShare = 0.15f;
 	constexpr float AedirBladeMaxPullBackCm = 30.f;
 	constexpr int32 AedirBladeBackOffSteps = 4;
@@ -868,8 +873,9 @@ bool UAedirCombatComponent::SweepHeldBlade(const AAedirItemActor* Item, const FV
 
 void UAedirCombatComponent::ResolveHeldCollision(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& PrevHand, const FVector& PrevDir, float DeltaTime)
 {
+	// Every blade meets what is in its way, an attack an NPC plays out as much as one the player swings.
 	const AAedirItemActor* Item = GetHeldItem(Hand);
-	if (!Item || Item->ItemClass != EAedirItemClass::Weapon || !IsWeaponStance(Hand) || Arm.bScriptedControl || PrevDir.IsNearlyZero())
+	if (!Item || Item->ItemClass != EAedirItemClass::Weapon || !(IsWeaponStance(Hand) || Arm.bScriptedControl) || PrevDir.IsNearlyZero())
 	{
 		return;
 	}
@@ -879,6 +885,29 @@ void UAedirCombatComponent::ResolveHeldCollision(EAedirHand Hand, FAedirArmDynam
 	if (!SweepHeldBlade(Item, Arm.HandWorld, Arm.WeaponDir, Length, Hit))
 	{
 		return;
+	}
+
+	// Steel on steel: the other weapon is knocked aside by what this one carried into it, as the two arms stand behind them.
+	if (DeltaTime > KINDA_SMALL_NUMBER)
+	{
+		AAedirCreature* Holder = Cast<AAedirCreature>(Hit.GetActor());
+		if (!Holder && Hit.GetActor())
+		{
+			Holder = Cast<AAedirCreature>(Hit.GetActor()->GetAttachParentActor());
+		}
+		UAedirCombatComponent* OtherCombat = Holder && Holder != Creature ? Holder->Combat.Get() : nullptr;
+		const EAedirHand OtherHand = Hit.BoneName.ToString().EndsWith(TEXT("_l")) ? EAedirHand::Left : EAedirHand::Right;
+		const AAedirItemActor* OtherItem = OtherCombat ? OtherCombat->GetHeldItem(OtherHand) : nullptr;
+		const bool bOnWeapon = OtherItem && (Hit.GetActor() == OtherItem || Hit.BoneName.ToString().StartsWith(TEXT("hand")));
+		if (bOnWeapon)
+		{
+			const FVector TipMotion = ((Arm.HandWorld + Arm.WeaponDir * Length) - (PrevHand + PrevDir * Length)) / DeltaTime;
+			const float MyMass = Item->Weight + ForearmMass;
+			const float TheirMass = OtherItem->Weight + ForearmMass;
+			const FVector Push = TipMotion.GetClampedToMaxSize(AedirClashMaxSpeed) * (MyMass / (MyMass + TheirMass));
+			OtherCombat->ReceiveClash(OtherHand, Push);
+			UE_CLOG(TipMotion.Size() > AedirClashLogSpeed, LogAedir, Log, TEXT("[Clash] %s's %s met %s's %s at %.0f cm/s"), *Creature->GetName(), *Item->GetName(), *Holder->GetName(), *OtherItem->GetName(), TipMotion.Size());
+		}
 	}
 
 	// Something loose gets pushed along by the blade.
@@ -931,6 +960,16 @@ void UAedirCombatComponent::ResolveHeldCollision(EAedirHand Hand, FAedirArmDynam
 	Arm.WeaponDir = FMath::Lerp(PrevDir, Arm.WeaponDir, Clear).GetSafeNormal();
 	Arm.HandVelocity = FVector::ZeroVector;
 	Arm.WeaponDirSpeed = FVector::ZeroVector;
+}
+
+void UAedirCombatComponent::ReceiveClash(EAedirHand Hand, const FVector& Push)
+{
+	// Struck on the weapon, the hand is driven along with the blow and the blade turns away with it; the arm then pulls it back.
+	FAedirArmDynamics& Arm = GetArm(Hand);
+	Arm.HandVelocity += Push * AedirClashHandShare;
+	const AAedirItemActor* Item = GetHeldItem(Hand);
+	const float Length = Item ? FMath::Max(Item->GetWeaponLength(), 1.f) : 1.f;
+	Arm.WeaponDirSpeed += FVector::VectorPlaneProject(Push, Arm.WeaponDir) / Length;
 }
 
 void UAedirCombatComponent::SetWeaponDirNow(EAedirHand Hand, const FVector& DirectionWorld)
