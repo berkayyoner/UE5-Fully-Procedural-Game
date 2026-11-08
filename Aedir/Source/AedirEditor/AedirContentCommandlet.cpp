@@ -61,10 +61,21 @@ namespace
 		return Node;
 	}
 
+	// A package already on disk is saved again as it was rather than as rebuilt, so the old file goes before the new one is made.
+	UPackage* ContentFreshPackage(const FString& PackageName)
+	{
+		const FString File = FPackageName::LongPackageNameToFilename(PackageName, FPackageName::GetAssetPackageExtension());
+		if (IFileManager::Get().FileExists(*File))
+		{
+			IFileManager::Get().Delete(*File, false, true);
+		}
+		return CreatePackage(*PackageName);
+	}
+
 	UMaterial* ContentNewMaterial(const TCHAR* Name, TArray<UPackage*>& ToSave)
 	{
 		const FString PackageName = FString(ContentFolder) + Name;
-		UPackage* Package = CreatePackage(*PackageName);
+		UPackage* Package = ContentFreshPackage(PackageName);
 		UMaterial* Material = NewObject<UMaterial>(Package, Name, RF_Public | RF_Standalone | RF_Transactional);
 		ToSave.Add(Package);
 		return Material;
@@ -95,15 +106,15 @@ namespace
 		UE_LOG(LogAedirEditor, Display, TEXT("Built M_AedirScanned."));
 	}
 
-	// A sole pressed in the ground: an oval darkening whose colour and strength the game sets, dust, mud, blood or water.
-	// The sole of a left shoe seen from above, toes at the top: a broad ball, the arch drawn in on the inside, a round heel,
-	// worn into a little tread. The game mirrors it for the right foot.
+	// A sole pressed in the ground, whose colour and strength the game sets: dust, mud, blood or water.
+	// The sole of a left boot seen from above, toes at the top: a broad forefoot with chevron lugs inside a pressed rim, the
+	// shank under the arch barely touching, and a separate heel block with cross bars. The game mirrors it for the right foot.
 	UTexture2D* ContentBuildFootprintTexture(TArray<UPackage*>& ToSave)
 	{
-		constexpr int32 Width = 64;
-		constexpr int32 Height = 128;
+		constexpr int32 Width = 128;
+		constexpr int32 Height = 256;
 		// Width of the sole down its length, as a share of the whole print, and how much of it lies on the inner side.
-		static const FVector2f Profile[] = { { 0.f, 0.f }, { 0.03f, 0.5f }, { 0.1f, 0.82f }, { 0.24f, 0.96f }, { 0.38f, 0.9f }, { 0.55f, 0.66f }, { 0.7f, 0.66f }, { 0.84f, 0.72f }, { 0.94f, 0.6f }, { 1.f, 0.f } };
+		static const FVector2f Profile[] = { { 0.f, 0.f }, { 0.03f, 0.5f }, { 0.1f, 0.82f }, { 0.24f, 0.96f }, { 0.38f, 0.9f }, { 0.55f, 0.66f }, { 0.7f, 0.66f }, { 0.84f, 0.72f }, { 0.93f, 0.62f }, { 0.98f, 0.4f }, { 1.f, 0.f } };
 		const auto WidthAt = [](float V)
 		{
 			for (int32 Index = 1; Index < UE_ARRAY_COUNT(Profile); ++Index)
@@ -130,18 +141,40 @@ namespace
 			const float Outer = Half;
 			for (int32 X = 0; X < Width; ++X)
 			{
-				const float U = (X + 0.5f) / Width - 0.5f;
+				// The toe leans to the big toe's side.
+				const float U = (X + 0.5f) / Width - 0.5f + 0.06f * FMath::SmoothStep(0.f, 1.f, FMath::Clamp(1.f - V / 0.32f, 0.f, 1.f));
 				const float Edge = U < 0.f ? Inner : Outer;
-				const float Inside = FMath::Clamp((Edge - FMath::Abs(U)) * 40.f, 0.f, 1.f);
-				// Treads across the ball and heel, and the grain of the dirt.
-				const float Tread = (V < 0.45f || V > 0.75f) && FMath::Fmod(V * 22.f, 1.f) < 0.25f ? 0.75f : 1.f;
-				const float Grain = Random.FRandRange(0.8f, 1.f);
-				Pixels[Y * Width + X] = static_cast<uint8>(FMath::Clamp(Inside * Tread * Grain, 0.f, 1.f) * 255.f);
+				const float FromEdge = Edge - FMath::Abs(U);
+				const float Inside = FMath::Clamp(FromEdge * 70.f, 0.f, 1.f);
+				// The rim of the sole bites deepest; inside it the lugs press and the grooves between them stay shallow.
+				const float Rim = FromEdge < 0.035f ? 1.f : 0.f;
+				float Press;
+				if (V < 0.58f)
+				{
+					// Forefoot: lugs in chevrons pointing to the toe, split down the middle.
+					const float Chevron = FMath::Fmod(V * 16.f + FMath::Abs(U) * 5.f, 1.f);
+					const bool bSplit = FMath::Abs(U) < 0.02f;
+					Press = Rim > 0.f ? 1.f : (Chevron < 0.55f && !bSplit ? 0.92f : 0.38f);
+				}
+				else if (V < 0.72f)
+				{
+					// Shank under the arch: only the outer edge and a faint middle touch the ground.
+					Press = U > 0.f ? FMath::Clamp(0.5f - (Outer - U) * 7.f, 0.f, 0.5f) : 0.f;
+				}
+				else
+				{
+					// Heel block, set off from the shank by its front edge, with bars across it.
+					const bool bFront = V < 0.745f;
+					const float Bar = FMath::Fmod((V - 0.72f) * 26.f, 1.f);
+					Press = Rim > 0.f || bFront ? 1.f : (Bar < 0.6f ? 0.9f : 0.4f);
+				}
+				const float Grain = Random.FRandRange(0.82f, 1.f);
+				Pixels[Y * Width + X] = static_cast<uint8>(FMath::Clamp(Inside * Press * Grain, 0.f, 1.f) * 255.f);
 			}
 		}
 
 		const FString PackageName = FString(ContentFolder) + TEXT("T_Footprint");
-		UPackage* Package = CreatePackage(*PackageName);
+		UPackage* Package = ContentFreshPackage(PackageName);
 		UTexture2D* Texture = NewObject<UTexture2D>(Package, TEXT("T_Footprint"), RF_Public | RF_Standalone | RF_Transactional);
 		Texture->Source.Init(Width, Height, 1, 1, TSF_G8, Pixels.GetData());
 		Texture->SRGB = false;
@@ -165,9 +198,15 @@ namespace
 		UMaterialExpressionTextureCoordinate* Coord = ContentNode<UMaterialExpressionTextureCoordinate>(Material, -1200, 0);
 		UMaterialExpressionComponentMask* U = ContentNode<UMaterialExpressionComponentMask>(Material, -1000, -60);
 		U->R = true;
+		U->G = false;
+		U->B = false;
+		U->A = false;
 		UMaterialEditingLibrary::ConnectMaterialExpressions(Coord, TEXT(""), U, TEXT(""));
 		UMaterialExpressionComponentMask* V = ContentNode<UMaterialExpressionComponentMask>(Material, -1000, 60);
+		V->R = false;
 		V->G = true;
+		V->B = false;
+		V->A = false;
 		UMaterialEditingLibrary::ConnectMaterialExpressions(Coord, TEXT(""), V, TEXT(""));
 		UMaterialExpressionScalarParameter* Mirror = ContentNode<UMaterialExpressionScalarParameter>(Material, -1000, -200);
 		Mirror->ParameterName = TEXT("Mirror");
@@ -183,7 +222,7 @@ namespace
 		UMaterialEditingLibrary::ConnectMaterialExpressions(V, TEXT(""), Uv, TEXT("B"));
 		UMaterialExpressionTextureSample* Sample = ContentNode<UMaterialExpressionTextureSample>(Material, -400, 0);
 		Sample->Texture = Sole;
-		Sample->SamplerType = SAMPLERTYPE_Grayscale;
+		Sample->SamplerType = SAMPLERTYPE_LinearGrayscale;
 		UMaterialEditingLibrary::ConnectMaterialExpressions(Uv, TEXT(""), Sample, TEXT("UVs"));
 
 		UMaterialExpressionScalarParameter* Strength = ContentNode<UMaterialExpressionScalarParameter>(Material, -200, 200);
