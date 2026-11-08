@@ -698,9 +698,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
 	float KickSpineLeanDegrees = 6.f;
 
-	// Works out the pose of this moment at once, outside the tick: a body starting to get up off the ground must not show, or be
-	// pulled towards, the pose it had while lying limp for even one frame.
-	void RefreshPoseNow();
+	// A body starts to get up off the ground: the hands and feet set out from where they lie, and the pose of this moment is
+	// worked out at once, outside the tick, so the body never shows, or is pulled towards, the pose it had while limp.
+	void BeginGetUpPose();
 
 private:
 	bool SampleGround(const FVector& WorldXY, float BottomZ, FVector& OutLocation, FVector& OutNormal) const;
@@ -708,6 +708,9 @@ private:
 	// Getting up off the ground: the hips, trunk, hands and feet go through the moves for the way the body lay, and hand over
 	// to the standing pose at the end.
 	void PoseGetUp(const FTransform& ActorTransform, float BottomZ, float ActorScale);
+	// Where the feet (left, right) and hands lay when getting up started.
+	FVector GetUpStartFoot[2];
+	FVector GetUpStartHand[2];
 	void AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength);
 	FRotator ComputeFootTilt(const FVector& GroundNormal, const FVector& ActorUp, const FRotator& CurrentTilt, float DeltaTime) const;
 	void BeginStep(int32 Foot, float Seconds);

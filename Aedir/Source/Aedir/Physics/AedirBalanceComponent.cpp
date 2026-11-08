@@ -439,6 +439,24 @@ void UAedirBalanceComponent::ServerRequestGetUp_Implementation(bool bForwardKey)
 		bReadyToGetUp ? 1 : 0, Balance);
 }
 
+bool UAedirBalanceComponent::GetGetUpStartHips(FVector& OutOffset, FQuat& OutTurn) const
+{
+	const USkeletalMesh* Model = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	const int32 PelvisIndex = Model ? Model->GetRefSkeleton().FindBoneIndex(PelvisBoneName) : INDEX_NONE;
+	if (!IsGettingUp() || !CharacterOwner || !BodyCapsule || PelvisIndex == INDEX_NONE)
+	{
+		return false;
+	}
+	// The inverse of how the held hips are placed from the pose.
+	const FTransform Actor = CharacterOwner->GetActorTransform();
+	const FTransform RestFrame = MeshRestRelative * BodyCapsule->GetComponentTransform();
+	const FTransform RefPelvis = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), PelvisIndex);
+	OutOffset = Actor.InverseTransformVectorNoScale(GetUpStartPelvis.GetLocation() - RestFrame.TransformPosition(RefPelvis.GetLocation()));
+	const FQuat ActorQuat = Actor.GetRotation();
+	OutTurn = (ActorQuat.Inverse() * GetUpStartPelvis.GetRotation() * (RestFrame.GetRotation() * RefPelvis.GetRotation()).Inverse() * ActorQuat).GetNormalized();
+	return true;
+}
+
 float UAedirBalanceComponent::GetPelvisStandHeight() const
 {
 	return PelvisRestHeight * (BodyMesh ? static_cast<float>(BodyMesh->GetComponentScale().Z) : 1.f);
@@ -1301,13 +1319,22 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 
 	if (Pelvis)
 	{
-		const FVector PelvisLocation = Pelvis->GetUnrealWorldTransform().GetLocation();
+		GetUpStartPelvis = Pelvis->GetUnrealWorldTransform();
+		GetUpStartPelvis.SetScale3D(FVector::OneVector);
+		const FVector PelvisLocation = GetUpStartPelvis.GetLocation();
 		FVector Along = (BodyMesh->GetBoneLocation(HeadBoneName) - PelvisLocation).GetSafeNormal2D();
 		if (Along.IsNearlyZero())
 		{
 			Along = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
 		}
 		Pelvis->SetInstanceSimulatePhysics(false);
+		// Moving the capsule and the mesh back onto it drags the limbs along with them; they are put back where they lay after.
+		TArray<FTransform> Lying;
+		Lying.Reserve(BodyMesh->Bodies.Num());
+		for (const FBodyInstance* Body : BodyMesh->Bodies)
+		{
+			Lying.Add(Body ? Body->GetUnrealWorldTransform() : FTransform::Identity);
+		}
 
 		if (IsAuthoritative())
 		{
@@ -1332,6 +1359,21 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		}
 		// Physical hips stay where they lay and are pulled up from there; pose-driven ones are put back on the legs at once.
 		BodyMesh->SetRelativeTransform(MeshRestRelative, false, nullptr, bActivePelvis ? ETeleportType::None : ETeleportType::ResetPhysics);
+		if (bActivePelvis)
+		{
+			for (int32 Index = 0; Index < BodyMesh->Bodies.Num() && Index < Lying.Num(); ++Index)
+			{
+				if (FBodyInstance* Body = BodyMesh->Bodies[Index])
+				{
+					Body->SetBodyTransform(Lying[Index], ETeleportType::TeleportPhysics);
+					if (Body->IsInstanceSimulatingPhysics())
+					{
+						Body->SetLinearVelocity(FVector::ZeroVector, false);
+						Body->SetAngularVelocityInRadians(FVector::ZeroVector, false);
+					}
+				}
+			}
+		}
 
 		// The pose takes the body up from the ground the way it lies, slower for a tired or hurt body.
 		const UAedirStatsComponent* StatsComponent = FindStats();
@@ -1342,7 +1384,7 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		bHipsInitialized = false;
 		if (UAedirGaitComponent* Gait = CharacterOwner->FindComponentByClass<UAedirGaitComponent>())
 		{
-			Gait->RefreshPoseNow();
+			Gait->BeginGetUpPose();
 		}
 	}
 

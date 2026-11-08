@@ -838,13 +838,22 @@ void UAedirGaitComponent::PoseGetUp(const FTransform& ActorTransform, float Bott
 		bFeetInitialized = false;
 	}
 
-	GaitState.HipOffsetZ = FMath::Lerp(GaitState.HipOffsetZ, Key.HipHeight * Size - StandHeight, Weight);
-	GaitState.HipForwardOffset = FMath::Lerp(GaitState.HipForwardOffset, Key.HipForward * Size, Weight);
-	GaitState.HipLateralOffset *= 1.f - Weight;
-	GaitState.PelvisRotation = FRotator(
-		FMath::Lerp(static_cast<float>(GaitState.PelvisRotation.Pitch), Key.PelvisPitch, Weight),
-		GaitState.PelvisRotation.Yaw * (1.f - Weight),
-		GaitState.PelvisRotation.Roll * (1.f - Weight));
+	// The hips, too, set out from how they lay: moved and turned from there to where the moves start.
+	const float SetOut = FMath::SmoothStep(0.f, FMath::Max(BalanceComponent->GetUpSetOutShare, KINDA_SMALL_NUMBER), Progress);
+	FVector HipOffset(Key.HipForward * Size, 0.f, Key.HipHeight * Size - StandHeight);
+	FQuat HipTurn = FRotator(Key.PelvisPitch, 0.f, 0.f).Quaternion();
+	FVector StartOffset;
+	FQuat StartTurn;
+	if (SetOut < 1.f && BalanceComponent->GetGetUpStartHips(StartOffset, StartTurn))
+	{
+		HipOffset = FMath::Lerp(StartOffset, HipOffset, SetOut);
+		HipTurn = FQuat::Slerp(StartTurn, HipTurn, SetOut);
+	}
+	const FRotator HipRotation = HipTurn.Rotator();
+	GaitState.HipOffsetZ = FMath::Lerp(GaitState.HipOffsetZ, static_cast<float>(HipOffset.Z), Weight);
+	GaitState.HipForwardOffset = FMath::Lerp(GaitState.HipForwardOffset, static_cast<float>(HipOffset.X), Weight);
+	GaitState.HipLateralOffset = FMath::Lerp(GaitState.HipLateralOffset, static_cast<float>(HipOffset.Y), Weight);
+	GaitState.PelvisRotation = FMath::Lerp(GaitState.PelvisRotation, HipRotation, Weight);
 	GaitState.PelvisRollDegrees *= 1.f - Weight;
 	GaitState.SpineLeanPitch = FMath::Lerp(GaitState.SpineLeanPitch, Key.SpinePitch, Weight);
 	GaitState.SpineLeanRoll *= 1.f - Weight;
@@ -864,14 +873,15 @@ void UAedirGaitComponent::PoseGetUp(const FTransform& ActorTransform, float Bott
 		SampleGround(Flat, BottomZ, Ground, Normal);
 		return Ground + FVector(0.f, 0.f, Local.Z * Size);
 	};
-	GaitState.LeftFootWorld = FMath::Lerp(GaitState.LeftFootWorld, OnGround(Key.LeftFoot, -1.f), Weight);
-	GaitState.RightFootWorld = FMath::Lerp(GaitState.RightFootWorld, OnGround(Key.RightFoot, 1.f), Weight);
+	// The hands and feet set out from where they lay, not from where the moves would have them lie, so no limb is yanked.
+	GaitState.LeftFootWorld = FMath::Lerp(GaitState.LeftFootWorld, FMath::Lerp(GetUpStartFoot[0], OnGround(Key.LeftFoot, -1.f), SetOut), Weight);
+	GaitState.RightFootWorld = FMath::Lerp(GaitState.RightFootWorld, FMath::Lerp(GetUpStartFoot[1], OnGround(Key.RightFoot, 1.f), SetOut), Weight);
 	GaitState.LeftFootLift = FMath::Lerp(GaitState.LeftFootLift, Key.LeftLift, Weight);
 	GaitState.RightFootLift = FMath::Lerp(GaitState.RightFootLift, Key.RightLift, Weight);
 
 	const auto PlaceHand = [&](FVector& Target, float& Alpha, float Side)
 	{
-		const FVector HandWorld = OnGround(Key.Hand, Side);
+		const FVector HandWorld = FMath::Lerp(GetUpStartHand[Side < 0.f ? 0 : 1], OnGround(Key.Hand, Side), SetOut);
 		Target = Alpha > 0.01f ? FMath::Lerp(Target, HandWorld, Weight) : HandWorld;
 		Alpha = FMath::Lerp(Alpha, Key.HandAlpha, Weight);
 	};
@@ -889,8 +899,21 @@ void UAedirGaitComponent::PoseGetUp(const FTransform& ActorTransform, float Bott
 	GaitState.KickSoleAlpha *= 1.f - Weight;
 }
 
-void UAedirGaitComponent::RefreshPoseNow()
+void UAedirGaitComponent::BeginGetUpPose()
 {
+	// Read off the physical bodies: the bone pose is still the one of the frame before the body was moved onto its capsule.
+	const auto WhereLying = [this](const FName& Bone)
+	{
+		const FBodyInstance* Body = BodyMesh->GetBodyInstance(Bone);
+		return Body ? Body->GetUnrealWorldTransform().GetLocation() : BodyMesh->GetBoneLocation(Bone);
+	};
+	if (BodyMesh)
+	{
+		GetUpStartFoot[0] = WhereLying(LeftFootBoneName);
+		GetUpStartFoot[1] = WhereLying(RightFootBoneName);
+		GetUpStartHand[0] = WhereLying(LeftHandBoneName);
+		GetUpStartHand[1] = WhereLying(RightHandBoneName);
+	}
 	const UWorld* World = GetWorld();
 	TickComponent(World ? FMath::Max(World->GetDeltaSeconds(), 0.001f) : 1.f / 60.f, LEVELTICK_All, nullptr);
 	if (BodyMesh)

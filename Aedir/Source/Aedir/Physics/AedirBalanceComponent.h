@@ -192,6 +192,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	FName HeadBoneName = FName(TEXT("head"));
 
+	// Over this first share of getting up the hips, hands and feet go from where they lay to where the moves start.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSetOutShare = 0.15f;
+
 	// Getting up off the back, the body stands up over its drawn-in feet, this far past where its hips lay.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float GetUpFromBackStandCm = 32.f;
@@ -362,6 +366,9 @@ public:
 	// Height of the hips above the ground when standing.
 	float GetPelvisStandHeight() const;
 
+	// Where the hips lay when getting up started, as the pose puts hips: moved from standing in the frame of the body, and turned.
+	bool GetGetUpStartHips(FVector& OutOffset, FQuat& OutTurn) const;
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	bool IsDazed() const;
 
@@ -422,6 +429,8 @@ private:
 	void BumpInto(class AAedirCreature* Other, const FHitResult& Hit);
 	float GetUpLeft = 0.f;
 	float GetUpTotal = 0.f;
+	// Where the hips lay when getting up started.
+	FTransform GetUpStartPelvis = FTransform::Identity;
 	EAedirGetUpStyle ReadLyingStyle() const;
 	UFUNCTION(Server, Unreliable)
 	void ServerRequestGetUp(bool bForwardKey);
