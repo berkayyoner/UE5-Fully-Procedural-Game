@@ -8,4 +8,7 @@ class UWorld;
 namespace AedirWorldDirector
 {
 	void PopulateTestMap(UWorld* World);
+
+	// The natural test level: a camp with food, drink, weapons and armour laid out, people, a meadow, a forest, rocks and ruins.
+	void PopulateNatureMap(UWorld* World);
 }

@@ -353,6 +353,9 @@ public:
 	void FoliageInfo();
 
 	UFUNCTION(Exec)
+	void LandInfo();
+
+	UFUNCTION(Exec)
 	void TalkOpenTest(const FString& Name);
 
 	// MouthTest 1 1: holds the grab key of the right hand down, 0 lets go. T and Y and the inventory click also have test commands.

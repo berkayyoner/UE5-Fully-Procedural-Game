@@ -1821,6 +1821,46 @@ void AAedirPlayerCharacter::TalkOpenTest(const FString& Name)
 	}
 }
 
+void AAedirPlayerCharacter::LandInfo()
+{
+	// Which material each piece of the land draws with, by its class.
+	int32 Shown = 0;
+	for (TActorIterator<AActor> It(GetWorld()); It && Shown < 6; ++It)
+	{
+		if (!It->GetClass()->GetName().Contains(TEXT("Landscape")))
+		{
+			continue;
+		}
+		TArray<UPrimitiveComponent*> Parts;
+		It->GetComponents<UPrimitiveComponent>(Parts);
+		for (UPrimitiveComponent* Part : Parts)
+		{
+			UMaterialInterface* Material = Part->GetMaterial(0);
+			UE_LOG(LogTemp, Display, TEXT("[Land] %s %s %s material %s parent %s"), *It->GetClass()->GetName(), *Part->GetClass()->GetName(), *Part->GetName(), *GetNameSafe(Material), *GetNameSafe(Material ? Material->GetMaterial() : nullptr));
+			TArray<UMaterialInterface*> Used;
+			Part->GetUsedMaterials(Used);
+			for (UMaterialInterface* Each : Used)
+			{
+				const FMaterialResource* Resource = Each ? Each->GetMaterialResource(GMaxRHIShaderPlatform) : nullptr;
+				const UMaterialInstance* Instance = Cast<UMaterialInstance>(Each);
+				UE_LOG(LogTemp, Display, TEXT("[Land]   uses %s (%s) finished %d errors %d permutation %d landscape %d shadermap %d"), *GetNameSafe(Each), Each ? *Each->GetClass()->GetName() : TEXT("-"), Resource ? Resource->IsCompilationFinished() : -1, Resource ? Resource->GetCompileErrors().Num() : -1,
+					Instance ? (int32)Instance->bHasStaticPermutationResource : -1, Resource ? (int32)Resource->IsUsedWithLandscape() : -1, Resource ? (int32)(Resource->GetGameThreadShaderMap() != nullptr) : -1);
+				if (Resource)
+				{
+					for (const FString& Error : Resource->GetCompileErrors())
+					{
+						UE_LOG(LogTemp, Display, TEXT("[Land]     %s"), *Error.Left(300));
+					}
+				}
+			}
+			if (++Shown >= 6)
+			{
+				break;
+			}
+		}
+	}
+}
+
 void AAedirPlayerCharacter::FoliageInfo()
 {
 	if (const UAedirFoliageSubsystem* Foliage = GetWorld()->GetSubsystem<UAedirFoliageSubsystem>())

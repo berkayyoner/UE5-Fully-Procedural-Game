@@ -33,7 +33,8 @@ public class Aedir : ModuleRules
 		{
 			"Sockets",
 			"CoreOnline",
-			"RenderCore"
+			"RenderCore",
+			"RHI"
 		});
 	}
 }

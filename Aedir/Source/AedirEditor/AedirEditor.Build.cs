@@ -23,6 +23,7 @@ public class AedirEditor : ModuleRules
 			"InputCore",
 			"StaticMeshEditor",
 			"AudioEditor",
+			"Landscape",
 			"Aedir"
 		});
 	}

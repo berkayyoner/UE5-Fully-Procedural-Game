@@ -1,6 +1,7 @@
 #include "AedirContentCommandlet.h"
 
 #include "AedirEditor.h"
+#include "AedirTestMapBuilder.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Editor.h"
 #include "Engine/StaticMesh.h"
@@ -431,6 +432,13 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 	{
 		ContentBuildPrecip(ToSave);
 		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
+	if (Only == TEXT("TestMap"))
+	{
+		AedirTestMap::BuildLandscapeMaterial(ToSave);
+		const bool bMaterialSaved = UEditorLoadingAndSavingUtils::SavePackages(ToSave, false);
+		AedirTestMap::BuildLevel();
+		return bMaterialSaved ? 0 : 1;
 	}
 	if (Only == TEXT("Sounds"))
 	{

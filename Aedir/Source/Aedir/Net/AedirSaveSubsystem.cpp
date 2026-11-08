@@ -23,7 +23,7 @@
 
 namespace
 {
-	const TCHAR* const AedirSaveDefaultPlayMap = TEXT("Lvl_ThirdPerson");
+	const TCHAR* const AedirSaveDefaultPlayMap = TEXT("Lvl_AedirTest");
 	constexpr int32 SaveSubsystemUserIndex = 0;
 	constexpr float SaveSubsystemRestoreWeatherSeconds = 0.1f;
 	constexpr double SaveSubsystemLocationRadiusCm = 20000.0;

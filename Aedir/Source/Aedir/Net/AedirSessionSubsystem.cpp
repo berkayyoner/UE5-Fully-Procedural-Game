@@ -13,7 +13,7 @@
 
 namespace
 {
-	const FName SessionPlayMap(TEXT("/Game/ThirdPerson/Lvl_ThirdPerson"));
+	const FName SessionPlayMap(TEXT("/Game/Aedir/Maps/Lvl_AedirTest"));
 	const FName SessionMenuMap(TEXT("/Game/Aedir/Maps/Lvl_MainMenu"));
 	constexpr int32 SessionCoopPlayers = 4;
 

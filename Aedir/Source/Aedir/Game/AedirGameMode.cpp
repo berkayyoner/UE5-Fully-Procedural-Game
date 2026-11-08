@@ -36,6 +36,7 @@ void AAedirGameMode::StartPlay()
 	Super::StartPlay();
 
 	AedirWorldDirector::PopulateTestMap(GetWorld());
+	AedirWorldDirector::PopulateNatureMap(GetWorld());
 
 	// A save chosen on the title screen is read once the host stands in the world.
 	UAedirSaveSubsystem* Saves = GetGameInstance()->GetSubsystem<UAedirSaveSubsystem>();
