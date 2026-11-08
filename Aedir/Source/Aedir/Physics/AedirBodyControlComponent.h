@@ -25,13 +25,13 @@ public:
 
 	// How quickly each part is pulled back to the pose, in Hz at full strength: a higher number is a stiffer muscle.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float SpineStrength = 7.f;
+	float SpineStrength = 11.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float HeadStrength = 4.f;
+	float HeadStrength = 7.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float ArmStrength = 9.f;
+	float ArmStrength = 13.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float LegStrength = 10.f;
@@ -45,7 +45,7 @@ public:
 
 	// How strongly the trunk and head are turned upright in the world, in Hz.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float PostureStrength = 6.f;
+	float PostureStrength = 9.f;
 
 	// How strongly each foot is pulled to where the pose sets it, in Hz.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -54,6 +54,11 @@ public:
 	// Share of its weight a body carries while standing at full strength; down it carries all of it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float StandingGravity = 0.5f;
+
+	// How hard the hips are lifted while getting up, against how hard they are held standing: the legs and arms do not yet
+	// carry the body, so the hips' muscles lift all of it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float RiseHipShare = 2.f;
 
 	// What is left of every muscle in a body that is down.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -69,6 +74,9 @@ public:
 
 	// Every frame: how strong the body holds itself up (0..1), and how strong each arm is.
 	void SetStrengths(float Upright, float LeftArm, float RightArm);
+
+	// Getting up off the ground: the hips stay physical and are lifted by their control, the legs push on the ground.
+	void SetRising(bool bInRising);
 
 	// Jumping or falling, the body carries all its weight.
 	void SetAirborne(bool bInAirborne);
@@ -94,6 +102,7 @@ public:
 
 private:
 	void ApplyMultipliers();
+	void ApplyLegContacts();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPhysicsControlComponent> Control;
@@ -118,6 +127,7 @@ private:
 	bool bReady = false;
 	bool bLimp = false;
 	bool bAirborne = false;
+	bool bRising = false;
 	bool bHipsCarried = false;
 	bool bLeftPlanted = false;
 	bool bRightPlanted = false;

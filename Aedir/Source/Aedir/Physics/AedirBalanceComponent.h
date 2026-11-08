@@ -459,6 +459,12 @@ private:
 
 	// The capsule size the hips were last tied to.
 	float BoundCapsuleHalfHeight = -1.f;
+
+	// Time left for a body just carried over to arrive before it is judged again.
+	float BodyTeleportGrace = 0.f;
+
+	// How the mesh sat on the capsule when the body went down, to put it back exactly so when it gets up.
+	FTransform MeshRelativeAtFall = FTransform::Identity;
 	// Physical hips: the joint to the capsule, made once, and its pull set every frame.
 	bool UsesPhysicalHips() const;
 	void SetupHipJoint();
@@ -495,6 +501,7 @@ private:
 	double LastBumpTime = -100.0;
 	bool bLegLost = false;
 	void ReshapeBodyPhysics();
+	void PutMeshOnCapsule();
 	float PhysicsShapeScale = 0.f;
 	void ApplyJointLimits(bool bRagdoll);
 	TArray<FConstraintProfileProperties> LooseJointLimits;

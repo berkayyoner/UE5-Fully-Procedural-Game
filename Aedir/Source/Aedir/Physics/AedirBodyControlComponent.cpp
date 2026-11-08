@@ -17,6 +17,8 @@ static TAutoConsoleVariable<float> CVarAedirBodyFoot(TEXT("aedir.BodyFoot"), -1.
 
 static TAutoConsoleVariable<float> CVarAedirBodyHips(TEXT("aedir.BodyHips"), -1.f, TEXT("Hz of the hips' hold on the capsule; below 0 uses the component's own."));
 
+static TAutoConsoleVariable<float> CVarAedirBodyRise(TEXT("aedir.BodyRise"), -1.f, TEXT("How hard the hips are lifted getting up, against standing; below 0 uses the component's own."));
+
 namespace
 {
 	// Which part of the body a bone belongs to, by its name on the standard skeleton.
@@ -114,7 +116,7 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		FPhysicsControlModifierData PartData = Simulated;
 		if (Part == EAedirBodyPart::Leg)
 		{
-			PartData.CollisionType = bLimp ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::QueryOnly;
+			PartData.CollisionType = bLimp || bRising ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::QueryOnly;
 		}
 		const FName Modifier = Control->CreateBodyModifier(Mesh, Bone, TEXT("Body"), PartData);
 		if (Part == EAedirBodyPart::Leg)
@@ -203,15 +205,34 @@ void UAedirBodyControlComponent::SetLimp(bool bInLimp)
 	if (bLimp != bInLimp)
 	{
 		bLimp = bInLimp;
-		if (Control)
-		{
-			for (const FName& Modifier : LegModifiers)
-			{
-				Control->SetBodyModifierCollisionType(Modifier, bLimp ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::QueryOnly);
-			}
-		}
+		ApplyLegContacts();
 		AppliedKey = -1.f;
 		ApplyMultipliers();
+	}
+}
+
+void UAedirBodyControlComponent::SetRising(bool bInRising)
+{
+	if (bRising != bInRising)
+	{
+		bRising = bInRising;
+		ApplyLegContacts();
+		AppliedKey = -1.f;
+		ApplyMultipliers();
+	}
+}
+
+void UAedirBodyControlComponent::ApplyLegContacts()
+{
+	if (!Control)
+	{
+		return;
+	}
+	// Down, or pushing up off the ground on hands and knees, the legs bear on it; standing, the steps set them.
+	const ECollisionEnabled::Type Contact = bLimp || bRising ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::QueryOnly;
+	for (const FName& Modifier : LegModifiers)
+	{
+		Control->SetBodyModifierCollisionType(Modifier, Contact);
 	}
 }
 
@@ -278,6 +299,7 @@ void UAedirBodyControlComponent::RebindHips(UCapsuleComponent* InCapsule)
 	// The hips are held where the pose has them on the capsule, in place and in turn.
 	HipControl = Control->CreateControl(InCapsule, NAME_None, Mesh, TEXT("pelvis"), HipData, FPhysicsControlTarget(), TEXT("Hips"));
 	bReady = !HipControl.IsNone();
+	UE_LOG(LogAedir, Verbose, TEXT("[Body] %s: hips tied to the capsule as %s."), *GetNameSafe(GetOwner()), *HipControl.ToString());
 	AppliedKey = -1.f;
 	ApplyMultipliers();
 }
@@ -311,7 +333,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 		return;
 	}
 	// Only when something changed enough to matter.
-	const float Key = (bLimp ? 1000.f : 0.f) + (bHipsCarried ? 2000.f : 0.f) + (bAirborne ? 4000.f : 0.f) + FMath::RoundToFloat(Upright * 50.f) + FMath::RoundToFloat(LeftArmShare * 50.f) * 0.01f + FMath::RoundToFloat(RightArmShare * 50.f) * 0.0001f;
+	const float Key = (bLimp ? 1000.f : 0.f) + (bHipsCarried ? 2000.f : 0.f) + (bAirborne ? 4000.f : 0.f) + (bRising ? 8000.f : 0.f) + FMath::RoundToFloat(Upright * 50.f) + FMath::RoundToFloat(LeftArmShare * 50.f) * 0.01f + FMath::RoundToFloat(RightArmShare * 50.f) * 0.0001f;
 	if (FMath::IsNearlyEqual(Key, AppliedKey))
 	{
 		return;
@@ -337,7 +359,10 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// Down, the hips are free; carried, the pose places them and the control rests.
 	const bool bHold = !bLimp && !bHipsCarried;
 	const float Hips = CVarAedirBodyHips.GetValueOnGameThread() >= 0.f ? CVarAedirBodyHips.GetValueOnGameThread() : HipLinearStrength;
-	Apply({ HipControl }, bHold ? HipAngularStrength * Body : 0.f, bHold ? Hips * Body : 0.f);
+	// Rising, the hips are lifted along the moves by the muscles, as hard as the body has it in it, never carried.
+	const float Rise = CVarAedirBodyRise.GetValueOnGameThread() >= 0.f ? CVarAedirBodyRise.GetValueOnGameThread() : RiseHipShare;
+	const float HipShare = bRising ? Rise * Body : Body;
+	Apply({ HipControl }, bHold ? HipAngularStrength * HipShare : 0.f, bHold ? Hips * HipShare : 0.f);
 	Control->SetControlEnabled(HipControl, bHold);
 
 	// The trunk is kept upright as a whole, and standing it carries only part of its weight.

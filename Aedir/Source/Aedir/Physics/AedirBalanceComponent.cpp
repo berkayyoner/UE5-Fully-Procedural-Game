@@ -56,6 +56,19 @@ namespace
 	constexpr float AedirPlantedFootLift = 0.12f;
 	// A frame longer than the physics steps through (six substeps of a sixtieth of a second).
 	constexpr float AedirBodyHitchSeconds = 0.1f;
+	// How much further the hips may stray from the pose while getting up before it costs balance.
+	constexpr float AedirGetUpDriftFreeScale = 2.f;
+	// How long a body that was just carried over is left to arrive.
+	constexpr float AedirBodyTeleportGraceSeconds = 0.15f;
+	// Balance lost each second a player getting up lets go of the key: the body sinks back down within half a second.
+	constexpr float AedirGetUpLetGoLossPerSecond = 2.5f;
+	// How much harder a blow throws a body that is getting up than one standing.
+	constexpr float AedirGetUpBlowScale = 2.f;
+	// A living joint's room against the limp body's limits in the physics asset: scaled, then widened, never past the cap.
+	constexpr float AedirLivingJointScale = 1.5f;
+	constexpr float AedirLivingJointExtraDegrees = 30.f;
+	constexpr float AedirLivingLockedExtraDegrees = 15.f;
+	constexpr float AedirLivingJointMaxDegrees = 150.f;
 	// Toppled over, parts of the body below this share of its height are pushed back against the blow.
 	constexpr float AedirToppleFootHoldShare = 0.3f;
 	// Seconds a body that starts to get up takes to tense its limbs.
@@ -182,6 +195,7 @@ void UAedirBalanceComponent::BeginPlay()
 	BodyMesh->SetAllBodiesBelowSimulatePhysics(PelvisBoneName, true, true);
 	BodyMesh->SetAllBodiesPhysicsBlendWeight(1.f);
 	MeshRestRelative = BodyMesh->GetRelativeTransform();
+	MeshRelativeAtFall = MeshRestRelative;
 	BodyMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	BodyMesh->SetNotifyRigidBodyCollision(true);
 	ApplyBodyContacts(false);
@@ -229,10 +243,19 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		return;
 	}
 
+	// The engine lets a mesh go from what it is attached to whenever its root part starts simulating, as the hips of a fully
+	// physical body do: up on its feet the mesh is put straight back on the capsule where it sat, the bodies staying put.
+	if (BodyControl && !bIsRagdoll && BodyMesh->GetAttachParent() != BodyCapsule)
+	{
+		PutMeshOnCapsule();
+	}
+
 	// Joints are laid out at the scale the physics was made at, and a race or growing strength changes that: the limbs would stay their old length.
 	const float MeshScale = static_cast<float>(BodyMesh->GetComponentScale().X);
 	if (!bIsRagdoll && !FMath::IsNearlyEqual(MeshScale, PhysicsShapeScale, AedirPhysicsRescaleStep))
 	{
+		UE_LOG(LogAedir, Verbose, TEXT("[Body] %s reshaped: scale %.3f, was %.3f, relative %s, actor %s, capsule %s, mode %d, parent %s."), *GetNameSafe(GetOwner()), MeshScale, PhysicsShapeScale, *BodyMesh->GetRelativeTransform().ToString(), *CharacterOwner->GetActorScale3D().ToCompactString(),
+			*BodyCapsule->GetComponentScale().ToCompactString(), static_cast<int32>(BodyMesh->PhysicsTransformUpdateMode), *GetNameSafe(BodyMesh->GetAttachParent()));
 		PhysicsShapeScale = MeshScale;
 		ReshapeBodyPhysics();
 	}
@@ -460,7 +483,7 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	}
 	BodyControl->SetStrengths(Upright, LeftArm, RightArm);
 	const bool bGettingUp = IsGettingUp();
-	BodyControl->SetHipsCarried(bGettingUp);
+	BodyControl->SetRising(bGettingUp);
 
 	// A foot the steps have put down stays there; one in the air, or both while jumping or falling, swings free.
 	FAedirGaitState Pose;
@@ -477,24 +500,41 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	const USkeletalMesh* Model = BodyMesh->GetSkeletalMeshAsset();
 	const int32 PelvisIndex = Model ? Model->GetRefSkeleton().FindBoneIndex(PelvisBoneName) : INDEX_NONE;
 	const FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName);
-	if (!Pelvis || PelvisIndex == INDEX_NONE || bGettingUp || !IsAuthoritative())
+	if (!Pelvis || PelvisIndex == INDEX_NONE || !IsAuthoritative())
 	{
 		return;
 	}
 	const FTransform Actor = CharacterOwner->GetActorTransform();
-	// Where the pose has the hips this frame, crouched, reaching or leaning as it is.
+	// Where the pose has the hips this frame, crouched, reaching, leaning or on the way up as it is.
 	const FVector Target = BodyControl->GetPoseLocation(PelvisBoneName);
 	const FVector Now = Pelvis->GetUnrealWorldTransform().GetLocation();
 	// Moved at once, by a teleport or a respawn, the whole body goes along instead of being torn after the capsule. So it
 	// does after a frame longer than the physics can step through: the capsule went the whole way, the body could not.
-	if (FVector::DistSquared(Now, Target) > FMath::Square(BodyTeleportCm) || DeltaTime > AedirBodyHitchSeconds)
+	// A body on its way up lifts itself from where it lay and is never put anywhere.
+	// The physics reports a move only a step later, so right after one the body is left to arrive before it is judged.
+	BodyTeleportGrace = FMath::Max(BodyTeleportGrace - DeltaTime, 0.f);
+	if (BodyTeleportGrace > 0.f)
 	{
+		return;
+	}
+	// A body on its way up is not carried over after a long frame, but neither is the frame held against it: the physics
+	// could not keep up with the moves, the body did not lose its balance.
+	if (bGettingUp && DeltaTime > AedirBodyHitchSeconds)
+	{
+		BodyTeleportGrace = AedirBodyTeleportGraceSeconds * 3.f;
+		return;
+	}
+	if (!bGettingUp && (FVector::DistSquared(Now, Target) > FMath::Square(BodyTeleportCm) || DeltaTime > AedirBodyHitchSeconds))
+	{
+		BodyTeleportGrace = AedirBodyTeleportGraceSeconds;
 		UE_LOG(LogAedir, Verbose, TEXT("[Fall] %s's body put back in its pose: hips %.0f cm off, frame %.3f s."), *GetNameSafe(GetOwner()), FVector::Dist(Now, Target), DeltaTime);
 		BodyControl->Teleported(Target - Now);
 		return;
 	}
-	const FVector Drift(Now.X - Target.X, Now.Y - Target.Y, 0.f);
-	const float Beyond = static_cast<float>(Drift.Size()) - PelvisDriftFreeCm;
+	// Getting up, the hips go over the knees and hands and may wander more before they tip the body back over.
+	// Getting up, hips left low count too: a body that cannot lift itself as fast as the moves go sinks back.
+	const FVector Drift(Now.X - Target.X, Now.Y - Target.Y, bGettingUp ? FMath::Min(Now.Z - Target.Z, 0.0) : 0.0);
+	const float Beyond = static_cast<float>(Drift.Size()) - PelvisDriftFreeCm * (bGettingUp ? AedirGetUpDriftFreeScale : 1.f);
 	if (Beyond > 0.f)
 	{
 		UE_LOG(LogAedir, Verbose, TEXT("[Fall] %s hips drift %s cm, balance %.2f, at %s speed %.0f, hips Z %.1f over target."), *GetNameSafe(GetOwner()), *(Actor.InverseTransformVectorNoScale(Drift)).ToCompactString(), Balance,
@@ -622,7 +662,8 @@ EAedirGetUpStyle UAedirBalanceComponent::ReadLyingStyle() const
 
 void UAedirBalanceComponent::RequestGetUp(bool bForwardKey)
 {
-	if (!bIsRagdoll)
+	// Down, the key starts getting up; on the way up, holding it keeps the body going.
+	if (!bIsRagdoll && !IsGettingUp())
 	{
 		return;
 	}
@@ -681,6 +722,11 @@ void UAedirBalanceComponent::ApplyBalanceImpact(FVector WorldDirection, float Ma
 		return;
 	}
 
+	// Half up off the ground, on hands and knees or one foot, the body has no footing to take a blow on.
+	if (IsGettingUp())
+	{
+		Magnitude *= AedirGetUpBlowScale;
+	}
 	AddLeanDirection(WorldDirection, Magnitude);
 
 	StumbleDebt += FMath::Max(Magnitude - Balance, 0.f);
@@ -1395,7 +1441,6 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 			UE_LOG(LogAedir, Log, TEXT("[GetUp] %s gets up %s%s."), *GetNameSafe(GetOwner()),
 				GetUpStyle == EAedirGetUpStyle::FromFront ? TEXT("from face down") : TEXT("off its back"), bChooses ? TEXT(" when told") : TEXT(""));
 			bReadyToGetUp = false;
-			GetUpRequestTime = -100.0;
 			bIsRagdoll = false;
 			SetBalance(GetUpBalanceThreshold);
 			SetRagdollPresentation(false);
@@ -1509,11 +1554,13 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 
 	if (bRagdoll)
 	{
+		MeshRelativeAtFall = BodyMesh->GetAttachParent() == BodyCapsule ? BodyMesh->GetRelativeTransform() : MeshRestRelative;
 		GetUpLeft = 0.f;
 		bHipsInitialized = false;
 		if (BodyControl)
 		{
 			BodyControl->SetHipsCarried(false);
+			BodyControl->SetRising(false);
 			BodyControl->SetLimp(true);
 			BodyControl->SetFeetPlanted(false, false);
 		}
@@ -1558,8 +1605,11 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		{
 			Along = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
 		}
-		// The hips are carried through getting up, and only then held by the joint again.
-		Pelvis->SetInstanceSimulatePhysics(false);
+		// The hips are carried through getting up, and only then held by the joint again; a fully physical body lifts its own.
+		if (!BodyControl)
+		{
+			Pelvis->SetInstanceSimulatePhysics(false);
+		}
 		// Moving the capsule and the mesh back onto it drags the limbs along with them; they are put back where they lay after.
 		TArray<FTransform> Lying;
 		Lying.Reserve(BodyMesh->Bodies.Num());
@@ -1585,13 +1635,21 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		}
 
 		// A loose pelvis took the mesh along with it. Back on its feet the mesh goes back to the capsule, and the limbs to the pose.
-		if (BodyMesh->GetAttachParent() != BodyCapsule)
+		if (BodyControl)
 		{
-			BodyMesh->AttachToComponent(BodyCapsule, FAttachmentTransformRules::KeepRelativeTransform);
+			PutMeshOnCapsule();
 		}
-		// Physical hips stay where they lay and are pulled up from there; pose-driven ones are put back on the legs at once.
-		BodyMesh->SetRelativeTransform(MeshRestRelative, false, nullptr, bActivePelvis ? ETeleportType::None : ETeleportType::ResetPhysics);
-		if (bActivePelvis)
+		else
+		{
+			if (BodyMesh->GetAttachParent() != BodyCapsule)
+			{
+				BodyMesh->AttachToComponent(BodyCapsule, FAttachmentTransformRules::KeepRelativeTransform);
+			}
+			// Physical hips stay where they lay and are pulled up from there; pose-driven ones are put back on the legs at once.
+			BodyMesh->SetRelativeTransform(MeshRelativeAtFall, false, nullptr, bActivePelvis ? ETeleportType::None : ETeleportType::ResetPhysics);
+			BodyMesh->UpdateComponentToWorld(EUpdateTransformFlags::None, ETeleportType::None);
+		}
+		if (bActivePelvis || BodyControl)
 		{
 			for (int32 Index = 0; Index < BodyMesh->Bodies.Num() && Index < Lying.Num(); ++Index)
 			{
@@ -1618,11 +1676,13 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		{
 			Gait->BeginGetUpPose();
 		}
-		// The muscles come back, and the hips are carried through the moves until the body is up.
+		// The muscles come back and lift the body through the moves, the hips with them; a blow can still put it back down.
 		if (BodyControl)
 		{
 			BodyControl->SetLimp(false);
-			BodyControl->SetHipsCarried(true);
+			BodyControl->SetRising(true);
+			// The pose takes a moment to start from where the body lies; until then it is not measured against it.
+			BodyTeleportGrace = AedirBodyTeleportGraceSeconds * 2.f;
 		}
 	}
 
@@ -1650,6 +1710,27 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	}
 }
 
+void UAedirBalanceComponent::PutMeshOnCapsule()
+{
+	// Lying, the mesh was let go and carried by the hips, taking their scale on top of its own. It goes back on the capsule
+	// exactly as it sat when the body went down, at the size its race and build give it. The engine attaches nothing whose
+	// root part simulates, so the hips are held still for the moment it takes, and set loose again without letting go.
+	FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName);
+	const bool bSimulating = Pelvis && Pelvis->IsInstanceSimulatingPhysics();
+	if (bSimulating)
+	{
+		Pelvis->SetInstanceSimulatePhysics(false, false, true);
+	}
+	BodyMesh->AttachToComponent(BodyCapsule, FAttachmentTransformRules::KeepRelativeTransform);
+	BodyMesh->SetRelativeTransform(MeshRelativeAtFall, false, nullptr, ETeleportType::None);
+	// The same relative transform is not applied again, while the world one was the hips': it is worked out anew.
+	BodyMesh->UpdateComponentToWorld(EUpdateTransformFlags::None, ETeleportType::None);
+	if (bSimulating)
+	{
+		Pelvis->SetInstanceSimulatePhysics(true, false, true);
+	}
+}
+
 float UAedirBalanceComponent::GetGetUpShare() const
 {
 	return GetUpLeft > 0.f && GetUpTotal > 0.f ? 1.f - FMath::SmoothStep(0.f, 1.f, 1.f - GetUpLeft / GetUpTotal) : 0.f;
@@ -1661,7 +1742,30 @@ void UAedirBalanceComponent::UpdateGetUp(float DeltaTime)
 	{
 		return;
 	}
+	// A player gets up only as long as the key is held: let go half way and the body sinks back to the ground.
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	const bool bChooses = bPlayerChoosesGetUp && CharacterOwner && CharacterOwner->IsPlayerControlled();
+	const bool bHeld = Now - GetUpRequestTime <= AedirGetUpRequestHoldSeconds && RequestedGetUpStyle == GetUpStyle;
+	// A long frame is not a let-go: the key could not be read in it.
+	if (bChooses && !bHeld && IsAuthoritative() && DeltaTime <= AedirBodyHitchSeconds)
+	{
+		ApplyBalanceImpact(-CharacterOwner->GetActorForwardVector(), AedirGetUpLetGoLossPerSecond * DeltaTime);
+		return;
+	}
 	GetUpLeft = FMath::Max(GetUpLeft - DeltaTime, 0.f);
+	// The moves are over, but the hips never made it up: the body did not get up.
+	if (GetUpLeft <= 0.f && BodyControl && IsAuthoritative())
+	{
+		const FBodyInstance* Pelvis = BodyMesh ? BodyMesh->GetBodyInstance(PelvisBoneName) : nullptr;
+		const float Short = Pelvis ? static_cast<float>(BodyControl->GetPoseLocation(PelvisBoneName).Z - Pelvis->GetUnrealWorldTransform().GetLocation().Z) : 0.f;
+		if (Short > PelvisDriftFreeCm * AedirGetUpDriftFreeScale)
+		{
+			UE_LOG(LogAedir, Log, TEXT("[Fall] %s did not make it up: hips %.0f cm short."), *GetNameSafe(GetOwner()), Short);
+			EnterRagdoll(MinRagdollSeconds);
+			return;
+		}
+	}
 	if (GetUpLeft <= 0.f)
 	{
 		if (UCharacterMovementComponent* Movement = CharacterOwner ? CharacterOwner->GetCharacterMovement() : nullptr)
@@ -1769,13 +1873,32 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll)
 		}
 	}
 
+	// Standing, the living pose gets more room than the limp one, but a joint still never turns the way it cannot: a
+	// shoulder does not go over backwards, a neck does not turn the head round, whatever the muscles or a blow ask of it.
+	const auto Living = [bRagdoll](EAngularConstraintMotion Motion, float Degrees, float& OutDegrees)
+	{
+		OutDegrees = Degrees;
+		if (bRagdoll || Motion == ACM_Free)
+		{
+			return Motion;
+		}
+		const float Asset = Motion == ACM_Locked ? 0.f : Degrees;
+		OutDegrees = FMath::Min(Asset * AedirLivingJointScale + (Motion == ACM_Locked ? AedirLivingLockedExtraDegrees : AedirLivingJointExtraDegrees), AedirLivingJointMaxDegrees);
+		return ACM_Limited;
+	};
 	for (int32 Index = 0; Index < BodyMesh->Constraints.Num() && Index < LooseJointLimits.Num(); ++Index)
 	{
 		FConstraintInstance* Joint = BodyMesh->Constraints[Index];
 		const FConstraintProfileProperties& Loose = LooseJointLimits[Index];
-		Joint->SetAngularSwing1Motion(bRagdoll ? Loose.ConeLimit.Swing1Motion.GetValue() : ACM_Free);
-		Joint->SetAngularSwing2Motion(bRagdoll ? Loose.ConeLimit.Swing2Motion.GetValue() : ACM_Free);
-		Joint->SetAngularTwistMotion(bRagdoll ? Loose.TwistLimit.TwistMotion.GetValue() : ACM_Free);
+		float Swing1 = 0.f;
+		float Swing2 = 0.f;
+		float Twist = 0.f;
+		const EAngularConstraintMotion Swing1Motion = Living(Loose.ConeLimit.Swing1Motion, Loose.ConeLimit.Swing1LimitDegrees, Swing1);
+		const EAngularConstraintMotion Swing2Motion = Living(Loose.ConeLimit.Swing2Motion, Loose.ConeLimit.Swing2LimitDegrees, Swing2);
+		const EAngularConstraintMotion TwistMotion = Living(Loose.TwistLimit.TwistMotion, Loose.TwistLimit.TwistLimitDegrees, Twist);
+		Joint->SetAngularSwing1Limit(Swing1Motion, Swing1);
+		Joint->SetAngularSwing2Limit(Swing2Motion, Swing2);
+		Joint->SetAngularTwistLimit(TwistMotion, Twist);
 	}
 }
 

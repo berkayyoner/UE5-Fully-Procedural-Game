@@ -260,8 +260,8 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		const float LeftKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::A) ? 1.f : 0.f;
 		const FVector2D MoveInput = FVector2D(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue) + DevAutoMove;
 		MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
-		// Down on the ground the same keys get the body up: W off the back, S from face down.
-		if (Balance && Balance->IsRagdoll() && FMath::Abs(MoveInput.Y) > 0.5)
+		// Down on the ground the same keys get the body up: W off the back, S from face down, held all the way up.
+		if (Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()) && FMath::Abs(MoveInput.Y) > 0.5)
 		{
 			Balance->RequestGetUp(MoveInput.Y > 0.0);
 		}
