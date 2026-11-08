@@ -805,7 +805,10 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<
 	// The pole sits beside the middle of the leg, in front of it and slightly down. A foot flicked up behind the body keeps a
 	// well defined bending plane this way, where a pole beyond the foot would flip the knee.
 	const FVector DownMeshDirection = ActorToMesh.RotateVector(-FVector::UpVector);
-	const FVector JointTarget = (RootPosition + Effector) * 0.5 + ForwardMesh * AedirKneePoleDistance + DownMeshDirection * AedirKneePoleDropDistance;
+	const FVector ForwardJointTarget = (RootPosition + Effector) * 0.5 + ForwardMesh * AedirKneePoleDistance + DownMeshDirection * AedirKneePoleDropDistance;
+	// Sat on the ground with the feet drawn in, the hip and the foot are level and the knees point up.
+	const FVector UpJointTarget = (RootPosition + Effector) * 0.5 + UpMeshDirection * AedirKneePoleDistance + ForwardMesh * AedirKneePoleDropDistance;
+	const FVector JointTarget = FMath::Lerp(ForwardJointTarget, UpJointTarget, FMath::Clamp(GaitData.KneeUpShare, 0.f, 1.f));
 
 	FVector SolvedJointPosition;
 	FVector SolvedEndPosition;

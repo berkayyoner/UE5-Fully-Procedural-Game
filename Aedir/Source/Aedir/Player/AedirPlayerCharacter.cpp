@@ -258,6 +258,11 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		const float LeftKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::A) ? 1.f : 0.f;
 		const FVector2D MoveInput = FVector2D(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue) + DevAutoMove;
 		MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
+		// Down on the ground the same keys get the body up: W off the back, S from face down.
+		if (Balance && Balance->IsRagdoll() && FMath::Abs(MoveInput.Y) > 0.5)
+		{
+			Balance->RequestGetUp(MoveInput.Y > 0.0);
+		}
 	}
 
 	UpdateTutorialObjectives();
@@ -1197,23 +1202,45 @@ void AAedirPlayerCharacter::AutoMove(float Forward, float Right, int32 Run, floa
 	RunDevCommand(TEXT("AutoMove"), FString::Printf(TEXT("%f %f %d %f"), Forward, Right, Run, TurnDegrees), false);
 }
 
-void AAedirPlayerCharacter::StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec)
+namespace
 {
-	// A blow on the chest from straight ahead, as a weapon of that mass and speed would land it.
-	if (!Balance || !GetMesh())
+	// A blow on the chest from straight ahead, or on the back from straight behind, as a weapon of that mass and speed would land it.
+	void StrikeCreature(AAedirCreature* Victim, float EnergyJoules, float MassKg, float SpeedCmPerSec, bool bFromBehind)
 	{
-		return;
+		if (!Victim || !Victim->Balance || !Victim->GetMesh())
+		{
+			return;
+		}
+		const FVector Toward = Victim->GetActorForwardVector() * (bFromBehind ? -1.f : 1.f);
+		FAedirImpactInfo Impact;
+		Impact.Bone = TEXT("spine_03");
+		Impact.Zone = EAedirBodyZone::Torso;
+		Impact.EnergyJoules = EnergyJoules;
+		Impact.Direction = -Toward;
+		Impact.Location = Victim->GetMesh()->GetBoneLocation(TEXT("spine_03")) + Toward * 15.f;
+		Impact.MassKg = MassKg;
+		Impact.RelativeSpeed = SpeedCmPerSec;
+		Victim->Balance->ApplyHitReaction(Impact);
+		UE_LOG(LogTemp, Display, TEXT("[Dev] %s struck with %.0f J from %s, balance %.2f"), *Victim->GetName(), EnergyJoules, bFromBehind ? TEXT("behind") : TEXT("the front"), Victim->Balance->GetBalance());
 	}
-	FAedirImpactInfo Impact;
-	Impact.Bone = TEXT("spine_03");
-	Impact.Zone = EAedirBodyZone::Torso;
-	Impact.EnergyJoules = EnergyJoules;
-	Impact.Direction = -GetActorForwardVector();
-	Impact.Location = GetMesh()->GetBoneLocation(TEXT("spine_03")) + GetActorForwardVector() * 15.f;
-	Impact.MassKg = MassKg;
-	Impact.RelativeSpeed = SpeedCmPerSec;
-	Balance->ApplyHitReaction(Impact);
-	UE_LOG(LogTemp, Display, TEXT("[Dev] Struck with %.0f J, balance %.2f"), EnergyJoules, Balance->GetBalance());
+}
+
+void AAedirPlayerCharacter::StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec, int32 FromBehind)
+{
+	StrikeCreature(this, EnergyJoules, MassKg, SpeedCmPerSec, FromBehind != 0);
+}
+
+void AAedirPlayerCharacter::StrikeNearest(float EnergyJoules, int32 FromBehind)
+{
+	AAedirCreature* Nearest = nullptr;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())))
+		{
+			Nearest = *It;
+		}
+	}
+	StrikeCreature(Nearest, EnergyJoules, 4.f, 900.f, FromBehind != 0);
 }
 
 void AAedirPlayerCharacter::WarpTo(float XMetres, float YMetres, float Yaw)

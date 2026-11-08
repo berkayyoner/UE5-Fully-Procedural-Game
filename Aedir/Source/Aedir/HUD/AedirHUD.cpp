@@ -18,6 +18,7 @@
 #include "GameFramework/PlayerController.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemActor.h"
+#include "Physics/AedirBalanceComponent.h"
 #include "UI/AedirJournalSubsystem.h"
 #include "UI/AedirMenuSubsystem.h"
 #include "UI/AedirUIStyle.h"
@@ -685,6 +686,18 @@ void AAedirHUD::DrawPrompt(const AAedirCreature* Creature)
 	if (!Canvas || !Interaction)
 	{
 		return;
+	}
+
+	// Down and able to get up: which key does it, for the way the body lies.
+	const UAedirBalanceComponent* BalanceComponent = Creature->Balance.Get();
+	if (BalanceComponent && BalanceComponent->bPlayerChoosesGetUp && BalanceComponent->IsReadyToGetUp())
+	{
+		const float Scale = AedirUIStyle::ScaleForHeight(static_cast<float>(Canvas->SizeY));
+		const FSlateFontInfo Font = AedirUIStyle::RegularFont(HudPromptFontSize * 1.3f * Scale, 40);
+		const FString Hint = BalanceComponent->GetLyingStyle() == EAedirGetUpStyle::FromFront
+			? TEXT("S   Push up on hands and knees")
+			: TEXT("W   Sit up and stand");
+		AedirUIStyle::DrawText(*Canvas, Hint, Font, FVector2f(static_cast<float>(Canvas->SizeX) * 0.5f, static_cast<float>(Canvas->SizeY) * 0.72f), AedirUIStyle::Ivory, EAedirTextAlign::Center, 1.f);
 	}
 
 	const AAedirItemActor* Item = Interaction->GetHighlightedItem();

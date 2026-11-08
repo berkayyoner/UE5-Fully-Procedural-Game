@@ -209,6 +209,10 @@ struct AEDIR_API FAedirGaitState
 	// Torso roll in degrees from acceleration and turn rate, distributed over the spine chain. Positive leans right.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float SpineLeanRoll = 0.f;
+
+	// How far the knees point up instead of forward, for feet drawn in towards hips sat on the ground.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float KneeUpShare = 0.f;
 };
 
 // Plain bone name copy consumed by the animation proxy on the worker thread.
@@ -694,9 +698,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
 	float KickSpineLeanDegrees = 6.f;
 
+	// Works out the pose of this moment at once, outside the tick: a body starting to get up off the ground must not show, or be
+	// pulled towards, the pose it had while lying limp for even one frame.
+	void RefreshPoseNow();
+
 private:
 	bool SampleGround(const FVector& WorldXY, float BottomZ, FVector& OutLocation, FVector& OutNormal) const;
 	void ResetForRagdoll();
+	// Getting up off the ground: the hips, trunk, hands and feet go through the moves for the way the body lay, and hand over
+	// to the standing pose at the end.
+	void PoseGetUp(const FTransform& ActorTransform, float BottomZ, float ActorScale);
 	void AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength);
 	FRotator ComputeFootTilt(const FVector& GroundNormal, const FVector& ActorUp, const FRotator& CurrentTilt, float DeltaTime) const;
 	void BeginStep(int32 Foot, float Seconds);

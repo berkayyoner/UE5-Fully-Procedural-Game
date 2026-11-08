@@ -211,11 +211,15 @@ public:
 	UFUNCTION(Exec)
 	void ShotCam(const FString& CameraArgs);
 
-	// Stands the body on the ground at a point given in metres from the middle of the map, facing a yaw.
-	// Takes a blow on the chest from the front, to see how the body answers it.
+	// Takes a blow on the chest from the front, or on the back from behind, to see how the body answers it.
 	UFUNCTION(Exec)
-	void StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec);
+	void StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec, int32 FromBehind = 0);
 
+	// The same blow on the nearest other creature, from the front or from behind.
+	UFUNCTION(Exec)
+	void StrikeNearest(float EnergyJoules, int32 FromBehind = 0);
+
+	// Stands the body on the ground at a point given in metres from the middle of the map, facing a yaw.
 	UFUNCTION(Exec)
 	void WarpTo(float XMetres, float YMetres, float Yaw);
 

@@ -15,6 +15,17 @@ class UPrimitiveComponent;
 class UPhysicalAnimationComponent;
 class USkeletalMeshComponent;
 
+// How a body that is down gets back on its feet, which depends on how it lies.
+UENUM(BlueprintType)
+enum class EAedirGetUpStyle : uint8
+{
+	None,
+	// Face down: pushed up onto the hands and knees, one foot brought forward, then up off it.
+	FromFront,
+	// On the back: propped up on the hands, sat on the hips, the feet drawn in to them, then up over the feet.
+	FromBack
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAedirBalanceEvent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FAedirHitReaction, EAedirBodyZone, Zone, float, Energy, bool, bStaggered, bool, bKnockedDown);
 
@@ -168,7 +179,22 @@ public:
 
 	// Seconds a fresh body takes to get up off the ground.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpBaseSeconds = 1.7f;
+	float GetUpBaseSeconds = 3.f;
+
+	// A player's body stays down until it is told to get up: S face down, W on the back. Bodies nobody plays get up by themselves.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	bool bPlayerChoosesGetUp = true;
+
+	// The chest tells which way a body lies, and the head which way it is stretched out.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	FName ChestBoneName = FName(TEXT("spine_03"));
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	FName HeadBoneName = FName(TEXT("head"));
+
+	// Getting up off the back, the body stands up over its drawn-in feet, this far past where its hips lay.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpFromBackStandCm = 32.f;
 
 	// How much longer it takes with no stamina left, as a share.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
@@ -178,17 +204,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float GetUpHurtShare = 0.9f;
 
-	// How far below standing the hips may start when getting up.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpMaxDropCm = 70.f;
-
-	// How far over the trunk is bent at the start of getting up.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpBendDegrees = 50.f;
-
 	// How weak the muscles are at the start of getting up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpMuscleShare = 0.45f;
+	float GetUpMuscleShare = 0.7f;
+
+	// A knockdown tips the body over the way the blow went: the head starts off at this share of the speed a stagger would give.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float KnockdownToppleShare = 1.2f;
 
 	// Going down, no part of the body is thrown upwards faster than this, in cm/s.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
@@ -320,6 +342,26 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	bool IsGettingUp() const { return GetUpLeft > 0.f; }
 
+	// How far through getting up the body is, 0 just off the ground to 1 standing.
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
+	float GetGetUpProgress() const { return GetUpTotal > 0.f ? 1.f - GetUpLeft / GetUpTotal : 1.f; }
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
+	EAedirGetUpStyle GetGetUpStyle() const { return GetUpStyle; }
+
+	// Down and able to get up again, and how it lies, which says what it takes.
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
+	bool IsReadyToGetUp() const { return bIsRagdoll && bReadyToGetUp; }
+
+	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
+	EAedirGetUpStyle GetLyingStyle() const { return LyingStyle; }
+
+	// The player's movement keys while down: forward (W) gets a body up off its back, back (S) one lying face down.
+	void RequestGetUp(bool bForwardKey);
+
+	// Height of the hips above the ground when standing.
+	float GetPelvisStandHeight() const;
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	bool IsDazed() const;
 
@@ -378,10 +420,20 @@ private:
 	FVector HipsVelocity = FVector::ZeroVector;
 	float BodyMassKg = 70.f;
 	void BumpInto(class AAedirCreature* Other, const FHitResult& Hit);
-	void ApplyGetUpPose();
 	float GetUpLeft = 0.f;
 	float GetUpTotal = 0.f;
-	float GetUpDropCm = 0.f;
+	EAedirGetUpStyle ReadLyingStyle() const;
+	UFUNCTION(Server, Unreliable)
+	void ServerRequestGetUp(bool bForwardKey);
+	double GetUpRequestTime = -100.0;
+	EAedirGetUpStyle RequestedGetUpStyle = EAedirGetUpStyle::None;
+	double LastGetUpRequestSent = -100.0;
+	UPROPERTY(Replicated)
+	EAedirGetUpStyle GetUpStyle = EAedirGetUpStyle::None;
+	UPROPERTY(Replicated)
+	EAedirGetUpStyle LyingStyle = EAedirGetUpStyle::None;
+	UPROPERTY(Replicated)
+	bool bReadyToGetUp = false;
 	// How the body was moving the frame before, since by the time a hit is reported the movement has already stopped it.
 	FVector LastVelocity = FVector::ZeroVector;
 	// When this body last ran into another, so one shove is not counted on every frame of the contact.
@@ -412,6 +464,12 @@ private:
 
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastBoneImpulse(FName Bone, FVector Impulse, FVector Location);
+
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastTopple(FVector TopVelocity);
+	void ApplyTopple(const FVector& TopVelocity);
+	FVector PendingTopple = FVector::ZeroVector;
+	int32 PendingToppleFrames = 0;
 
 	UFUNCTION()
 	void OnCapsuleHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit);

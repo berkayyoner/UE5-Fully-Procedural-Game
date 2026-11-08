@@ -45,6 +45,12 @@ namespace
 	constexpr double BumpRepeatSeconds = 0.6;
 	// Hips further than this from where they belong were not knocked there: the body was moved.
 	constexpr float HipsTeleportCm = 250.f;
+	// A get-up key counts this long after it was last held.
+	constexpr double AedirGetUpRequestHoldSeconds = 0.3;
+	// Toppled over, parts of the body below this share of its height are pushed back against the blow.
+	constexpr float AedirToppleFootHoldShare = 0.3f;
+	// Seconds a body that starts to get up takes to tense its limbs.
+	constexpr float AedirGetUpTenseSeconds = 0.12f;
 
 	constexpr float HitReactionAthleticsCap = 100.f;
 	constexpr float HitReactionAthleticsLossScale = 0.5f;
@@ -239,6 +245,14 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		UpdateServerState(DeltaTime);
 	}
 
+	if (!PendingTopple.IsZero() && --PendingToppleFrames < 0)
+	{
+		if (bIsRagdoll)
+		{
+			ApplyTopple(PendingTopple);
+		}
+		PendingTopple = FVector::ZeroVector;
+	}
 	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
 	UpdateMotors(DeltaTime, false);
@@ -292,8 +306,16 @@ void UAedirBalanceComponent::HoldPelvis(float DeltaTime)
 	}
 	const float Strength = GetUprightStrength();
 	// A weak body cannot hold itself all the way up: the knees give and the hips sink.
+	const bool bGettingUp = IsGettingUp();
+	// Just off the ground the pose has not caught up with getting up yet, and would pull the hips up to standing: they stay
+	// where they lay until it has.
+	if (bGettingUp && !Pose.bProceduralActive)
+	{
+		bHipsInitialized = false;
+		return;
+	}
 	const FVector TargetLocation = RestFrame.TransformPosition(RefPelvis.GetLocation())
-		+ Actor.TransformVectorNoScale(FVector(Pose.HipForwardOffset, Pose.HipLateralOffset, Pose.HipOffsetZ + GetUpDropCm * GetGetUpShare() - (1.f - Strength) * PelvisWeakSagCm));
+		+ Actor.TransformVectorNoScale(FVector(Pose.HipForwardOffset, Pose.HipLateralOffset, Pose.HipOffsetZ - (bGettingUp ? 0.f : (1.f - Strength) * PelvisWeakSagCm)));
 	FRotator PoseTurn = Pose.PelvisRotation;
 	PoseTurn.Roll += Pose.PelvisRollDegrees;
 	const FQuat ActorQuat = Actor.GetRotation();
@@ -309,6 +331,14 @@ void UAedirBalanceComponent::HoldPelvis(float DeltaTime)
 		HipsVelocity = CharacterOwner->GetVelocity();
 		BodyMassKg = FMath::Max(BodyMesh->GetMass(), 1.f);
 		bHipsInitialized = true;
+	}
+	// Getting up, the hands, knees and feet on the ground carry the hips along the way up: they are where the body puts them.
+	if (bGettingUp)
+	{
+		HipsVelocity = (TargetLocation - HipsLocation) / DeltaTime;
+		HipsLocation = TargetLocation;
+		Pelvis->SetBodyTransform(FTransform(TargetRotation, HipsLocation), ETeleportType::None);
+		return;
 	}
 	const float Hold = FMath::Max(Strength, PelvisMinHoldShare);
 	const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime / 0.008f), 1, 8);
@@ -357,6 +387,61 @@ void UAedirBalanceComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	DOREPLIFETIME(UAedirBalanceComponent, bIsRagdoll);
 	DOREPLIFETIME(UAedirBalanceComponent, StaggerSeconds);
 	DOREPLIFETIME(UAedirBalanceComponent, DazeSeconds);
+	DOREPLIFETIME(UAedirBalanceComponent, GetUpStyle);
+	DOREPLIFETIME(UAedirBalanceComponent, LyingStyle);
+	DOREPLIFETIME(UAedirBalanceComponent, bReadyToGetUp);
+}
+
+EAedirGetUpStyle UAedirBalanceComponent::ReadLyingStyle() const
+{
+	const USkeletalMesh* Model = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	const int32 ChestIndex = Model ? Model->GetRefSkeleton().FindBoneIndex(ChestBoneName) : INDEX_NONE;
+	if (ChestIndex == INDEX_NONE)
+	{
+		return EAedirGetUpStyle::FromBack;
+	}
+	// Which way the chest faces, from how the chest bone is turned now against how it is turned in a body standing upright.
+	const FTransform RefChest = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), ChestIndex);
+	const FQuat StandingChest = MeshRestRelative.GetRotation() * RefChest.GetRotation();
+	const FVector BellyInChest = StandingChest.UnrotateVector(FVector::ForwardVector);
+	const FVector Belly = BodyMesh->GetBoneQuaternion(ChestBoneName, EBoneSpaces::WorldSpace).RotateVector(BellyInChest);
+	return Belly.Z < 0.0 ? EAedirGetUpStyle::FromFront : EAedirGetUpStyle::FromBack;
+}
+
+void UAedirBalanceComponent::RequestGetUp(bool bForwardKey)
+{
+	if (!bIsRagdoll)
+	{
+		return;
+	}
+	if (IsAuthoritative())
+	{
+		ServerRequestGetUp_Implementation(bForwardKey);
+		return;
+	}
+	// Held down, the key would be sent every frame; a few times a second is enough to keep the request alive.
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	if (Now - LastGetUpRequestSent >= 0.1)
+	{
+		LastGetUpRequestSent = Now;
+		ServerRequestGetUp(bForwardKey);
+	}
+}
+
+void UAedirBalanceComponent::ServerRequestGetUp_Implementation(bool bForwardKey)
+{
+	const UWorld* World = GetWorld();
+	GetUpRequestTime = World ? World->GetTimeSeconds() : 0.0;
+	RequestedGetUpStyle = bForwardKey ? EAedirGetUpStyle::FromBack : EAedirGetUpStyle::FromFront;
+	UE_LOG(LogAedir, Verbose, TEXT("[GetUp] %s asked to get up %s, lies %s, ready %d, balance %.2f."), *GetNameSafe(GetOwner()),
+		bForwardKey ? TEXT("off its back") : TEXT("from face down"), LyingStyle == EAedirGetUpStyle::FromFront ? TEXT("face down") : TEXT("on its back"),
+		bReadyToGetUp ? 1 : 0, Balance);
+}
+
+float UAedirBalanceComponent::GetPelvisStandHeight() const
+{
+	return PelvisRestHeight * (BodyMesh ? static_cast<float>(BodyMesh->GetComponentScale().Z) : 1.f);
 }
 
 void UAedirBalanceComponent::ApplyBalanceImpact(FVector WorldDirection, float Magnitude)
@@ -456,6 +541,12 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 		if (!bIsRagdoll)
 		{
 			EnterRagdoll(MinRagdollSeconds + HitReactionKnockdownExtraSeconds);
+			// The legs give and the body goes over the way the blow drove it: back from a blow in front, face down from one behind.
+			const FVector PlanarDirection = FVector(Impact.Direction.X, Impact.Direction.Y, 0.f).GetSafeNormal();
+			if (!PlanarDirection.IsNearlyZero())
+			{
+				MulticastTopple(PlanarDirection * (ComputeStaggerSpeed(Impact.EnergyJoules) * KnockdownToppleShare));
+			}
 		}
 		else
 		{
@@ -582,7 +673,7 @@ bool UAedirBalanceComponent::IsCenterOfMassOutsideSupport() const
 
 bool UAedirBalanceComponent::GetRecoveryStepRequest(FVector& OutDirectionWorld, float& OutUrgency) const
 {
-	if (bIsRagdoll || !bSupportGrounded || SupportMargin >= ComBalanceRecoveryMarginCm || ComOffsetDirection.IsNearlyZero())
+	if (bIsRagdoll || IsGettingUp() || !bSupportGrounded || SupportMargin >= ComBalanceRecoveryMarginCm || ComOffsetDirection.IsNearlyZero())
 	{
 		return false;
 	}
@@ -843,7 +934,8 @@ void UAedirBalanceComponent::AddFootSupportPoints(FName FootBone, FName BallBone
 
 void UAedirBalanceComponent::ApplyCenterOfMassLoss(float DeltaTime)
 {
-	if (!bSupportGrounded || bIsRagdoll)
+	// Getting up, the hands, knees and seat carry the body, not the feet alone.
+	if (!bSupportGrounded || bIsRagdoll || IsGettingUp())
 	{
 		return;
 	}
@@ -863,7 +955,7 @@ void UAedirBalanceComponent::SampleProtectiveReflex()
 {
 	TargetProtectiveAlpha = 0.f;
 
-	if (!CharacterOwner || !BodyMesh)
+	if (!CharacterOwner || !BodyMesh || IsGettingUp())
 	{
 		return;
 	}
@@ -1046,11 +1138,31 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	{
 		EnterRagdoll(MinRagdollSeconds);
 	}
-	else if (bIsRagdoll && !bDead && !bLegLost && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds)
+	else if (bIsRagdoll)
 	{
-		bIsRagdoll = false;
-		SetBalance(GetUpBalanceThreshold);
-		SetRagdollPresentation(false);
+		LyingStyle = ReadLyingStyle();
+		const bool bWasReady = bReadyToGetUp;
+		bReadyToGetUp = !bDead && !bLegLost && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds;
+		if (bReadyToGetUp && !bWasReady && BodyMesh)
+		{
+			UE_LOG(LogAedir, Verbose, TEXT("[GetUp] %s can get up, lies %s, head %s from the pelvis."), *GetNameSafe(GetOwner()),
+				LyingStyle == EAedirGetUpStyle::FromFront ? TEXT("face down") : TEXT("on its back"),
+				*(BodyMesh->GetBoneLocation(HeadBoneName) - BodyMesh->GetBoneLocation(PelvisBoneName)).ToCompactString());
+		}
+		// A player gets up when told to, and only the way the body lies allows; anyone else as soon as it can.
+		const bool bChooses = bPlayerChoosesGetUp && CharacterOwner && CharacterOwner->IsPlayerControlled();
+		const bool bTold = Now - GetUpRequestTime <= AedirGetUpRequestHoldSeconds && RequestedGetUpStyle == LyingStyle;
+		if (bReadyToGetUp && (!bChooses || bTold))
+		{
+			GetUpStyle = LyingStyle;
+			UE_LOG(LogAedir, Log, TEXT("[GetUp] %s gets up %s%s."), *GetNameSafe(GetOwner()),
+				GetUpStyle == EAedirGetUpStyle::FromFront ? TEXT("from face down") : TEXT("off its back"), bChooses ? TEXT(" when told") : TEXT(""));
+			bReadyToGetUp = false;
+			GetUpRequestTime = -100.0;
+			bIsRagdoll = false;
+			SetBalance(GetUpBalanceThreshold);
+			SetRagdollPresentation(false);
+		}
 	}
 }
 
@@ -1061,6 +1173,34 @@ void UAedirBalanceComponent::EnterRagdoll(float MinimumSeconds)
 	RagdollStartTime = World ? World->GetTimeSeconds() : 0.0;
 	CurrentRagdollMinSeconds = MinimumSeconds;
 	SetRagdollPresentation(true);
+}
+
+void UAedirBalanceComponent::MulticastTopple_Implementation(FVector TopVelocity)
+{
+	// The bodies only just let go this frame and would not take a push yet: it is given on the next one.
+	PendingTopple = TopVelocity;
+	PendingToppleFrames = 1;
+}
+
+void UAedirBalanceComponent::ApplyTopple(const FVector& TopVelocity)
+{
+	if (!BodyMesh || !CharacterOwner)
+	{
+		return;
+	}
+	// Tipped over at the feet: the higher a part of the body, the faster it goes, and the feet are kept where they stand, held a
+	// little against the push, so the body turns over them instead of sliding off on them.
+	const float FeetZ = static_cast<float>(BodyCapsule ? BodyCapsule->GetComponentLocation().Z - BodyCapsule->GetScaledCapsuleHalfHeight() : CharacterOwner->GetActorLocation().Z);
+	const float Height = FMath::Max(static_cast<float>(BodyMesh->GetBoneLocation(HeadBoneName).Z) - FeetZ, 1.f);
+	for (FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		if (Body && Body->IsInstanceSimulatingPhysics())
+		{
+			const float Up = FMath::Clamp((static_cast<float>(Body->GetUnrealWorldTransform().GetLocation().Z) - FeetZ) / Height, 0.f, 1.f);
+			const float Share = (Up - AedirToppleFootHoldShare) / (1.f - AedirToppleFootHoldShare);
+			Body->AddImpulse(TopVelocity * Share, true);
+		}
+	}
 }
 
 void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVector Impulse, FVector Location)
@@ -1083,8 +1223,7 @@ void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
 	const float Hurt = Stats ? 1.f - FMath::Clamp(Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
 	const float Sway = bIsRagdoll ? 0.f : BalanceSwayDegrees + Tired * BalanceSwayTiredDegrees + Hurt * BalanceSwayHurtDegrees;
 	SwayClock += DeltaTime * BalanceSwayRate;
-	// Getting up, the trunk comes up last: bent far over at first, straightening as the legs push up.
-	const double Pitch = LeanDirection.X * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock + SwaySeed) - GetUpBendDegrees * GetGetUpShare();
+	const double Pitch = LeanDirection.X * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock + SwaySeed);
 	const double Roll = -LeanDirection.Y * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock * 1.3f + SwaySeed + 17.f);
 
 	CurrentLean = FMath::RInterpTo(CurrentLean, FRotator(Pitch, 0.0, Roll), DeltaTime, AedirLeanInterpSpeed);
@@ -1163,14 +1302,27 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	if (Pelvis)
 	{
 		const FVector PelvisLocation = Pelvis->GetUnrealWorldTransform().GetLocation();
+		FVector Along = (BodyMesh->GetBoneLocation(HeadBoneName) - PelvisLocation).GetSafeNormal2D();
+		if (Along.IsNearlyZero())
+		{
+			Along = CharacterOwner->GetActorForwardVector().GetSafeNormal2D();
+		}
 		Pelvis->SetInstanceSimulatePhysics(false);
 
 		if (IsAuthoritative())
 		{
-			const float MeshScale = static_cast<float>(BodyMesh->GetComponentScale().Z);
-			const FVector CapsuleLocation = PelvisLocation
-				+ FVector(0.f, 0.f, BodyCapsule->GetScaledCapsuleHalfHeight() - PelvisRestHeight * MeshScale);
-			CharacterOwner->SetActorLocation(CapsuleLocation, false, nullptr, ETeleportType::TeleportPhysics);
+			// Face down the body comes up facing the way its head lay, over its hips. On its back it sits up facing its feet and
+			// stands up over them, a little past where the hips lay.
+			const bool bFromBack = GetUpStyle == EAedirGetUpStyle::FromBack;
+			const FVector Facing = bFromBack ? -Along : Along;
+			const FVector StandXY = PelvisLocation + Facing * (bFromBack ? GetUpFromBackStandCm * static_cast<float>(BodyMesh->GetComponentScale().Z) : 0.f);
+			FVector Ground;
+			if (!TraceGround(StandXY + FVector(0.f, 0.f, 80.f), StandXY - FVector(0.f, 0.f, 200.f), Ground))
+			{
+				Ground = StandXY - FVector(0.f, 0.f, 10.f);
+			}
+			const FVector CapsuleLocation = Ground + FVector(0.f, 0.f, BodyCapsule->GetScaledCapsuleHalfHeight() + 1.f);
+			CharacterOwner->SetActorLocationAndRotation(CapsuleLocation, FRotator(0.f, Facing.Rotation().Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
 		}
 
 		// A loose pelvis took the mesh along with it. Back on its feet the mesh goes back to the capsule, and the limbs to the pose.
@@ -1181,16 +1333,17 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		// Physical hips stay where they lay and are pulled up from there; pose-driven ones are put back on the legs at once.
 		BodyMesh->SetRelativeTransform(MeshRestRelative, false, nullptr, bActivePelvis ? ETeleportType::None : ETeleportType::ResetPhysics);
 
-		// Standing up on the spot the capsule now stands on, from as low as the hips lay, bent over and slowly, longer for a
-		// tired or hurt body.
-		const float StandPelvisZ = static_cast<float>(BodyCapsule->GetComponentLocation().Z) - BodyCapsule->GetScaledCapsuleHalfHeight() + PelvisRestHeight * static_cast<float>(BodyMesh->GetComponentScale().Z);
-		GetUpDropCm = FMath::Clamp(static_cast<float>(PelvisLocation.Z) - StandPelvisZ, -GetUpMaxDropCm, 0.f);
+		// The pose takes the body up from the ground the way it lies, slower for a tired or hurt body.
 		const UAedirStatsComponent* StatsComponent = FindStats();
 		const float Tired = StatsComponent ? StatsComponent->GetFatigue() : 0.f;
 		const float Hurt = StatsComponent ? 1.f - FMath::Clamp(StatsComponent->GetHealth() / FMath::Max(StatsComponent->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
 		GetUpTotal = GetUpBaseSeconds * (1.f + Tired * GetUpTiredShare + Hurt * GetUpHurtShare);
 		GetUpLeft = GetUpTotal;
-		ApplyGetUpPose();
+		bHipsInitialized = false;
+		if (UAedirGaitComponent* Gait = CharacterOwner->FindComponentByClass<UAedirGaitComponent>())
+		{
+			Gait->RefreshPoseNow();
+		}
 	}
 
 	BodyCapsule->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -1212,19 +1365,6 @@ float UAedirBalanceComponent::GetGetUpShare() const
 	return GetUpLeft > 0.f && GetUpTotal > 0.f ? 1.f - FMath::SmoothStep(0.f, 1.f, 1.f - GetUpLeft / GetUpTotal) : 0.f;
 }
 
-void UAedirBalanceComponent::ApplyGetUpPose()
-{
-	// Physical hips are lowered through where they are pulled to instead.
-	if (!BodyMesh || bActivePelvis)
-	{
-		return;
-	}
-	// The body is lowered towards where it lay and rises with the share left; the feet stay on the ground, so the knees bend.
-	FTransform Lowered = MeshRestRelative;
-	Lowered.AddToTranslation(FVector(0.f, 0.f, GetUpDropCm * GetGetUpShare()));
-	BodyMesh->SetRelativeTransform(Lowered, false, nullptr, ETeleportType::None);
-}
-
 void UAedirBalanceComponent::UpdateGetUp(float DeltaTime)
 {
 	if (GetUpLeft <= 0.f)
@@ -1232,7 +1372,6 @@ void UAedirBalanceComponent::UpdateGetUp(float DeltaTime)
 		return;
 	}
 	GetUpLeft = FMath::Max(GetUpLeft - DeltaTime, 0.f);
-	ApplyGetUpPose();
 	if (GetUpLeft <= 0.f)
 	{
 		if (UCharacterMovementComponent* Movement = CharacterOwner ? CharacterOwner->GetCharacterMovement() : nullptr)
@@ -1571,7 +1710,7 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	{
 		return;
 	}
-	MotorUpdateTimer = 0.2f;
+	MotorUpdateTimer = IsGettingUp() ? 0.05f : 0.2f;
 
 	const UAedirStatsComponent* Stats = FindStats();
 	const float StaminaFraction = Stats ? FMath::Clamp(Stats->GetStaminaFraction(), 0.f, 1.f) : 1.f;
@@ -1584,6 +1723,11 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	}
 	// Coming up off the ground the limbs are still heavy and find their strength as the body rises.
 	Common *= FMath::Lerp(1.f, GetUpMuscleShare, GetGetUpShare());
+	// A limp body tenses gradually as it starts to move, instead of being snapped into the first pose of getting up.
+	if (IsGettingUp())
+	{
+		Common *= FMath::Max(FMath::SmoothStep(0.f, AedirGetUpTenseSeconds, GetUpTotal - GetUpLeft), RagdollMotorShare);
+	}
 	if (bIsRagdoll || (Stats && Stats->IsDead()))
 	{
 		Common = RagdollMotorShare;

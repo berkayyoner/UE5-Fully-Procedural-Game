@@ -742,7 +742,162 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.Phase = Phase;
 	GaitState.bStepping = bStepping;
 	GaitState.bTurningInPlace = bTurning;
+	GaitState.KneeUpShare = 0.f;
+	if (BalanceComponent && BalanceComponent->IsGettingUp())
+	{
+		PoseGetUp(ActorTransform, BottomZ, ActorScale);
+	}
 	GaitState.bProceduralActive = true;
+}
+
+namespace
+{
+	// One moment of getting up, in the frame of the body: forward, out to the side and up from the ground, in cm for a body
+	// whose hips stand 95 cm high. Angles in degrees, forward negative.
+	struct FAedirGetUpKey
+	{
+		float Time;
+		float HipHeight;
+		float HipForward;
+		float PelvisPitch;
+		float SpinePitch;
+		float NeckPitch;
+		FVector LeftFoot;
+		FVector RightFoot;
+		float LeftLift;
+		float RightLift;
+		FVector Hand;
+		float HandAlpha;
+		float KneeUp;
+	};
+
+	constexpr float AedirGetUpReferenceHipCm = 95.f;
+	// From here on the moves hand over to the standing pose.
+	constexpr float AedirGetUpHandOverFrom = 0.8f;
+
+	// Face down: push up onto the hands and knees, bring the right foot forward, then rise off it with the hands leaving the ground.
+	const FAedirGetUpKey AedirGetUpFromFront[] = {
+		{ 0.f,   13.f, 0.f, -85.f, -5.f,  25.f, FVector(-82.f, 13.f, 6.f), FVector(-82.f, 13.f, 6.f), 0.3f, 0.3f, FVector(38.f, 30.f, 6.f), 1.f, 0.f },
+		{ 0.32f, 50.f, 0.f, -72.f, -12.f, 35.f, FVector(-40.f, 14.f, 6.f), FVector(-40.f, 14.f, 6.f), 0.3f, 0.3f, FVector(50.f, 22.f, 6.f), 1.f, 0.f },
+		{ 0.55f, 55.f, 0.f, -50.f, -18.f, 25.f, FVector(-40.f, 14.f, 6.f), FVector(32.f, 16.f, 8.f),  0.3f, 0.f,  FVector(42.f, 24.f, 6.f), 0.5f, 0.f },
+		{ 0.8f,  78.f, 4.f, -22.f, -14.f, 10.f, FVector(-12.f, 12.f, 10.f), FVector(10.f, 14.f, 8.f), 0.5f, 0.f,  FVector(30.f, 24.f, 40.f), 0.f, 0.f },
+	};
+
+	// On the back: sit up propped on the hands behind, draw the feet in to the hips with the knees up, then lean over the feet
+	// and stand up on them. The body stands where the feet are drawn in to, past where its hips lay.
+	const FAedirGetUpKey AedirGetUpFromBack[] = {
+		{ 0.f,   12.f, -32.f, 85.f,  5.f, -15.f, FVector(56.f, 14.f, 8.f), FVector(56.f, 14.f, 8.f), 1.f, 1.f, FVector(-35.f, 30.f, 6.f), 0.6f, 0.f },
+		{ 0.28f, 13.f, -32.f, 30.f,  8.f, -10.f, FVector(52.f, 14.f, 8.f), FVector(52.f, 14.f, 8.f), 1.f, 1.f, FVector(-68.f, 24.f, 6.f), 1.f, 0.f },
+		{ 0.52f, 14.f, -32.f, 22.f,  4.f, 0.f,   FVector(0.f, 15.f, 8.f),  FVector(0.f, 15.f, 8.f),  0.f, 0.f, FVector(-66.f, 24.f, 6.f), 1.f, 1.f },
+		{ 0.8f,  45.f, -10.f, -35.f, -25.f, 15.f, FVector(0.f, 15.f, 8.f),  FVector(0.f, 15.f, 8.f),  0.f, 0.f, FVector(-30.f, 24.f, 40.f), 0.f, 0.f },
+	};
+
+	template <int32 Count>
+	FAedirGetUpKey SampleGetUpKeys(const FAedirGetUpKey (&Keys)[Count], float Time)
+	{
+		int32 Next = 1;
+		while (Next < Count - 1 && Keys[Next].Time < Time)
+		{
+			++Next;
+		}
+		const FAedirGetUpKey& A = Keys[Next - 1];
+		const FAedirGetUpKey& B = Keys[Next];
+		const float Alpha = FMath::SmoothStep(0.f, 1.f, FMath::Clamp((Time - A.Time) / FMath::Max(B.Time - A.Time, KINDA_SMALL_NUMBER), 0.f, 1.f));
+		FAedirGetUpKey Out;
+		Out.Time = Time;
+		Out.HipHeight = FMath::Lerp(A.HipHeight, B.HipHeight, Alpha);
+		Out.HipForward = FMath::Lerp(A.HipForward, B.HipForward, Alpha);
+		Out.PelvisPitch = FMath::Lerp(A.PelvisPitch, B.PelvisPitch, Alpha);
+		Out.SpinePitch = FMath::Lerp(A.SpinePitch, B.SpinePitch, Alpha);
+		Out.NeckPitch = FMath::Lerp(A.NeckPitch, B.NeckPitch, Alpha);
+		Out.LeftFoot = FMath::Lerp(A.LeftFoot, B.LeftFoot, Alpha);
+		Out.RightFoot = FMath::Lerp(A.RightFoot, B.RightFoot, Alpha);
+		Out.LeftLift = FMath::Lerp(A.LeftLift, B.LeftLift, Alpha);
+		Out.RightLift = FMath::Lerp(A.RightLift, B.RightLift, Alpha);
+		Out.Hand = FMath::Lerp(A.Hand, B.Hand, Alpha);
+		Out.HandAlpha = FMath::Lerp(A.HandAlpha, B.HandAlpha, Alpha);
+		Out.KneeUp = FMath::Lerp(A.KneeUp, B.KneeUp, Alpha);
+		return Out;
+	}
+}
+
+void UAedirGaitComponent::PoseGetUp(const FTransform& ActorTransform, float BottomZ, float ActorScale)
+{
+	const float Progress = BalanceComponent->GetGetUpProgress();
+	const FAedirGetUpKey Key = BalanceComponent->GetGetUpStyle() == EAedirGetUpStyle::FromFront
+		? SampleGetUpKeys(AedirGetUpFromFront, Progress)
+		: SampleGetUpKeys(AedirGetUpFromBack, Progress);
+	// Fully the moves until the body is nearly up, then the standing pose takes over.
+	const float Weight = 1.f - FMath::SmoothStep(AedirGetUpHandOverFrom, 1.f, Progress);
+	const float StandHeight = BalanceComponent->GetPelvisStandHeight();
+	const float Size = StandHeight > KINDA_SMALL_NUMBER ? StandHeight / AedirGetUpReferenceHipCm : ActorScale;
+
+	// The feet take their steps from scratch once the body is up.
+	if (Weight > 0.99f)
+	{
+		bFeetInitialized = false;
+	}
+
+	GaitState.HipOffsetZ = FMath::Lerp(GaitState.HipOffsetZ, Key.HipHeight * Size - StandHeight, Weight);
+	GaitState.HipForwardOffset = FMath::Lerp(GaitState.HipForwardOffset, Key.HipForward * Size, Weight);
+	GaitState.HipLateralOffset *= 1.f - Weight;
+	GaitState.PelvisRotation = FRotator(
+		FMath::Lerp(static_cast<float>(GaitState.PelvisRotation.Pitch), Key.PelvisPitch, Weight),
+		GaitState.PelvisRotation.Yaw * (1.f - Weight),
+		GaitState.PelvisRotation.Roll * (1.f - Weight));
+	GaitState.PelvisRollDegrees *= 1.f - Weight;
+	GaitState.SpineLeanPitch = FMath::Lerp(GaitState.SpineLeanPitch, Key.SpinePitch, Weight);
+	GaitState.SpineLeanRoll *= 1.f - Weight;
+	GaitState.SpineTwistYaw *= 1.f - Weight;
+	GaitState.SpineCounterRollDegrees *= 1.f - Weight;
+	GaitState.HeadStabilizeRollDegrees *= 1.f - Weight;
+	GaitState.NeckLookRotation = FMath::Lerp(GaitState.NeckLookRotation, FRotator(Key.NeckPitch * 0.6f, 0.f, 0.f), Weight);
+	GaitState.HeadLookRotation = FMath::Lerp(GaitState.HeadLookRotation, FRotator(Key.NeckPitch * 0.4f, 0.f, 0.f), Weight);
+	GaitState.KneeUpShare = Key.KneeUp * Weight;
+
+	// Hands and feet go on the ground under the points of the moves, wherever that ground is.
+	const auto OnGround = [&](const FVector& Local, float Side)
+	{
+		const FVector Flat = ActorTransform.TransformPositionNoScale(FVector(Local.X * Size, Side * Local.Y * Size, 0.f));
+		FVector Ground;
+		FVector Normal;
+		SampleGround(Flat, BottomZ, Ground, Normal);
+		return Ground + FVector(0.f, 0.f, Local.Z * Size);
+	};
+	GaitState.LeftFootWorld = FMath::Lerp(GaitState.LeftFootWorld, OnGround(Key.LeftFoot, -1.f), Weight);
+	GaitState.RightFootWorld = FMath::Lerp(GaitState.RightFootWorld, OnGround(Key.RightFoot, 1.f), Weight);
+	GaitState.LeftFootLift = FMath::Lerp(GaitState.LeftFootLift, Key.LeftLift, Weight);
+	GaitState.RightFootLift = FMath::Lerp(GaitState.RightFootLift, Key.RightLift, Weight);
+
+	const auto PlaceHand = [&](FVector& Target, float& Alpha, float Side)
+	{
+		const FVector HandWorld = OnGround(Key.Hand, Side);
+		Target = Alpha > 0.01f ? FMath::Lerp(Target, HandWorld, Weight) : HandWorld;
+		Alpha = FMath::Lerp(Alpha, Key.HandAlpha, Weight);
+	};
+	PlaceHand(GaitState.LeftReachTargetWorld, GaitState.LeftArmReachAlpha, -1.f);
+	PlaceHand(GaitState.RightReachTargetWorld, GaitState.RightArmReachAlpha, 1.f);
+	GaitState.ArmSwingLeft *= 1.f - Weight;
+	GaitState.ArmSwingRight *= 1.f - Weight;
+	GaitState.LeftWeaponAimAlpha *= 1.f - Weight;
+	GaitState.RightWeaponAimAlpha *= 1.f - Weight;
+	GaitState.LeftArmLedShare *= 1.f - Weight;
+	GaitState.RightArmLedShare *= 1.f - Weight;
+	GaitState.LeftElbowHintAlpha *= 1.f - Weight;
+	GaitState.RightElbowHintAlpha *= 1.f - Weight;
+	GaitState.ObjectAlpha *= 1.f - Weight;
+	GaitState.KickSoleAlpha *= 1.f - Weight;
+}
+
+void UAedirGaitComponent::RefreshPoseNow()
+{
+	const UWorld* World = GetWorld();
+	TickComponent(World ? FMath::Max(World->GetDeltaSeconds(), 0.001f) : 1.f / 60.f, LEVELTICK_All, nullptr);
+	if (BodyMesh)
+	{
+		BodyMesh->TickAnimation(0.f, false);
+		BodyMesh->RefreshBoneTransforms();
+	}
 }
 
 const FAedirGaitState& UAedirGaitComponent::GetGaitState() const
