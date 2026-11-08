@@ -22,6 +22,7 @@ public class Aedir : ModuleRules
 			"PhysicsCore",
 			"Niagara",
 			"DynamicWind",
+			"Landscape",
 			"ProceduralMeshComponent",
 			"DeveloperSettings",
 			"NetCore",

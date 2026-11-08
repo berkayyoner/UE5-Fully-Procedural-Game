@@ -43,6 +43,8 @@ namespace
 	constexpr float AedirWallImpactDamagePerSpeed = 0.01f;
 	// One shove from running into another body lasts this long.
 	constexpr double BumpRepeatSeconds = 0.6;
+	// Hips further than this from where they belong were not knocked there: the body was moved.
+	constexpr float HipsTeleportCm = 250.f;
 
 	constexpr float HitReactionAthleticsCap = 100.f;
 	constexpr float HitReactionAthleticsLossScale = 0.5f;
@@ -126,10 +128,10 @@ namespace
 	{
 		switch (Zone)
 		{
-		case EAedirBodyZone::Head: return 45.f;
-		case EAedirBodyZone::Torso: return 130.f;
-		case EAedirBodyZone::Arm: return 220.f;
-		case EAedirBodyZone::Leg: return 80.f;
+		case EAedirBodyZone::Head: return 135.f;
+		case EAedirBodyZone::Torso: return 400.f;
+		case EAedirBodyZone::Arm: return 600.f;
+		case EAedirBodyZone::Leg: return 240.f;
 		default: checkNoEntry(); return 60.f;
 		}
 	}
@@ -300,7 +302,8 @@ void UAedirBalanceComponent::HoldPelvis(float DeltaTime)
 	// The hips are a mass carried on the legs: a spring pulls them to where they belong, as stiff as the body is strong and
 	// never harder than the legs can push, and blows knock them off it. They move with their own speed, so they lag into a
 	// start, carry on over a stop and swing back after a shove.
-	if (!bHipsInitialized)
+	// A body moved at once, by a teleport or a respawn, takes its hips along instead of being torn from them.
+	if (!bHipsInitialized || FVector::DistSquared(HipsLocation, TargetLocation) > FMath::Square(HipsTeleportCm))
 	{
 		HipsLocation = TargetLocation;
 		HipsVelocity = CharacterOwner->GetVelocity();
@@ -466,9 +469,16 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 		StaggerSeconds = FMath::Lerp(HitReactionStaggerMinSeconds, HitReactionStaggerMaxSeconds, Loss);
 
 		const FVector PlanarDirection = FVector(Impact.Direction.X, Impact.Direction.Y, 0.f).GetSafeNormal();
-		if (!PlanarDirection.IsNearlyZero())
+		// The feet stay on the ground and are driven back a step; the hips are knocked further and swing back over them.
+		UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
+		if (!PlanarDirection.IsNearlyZero() && Movement)
 		{
-			CharacterOwner->LaunchCharacter(PlanarDirection * ComputeStaggerSpeed(Impact.EnergyJoules), true, false);
+			const float Speed = ComputeStaggerSpeed(Impact.EnergyJoules);
+			Movement->AddImpulse(PlanarDirection * (Speed * StaggerFeetShare), true);
+			if (bHipsInitialized)
+			{
+				HipsVelocity += PlanarDirection * (Speed * StaggerHipsShare);
+			}
 		}
 	}
 

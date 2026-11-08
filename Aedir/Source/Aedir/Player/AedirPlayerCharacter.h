@@ -211,6 +211,14 @@ public:
 	UFUNCTION(Exec)
 	void ShotCam(const FString& CameraArgs);
 
+	// Stands the body on the ground at a point given in metres from the middle of the map, facing a yaw.
+	// Takes a blow on the chest from the front, to see how the body answers it.
+	UFUNCTION(Exec)
+	void StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec);
+
+	UFUNCTION(Exec)
+	void WarpTo(float XMetres, float YMetres, float Yaw);
+
 	UFUNCTION(Exec)
 	void PlaceItem(const FString& ItemArgs);
 

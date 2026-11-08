@@ -1,5 +1,6 @@
 #include "AedirPlayerCharacter.h"
 #include "EngineUtils.h"
+#include "LandscapeProxy.h"
 #include "Components/DecalComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -1194,6 +1195,44 @@ void AAedirPlayerCharacter::GaitInfo(float Seconds, float Interval)
 void AAedirPlayerCharacter::AutoMove(float Forward, float Right, int32 Run, float TurnDegrees)
 {
 	RunDevCommand(TEXT("AutoMove"), FString::Printf(TEXT("%f %f %d %f"), Forward, Right, Run, TurnDegrees), false);
+}
+
+void AAedirPlayerCharacter::StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec)
+{
+	// A blow on the chest from straight ahead, as a weapon of that mass and speed would land it.
+	if (!Balance || !GetMesh())
+	{
+		return;
+	}
+	FAedirImpactInfo Impact;
+	Impact.Bone = TEXT("spine_03");
+	Impact.Zone = EAedirBodyZone::Torso;
+	Impact.EnergyJoules = EnergyJoules;
+	Impact.Direction = -GetActorForwardVector();
+	Impact.Location = GetMesh()->GetBoneLocation(TEXT("spine_03")) + GetActorForwardVector() * 15.f;
+	Impact.MassKg = MassKg;
+	Impact.RelativeSpeed = SpeedCmPerSec;
+	Balance->ApplyHitReaction(Impact);
+	UE_LOG(LogTemp, Display, TEXT("[Dev] Struck with %.0f J, balance %.2f"), EnergyJoules, Balance->GetBalance());
+}
+
+void AAedirPlayerCharacter::WarpTo(float XMetres, float YMetres, float Yaw)
+{
+	const FVector Spot(XMetres * 100.f, YMetres * 100.f, 0.f);
+	// The ground itself, under whatever mist or tree stands over it.
+	TArray<FHitResult> Hits;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirTeleport), false, this);
+	GetWorld()->LineTraceMultiByObjectType(Hits, Spot + FVector(0.f, 0.f, 100000.f), Spot - FVector(0.f, 0.f, 100000.f), FCollisionObjectQueryParams(ECC_WorldStatic), Params);
+	const FHitResult* Ground = Hits.FindByPredicate([](const FHitResult& One) { return One.GetActor() && One.GetActor()->IsA<ALandscapeProxy>(); });
+	if (Ground)
+	{
+		const FHitResult& Hit = *Ground;
+		SetActorLocationAndRotation(Hit.ImpactPoint + FVector(0.f, 0.f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 5.f), FRotator(0.f, Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+		if (AController* Mind = GetController())
+		{
+			Mind->SetControlRotation(FRotator(0.f, Yaw, 0.f));
+		}
+	}
 }
 
 void AAedirPlayerCharacter::ShotCam(const FString& CameraArgs)

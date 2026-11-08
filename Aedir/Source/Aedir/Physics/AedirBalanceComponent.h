@@ -153,6 +153,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
 	float PelvisWeakSagCm = 12.f;
 
+	// A staggering blow drives the feet back this share of its speed along the ground, and the hips this share.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float StaggerFeetShare = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float StaggerHipsShare = 0.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
 	float PelvisMinHoldShare = 0.25f;
 
