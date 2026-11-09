@@ -182,8 +182,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingReach = 75.f;
 
+	// How thick a bare fist is where it strikes, in cm. A held thing strikes with its own shape.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
-	float HitRadius = 18.f;
+	float FistRadius = 5.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingCooldown = 0.15f;
@@ -561,7 +562,17 @@ private:
 	void UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	bool IsImpactOnCooldown(EAedirHand Hand, const AActor* Victim, double Now) const;
 	void RegisterImpact(EAedirHand Hand, AActor* Victim, double Now);
-	void ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& From, const FVector& To, const FVector& TipVelocity, float MassEff, float AxialAlignment, double Now);
+	void ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& From, const FVector& To, const FVector& FromVelocity, const FVector& ToVelocity, float RadiusCm, float MassEff, double Now);
+
+	// Where what the hand strikes with really is this frame: the held thing as the body carries it, or the fist. From the
+	// handle end to the far end, and how thick it is.
+	bool GetStrikingSegment(EAedirHand Hand, FVector& OutFrom, FVector& OutTo, float& OutRadiusCm) const;
+
+	// That segment as it was last frame, so a blow is the path the real weapon took.
+	FVector StrikePrevFrom[2];
+	FVector StrikePrevTo[2];
+	TWeakObjectPtr<const AActor> StrikePrevItem[2];
+	bool bStrikePrevValid[2] = { false, false };
 	void ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, const FVector& TipVelocity, float RelativeSpeed, float MassEff, float AxialAlignment);
 	void ApplyPhysicsImpact(FAedirArmDynamics& Arm, const FHitResult& Hit, UPrimitiveComponent* HitComponent, float RelativeSpeed, float MassEff);
 	void ApplyLimbInjury(EAedirLimb Limb, float Amount);

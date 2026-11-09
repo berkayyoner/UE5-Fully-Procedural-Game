@@ -67,6 +67,13 @@ namespace
 	constexpr float AedirArmReachHardLimit = 1.15f;
 	constexpr float AedirArmFallbackLength = 12.f;
 	constexpr float AedirArmMinSpeed = 50.f;
+	// What a held thing strikes with is its own body, a little thicker than its box for the edge of the model around it.
+	constexpr float AedirStrikeSkinCm = 1.5f;
+	constexpr float AedirStrikeMinRadiusCm = 2.5f;
+	constexpr float AedirStrikeMaxRadiusCm = 7.f;
+	// The swept weapon is looked at every so many of its own thicknesses along its way, at most this many times a frame.
+	constexpr float AedirStrikeStepRadii = 1.5f;
+	constexpr int32 AedirStrikeMaxSteps = 12;
 	constexpr float AedirArmReconcileDistance = 40.f;
 	constexpr float AedirArmProxyInterpSpeed = 12.f;
 	constexpr float AedirArmNetSendInterval = 1.f / 30.f;
@@ -191,6 +198,7 @@ namespace
 	// Held items stop at what they hit. Only what is light enough gives way.
 	constexpr float AedirBladeGuardCm = 10.f;
 	constexpr float AedirBladeRadiusCm = 2.5f;
+	constexpr int32 AedirBladeSweepTries = 4;
 	constexpr float AedirBladeBlockMassKg = 40.f;
 	constexpr float AedirBladePushMaxSpeed = 500.f;
 	// A clash of weapons: the fastest a blade's tip counts, and how much of the push the struck hand takes.
@@ -409,7 +417,7 @@ namespace
 	constexpr float AedirKickDuration = 1.2f;
 	constexpr float AedirKickStrikeStart = 0.56f;
 	constexpr float AedirKickStrikeEnd = 0.8f;
-	constexpr float AedirKickHitRadius = 14.f;
+	constexpr float AedirKickHitRadius = 8.f;
 	constexpr float AedirKickMassKg = 10.f;
 	constexpr float AedirKickEnergyScale = 1.f;
 	constexpr float AedirKickMaxFootSpeed = 1200.f;
@@ -947,7 +955,26 @@ bool UAedirCombatComponent::SweepHeldBlade(const AAedirItemActor* Item, const FV
 	TArray<AActor*> Carried;
 	Creature->GetAttachedActors(Carried);
 	Params.AddIgnoredActors(Carried);
-	return GetWorld() && GetWorld()->SweepSingleByObjectType(OutHit, HandWorld + Direction * AedirBladeGuardCm, HandWorld + Direction * LengthCm, FQuat::Identity, GetHeldBlockObjects(), FCollisionShape::MakeSphere(AedirBladeRadiusCm), Params);
+	if (!GetWorld())
+	{
+		return false;
+	}
+	// Another body does not stop the blade here short of it: the blade goes on to meet it, and the blow decides whether it
+	// stops on it, bites or goes through. Steel and the world still stop it.
+	for (int32 Try = 0; Try < AedirBladeSweepTries; ++Try)
+	{
+		if (!GetWorld()->SweepSingleByObjectType(OutHit, HandWorld + Direction * AedirBladeGuardCm, HandWorld + Direction * LengthCm, FQuat::Identity, GetHeldBlockObjects(), FCollisionShape::MakeSphere(AedirBladeRadiusCm), Params))
+		{
+			return false;
+		}
+		AAedirCreature* Body = Cast<AAedirCreature>(OutHit.GetActor());
+		if (!Body || OutHit.GetComponent() != Body->GetMesh())
+		{
+			return true;
+		}
+		Params.AddIgnoredActor(Body);
+	}
+	return false;
 }
 
 void UAedirCombatComponent::ResolveHeldCollision(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& PrevHand, const FVector& PrevDir, float DeltaTime)
@@ -975,9 +1002,9 @@ void UAedirCombatComponent::ResolveHeldCollision(EAedirHand Hand, FAedirArmDynam
 			Holder = Cast<AAedirCreature>(Hit.GetActor()->GetAttachParentActor());
 		}
 		UAedirCombatComponent* OtherCombat = Holder && Holder != Creature ? Holder->Combat.Get() : nullptr;
-		const EAedirHand OtherHand = Hit.BoneName.ToString().EndsWith(TEXT("_l")) ? EAedirHand::Left : EAedirHand::Right;
+		const EAedirHand OtherHand = OtherCombat && OtherCombat->GetHeldItem(EAedirHand::Left) == Hit.GetActor() ? EAedirHand::Left : EAedirHand::Right;
 		const AAedirItemActor* OtherItem = OtherCombat ? OtherCombat->GetHeldItem(OtherHand) : nullptr;
-		const bool bOnWeapon = OtherItem && (Hit.GetActor() == OtherItem || Hit.BoneName.ToString().StartsWith(TEXT("hand")));
+		const bool bOnWeapon = OtherItem && Hit.GetActor() == OtherItem;
 		if (bOnWeapon)
 		{
 			const FVector TipMotion = ((Arm.HandWorld + Arm.WeaponDir * Length) - (PrevHand + PrevDir * Length)) / DeltaTime;
@@ -2655,30 +2682,91 @@ void UAedirCombatComponent::ResolveClash(EAedirHand Hand, FAedirArmDynamics& Arm
 	OnClash.Broadcast(Other);
 }
 
+bool UAedirCombatComponent::GetStrikingSegment(EAedirHand Hand, FVector& OutFrom, FVector& OutTo, float& OutRadiusCm) const
+{
+	const AAedirItemActor* Item = GetHeldItem(Hand);
+	if (Item)
+	{
+		const UStaticMeshComponent* ItemMesh = Item->Mesh.Get();
+		const UStaticMesh* Shape = ItemMesh ? ItemMesh->GetStaticMesh() : nullptr;
+		if (!Shape)
+		{
+			return false;
+		}
+		// The item's own body, end to end along its length, where the hand that holds it has it now.
+		const FBox Box = Shape->GetBoundingBox();
+		const FTransform Placed = ItemMesh->GetComponentTransform();
+		const FVector Middle = Box.GetCenter();
+		OutFrom = Placed.TransformPosition(FVector(Box.Min.X, Middle.Y, Middle.Z));
+		OutTo = Placed.TransformPosition(FVector(Box.Max.X, Middle.Y, Middle.Z));
+		const FVector Extent = Box.GetExtent() * Placed.GetScale3D().GetAbs();
+		OutRadiusCm = FMath::Clamp(static_cast<float>(FMath::Max(Extent.Y, Extent.Z)) + AedirStrikeSkinCm, AedirStrikeMinRadiusCm, AedirStrikeMaxRadiusCm);
+		return true;
+	}
+
+	const USkeletalMeshComponent* Body = Creature ? Creature->GetMesh() : nullptr;
+	const UAedirInteractionComponent* Interaction = Creature ? Creature->Interaction.Get() : nullptr;
+	if (!Body || !Interaction)
+	{
+		return false;
+	}
+	// A bare hand strikes with the knuckles: from the wrist out over the back of the hand.
+	const FName HandBone = Hand == EAedirHand::Left ? Interaction->LeftHandBone : Interaction->RightHandBone;
+	const FName Knuckle = Hand == EAedirHand::Left ? FName(TEXT("middle_01_l")) : FName(TEXT("middle_01_r"));
+	if (Body->GetBoneIndex(HandBone) == INDEX_NONE || Body->GetBoneIndex(Knuckle) == INDEX_NONE)
+	{
+		return false;
+	}
+	OutFrom = Body->GetBoneLocation(HandBone);
+	OutTo = Body->GetBoneLocation(Knuckle);
+	OutRadiusCm = FistRadius * static_cast<float>(Creature->GetActorScale3D().X);
+	return true;
+}
+
 void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime)
 {
 	UWorld* World = GetWorld();
-	if (!World || DeltaTime <= KINDA_SMALL_NUMBER || !IsArmActive(Hand))
+	const int32 Index = HandIndex(Hand);
+	FVector From;
+	FVector To;
+	float Radius = 0.f;
+	const AActor* Item = GetHeldItem(Hand);
+	if (!World || DeltaTime <= KINDA_SMALL_NUMBER || !GetStrikingSegment(Hand, From, To, Radius))
+	{
+		bStrikePrevValid[Index] = false;
+		return;
+	}
+
+	// Only the path the real weapon took this frame strikes: it lands where it is seen to land, and nowhere short of it.
+	const bool bHadPath = bStrikePrevValid[Index] && StrikePrevItem[Index].Get() == Item;
+	const FVector PrevFrom = StrikePrevFrom[Index];
+	const FVector PrevTo = StrikePrevTo[Index];
+	StrikePrevFrom[Index] = From;
+	StrikePrevTo[Index] = To;
+	StrikePrevItem[Index] = Item;
+	bStrikePrevValid[Index] = true;
+	if (!bHadPath || !IsArmActive(Hand))
 	{
 		return;
 	}
 
-	const FVector Tip = ComputeArmTip(Hand, Arm);
-	const FVector TipVelocity = (Tip - Arm.PrevTipWorld) / DeltaTime;
-	const float Speed = static_cast<float>(FMath::Max(Arm.HandVelocity.Size(), TipVelocity.Size()));
-	if (Speed <= AedirArmMinSpeed)
+	const FVector FromVelocity = (From - PrevFrom) / DeltaTime;
+	const FVector ToVelocity = (To - PrevTo) / DeltaTime;
+	if (FMath::Max(FromVelocity.Size(), ToVelocity.Size()) <= AedirArmMinSpeed)
 	{
 		return;
 	}
 
-	const FVector WeaponDirection = (Arm.HandWorld - Arm.ShoulderWorld).GetSafeNormal();
-	const float AxialAlignment = static_cast<float>(FMath::Abs(FVector::DotProduct(TipVelocity.GetSafeNormal(), WeaponDirection)));
 	const float MassEff = GetArmTotalMass(Hand);
 	const double Now = World->GetTimeSeconds();
-
-	ProcessImpactSweep(Hand, Arm, Arm.PrevHandWorld, Arm.HandWorld, TipVelocity, MassEff, AxialAlignment, Now);
-	ProcessImpactSweep(Hand, Arm, Arm.PrevTipWorld, Tip, TipVelocity, MassEff, AxialAlignment, Now);
-	ProcessImpactSweep(Hand, Arm, (Arm.PrevHandWorld + Arm.PrevTipWorld) * 0.5, (Arm.HandWorld + Tip) * 0.5, TipVelocity, MassEff, AxialAlignment, Now);
+	// The weapon's length is swept at close steps along its way, so nothing it passed through slips between two of them.
+	const double Travel = FMath::Max(FVector::Dist(From, PrevFrom), FVector::Dist(To, PrevTo));
+	const int32 Steps = FMath::Clamp(FMath::CeilToInt(Travel / FMath::Max(Radius * AedirStrikeStepRadii, 1.f)), 1, AedirStrikeMaxSteps);
+	for (int32 Step = 1; Step <= Steps; ++Step)
+	{
+		const double T = static_cast<double>(Step) / Steps;
+		ProcessImpactSweep(Hand, Arm, FMath::Lerp(PrevFrom, From, T), FMath::Lerp(PrevTo, To, T), FromVelocity, ToVelocity, Radius, MassEff, Now);
+	}
 }
 
 bool UAedirCombatComponent::IsImpactOnCooldown(EAedirHand Hand, const AActor* Victim, double Now) const
@@ -2719,7 +2807,7 @@ void UAedirCombatComponent::RegisterImpact(EAedirHand Hand, AActor* Victim, doub
 	Records.Add(NewRecord);
 }
 
-void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& From, const FVector& To, const FVector& TipVelocity, float MassEff, float AxialAlignment, double Now)
+void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& From, const FVector& To, const FVector& FromVelocity, const FVector& ToVelocity, float RadiusCm, float MassEff, double Now)
 {
 	UWorld* World = GetWorld();
 	if (!World)
@@ -2743,7 +2831,10 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 	}
 
 	TArray<FHitResult> Hits;
-	World->SweepMultiByObjectType(Hits, From, To, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(HitRadius), Params);
+	World->SweepMultiByObjectType(Hits, From, To, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(RadiusCm), Params);
+	const FVector Along = To - From;
+	const double AlongSquared = FMath::Max(Along.SizeSquared(), 1.0);
+	const FVector BladeDir = Along.GetSafeNormal();
 
 	for (const FHitResult& Hit : Hits)
 	{
@@ -2752,6 +2843,10 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 		{
 			continue;
 		}
+		// Each part of the weapon moves at its own speed: the far end of a long blade fastest, near the hand slowest.
+		const double Share = FMath::Clamp(FVector::DotProduct(FVector(Hit.ImpactPoint) - From, Along) / AlongSquared, 0.0, 1.0);
+		const FVector TipVelocity = FMath::Lerp(FromVelocity, ToVelocity, Share);
+		const float AxialAlignment = static_cast<float>(FMath::Abs(FVector::DotProduct(TipVelocity.GetSafeNormal(), BladeDir)));
 
 		if (AAedirCreature* Victim = Cast<AAedirCreature>(HitActor))
 		{
