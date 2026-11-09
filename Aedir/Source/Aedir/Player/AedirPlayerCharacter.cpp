@@ -1,4 +1,5 @@
 #include "AedirPlayerCharacter.h"
+#include "Aedir.h"
 #include "Travel/AedirTravelSubsystem.h"
 #include "EngineUtils.h"
 #include "LandscapeProxy.h"
@@ -408,6 +409,7 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 	{
 		Target = FindLockOnTarget();
 		LockOnTarget = Target;
+		UE_CLOG(Target != nullptr, LogAedir, Log, TEXT("[LockOn] The view locks on %s."), *GetNameSafe(Target));
 	}
 	if (!Target)
 	{
