@@ -18,4 +18,11 @@ namespace AedirWorldDirector
 
 	// Places all of it in the world, game or editor; the editor saves it into the level so it can be edited there.
 	AEDIR_API void LayOutNatureMap(UWorld* World);
+
+	// The landscape around the camp, at every start: water in the stream bed, a waterfall where it begins, a ruined tower
+	// on the highest hill, a cave in a hillside, rock outcrops, fallen trees, a campfire and torches.
+	AEDIR_API void AddScenery(UWorld* World);
+
+	// The height of the water's surface at a point, if the point is in the water.
+	AEDIR_API bool GetWaterSurface(const UWorld* World, const FVector& Point, float& OutZ);
 }

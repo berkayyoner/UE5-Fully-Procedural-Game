@@ -1,6 +1,7 @@
 ﻿#include "Surface/AedirFootstepComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NiagaraComponent.h"
+#include "Game/AedirWorldDirector.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 #include "TimerManager.h"
@@ -210,6 +211,19 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 {
 	UWorld* World = GetWorld();
 	const int32 Foot = FMath::Clamp(FootIndex, 0, 1);
+
+	// A foot coming down in water stirs it: rings spread from it and it splashes, more the faster the step. The sole comes
+	// out wet.
+	float WaterZ = 0.f;
+	if (AedirWorldDirector::GetWaterSurface(World, Point, WaterZ))
+	{
+		WaterOnFoot[Foot] = 1.f;
+		const float Pace = FMath::Clamp(Speed2D / AedirStepRunSpeed, 0.f, 1.5f);
+		if (UNiagaraSystem* Ripple = FindStepEffect(Pace > 0.7f ? TEXT("PSN_WaterHeavy_Surface") : TEXT("PSN_WaterLight_Surface")))
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, Ripple, FVector(Point.X, Point.Y, WaterZ), FRotator::ZeroRotator, FVector(FMath::Lerp(0.3f, 0.55f, FMath::Min(Pace, 1.f))));
+		}
+	}
 
 	// Stepping in it wets the sole, and each step leaves less of it.
 	UAedirBloodSubsystem* Blood = World->GetSubsystem<UAedirBloodSubsystem>();

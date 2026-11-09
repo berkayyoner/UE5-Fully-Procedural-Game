@@ -1,5 +1,6 @@
-#include "Game/AedirWorldDirector.h"
+﻿#include "Game/AedirWorldDirector.h"
 #include "Game/AedirClasses.h"
+#include "Game/AedirSceneryActors.h"
 
 #include "Engine/CollisionProfile.h"
 
@@ -425,4 +426,335 @@ void AedirWorldDirector::LayOutNatureMap(UWorld* World)
 	DirectorPlaceProp(World, TEXT("GraveA"), Ruin + Flat.RotateVector(FVector(300.f, -600.f, 0.f)), Flat.Yaw, 1.f, 5.f);
 	DirectorPlaceProp(World, TEXT("GraveB"), Ruin + Flat.RotateVector(FVector(420.f, -680.f, 0.f)), Flat.Yaw + 8.f, 1.f, 5.f);
 	UE_LOG(LogAedir, Log, TEXT("World director laid out the nature test map around %s."), *Center.ToCompactString());
+}
+
+namespace
+{
+	const FName SceneryTag(TEXT("AedirScenery"));
+	const TCHAR* const SceneryWaterPath = TEXT("/Game/Aedir/Materials/M_AedirStream.M_AedirStream");
+	const TCHAR* const SceneryPlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
+	constexpr int32 ScenerySeed = 52711;
+	// The stream: the line its bed follows, how far it runs, how deep the water stands in it and how wide its surface is laid.
+	constexpr float StreamFromCm = -48000.f;
+	constexpr float StreamToCm = 48000.f;
+	constexpr float StreamStepCm = 600.f;
+	constexpr float StreamDepthCm = 70.f;
+	constexpr float StreamHalfWidthCm = 650.f;
+
+	float SceneryStreamY(float XCm)
+	{
+		return (95.f + 40.f * FMath::Sin(XCm / 100.f / 85.f)) * 100.f;
+	}
+
+	// The water's surface along the stream, point by point, for each world it was laid in.
+	TMap<TWeakObjectPtr<const UWorld>, TArray<FVector>>& SceneryStreams()
+	{
+		static TMap<TWeakObjectPtr<const UWorld>, TArray<FVector>> Streams;
+		return Streams;
+	}
+
+	AStaticMeshActor* SceneryProp(UWorld* World, const TCHAR* Name, const FVector& Where, float Yaw, float Scale, float SinkCm)
+	{
+		AStaticMeshActor* Prop = DirectorPlaceProp(World, Name, Where, Yaw, Scale, SinkCm);
+		if (Prop)
+		{
+			Prop->Tags.Add(SceneryTag);
+		}
+		return Prop;
+	}
+
+	AAedirFlame* SceneryFire(UWorld* World, const FVector& Base, float HeightCm, float Candelas, bool bSmoke)
+	{
+		AAedirFlame* Fire = World->SpawnActorDeferred<AAedirFlame>(AAedirFlame::StaticClass(), FTransform(Base), nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (Fire)
+		{
+			Fire->Configure(HeightCm, Candelas, bSmoke);
+			Fire->Tags.Add(SceneryTag);
+			Fire->FinishSpawning(FTransform(Base));
+		}
+		return Fire;
+	}
+
+	// A torch: a pole stuck in the ground with a fire on top.
+	void SceneryTorch(UWorld* World, const FVector& Where)
+	{
+		FVector Ground;
+		if (!DirectorGroundUnder(World, Where, Ground))
+		{
+			return;
+		}
+		if (AStaticMeshActor* Pole = SceneryProp(World, TEXT("OldWoodenPole"), Ground, FMath::FRandRange(0.f, 360.f), 0.55f, 10.f))
+		{
+			SceneryFire(World, FVector(Ground.X, Ground.Y, DirectorTopOf(Pole) - 4.f), 26.f, 600.f, false);
+		}
+	}
+
+	void SceneryBuildStream(UWorld* World)
+	{
+		UStaticMesh* Plane = LoadObject<UStaticMesh>(nullptr, SceneryPlanePath);
+		UMaterialInterface* Water = LoadObject<UMaterialInterface>(nullptr, SceneryWaterPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (!Plane)
+		{
+			return;
+		}
+		// The water lies on the bottom of the bed as deep as a stream runs; each stretch is laid from one point of its surface
+		// to the next, so the surface follows the bed's fall without a step.
+		TArray<FVector>& Surface = SceneryStreams().FindOrAdd(World);
+		Surface.Reset();
+		for (float X = StreamFromCm; X <= StreamToCm; X += StreamStepCm)
+		{
+			FVector Bed;
+			if (DirectorGroundUnder(World, FVector(X, SceneryStreamY(X), 0.f), Bed))
+			{
+				Surface.Add(FVector(X, SceneryStreamY(X), Bed.Z + StreamDepthCm));
+			}
+		}
+		for (int32 Index = 0; Index + 1 < Surface.Num(); ++Index)
+		{
+			const FVector A = Surface[Index];
+			const FVector B = Surface[Index + 1];
+			AStaticMeshActor* Stretch = World->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), (A + B) * 0.5, FRotationMatrix::MakeFromXZ((B - A).GetSafeNormal(), FVector::UpVector).Rotator());
+			if (!Stretch)
+			{
+				continue;
+			}
+			Stretch->SetMobility(EComponentMobility::Movable);
+			UStaticMeshComponent* Mesh = Stretch->GetStaticMeshComponent();
+			Mesh->SetStaticMesh(Plane);
+			if (Water)
+			{
+				Mesh->SetMaterial(0, Water);
+			}
+			Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			Mesh->SetCastShadow(false);
+			Stretch->SetActorScale3D(FVector(FVector::Dist(A, B) * 1.04f / 100.f, StreamHalfWidthCm * 2.f / 100.f, 1.f));
+			Stretch->Tags.Add(SceneryTag);
+		}
+		UE_LOG(LogAedir, Log, TEXT("[Scenery] Water laid along %d points of the stream."), Surface.Num());
+	}
+}
+
+bool AedirWorldDirector::GetWaterSurface(const UWorld* World, const FVector& Point, float& OutZ)
+{
+	const TArray<FVector>* Surface = SceneryStreams().Find(World);
+	if (!Surface || Surface->Num() < 2)
+	{
+		return false;
+	}
+	const float X = static_cast<float>(Point.X);
+	if (X < (*Surface)[0].X || X > Surface->Last().X || FMath::Abs(static_cast<float>(Point.Y) - SceneryStreamY(X)) > StreamHalfWidthCm)
+	{
+		return false;
+	}
+	const int32 Index = FMath::Clamp(static_cast<int32>((X - (*Surface)[0].X) / StreamStepCm), 0, Surface->Num() - 2);
+	const FVector& A = (*Surface)[Index];
+	const FVector& B = (*Surface)[Index + 1];
+	const float Share = FMath::Clamp(static_cast<float>((X - A.X) / FMath::Max(B.X - A.X, 1.0)), 0.f, 1.f);
+	OutZ = FMath::Lerp(static_cast<float>(A.Z), static_cast<float>(B.Z), Share);
+	return Point.Z < OutZ + 30.f;
+}
+
+void AedirWorldDirector::AddScenery(UWorld* World)
+{
+	if (!World || World->GetNetMode() == NM_Client || World->GetMapName().Find(DirectorNatureMap) == INDEX_NONE)
+	{
+		return;
+	}
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if (It->ActorHasTag(SceneryTag))
+		{
+			return;
+		}
+	}
+	FRandomStream Random(ScenerySeed);
+	FVector Center = FVector::ZeroVector;
+	for (TActorIterator<APlayerStart> It(World); It; ++It)
+	{
+		Center = It->GetActorLocation();
+		break;
+	}
+	DirectorGroundUnder(World, Center, Center);
+
+	SceneryBuildStream(World);
+
+	// The lie of the land: heights on a coarse grid, to find the highest hill and the steepest slopes.
+	struct FSpot { FVector Ground; float Slope; };
+	TArray<FSpot> Spots;
+	for (float X = -42000.f; X <= 42000.f; X += 3000.f)
+	{
+		for (float Y = -42000.f; Y <= 42000.f; Y += 3000.f)
+		{
+			FVector Here, East, North;
+			if (DirectorGroundUnder(World, FVector(X, Y, 0.f), Here) && DirectorGroundUnder(World, FVector(X + 800.f, Y, 0.f), East) && DirectorGroundUnder(World, FVector(X, Y + 800.f, 0.f), North))
+			{
+				Spots.Add({ Here, static_cast<float>(FVector2D(East.Z - Here.Z, North.Z - Here.Z).Size() / 800.0) });
+			}
+		}
+	}
+	const auto FarFrom = [](const FVector& A, const FVector& B, float Cm) { return FVector::Dist2D(A, B) > Cm; };
+	const auto AwayFromStream = [](const FVector& P) { return FMath::Abs(static_cast<float>(P.Y) - SceneryStreamY(static_cast<float>(P.X))) > 2000.f; };
+
+	// The waterfall where the stream begins: it pours over a rock ledge at the west end of its bed into a pool.
+	const TArray<FVector>* StreamSurface = SceneryStreams().Find(World);
+	if (StreamSurface && StreamSurface->Num() > 12)
+	{
+		const float X = static_cast<float>((*StreamSurface)[10].X);
+		FVector Bed;
+		if (DirectorGroundUnder(World, FVector(X, SceneryStreamY(X), 0.f), Bed))
+		{
+			// A cliff of rock across the head of the stream: the water falls from its top.
+			AStaticMeshActor* Cliff = SceneryProp(World, TEXT("IcelandicBoulder"), FVector(X - 750.f, SceneryStreamY(X - 750.f), 0.f), 15.f, 5.5f, 10.f);
+			SceneryProp(World, TEXT("IcelandicBoulder"), FVector(X - 650.f, SceneryStreamY(X - 650.f) + 450.f, 0.f), 140.f, 4.2f, 10.f);
+			SceneryProp(World, TEXT("IcelandicBoulder"), FVector(X - 650.f, SceneryStreamY(X - 650.f) - 450.f, 0.f), 250.f, 4.2f, 10.f);
+			SceneryProp(World, TEXT("IcelandicMossyRock"), FVector(X - 500.f, SceneryStreamY(X) + 700.f, 0.f), Random.FRandRange(0.f, 360.f), 3.5f, 20.f);
+			SceneryProp(World, TEXT("IcelandicMossyRock"), FVector(X - 500.f, SceneryStreamY(X) - 700.f, 0.f), Random.FRandRange(0.f, 360.f), 3.5f, 20.f);
+			SceneryProp(World, TEXT("IcelandicBoulder"), FVector(X - 100.f, SceneryStreamY(X) + 800.f, 0.f), 30.f, 2.4f, 20.f);
+			SceneryProp(World, TEXT("MossyRocksA"), FVector(X + 300.f, SceneryStreamY(X) - 750.f, 0.f), 80.f, 2.f, 20.f);
+			const float CliffTop = Cliff ? DirectorTopOf(Cliff) : Bed.Z + 700.f;
+			const FVector Ledge(X - 380.f, SceneryStreamY(X - 380.f), FMath::Min(CliffTop - 60.f, static_cast<float>(Bed.Z) + 1100.f));
+			FActorSpawnParameters Params;
+			Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			if (AAedirWaterfall* Fall = World->SpawnActor<AAedirWaterfall>(AAedirWaterfall::StaticClass(), FTransform(Ledge), Params))
+			{
+				Fall->Configure(Ledge, FVector(X, SceneryStreamY(X), Bed.Z + StreamDepthCm), 420.f);
+				Fall->Tags.Add(SceneryTag);
+			}
+		}
+	}
+
+	// A ruined watchtower on the highest hill, its stair still standing, torches burning on it: it can be seen from the camp.
+	FSpot High = Spots.Num() ? Spots[0] : FSpot{ Center, 0.f };
+	for (const FSpot& Spot : Spots)
+	{
+		if (Spot.Ground.Z > High.Ground.Z && FarFrom(Spot.Ground, Center, 8000.f) && AwayFromStream(Spot.Ground))
+		{
+			High = Spot;
+		}
+	}
+	{
+		const FVector Tower = High.Ground;
+		const float Yaw = static_cast<float>((Center - Tower).Rotation().Yaw);
+		const FRotator Facing(0.f, Yaw, 0.f);
+		static const TCHAR* const Walls[] = { TEXT("MedievalModularWall3x2M"), TEXT("MedievalModularWall2x2MD"), TEXT("MedievalModularCornerWall1x2M"), TEXT("MedievalModularWall2x2MG") };
+		for (int32 Side = 0; Side < 4; ++Side)
+		{
+			const FRotator Around(0.f, Yaw + Side * 90.f, 0.f);
+			SceneryProp(World, Walls[Side], Tower + Around.RotateVector(FVector(650.f, 0.f, 0.f)), Yaw + Side * 90.f + 90.f, 2.2f, 30.f);
+		}
+		SceneryProp(World, TEXT("DamagedCastleStairs"), Tower + Facing.RotateVector(FVector(-150.f, 0.f, 0.f)), Yaw, 1.8f, 20.f);
+		SceneryProp(World, TEXT("IcelandicMossyRocks"), Tower + Facing.RotateVector(FVector(300.f, 900.f, 0.f)), Yaw, 2.f, 30.f);
+		SceneryProp(World, TEXT("GraniteRockAssembly"), Tower + Facing.RotateVector(FVector(-400.f, -1100.f, 0.f)), Yaw + 60.f, 2.2f, 60.f);
+		SceneryProp(World, TEXT("CastleWall"), Tower + Facing.RotateVector(FVector(-900.f, 700.f, 0.f)), Yaw + 30.f, 1.f, 40.f);
+		SceneryProp(World, TEXT("MossyStoneWallB"), Tower + Facing.RotateVector(FVector(-700.f, -900.f, 0.f)), Yaw - 20.f, 1.2f, 20.f);
+		SceneryTorch(World, Tower + Facing.RotateVector(FVector(700.f, 250.f, 0.f)));
+		SceneryTorch(World, Tower + Facing.RotateVector(FVector(700.f, -250.f, 0.f)));
+		DirectorLayItem(World, TEXT("SteelLongsword"), Tower + Facing.RotateVector(FVector(100.f, 80.f, 0.f)) + FVector(0.f, 0.f, 80.f), Yaw);
+		UE_LOG(LogAedir, Log, TEXT("[Scenery] Ruined tower on the hill at %s."), *Tower.ToCompactString());
+	}
+
+	// A cave in the steepest hillside away from the camp: rock walls and a rock roof over a dark hollow, a fire burning in it,
+	// a chest and a guard who does not like visitors.
+	FSpot Steep = Spots.Num() ? Spots[0] : FSpot{ Center, 0.f };
+	for (const FSpot& Spot : Spots)
+	{
+		if (Spot.Slope > Steep.Slope && FarFrom(Spot.Ground, Center, 9000.f) && FarFrom(Spot.Ground, High.Ground, 8000.f) && AwayFromStream(Spot.Ground) && FVector::Dist2D(Spot.Ground, Center) < 30000.f)
+		{
+			Steep = Spot;
+		}
+	}
+	{
+		const FVector Mouth = Steep.Ground;
+		// It opens downhill, towards the camp.
+		const float Yaw = static_cast<float>((Center - Mouth).Rotation().Yaw);
+		const FRotator Facing(0.f, Yaw, 0.f);
+		const auto At = [&Mouth, &Facing](float Forward, float Right) { return Mouth + Facing.RotateVector(FVector(Forward, Right, 0.f)); };
+		FVector Inside = Mouth;
+		DirectorGroundUnder(World, At(-450.f, 150.f), Inside);
+		FVector Guard;
+		if (DirectorGroundUnder(World, At(-150.f, 0.f), Guard))
+		{
+			DirectorSpawnNpc(World, Guard, At(-600.f, 0.f), EAedirNpcRole::Enemy, FText::FromString(TEXT("Grell of the Hollow")), FText::GetEmpty(), TEXT("BeardedGreataxe"));
+		}
+		AStaticMeshActor* LeftWall = SceneryProp(World, TEXT("IcelandicBoulder"), At(-350.f, -560.f), Yaw + 90.f, 3.f, 10.f);
+		AStaticMeshActor* RightWall = SceneryProp(World, TEXT("IcelandicBoulder"), At(-350.f, 560.f), Yaw - 90.f, 3.f, 10.f);
+		SceneryProp(World, TEXT("IcelandicBoulder"), At(-950.f, 0.f), Yaw + 180.f, 3.4f, 10.f);
+		SceneryProp(World, TEXT("IcelandicMossyRocks"), At(-700.f, -500.f), Yaw, 2.f, 10.f);
+		SceneryProp(World, TEXT("IcelandicMossyRocks"), At(-700.f, 500.f), Yaw + 180.f, 2.f, 10.f);
+		// The roof: great boulders laid across the two walls.
+		for (int32 Stone = 0; Stone < 2; ++Stone)
+		{
+			if (AStaticMeshActor* Roof = SceneryProp(World, TEXT("IcelandicBoulder"), At(-250.f - Stone * 380.f, Stone ? 120.f : -100.f), Yaw + Stone * 70.f, 3.6f, 0.f))
+			{
+				// Laid on the lower of the two walls' tops, sunk a little into them.
+				const float Walls = FMath::Min(LeftWall ? DirectorTopOf(LeftWall) : Inside.Z + 450.f, RightWall ? DirectorTopOf(RightWall) : Inside.Z + 450.f);
+				const float Under = static_cast<float>(Roof->GetActorLocation().Z - Roof->GetComponentsBoundingBox().Min.Z);
+				Roof->SetActorLocation(FVector(Roof->GetActorLocation().X, Roof->GetActorLocation().Y, FMath::Max(Walls - 120.f, static_cast<float>(Inside.Z) + 300.f) + Under));
+			}
+		}
+		SceneryProp(World, TEXT("IcelandicBoulder"), At(150.f, -650.f), Yaw + 20.f, 1.8f, 30.f);
+		SceneryProp(World, TEXT("MossyRocksB"), At(200.f, 600.f), Yaw - 40.f, 1.6f, 20.f);
+		SceneryFire(World, Inside + FVector(0.f, 0.f, 5.f), 30.f, 900.f, false);
+		if (AStaticMeshActor* Chest = SceneryProp(World, TEXT("OldWoodenChest"), At(-650.f, -150.f), Yaw + 10.f, 1.f, 2.f))
+		{
+			const float Top = DirectorTopOf(Chest) + 10.f;
+			const FVector Lid = Chest->GetActorLocation();
+			DirectorLayItem(World, TEXT("BloodySword"), FVector(Lid.X, Lid.Y, Top), Yaw + 80.f);
+		}
+		DirectorLayItem(World, TEXT("IronSouthernHelmet"), FVector(At(-600.f, 120.f).X, At(-600.f, 120.f).Y, Inside.Z + 40.f), Yaw);
+		DirectorLayItem(World, TEXT("RustyIronShield"), FVector(At(-700.f, 260.f).X, At(-700.f, 260.f).Y, Inside.Z + 40.f), Yaw);
+		UE_LOG(LogAedir, Log, TEXT("[Scenery] Cave in the hillside at %s, slope %.2f."), *Mouth.ToCompactString(), Steep.Slope);
+	}
+
+	// The camp: a fire ringed with stones and logs to sit on, torches at its edges.
+	{
+		const FVector FirePlace = Center + FVector(-350.f, -250.f, 0.f);
+		FVector Ground;
+		if (DirectorGroundUnder(World, FirePlace, Ground))
+		{
+			for (int32 Stone = 0; Stone < 8; ++Stone)
+			{
+				const FVector Ring = Ground + FRotator(0.f, Stone * 45.f, 0.f).Vector() * 55.f;
+				SceneryProp(World, TEXT("MossyRock"), Ring, Random.FRandRange(0.f, 360.f), 0.16f, 4.f);
+			}
+			SceneryProp(World, TEXT("CoalA"), Ground, 0.f, 1.6f, 2.f);
+			SceneryProp(World, TEXT("CoalB"), Ground + FVector(15.f, 10.f, 0.f), 40.f, 1.6f, 2.f);
+			SceneryFire(World, Ground + FVector(0.f, 0.f, 8.f), 55.f, 1800.f, false);
+			SceneryProp(World, TEXT("MossyLog"), Ground + FVector(220.f, 0.f, 0.f), 90.f, 0.8f, 8.f);
+			SceneryProp(World, TEXT("MossyLog"), Ground + FVector(-60.f, 220.f, 0.f), 10.f, 0.8f, 8.f);
+		}
+		SceneryTorch(World, Center + FVector(1100.f, 700.f, 0.f));
+		SceneryTorch(World, Center + FVector(1100.f, -700.f, 0.f));
+		SceneryTorch(World, Center + FVector(-300.f, 800.f, 0.f));
+		SceneryTorch(World, Center + FVector(-600.f, -800.f, 0.f));
+	}
+
+	// Banks of moss and stone along the stream.
+	static const TCHAR* const Banks[] = { TEXT("MossyEmbankmentB"), TEXT("MossyEmbankmentC"), TEXT("MossyEmbankmentD"), TEXT("MossyEmbankmentE"), TEXT("HovsBeachRock"), TEXT("MossyRocksA") };
+	for (float X = StreamFromCm + 2500.f; X < StreamToCm - 1000.f; X += Random.FRandRange(1800.f, 3200.f))
+	{
+		const float Side = Random.FRandRange(0.f, 1.f) < 0.5f ? 1.f : -1.f;
+		SceneryProp(World, Banks[Random.RandHelper(UE_ARRAY_COUNT(Banks))], FVector(X, SceneryStreamY(X) + Side * Random.FRandRange(700.f, 1000.f), 0.f), Random.FRandRange(0.f, 360.f), Random.FRandRange(1.f, 1.8f), 30.f);
+	}
+
+	// Outcrops of rock on the hills, big ones far out, and the dead wood of the forest.
+	static const TCHAR* const Outcrops[] = { TEXT("GraniteRockAssembly"), TEXT("IcelandicBoulder"), TEXT("IcelandicMossyRocks"), TEXT("IcelandicMossyRock"), TEXT("MossyRocksA"), TEXT("MossyRocksB"), TEXT("HovsBeachRock") };
+	static const TCHAR* const DeadWood[] = { TEXT("FallenPineTree"), TEXT("FallenFirTree"), TEXT("FallenPineAssembly"), TEXT("FallenTreeAssembly"), TEXT("BrokenPineAssembly"), TEXT("BrokenPineStump"), TEXT("ForestRootsA"), TEXT("ForestRootsB"), TEXT("LichenStump"), TEXT("MossyLog") };
+	int32 Placed = 0;
+	for (int32 Try = 0; Try < 400 && Placed < 140; ++Try)
+	{
+		const FVector Spot = Center + FRotator(0.f, Random.FRandRange(0.f, 360.f), 0.f).Vector() * FMath::Lerp(4000.f, 42000.f, FMath::Sqrt(Random.FRand()));
+		if (!AwayFromStream(Spot))
+		{
+			continue;
+		}
+		const bool bRock = Random.FRand() < 0.55f;
+		const float Far = static_cast<float>(FVector::Dist2D(Spot, Center)) / 42000.f;
+		const float Scale = bRock ? Random.FRandRange(1.f, 1.5f) * FMath::Lerp(1.f, 3.f, Far) : Random.FRandRange(0.9f, 1.2f);
+		if (SceneryProp(World, bRock ? Outcrops[Random.RandHelper(UE_ARRAY_COUNT(Outcrops))] : DeadWood[Random.RandHelper(UE_ARRAY_COUNT(DeadWood))], Spot, Random.FRandRange(0.f, 360.f), Scale, bRock ? 40.f : 10.f))
+		{
+			++Placed;
+		}
+	}
+	UE_LOG(LogAedir, Log, TEXT("[Scenery] Laid %d rocks and fallen trees about the land."), Placed);
 }
