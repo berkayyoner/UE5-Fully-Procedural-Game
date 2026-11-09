@@ -220,6 +220,14 @@ public:
 
 	static bool IsPickable(const AAedirItemActor* Item);
 
+	// How the held item is turned in the hand: as it is made, or an axe or a hammer turned over on its haft to strike with
+	// its back.
+	enum class EGripTurn : uint8 { Normal, Back };
+	EGripTurn GetGripTurn() const { return GripTurn; }
+
+	// Turns a hafted weapon held in this creature's hand over on its haft, or back. Returns the new way.
+	EGripTurn TurnInHand(AAedirCreature* Creature);
+
 private:
 	UFUNCTION()
 	void OnRep_Holder();
@@ -256,6 +264,11 @@ private:
 	void ApplyItemMass();
 	FTransform ComputeHoldTransform(const FTransform& HoldOffset) const;
 	FTransform ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const;
+
+	EGripTurn GripTurn = EGripTurn::Normal;
+	void ResetGripTurn();
+	// Turns what the item looks like half a turn about its length; the item itself, as the hand holds it, stays as it is.
+	void TurnLookOnHaft();
 
 	// Hanging from the belt.
 	FVector HangSlot = FVector::ZeroVector;

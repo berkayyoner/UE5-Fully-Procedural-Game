@@ -292,6 +292,10 @@ public:
 	UFUNCTION(Exec)
 	void ArmourInfo();
 
+	// Turns a hafted weapon in the hand over on its haft, as the R key does.
+	UFUNCTION(Exec)
+	void TurnWeapon();
+
 	// A decal material laid flat in front of the feet, to look at on its own.
 	UFUNCTION(Exec)
 	void LayDecal(const FString& Args);
@@ -532,6 +536,15 @@ private:
 	class AAedirCreature* FindLockOnTarget() const;
 	void HandleThrustPressed();
 	void HandleThrustReleased();
+
+	// A tap of the thrust key leaves the thrust on until the next tap or the guard is let go; held, it lasts as long as the key.
+	double ThrustPressedAt = 0.0;
+	bool bThrustWasOn = false;
+	bool bThrustLatched = false;
+	void EndLatchedThrust();
+
+	// Turns an axe or a hammer in the hand over on its haft, to strike with its back.
+	void HandleTurnWeaponPressed();
 	void HandleDynamicKickPressed();
 
 	void HandleHandPressed(EAedirHand Hand);

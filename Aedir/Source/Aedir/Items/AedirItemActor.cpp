@@ -13,6 +13,8 @@
 
 namespace
 {
+	// A weapon whose body is a box this thin across is a haft.
+	constexpr double ItemHaftedBoxY = 0.035;
 	// Where armour leaves a body bare, in cm from the bone the blow landed on: the face in front of the head below the brow,
 	// under the arm where it meets the trunk, and high on the sides under the arms.
 	constexpr float ArmorFaceForwardCm = 4.f;
@@ -601,7 +603,45 @@ float AAedirItemActor::GetWeaponLength() const
 
 EAedirDamageType AAedirItemActor::GetDamageType() const
 {
-	return DamageType;
+	// The back of an axe strikes blunt.
+	return GripTurn == EGripTurn::Back ? EAedirDamageType::Blunt : DamageType;
+}
+
+AAedirItemActor::EGripTurn AAedirItemActor::TurnInHand(AAedirCreature* Creature)
+{
+	// Only a hafted weapon (its body a thin round box) turns over: its head has a back to strike with and its haft is the
+	// same all round, so the hand holds it as before.
+	if (!Creature || Holder != Creature || ItemClass != EAedirItemClass::Weapon || BodyScale.Y > ItemHaftedBoxY)
+	{
+		return GripTurn;
+	}
+	GripTurn = GripTurn == EGripTurn::Normal ? EGripTurn::Back : EGripTurn::Normal;
+	TurnLookOnHaft();
+	return GripTurn;
+}
+
+void AAedirItemActor::ResetGripTurn()
+{
+	if (GripTurn != EGripTurn::Normal)
+	{
+		GripTurn = EGripTurn::Normal;
+		TurnLookOnHaft();
+	}
+}
+
+void AAedirItemActor::TurnLookOnHaft()
+{
+	const FQuat Half(FVector::ForwardVector, UE_PI);
+	if (Mesh)
+	{
+		for (USceneComponent* Part : Mesh->GetAttachChildren())
+		{
+			if (Part)
+			{
+				Part->SetRelativeLocationAndRotation(Half.RotateVector(Part->GetRelativeLocation()), Half * Part->GetRelativeRotation().Quaternion());
+			}
+		}
+	}
 }
 
 bool AAedirItemActor::IsPickable(const AAedirItemActor* Item)
@@ -680,6 +720,11 @@ void AAedirItemActor::SetFreePhysics(bool bFree)
 	}
 
 	UnweldFromHand();
+	// Let go of, it is taken up again as it was made to be held.
+	if (bFree)
+	{
+		ResetGripTurn();
+	}
 	Mesh->SetCollisionEnabled(bFree ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
 	Mesh->SetSimulatePhysics(bFree);
 	if (bHeldCollision)

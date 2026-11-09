@@ -61,6 +61,8 @@
 
 namespace
 {
+	// A press of the thrust key shorter than this is a tap that leaves the thrust on.
+	constexpr double ThrustTapSeconds = 0.25;
 	constexpr float AedirGuestStoreSeconds = 60.f;
 	constexpr float AedirConsolePickRangeCm = 20000.f;
 	constexpr float AedirConsolePickRadiusCm = 4.f;
@@ -331,6 +333,7 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &AAedirPlayerCharacter::HandleThrustPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Released, this, &AAedirPlayerCharacter::HandleThrustReleased);
+	PlayerInputComponent->BindKey(EKeys::R, IE_Pressed, this, &AAedirPlayerCharacter::HandleTurnWeaponPressed);
 	// The key under Esc types " on a Turkish keyboard, and is known by that.
 	PlayerInputComponent->BindKey(EKeys::Tilde, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
 	PlayerInputComponent->BindKey(EKeys::Quote, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
@@ -567,6 +570,8 @@ void AAedirPlayerCharacter::HandleRightGuardReleased()
 	{
 		Combat->SetGuard(EAedirHand::Right, false);
 	}
+	// Letting go of the guard goes back to swinging.
+	EndLatchedThrust();
 }
 
 void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
@@ -894,16 +899,55 @@ void AAedirPlayerCharacter::HandleThrustPressed()
 {
 	if (Combat)
 	{
+		bThrustWasOn = bThrustLatched;
+		ThrustPressedAt = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 		Combat->SetThrustMode(true);
 	}
 }
 
 void AAedirPlayerCharacter::HandleThrustReleased()
 {
-	if (Combat)
+	if (!Combat)
 	{
+		return;
+	}
+	// A short tap turns the thrust on and leaves it, or off if it was on; a held key lets it go with the key.
+	const bool bTap = GetWorld() && GetWorld()->GetTimeSeconds() - ThrustPressedAt < ThrustTapSeconds;
+	bThrustLatched = bTap && !bThrustWasOn;
+	Combat->SetThrustMode(bThrustLatched);
+}
+
+void AAedirPlayerCharacter::EndLatchedThrust()
+{
+	if (bThrustLatched && Combat)
+	{
+		bThrustLatched = false;
 		Combat->SetThrustMode(false);
 	}
+}
+
+void AAedirPlayerCharacter::HandleTurnWeaponPressed()
+{
+	if (!Interaction || !Combat)
+	{
+		return;
+	}
+	AAedirItemActor* Item = Interaction->GetHeldItem(EAedirHand::Right);
+	if (!Item)
+	{
+		Item = Interaction->GetHeldItem(EAedirHand::Left);
+	}
+	if (Item)
+	{
+		const AAedirItemActor::EGripTurn Turn = Item->TurnInHand(this);
+		static const TCHAR* const Names[] = { TEXT("as made"), TEXT("turned on its haft") };
+		UE_LOG(LogAedir, Log, TEXT("[Grip] %s held %s"), *Item->GetName(), Names[static_cast<int32>(Turn)]);
+	}
+}
+
+void AAedirPlayerCharacter::TurnWeapon()
+{
+	HandleTurnWeaponPressed();
 }
 
 void AAedirPlayerCharacter::HandleDynamicKickPressed()
