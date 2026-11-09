@@ -106,14 +106,16 @@ namespace
 	}
 
 	// A hand wears its items on the opposite hip, where it can draw them across the body.
+	// Each hand hangs its weapons on its own hip, where it reaches without crossing the belly: the slots of the left hip come
+	// first, those of the right after them.
 	int32 GetWaistSideBegin(EAedirHand Hand)
 	{
-		return Hand == EAedirHand::Left ? WaistSlotsPerSide : 0;
+		return Hand == EAedirHand::Left ? 0 : WaistSlotsPerSide;
 	}
 
 	int32 GetWaistSideIndex(EAedirHand Hand)
 	{
-		return Hand == EAedirHand::Left ? 1 : 0;
+		return Hand == EAedirHand::Left ? 0 : 1;
 	}
 
 	void ResetSlot(FAedirHandSlot& Slot)
@@ -1672,7 +1674,7 @@ bool UAedirInteractionComponent::HolsterImmediate(int32 SlotIndex, AAedirItemAct
 		return false;
 	}
 
-	const EAedirHand Hand = SlotIndex < WaistSlotsPerSide ? EAedirHand::Right : EAedirHand::Left;
+	const EAedirHand Hand = SlotIndex < WaistSlotsPerSide ? EAedirHand::Left : EAedirHand::Right;
 
 	WaistItems[SlotIndex] = Item;
 	LastStoredWaistIndex[GetWaistSideIndex(Hand)] = SlotIndex;
