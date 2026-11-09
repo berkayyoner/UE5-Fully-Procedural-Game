@@ -92,6 +92,9 @@ namespace
 	constexpr float HitReactionDazeMaxSeconds = 2.5f;
 	constexpr float HitReactionDazeRecoveryScale = 0.5f;
 	constexpr float AedirGroggyBelow = 0.65f;
+	// A head turned this far from where it sits on the neck, for this long, has gone round the wrong way.
+	constexpr float AedirHeadTwistedDegrees = 100.f;
+	constexpr float AedirHeadTwistedSeconds = 0.4f;
 	// Put back on the capsule, the mesh keeps its place relative to it but its size in the world: let go, its relative
 	// scale is its world one, and taken as relative it would be scaled by the capsule's once more for a moment, which
 	// resizes every moving part of the body twice and breaks the physics on them.
@@ -246,6 +249,37 @@ void UAedirBalanceComponent::BeginPlay()
 	}, 1.5f, false);
 }
 
+void UAedirBalanceComponent::KeepHeadOnNeck(float DeltaTime)
+{
+	// A blow or a fall can throw the head past where a neck turns, and from there its muscles pull it on round the short way,
+	// backwards, where the joint holds it: a head standing that far from its neck for a moment is set back on it, as it
+	// sits in the pose, at rest.
+	FBodyInstance* Head = BodyMesh->GetBodyInstance(TEXT("head"));
+	const FName NeckName = BodyMesh->GetParentBone(TEXT("head"));
+	if (bIsRagdoll || IsGettingUp() || !Head || !Head->IsInstanceSimulatingPhysics() || NeckName.IsNone())
+	{
+		HeadTwistedSeconds = 0.f;
+		return;
+	}
+	const FQuat NeckWorld = BodyMesh->GetBoneQuaternion(NeckName);
+	const FQuat HeadWorld = Head->GetUnrealWorldTransform().GetRotation();
+	const int32 HeadIndex = BodyMesh->GetBoneIndex(TEXT("head"));
+	const FReferenceSkeleton& Skeleton = BodyMesh->GetSkeletalMeshAsset()->GetRefSkeleton();
+	const FQuat RestInNeck = Skeleton.GetRefBonePose()[HeadIndex].GetRotation();
+	const float Off = FMath::RadiansToDegrees(static_cast<float>((NeckWorld.Inverse() * HeadWorld).AngularDistance(RestInNeck)));
+	HeadTwistedSeconds = Off > AedirHeadTwistedDegrees ? HeadTwistedSeconds + DeltaTime : 0.f;
+	if (HeadTwistedSeconds >= AedirHeadTwistedSeconds)
+	{
+		HeadTwistedSeconds = 0.f;
+		FTransform Placed = Head->GetUnrealWorldTransform();
+		Placed.SetRotation(NeckWorld * RestInNeck);
+		Placed.SetScale3D(FVector::OneVector);
+		Head->SetBodyTransform(Placed, ETeleportType::TeleportPhysics);
+		Head->SetAngularVelocityInRadians(FVector::ZeroVector, false);
+		UE_LOG(LogAedir, Log, TEXT("[Head] %s's head stood %.0f degrees off its neck and is set back on it."), *GetNameSafe(GetOwner()), Off);
+	}
+}
+
 void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -271,6 +305,8 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		PhysicsShapeScale = MeshScale;
 		ReshapeBodyPhysics();
 	}
+
+	KeepHeadOnNeck(DeltaTime);
 
 	// The muscles pull towards the pose, so they start once a body spawned in mid-game has one.
 	if (!MotorComponent && !BodyControl && !BodyMesh->GetEditableComponentSpaceTransforms().IsEmpty())

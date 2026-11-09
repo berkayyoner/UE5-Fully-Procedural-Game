@@ -363,6 +363,10 @@ public:
 	// A leg is gone: this body does not get up again.
 	void SetLegLost() { bLegLost = true; }
 
+	// A head thrown round past where a neck turns is set back on it.
+	void KeepHeadOnNeck(float DeltaTime);
+	float HeadTwistedSeconds = 0.f;
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	bool IsRagdoll() const;
 
