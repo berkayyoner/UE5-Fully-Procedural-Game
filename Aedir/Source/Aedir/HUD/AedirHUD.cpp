@@ -39,10 +39,16 @@ namespace
 	constexpr float HudSubtitleWidthShare = 0.5f;
 	constexpr float HudSubtitleBottomMargin = 170.f;
 	constexpr int32 HudSubtitleMaxLines = 2;
+	// A thin dark ring around every letter of a subtitle, so the words read over snow and sky as well as over shade.
+	constexpr float HudSubtitleOutlineReach = 1.2f;
+	constexpr float HudSubtitleOutlineAlpha = 0.55f;
+	constexpr float HudSubtitleShadowAlpha = 1.f;
 	constexpr float HudTargetBarWidth = 300.f;
 	constexpr float HudTargetBarHeight = 4.f;
 	constexpr float HudTargetBarGap = 3.f;
 	constexpr float HudTargetOverHeadCm = 26.f;
+	// Seconds a foe's life bar stays after the player last looked at it while it fought, so a sidestep does not hide it.
+	constexpr double HudFoeLingerSeconds = 8.0;
 	constexpr float HudNeedBarHeight = 7.f;
 	constexpr float HudNeedBarGap = 6.f;
 	constexpr float HudNeedBarSpace = 3.f;
@@ -310,7 +316,21 @@ void AAedirHUD::DrawSubtitles(const APawn* Pawn)
 	// As in Skyrim: low in the middle, the speaker's name dimmed before the words, the newest line at the bottom.
 	using namespace AedirUIStyle;
 	const float Scale = ScaleForHeight(static_cast<float>(Canvas->SizeY));
-	const FSlateFontInfo Font = LightFont(HudSubtitleFontSize * Scale);
+	// The regular face rather than the light one of the dialogue: during play the words stand over the bright world, not over
+	// the darkening a conversation lays on the screen, and the thin strokes vanish there.
+	const FSlateFontInfo Font = RegularFont(HudSubtitleFontSize * Scale);
+	const float OutlineReach = FMath::Max(1.f, HudSubtitleOutlineReach * Scale);
+	const auto DrawSubtitleText = [this, &Font, OutlineReach](const FString& Text, const FVector2f& Position, const FLinearColor& Color)
+	{
+		const FLinearColor Outline(0.f, 0.f, 0.f, HudSubtitleOutlineAlpha * Color.A);
+		for (int32 Step = 0; Step < 8; ++Step)
+		{
+			const float Angle = UE_TWO_PI * Step / 8.f;
+			const FVector2f Offset(FMath::Cos(Angle) * OutlineReach, FMath::Sin(Angle) * OutlineReach);
+			AedirUIStyle::DrawText(*Canvas, Text, Font, Position + Offset, Outline, EAedirTextAlign::Left, 0.f);
+		}
+		AedirUIStyle::DrawText(*Canvas, Text, Font, Position, Color, EAedirTextAlign::Left, HudSubtitleShadowAlpha);
+	};
 	const float MaxWidth = static_cast<float>(Canvas->SizeX) * HudSubtitleWidthShare;
 	const float CenterX = static_cast<float>(Canvas->SizeX) * 0.5f;
 	float Bottom = static_cast<float>(Canvas->SizeY) - HudSubtitleBottomMargin * Scale;
@@ -347,12 +367,12 @@ void AAedirHUD::DrawSubtitles(const APawn* Pawn)
 			if (RowIndex == 0)
 			{
 				const float NameWidth = MeasureText(Name, Font).X;
-				AedirUIStyle::DrawText(*Canvas, Name, Font, FVector2f(Left, Y), TextDim, EAedirTextAlign::Left, 0.9f);
-				AedirUIStyle::DrawText(*Canvas, Rows[RowIndex].RightChop(Name.Len()), Font, FVector2f(Left + NameWidth, Y), IvoryBright, EAedirTextAlign::Left, 0.9f);
+				DrawSubtitleText(Name, FVector2f(Left, Y), TextDim);
+				DrawSubtitleText(Rows[RowIndex].RightChop(Name.Len()), FVector2f(Left + NameWidth, Y), IvoryBright);
 			}
 			else
 			{
-				AedirUIStyle::DrawText(*Canvas, Rows[RowIndex], Font, FVector2f(Left, Y), IvoryBright, EAedirTextAlign::Left, 0.9f);
+				DrawSubtitleText(Rows[RowIndex], FVector2f(Left, Y), IvoryBright);
 			}
 		}
 		Bottom -= RowHeight * 0.4f;
@@ -734,18 +754,39 @@ void AAedirHUD::DrawLookTarget(const AAedirCreature* Creature)
 	const AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(Creature);
 	const AAedirCreature* Target = Player ? Player->FindLookTarget(HudLookRangeCm) : nullptr;
 	const AAedirNpc* Npc = Cast<AAedirNpc>(Target);
-	if (!Canvas || !Npc)
+	if (!Canvas || !Creature)
 	{
 		return;
 	}
 
+	// The bar belongs to a fight, not to a faction: a body counts as a foe only while its own target is the player. A friend the
+	// player strikes turns on the player and shows its bar; a hostile busy elsewhere, or not yet aware of the player, does not.
+	const auto IsFightingPlayer = [Creature](const AAedirNpc* Other)
+	{
+		const UAedirStatsComponent* OtherStats = Other ? Other->Stats.Get() : nullptr;
+		return Other && Other->Combat && Other->Combat->GetAITarget() == Creature && !(OtherStats && OtherStats->IsDead());
+	};
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	if (IsFightingPlayer(Npc))
+	{
+		FoeShown = Npc;
+		FoeShownUntil = Now + HudFoeLingerSeconds;
+	}
+	const AAedirNpc* Foe = Cast<AAedirNpc>(FoeShown.Get());
+	if (!IsFightingPlayer(Foe) || Now > FoeShownUntil)
+	{
+		FoeShown.Reset();
+		Foe = nullptr;
+	}
+
 	using namespace AedirUIStyle;
 	const float Scale = ScaleForHeight(static_cast<float>(Canvas->SizeY));
-	const FString Name = Npc->NpcName.ToString();
 
-	// An enemy's name stands under the compass with a thin red line for its life. Nothing tells the number.
-	if (Npc->IsEnemyOf(Creature))
+	// A foe's name stands under the compass with a thin red line for its life. Nothing tells the number.
+	if (Foe)
 	{
+		const FString Name = Foe->NpcName.ToString();
 		const float CenterX = static_cast<float>(Canvas->SizeX) * 0.5f;
 		const float Top = (CompassTopMargin + CompassHeight + HudTargetGap) * Scale;
 		const FSlateFontInfo Font = RegularFont(HudTargetFontSize * Scale, 40);
@@ -753,7 +794,7 @@ void AAedirHUD::DrawLookTarget(const AAedirCreature* Creature)
 		AedirUIStyle::DrawText(*Canvas, Name, Font, FVector2f(CenterX, Top), Ivory, EAedirTextAlign::Center, 1.f);
 
 		// Only its life shows; its breath and magicka are its own to know.
-		const UAedirStatsComponent* NpcStats = Npc->Stats.Get();
+		const UAedirStatsComponent* NpcStats = Foe->Stats.Get();
 		const auto Share = [](float Value, float Max) { return FMath::Clamp(Value / FMath::Max(Max, 1.f), 0.f, 1.f); };
 		struct FTargetBar { float Fraction; float HeightShare; FLinearColor Color; };
 		const FTargetBar Bars[] =
@@ -776,10 +817,14 @@ void AAedirHUD::DrawLookTarget(const AAedirCreature* Creature)
 			Y += HalfHeight * 2.f + 2.f * Scale;
 		}
 		DrawMesh(*Canvas->Canvas, Mesh);
-		return;
 	}
 
-	// Anybody else has their name over their head, and the key to talk to them when they are near enough.
+	// Anybody else looked at has their name over their head, and the key to talk to them when they are near enough.
+	if (!Npc || Npc == Foe)
+	{
+		return;
+	}
+	const FString Name = Npc->NpcName.ToString();
 	const FVector Over = Npc->GetActorLocation() + FVector(0.0, 0.0, Npc->GetSimpleCollisionHalfHeight() + HudTargetOverHeadCm);
 	const FVector Projected = Canvas->Project(Over);
 	if (Projected.Z <= 0.0)

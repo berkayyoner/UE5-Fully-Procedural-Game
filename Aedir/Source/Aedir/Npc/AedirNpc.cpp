@@ -3,6 +3,7 @@
 #include "Aedir.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirStatsComponent.h"
+#include "Creature/AedirGroupSubsystem.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Items/AedirCatalogItem.h"
@@ -29,6 +30,8 @@ namespace
 	constexpr int32 NpcThreatenLoss = 15;
 	constexpr int32 NpcGiftGain = 10;
 	constexpr int32 NpcAttackLoss = 35;
+	// How far off the friends of one who is attacked come to their help.
+	constexpr float NpcRallyRangeCm = 2500.f;
 	constexpr int32 NpcHelpsFrom = 10;
 	constexpr int32 NpcFollowsFrom = -20;
 	constexpr float NpcComplimentSeconds = 120.f;
@@ -930,5 +933,29 @@ void AAedirNpc::OnAttackedBy(AAedirCreature* Attacker)
 	if (Combat)
 	{
 		Combat->SetAIGrudge(Attacker);
+	}
+
+	// Those on the victim's side who see or hear it do not stand by: they take up the fight against the attacker, unless the
+	// attacker is one of their own.
+	UWorld* World = GetWorld();
+	const UAedirGroupSubsystem* Groups = World ? World->GetSubsystem<UAedirGroupSubsystem>() : nullptr;
+	if (!Groups)
+	{
+		return;
+	}
+	for (TActorIterator<AAedirNpc> It(World); It; ++It)
+	{
+		AAedirNpc* Friend = *It;
+		if (Friend == this || Friend == Attacker || !Friend->Combat || (Friend->Stats && Friend->Stats->IsDead())
+			|| FVector::DistSquared(Friend->GetActorLocation(), GetActorLocation()) > FMath::Square(NpcRallyRangeCm))
+		{
+			continue;
+		}
+		const bool bOnVictimsSide = Friend->GroupId == GroupId || Groups->GetRelation(Friend->GroupId, GroupId) == EAedirRelation::Ally;
+		const bool bOnAttackersSide = Friend->GroupId == Attacker->GroupId;
+		if (bOnVictimsSide && !bOnAttackersSide && (Friend->Combat->CanNotice(this) || Friend->Combat->CanNotice(Attacker)))
+		{
+			Friend->Combat->SetAIGrudge(Attacker);
+		}
 	}
 }

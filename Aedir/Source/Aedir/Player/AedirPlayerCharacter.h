@@ -266,6 +266,15 @@ public:
 	void GripInfo();
 
 	UFUNCTION(Exec)
+	void Holster(const FString& HandArgs);
+
+	UFUNCTION(Exec)
+	void ClearItems();
+
+	UFUNCTION(Exec)
+	void WaistInfo();
+
+	UFUNCTION(Exec)
 	void DropHand(int32 RightHand);
 
 	UFUNCTION(Exec)

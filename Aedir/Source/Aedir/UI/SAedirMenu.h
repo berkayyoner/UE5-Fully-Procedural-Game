@@ -154,7 +154,7 @@ private:
 	float GetRowMarker(int32 Index) const;
 	FLinearColor GetRowTextColor(int32 Index) const;
 	// The item under the mouse, or the selected one, is shown turning on the right in the inventory.
-	void UpdatePreview();
+	void UpdatePreview(float DeltaSeconds);
 	EVisibility GetPreviewVisibility() const;
 
 	TWeakObjectPtr<AAedirCreature> Creature;

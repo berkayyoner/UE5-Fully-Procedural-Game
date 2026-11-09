@@ -73,10 +73,10 @@ public:
 	float ManaRegenPerSecond = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
-	float StaminaRegenPerSecond = 12.f;
+	float StaminaRegenPerSecond = 16.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
-	float StaminaRegenDelay = 1.f;
+	float StaminaRegenDelay = 0.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
 	float MaxStaminaGainPerStaminaSpent = 0.0005f;
@@ -114,6 +114,9 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
 	bool ConsumeStamina(float Amount);
+
+	// A steady small effort, like the arm carrying a weapon about, wears breath down without stopping it from coming back.
+	bool ConsumeStaminaEffort(float Amount, bool bPausesRegen);
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
 	bool ConsumeMana(float Amount);

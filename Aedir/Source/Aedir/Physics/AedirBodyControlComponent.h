@@ -25,27 +25,27 @@ public:
 
 	// How quickly each part is pulled back to the pose, in Hz at full strength: a higher number is a stiffer muscle.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float SpineStrength = 17.f;
+	float SpineStrength = 23.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float HeadStrength = 11.f;
+	float HeadStrength = 15.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float ArmStrength = 18.f;
+	float ArmStrength = 22.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float LegStrength = 14.f;
+	float LegStrength = 19.f;
 
 	// The hips' hold on the capsule: where they are and how they are turned.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float HipLinearStrength = 15.f;
+	float HipLinearStrength = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float HipAngularStrength = 11.f;
+	float HipAngularStrength = 15.f;
 
 	// How strongly the trunk and head are turned upright in the world, in Hz.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float PostureStrength = 14.f;
+	float PostureStrength = 19.f;
 
 	// How strongly each foot is pulled to where the pose sets it, in Hz.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -66,7 +66,7 @@ public:
 
 	// Damping of the muscles, 1 for no overshoot.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float DampingRatio = 1.f;
+	float DampingRatio = 1.1f;
 
 	// Builds the controls on the body's bones; called again whenever the physics bodies are made anew.
 	void Setup(USkeletalMeshComponent* InMesh, UCapsuleComponent* InCapsule);

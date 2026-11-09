@@ -373,6 +373,11 @@ public:
 	// How far the trunk bends forward with the weapon (negative: back), from how low or high the arm has it.
 	float GetSwingBendDegrees() const;
 	bool HasAITarget() const { return AITarget != nullptr; }
+	// Whom this body is fighting now, so the HUD can tell a foe that is fighting the player from one that only could.
+	AAedirCreature* GetAITarget() const { return AITarget; }
+
+	// Whether this creature can see or hear another from where it stands.
+	bool CanNotice(const AAedirCreature* Other) const { return Other && (CanSeeTarget(Other) || CanHearTarget(Other)); }
 	void SetAIGrudge(AAedirCreature* Attacker);
 	float GetPunchLeanDegrees() const;
 

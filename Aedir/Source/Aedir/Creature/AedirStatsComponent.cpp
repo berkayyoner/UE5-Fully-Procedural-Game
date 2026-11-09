@@ -15,6 +15,7 @@ namespace
 	constexpr float StatsEnergyNeedLoss = 0.75f;
 	constexpr float StatsAthletismBase = 10.f;
 	constexpr float StatsAthletismMaxStaminaGain = 0.8f;
+	constexpr float StatsStaminaRegenWhileStraining = 0.4f;
 	constexpr float StatsAthletismRegenGain = 1.2f;
 	constexpr float StatsStarveDamagePerSecond = 0.25f;
 	// Out of health, a body lies dying this long before it is dead; every further point of damage takes this much off.
@@ -95,9 +96,11 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	}
 
 	const UWorld* World = GetWorld();
-	if (World && World->GetTimeSeconds() - LastStaminaConsumptionTime >= StaminaRegenDelay)
+	if (World)
 	{
-		const float NewStamina = FMath::Min(GetMaxStamina(), Stamina + GetStaminaRegenRate() * DeltaTime);
+		// Breath comes back even in a fight, slower just after an effort, at full rate once the body has had a moment's rest.
+		const bool bRested = World->GetTimeSeconds() - LastStaminaConsumptionTime >= StaminaRegenDelay;
+		const float NewStamina = FMath::Min(GetMaxStamina(), Stamina + GetStaminaRegenRate() * (bRested ? 1.f : StatsStaminaRegenWhileStraining) * DeltaTime);
 		bChanged |= NewStamina != Stamina;
 		Stamina = NewStamina;
 	}
@@ -181,6 +184,11 @@ void UAedirStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 
 bool UAedirStatsComponent::ConsumeStamina(float Amount)
 {
+	return ConsumeStaminaEffort(Amount, true);
+}
+
+bool UAedirStatsComponent::ConsumeStaminaEffort(float Amount, bool bPausesRegen)
+{
 	if (!IsAuthoritative() || Amount < 0.f || Stamina < Amount)
 	{
 		return false;
@@ -188,7 +196,8 @@ bool UAedirStatsComponent::ConsumeStamina(float Amount)
 
 	Stamina -= Amount;
 
-	if (const UWorld* World = GetWorld())
+	const UWorld* World = GetWorld();
+	if (World && bPausesRegen)
 	{
 		LastStaminaConsumptionTime = World->GetTimeSeconds();
 	}

@@ -727,6 +727,43 @@ void AedirWorldDirector::AddScenery(UWorld* World)
 		SceneryTorch(World, Center + FVector(1100.f, -700.f, 0.f));
 		SceneryTorch(World, Center + FVector(-300.f, 800.f, 0.f));
 		SceneryTorch(World, Center + FVector(-600.f, -800.f, 0.f));
+
+		// The camp's armoury: two long tables by the fire laid with every blade, axe and mace the smiths of the land make, and a
+		// bench with helmet, shield and pauldrons.
+		static const TCHAR* const Blades[] = { TEXT("RustySword"), TEXT("IronSword"), TEXT("SteelSword"), TEXT("SteelLongsword"), TEXT("BloodySword"), TEXT("SilverShortsword"),
+			TEXT("AshwardBlade"), TEXT("WardenSword"), TEXT("AncestralSword"), TEXT("RidgeSword"), TEXT("SlenderSword"), TEXT("Cleaver") };
+		static const TCHAR* const Hafted[] = { TEXT("Axe"), TEXT("ElvenBattleaxe"), TEXT("RustyIronMace"), TEXT("WoodsmanAxe"), TEXT("BeardedGreataxe"), TEXT("HandAxe"),
+			TEXT("RaiderAxe"), TEXT("CrescentAxe"), TEXT("WarAxe") };
+		const auto LayOnTable = [World](const FVector& Where, float Yaw, const TCHAR* const* Ids, int32 Count)
+		{
+			AStaticMeshActor* Table = SceneryProp(World, TEXT("OldWoodenTable"), Where, Yaw, 1.f, 2.f);
+			if (!Table)
+			{
+				return;
+			}
+			const float Top = DirectorTopOf(Table) + 6.f;
+			const FVector Mid = Table->GetActorLocation();
+			const FRotator Along(0.f, Yaw, 0.f);
+			const FBox Box = Table->GetComponentsBoundingBox();
+			const float Across = static_cast<float>(FMath::Min(Box.GetSize().X, Box.GetSize().Y)) * 0.4f;
+			// Laid side by side across the table, each pointing along its width, spaced over its length.
+			for (int32 Index = 0; Index < Count; ++Index)
+			{
+				const float Share = Count > 1 ? static_cast<float>(Index) / (Count - 1) - 0.5f : 0.f;
+				const FVector Spot = FVector(Mid.X, Mid.Y, Top) + Along.RotateVector(FVector(Share * 150.f, (Index % 2 ? 1.f : -1.f) * Across * 0.2f, 0.f));
+				DirectorLayItem(World, Ids[Index], Spot, Yaw + 90.f);
+			}
+		};
+		LayOnTable(Center + FVector(-250.f, 450.f, 0.f), 0.f, Blades, UE_ARRAY_COUNT(Blades));
+		LayOnTable(Center + FVector(-550.f, 450.f, 0.f), 0.f, Hafted, UE_ARRAY_COUNT(Hafted));
+		if (AStaticMeshActor* Bench = SceneryProp(World, TEXT("OldWoodenBench"), Center + FVector(-400.f, 700.f, 0.f), 0.f, 1.f, 2.f))
+		{
+			const float Top = DirectorTopOf(Bench) + 15.f;
+			const FVector Mid = Bench->GetActorLocation();
+			DirectorLayItem(World, TEXT("IronSouthernHelmet"), FVector(Mid.X - 60.f, Mid.Y, Top), 0.f);
+			DirectorLayItem(World, TEXT("RustyIronShield"), FVector(Mid.X, Mid.Y, Top), 0.f);
+			DirectorLayItem(World, TEXT("RustyShoulders"), FVector(Mid.X + 60.f, Mid.Y, Top), 0.f);
+		}
 	}
 
 	// Banks of moss and stone along the stream.

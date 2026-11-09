@@ -388,6 +388,21 @@ FVector AAedirItemActor::GetGripWorld() const
 	return GetActorLocation() + GetActorForwardVector() * GripLocalCm;
 }
 
+void AAedirItemActor::SetPassesOwnBody(bool bPasses)
+{
+	if (bPassesOwnBody == bPasses)
+	{
+		return;
+	}
+	bPassesOwnBody = bPasses;
+	// Bodies are physics bodies; for the short while it passes them it passes everyone's, which a weapon coming out of a belt
+	// does not notice.
+	if (Mesh && bHeldCollision)
+	{
+		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPasses ? ECR_Ignore : ECR_Block);
+	}
+}
+
 void AAedirItemActor::AttachToBackpack(AAedirCreature* Creature)
 {
 	if (!HasAuthority() || !Creature)
@@ -605,8 +620,10 @@ void AAedirItemActor::SetFreePhysics(bool bFree)
 	{
 		bHeldCollision = false;
 		Mesh->SetCollisionResponseToChannel(ECC_Pawn, FreePawnResponse);
+		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
 		Mesh->BodyInstance.SetMaskFilter(0);
 	}
+	bPassesOwnBody = false;
 }
 
 void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
@@ -626,6 +643,7 @@ void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	Mesh->BodyInstance.SetMaskFilter(Creature->GetHeldMaskBit());
+	Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody ? ECR_Ignore : ECR_Block);
 	if (SettleAlpha >= 1.f)
 	{
 		WeldToHand();

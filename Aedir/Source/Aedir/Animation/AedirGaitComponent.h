@@ -457,7 +457,7 @@ public:
 	float MaxArmSwingWalkDegrees = 9.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxArmSwingRunDegrees = 27.f;
+	float MaxArmSwingRunDegrees = 19.f;
 
 	// Share of the arms' rest inward turn given up at a full run: running, the arms swing a little further from the body.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")

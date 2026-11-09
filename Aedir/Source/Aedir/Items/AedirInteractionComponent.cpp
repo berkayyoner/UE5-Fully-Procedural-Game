@@ -52,6 +52,9 @@ namespace
 	constexpr float HolsterOverForward = 0.2f;
 	constexpr float HolsterOverSide = 0.35f;
 	constexpr float HolsterDrawSettleSeconds = 0.6f;
+	// How near the grip the wrist has to be to close on it, and how long past the reach it may take to get there.
+	constexpr float HolsterGraspCm = 14.f;
+	constexpr float HolsterGraspWaitSeconds = 0.7f;
 	// Passing a weapon: both hands come together before the chest and the other hand takes it there.
 	constexpr float PassHandSeconds = 0.35f;
 	constexpr float PassGiveUpSeconds = 1.5f;
@@ -676,7 +679,16 @@ void UAedirInteractionComponent::UpdateHolsterMotion(EAedirHand Hand, float Delt
 {
 	const int32 Index = static_cast<int32>(Hand);
 	const EAedirHolsterMotion Motion = HolsterMotion[Index];
+	const bool bWasSettling = HolsterDrawSettle[Index] > 0.f;
 	HolsterDrawSettle[Index] = FMath::Max(HolsterDrawSettle[Index] - DeltaTime, 0.f);
+	// While a drawn blade comes up out of the belt it slides past its own hip and thigh rather than catching between the legs.
+	if (bWasSettling && HolsterDrawSettle[Index] <= 0.f)
+	{
+		if (AAedirItemActor* Drawn = GetHeldItem(Hand))
+		{
+			Drawn->SetPassesOwnBody(false);
+		}
+	}
 	if (Motion == EAedirHolsterMotion::None)
 	{
 		return;
@@ -694,6 +706,13 @@ void UAedirInteractionComponent::UpdateHolsterMotion(EAedirHand Hand, float Delt
 
 	HolsterElapsed[Index] += DeltaTime;
 	if (HolsterElapsed[Index] < HolsterHandSeconds)
+	{
+		return;
+	}
+	// A weapon is only taken from the belt by a hand that has got to its grip: blocked by the thigh or still on its way, the
+	// hand goes on reaching for a moment, and the weapon never jumps into a hand that is somewhere else.
+	if (Motion == EAedirHolsterMotion::Draw && !FromPack && HolsterElapsed[Index] < HolsterHandSeconds + HolsterGraspWaitSeconds
+		&& FVector::Dist(GetHandWorld(Hand), Item->GetGripWorld()) > HolsterGraspCm)
 	{
 		return;
 	}
@@ -1121,7 +1140,9 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 		{
 			const AAedirItemActor* HolsterItem = HolsterMotion[Index] == EAedirHolsterMotion::Store ? Slot.Item.Get() : (WaistItems.IsValidIndex(HolsterWaistIndex[Index]) ? WaistItems[HolsterWaistIndex[Index]].Get() : nullptr);
 			const AAedirCreature* Creature = GetCreature();
-			const FVector SlotWorld = GetWaistSlotWorld(HolsterWaistIndex[Index], HolsterItem);
+			// Drawing, the hand goes for the grip of the weapon where it hangs; putting away, to the slot it will hang from.
+			const bool bDrawingHung = HolsterMotion[Index] == EAedirHolsterMotion::Draw && HolsterItem && !BackpackDrawItem[Index];
+			const FVector SlotWorld = bDrawingHung ? HolsterItem->GetGripWorld() : GetWaistSlotWorld(HolsterWaistIndex[Index], HolsterItem);
 			const FTransform ActorTransform = Creature ? Creature->GetActorTransform() : FTransform::Identity;
 			const float SlotSide = HolsterWaistIndex[Index] < WaistSlotsPerSide ? -1.f : 1.f;
 			const FVector Front = ActorTransform.TransformPositionNoScale(FVector(HolsterFrontForwardCm, SlotSide * HolsterFrontSideCm, HolsterFrontUpCm));
@@ -1411,6 +1432,7 @@ void UAedirInteractionComponent::DrawFromWaist(EAedirHand Hand, AAedirCreature* 
 
 	const FVector HangingDir = Item->GetActorForwardVector();
 	HolsterDrawFrom[static_cast<int32>(Hand)] = HangingDir;
+	Item->SetPassesOwnBody(true);
 	Item->SettleIntoCreatureHand(Creature, Hand);
 	if (Creature->Combat)
 	{

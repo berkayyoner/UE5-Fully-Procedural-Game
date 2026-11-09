@@ -237,7 +237,8 @@ namespace
 			Item.bModelReversed = bReversed;
 			Item.GripCm = GripCm;
 			Item.GripSpanCm = SpanCm;
-			Item.bHangsDiagonal = Type != EAedirDamageType::Blunt && BladeCm < 100.f && Box.Y < 0.04;
+			// Blades (a flat box) hang point down and back from the hip; axes and maces, thick at the head, hang by the head.
+			Item.bHangsDiagonal = Type != EAedirDamageType::Blunt && BladeCm < 100.f && Box.Y > 0.04;
 			Item.ModelThickShare = ThickShare;
 			Definitions.Add(Item);
 		};

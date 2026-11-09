@@ -220,6 +220,48 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 			}
 		}
 	}
+	else if (Command == TEXT("Holster"))
+	{
+		// Puts what the right hand holds on the belt, or the left with "l".
+		if (Player->Interaction)
+		{
+			const TArray<FString> Tokens = DevToolsTokens(Args);
+			Player->Interaction->HolsterToWaist(Tokens.IsValidIndex(0) && DevToolsIsToken(Tokens[0], TEXT("l")) ? EAedirHand::Left : EAedirHand::Right);
+		}
+	}
+	else if (Command == TEXT("WaistInfo"))
+	{
+		// Where each thing on the belt hangs, in the body's own frame (forward, right, up), and which way its point looks.
+		if (Player->Interaction)
+		{
+			const FTransform Body = Player->GetActorTransform();
+			for (const AAedirItemActor* Item : Player->Interaction->GetWaistItemsCopy())
+			{
+				if (Item)
+				{
+					DevToolsReport(FString::Printf(TEXT("Waist %s at %s point %s grip %s hidden %d"), *Item->GetName(), *Body.InverseTransformPositionNoScale(Item->GetActorLocation()).ToCompactString(),
+						*Body.InverseTransformVectorNoScale(Item->GetActorForwardVector()).ToCompactString(), *Body.InverseTransformPositionNoScale(Item->GetGripWorld()).ToCompactString(), Item->IsHidden() ? 1 : 0));
+				}
+			}
+		}
+	}
+	else if (Command == TEXT("ClearItems"))
+	{
+		// Takes away everything in the hands and on the belt, for trying one item after another.
+		if (UAedirInteractionComponent* Hands = Player->Interaction)
+		{
+			TArray<AAedirItemActor*> Owned = Hands->GetWaistItemsCopy();
+			Owned.AddUnique(Hands->GetHeldItem(EAedirHand::Right));
+			Owned.AddUnique(Hands->GetHeldItem(EAedirHand::Left));
+			for (AAedirItemActor* Item : Owned)
+			{
+				if (Item)
+				{
+					Hands->RemoveOwnedItem(Item);
+				}
+			}
+		}
+	}
 	else if (Command == TEXT("CloudFlash"))
 	{
 		// A flash in the clouds straight ahead of the view, a kilometre and a half away.

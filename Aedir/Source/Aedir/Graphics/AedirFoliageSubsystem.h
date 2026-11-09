@@ -6,6 +6,7 @@
 
 class UInstancedStaticMeshComponent;
 class UMaterialParameterCollection;
+class UStaticMesh;
 
 // Grass and flowers of the world: they lean away from whoever walks through, move with the wind of the weather, and stay flattened for a while where they were stepped on.
 UCLASS()
@@ -59,6 +60,10 @@ private:
 	void CrushUnderFeet();
 	void Recover(float DeltaTime);
 	void SetInstanceFlatness(FCrushed& Entry);
+	// The scanned Megascans grass clumps, when they are in the project.
+	static TArray<UStaticMesh*> LoadScannedGrass();
+	// Grows the scanned grass where the saved meadow has blades of an older grass, as tall as those were, fewer since a clump covers more ground.
+	void ReplantWithScannedGrass(AActor* Meadow);
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UInstancedStaticMeshComponent>> Patches;

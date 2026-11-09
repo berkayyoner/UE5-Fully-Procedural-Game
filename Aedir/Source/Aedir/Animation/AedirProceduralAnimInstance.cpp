@@ -25,6 +25,8 @@ namespace
 	constexpr float AedirHeelRaiseCm = 7.f;
 	constexpr float AedirFootLooseGain = 3.f;
 	constexpr float AedirWristFollowShare = 0.25f;
+	// At a full run (the run spread at its most, 0.6) the free hand is turned about 20 degrees in.
+	constexpr float AedirRunWristInwardDegrees = 34.f;
 	// A bent elbow carries the forearm in across the belly, as a runner's does.
 	constexpr float AedirForearmInwardShare = 0.22f;
 	constexpr float AedirClavicleFollowShare = 0.25f;
@@ -403,7 +405,10 @@ void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FB
 	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);
 	if (Hand.IsValid())
 	{
-		RotateBone(CSPose, Hand, ActorRotationToMesh(FRotator(RestElbowDegrees * AedirWristFollowShare, 0.f, 0.f).Quaternion()));
+		// Running, a free hand turns in towards the body at the wrist, as a runner's does.
+		const float InwardSign = ClavicleName == BoneNameSet.LeftClavicle ? 1.f : -1.f;
+		const float RunWristDegrees = InwardSign * AedirRunWristInwardDegrees * GaitData.ArmRunSpread * RestAlpha;
+		RotateBone(CSPose, Hand, ActorRotationToMesh(FRotator(RestElbowDegrees * AedirWristFollowShare, RunWristDegrees, 0.f).Quaternion()));
 	}
 }
 

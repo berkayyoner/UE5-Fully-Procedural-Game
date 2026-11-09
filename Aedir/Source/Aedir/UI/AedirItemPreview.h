@@ -27,13 +27,15 @@ public:
 	void ShowItem(AAedirItemActor* Item);
 	bool HasModel() const { return !Copies.IsEmpty(); }
 
-	// Turns the model by a mouse drag, in screen pixels.
+	// Turns the model by a mouse drag, in screen pixels. Sets where the turn is going; the model follows over the next frames.
 	void Turn(const FVector2D& Delta);
-	// Brings the model nearer for positive steps of the wheel, further for negative ones, within a fixed range.
+	// Brings the model nearer for positive steps of the wheel, further for negative ones. Never so near that any of it leaves
+	// the picture; the camera glides to the new distance over the next frames.
 	void Zoom(float Steps);
 
-	// Films the model into the texture now.
-	void Capture();
+	// Moves the model and camera that much of the way towards where the mouse has sent them, then films the model into the
+	// texture. Called every frame by the menu, which keeps running while the game is paused.
+	void Capture(float DeltaSeconds);
 
 	UTextureRenderTarget2D* GetTexture() const;
 
@@ -76,9 +78,13 @@ private:
 
 	TWeakObjectPtr<AAedirItemActor> ShownItem;
 	uint32 ShownLook = 0;
+	// Shown turn and camera distance, and where the mouse has sent them: the shown ones ease towards the targets every frame.
 	FQuat Spin = FQuat::Identity;
-	float FitDistance = 100.f;
-	float ZoomFactor = 1.f;
+	FQuat TargetSpin = FQuat::Identity;
+	float Distance = 100.f;
+	float TargetDistance = 100.f;
+	// The nearest the camera may come: the item's bounding sphere then just touches the edges of the view.
+	float NearestDistance = 100.f;
 };
 
 // Draws the studio's picture over a soft dark ground; a left drag turns the model, the wheel brings it nearer or further.

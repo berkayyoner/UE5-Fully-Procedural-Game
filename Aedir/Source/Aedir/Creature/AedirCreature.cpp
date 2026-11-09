@@ -30,6 +30,9 @@ namespace
 {
 	// The bit the hands of every body and what they hold share, so two hands can hold one grip.
 	constexpr uint8 AedirHandMaskBit = 128;
+	// The feet pass each other too: in a quick turn or a narrow step one foot brushes past the other, and catching there would
+	// trip the walk. The legs above them stay solid.
+	constexpr uint8 AedirFootMaskBit = 64;
 }
 
 namespace
@@ -117,14 +120,14 @@ void AAedirCreature::ApplyBodyMask()
 	}
 	// Nothing passes through a body, not even what it holds itself: the trunk, the arms and the legs stand against its own
 	// weapon as against anyone's, and the arms against the trunk, as the physics asset pairs them. Only the hands pass each
-	// other, so two hands can close on one grip.
+	// other, so two hands can close on one grip, and the feet each other.
 	Body->BodyInstance.SetMaskFilter(0);
 	for (FBodyInstance* Part : Body->Bodies)
 	{
 		if (Part && Part->BodySetup.IsValid())
 		{
 			const FString Bone = Part->BodySetup->BoneName.ToString();
-			Part->SetMaskFilter(Bone.StartsWith(TEXT("hand")) ? AedirHandMaskBit : 0);
+			Part->SetMaskFilter(Bone.StartsWith(TEXT("hand")) ? AedirHandMaskBit : Bone.StartsWith(TEXT("foot")) || Bone.StartsWith(TEXT("ball")) ? AedirFootMaskBit : 0);
 		}
 	}
 }
@@ -336,7 +339,16 @@ void AAedirCreature::WalkTowards(const FVector& FinalGoal, float DeltaSeconds, f
 	}
 	WalkDetourSeconds = FMath::Max(WalkDetourSeconds - DeltaSeconds, 0.f);
 
+	// A goal taken from a body thrown about by physics can be broken for a frame; a broken direction would break the probes.
+	if (Goal.ContainsNaN() || From.ContainsNaN() || FVector::DistSquared2D(Goal, From) < 1.f)
+	{
+		return;
+	}
 	const float GoalYaw = static_cast<float>((Goal - From).Rotation().Yaw) + (WalkDetourSeconds > 0.f ? WalkDetourYaw : 0.f);
+	if (!FMath::IsFinite(GoalYaw))
+	{
+		return;
+	}
 	const float FeetZ = static_cast<float>(From.Z) - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirWalkProbe), false, this);
 	UWorld* World = GetWorld();

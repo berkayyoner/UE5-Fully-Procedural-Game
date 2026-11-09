@@ -41,8 +41,11 @@ namespace
 	constexpr float MenuProgressWidth = 360.f;
 	constexpr float MenuProgressHeight = 12.f;
 	// The turning model of an item stands in the middle of the right side, above the item card.
-	constexpr float MenuPreviewSize = 560.f;
-	constexpr float MenuPreviewTop = 84.f;
+	// The item's model takes the whole right side above the details: from just under the top edge down to where the details
+	// begin, as wide as that side allows. The picture inside stays square and centred, as large as the area's shorter side.
+	constexpr float MenuPreviewTop = 60.f;
+	constexpr float MenuPreviewBottom = 270.f;
+	constexpr float MenuPreviewSideMargin = 40.f;
 
 	FSlateFontInfo MenuLabelFont(float Size)
 	{
@@ -673,12 +676,11 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 			.FillWidth(MenuListFraction)
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.f - MenuListFraction)
-			.HAlign(HAlign_Center)
-			.VAlign(VAlign_Top)
-			.Padding(FMargin(0.f, MenuPreviewTop, 0.f, 0.f))
+			.HAlign(HAlign_Fill)
+			.VAlign(VAlign_Fill)
+			.Padding(FMargin(MenuPreviewSideMargin, MenuPreviewTop, MenuPreviewSideMargin, MenuPreviewBottom))
 			[
 				SAssignNew(PreviewView, SAedirItemPreviewView)
-				.DesiredSize(FVector2D(MenuPreviewSize, MenuPreviewSize))
 				.Cursor(EMouseCursor::GrabHand)
 				.Visibility_Lambda([this]() { return GetPreviewVisibility(); })
 			]
@@ -857,10 +859,10 @@ void SAedirMenu::Tick(const FGeometry& AllottedGeometry, const double InCurrentT
 	}
 
 	RefreshView(false);
-	UpdatePreview();
+	UpdatePreview(InDeltaTime);
 }
 
-void SAedirMenu::UpdatePreview()
+void SAedirMenu::UpdatePreview(float DeltaSeconds)
 {
 	AAedirItemActor* Wanted = nullptr;
 	if (CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory))
@@ -876,7 +878,7 @@ void SAedirMenu::UpdatePreview()
 		}
 		else if (bKeep)
 		{
-			Shown->Capture();
+			Shown->Capture(DeltaSeconds);
 			return;
 		}
 		else if (Rows.IsValidIndex(SelectedRow))
@@ -918,7 +920,7 @@ void SAedirMenu::UpdatePreview()
 	}
 
 	Studio->ShowItem(Wanted);
-	Studio->Capture();
+	Studio->Capture(DeltaSeconds);
 }
 
 EVisibility SAedirMenu::GetPreviewVisibility() const

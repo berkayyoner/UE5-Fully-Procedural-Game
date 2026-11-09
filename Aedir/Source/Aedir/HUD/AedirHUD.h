@@ -88,6 +88,10 @@ private:
 		float Age = 0.f;
 	};
 
+	// The last body seen fighting the player, whose life stays under the compass a while after the player looks away from it.
+	TWeakObjectPtr<const AAedirCreature> FoeShown;
+	double FoeShownUntil = 0.0;
+
 	FAedirHudBarState BarStates[3];
 	TArray<FAedirHudNotification> SkillNotifications;
 	TArray<int32> LastSkillLevels;

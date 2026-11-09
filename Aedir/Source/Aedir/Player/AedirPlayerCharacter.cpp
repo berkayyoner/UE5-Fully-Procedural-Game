@@ -222,7 +222,7 @@ void AAedirPlayerCharacter::BeginPlay()
 		FTimerHandle TestItemTimer;
 		GetWorldTimerManager().SetTimer(TestItemTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
 		{
-			for (const TCHAR* ItemId : { TEXT("Sword"), TEXT("Longsword"), TEXT("Mace"), TEXT("Boulder"), TEXT("Spear"), TEXT("Club"), TEXT("Quarterstaff"), TEXT("Halberd") })
+			for (const TCHAR* ItemId : { TEXT("RustySword"), TEXT("IronSword"), TEXT("SteelSword"), TEXT("SteelLongsword"), TEXT("BloodySword"), TEXT("SilverShortsword"), TEXT("ElvenBattleaxe"), TEXT("Axe"), TEXT("RustyIronMace") })
 			{
 				UAedirDevTools::Execute(this, TEXT("SpawnItem"), ItemId);
 			}
@@ -1299,6 +1299,21 @@ void AAedirPlayerCharacter::BoneAxes(const FString& Bones)
 void AAedirPlayerCharacter::CloudFlash()
 {
 	RunDevCommand(TEXT("CloudFlash"), FString(), false);
+}
+
+void AAedirPlayerCharacter::Holster(const FString& HandArgs)
+{
+	RunDevCommand(TEXT("Holster"), HandArgs, false);
+}
+
+void AAedirPlayerCharacter::WaistInfo()
+{
+	RunDevCommand(TEXT("WaistInfo"), FString(), false);
+}
+
+void AAedirPlayerCharacter::ClearItems()
+{
+	RunDevCommand(TEXT("ClearItems"), FString(), false);
 }
 
 void AAedirPlayerCharacter::GaitInfo(float Seconds, float Interval)

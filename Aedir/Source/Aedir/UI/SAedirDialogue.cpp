@@ -14,8 +14,8 @@
 
 namespace
 {
-	// Sizes are Slate units, one pixel at 1080p. Skyrim keeps its dialogue small: a compact column of lines right of the middle
-	// and a short subtitle low in the middle, both in a light condensed face.
+	// Sizes are Slate units, one pixel at 1080p. Skyrim keeps its dialogue small: a compact column of lines in the right third
+	// of the screen and a short subtitle low in the middle, both in a light condensed face.
 	constexpr float DialogueWidth = 440.f;
 	constexpr float DialogueSpeechWidth = 900.f;
 	constexpr float DialogueRowHeight = 30.f;
@@ -24,9 +24,9 @@ namespace
 	constexpr float DialogueListRaise = 30.f;
 	constexpr float DialogueListGap = 20.f;
 	constexpr float DialogueNameGap = 22.f;
-	// Free width left and right of the column: the column stands a little right of the middle of the screen.
-	constexpr float DialogueLeftFill = 1.f;
-	constexpr float DialogueRightFill = 0.55f;
+	// Free width right of the column. The column keeps this distance from the right edge on any screen width, so the rule and
+	// the lines stay in the right third and leave the speaker's face in the middle clear.
+	constexpr float DialogueRightMargin = 150.f;
 	constexpr float DialogueRuleFade = 70.f;
 	constexpr int32 DialogueRuleFadeSteps = 10;
 	constexpr float DialogueSubtitleBottom = 120.f;
@@ -85,7 +85,7 @@ void SAedirDialogue::Construct(const FArguments& InArgs)
 			SNew(SAedirUIPaint)
 			.Painter([](const FVector2f& Size, FAedirUIMesh& Mesh)
 			{
-				const float RuleX = FMath::Max(0.f, Size.X - DialogueListGap - 1.f - DialogueWidth) * DialogueLeftFill / (DialogueLeftFill + DialogueRightFill);
+				const float RuleX = FMath::Max(0.f, Size.X - DialogueRightMargin - DialogueWidth - DialogueListGap - 1.f);
 				const FVector2f ListCenter(RuleX + DialogueWidth * 0.28f, Size.Y * 0.5f - DialogueListRaise);
 				AedirUIStyle::AddVignette(Mesh, Size, 0.12f, 0.6f);
 				AedirUIStyle::AddGlow(Mesh, ListCenter, FVector2f(DialogueWidth * 1.35f, DialogueListHeight * 1.25f), FLinearColor(0.f, 0.f, 0.f, 0.85f));
@@ -109,7 +109,7 @@ void SAedirDialogue::Construct(const FArguments& InArgs)
 		+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Center).Padding(0.f, DialogueListRaise * -2.f, 0.f, 0.f)
 		[
 			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().FillWidth(DialogueLeftFill).HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.f, 0.f, DialogueNameGap, 0.f)
+			+ SHorizontalBox::Slot().FillWidth(1.f).HAlign(HAlign_Right).VAlign(VAlign_Center).Padding(0.f, 0.f, DialogueNameGap, 0.f)
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
@@ -151,7 +151,10 @@ void SAedirDialogue::Construct(const FArguments& InArgs)
 					]
 				]
 			]
-			+ SHorizontalBox::Slot().FillWidth(DialogueRightFill)
+			+ SHorizontalBox::Slot().AutoWidth()
+			[
+				SNew(SBox).WidthOverride(DialogueRightMargin)
+			]
 		]
 	];
 

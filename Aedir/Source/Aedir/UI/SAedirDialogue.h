@@ -9,7 +9,7 @@ class AAedirPlayerCharacter;
 class SVerticalBox;
 class STextBlock;
 
-// Talking: what the other person last said low in the middle, what you can say in a column right of the middle.
+// Talking: what the other person last said low in the middle, what you can say in a column on the right side.
 class AEDIR_API SAedirDialogue : public SCompoundWidget
 {
 public:

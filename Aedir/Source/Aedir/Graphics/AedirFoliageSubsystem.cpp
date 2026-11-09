@@ -42,6 +42,15 @@ namespace
 	constexpr float FoliageBendDistance = 70.f;
 	constexpr float FoliageWindFollow = 0.4f;
 	const TCHAR* const FoliageNaniteGrassRoot = TEXT("/Game/OWD_Nanite_Base_Grass/Meshes/");
+	const TCHAR* const FoliageScannedGrassRoot = TEXT("/Game/Aedir/Megascans/Grass/");
+	// Each scanned plant and its variations; the tall meadow grass is grown low, as a grazed meadow's is.
+	const TCHAR* const FoliageScannedGrass[] = { TEXT("WildGrass/SM_WildGrass_A"), TEXT("WildGrass/SM_WildGrass_B"), TEXT("WildGrass/SM_WildGrass_C"), TEXT("WildGrass/SM_WildGrass_D"),
+		TEXT("WildGrass/SM_WildGrass_E"), TEXT("WildGrass/SM_WildGrass_F"), TEXT("WildGrass/SM_WildGrass_G"), TEXT("WildGrass/SM_WildGrass_H"),
+		TEXT("MeadowGrass/SM_MeadowGrass_A"), TEXT("MeadowGrass/SM_MeadowGrass_D"), TEXT("MeadowGrass/SM_MeadowGrass_E"),
+		TEXT("GrassClumps/SM_GrassClumps_A"), TEXT("GrassClumps/SM_GrassClumps_B"), TEXT("GrassClumps/SM_GrassClumps_C") };
+	// A scanned clump is wider than a tuft of the older grass, but thinner: most of the places keep one.
+	constexpr float FoliageScannedKeepShare = 0.8f;
+	constexpr float FoliageScannedWidthScale = 1.f;
 	constexpr float FoliageGrassMinCm = 14.f;
 	constexpr float FoliageGrassMaxCm = 34.f;
 	constexpr float FoliageFlowerMinCm = 22.f;
@@ -177,6 +186,7 @@ void UAedirFoliageSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 			}
 		}
 		UE_CLOG(Cleared > 0, LogAedir, Log, TEXT("Cleared %d grass blades growing on props."), Cleared);
+		ReplantWithScannedGrass(*It);
 		TArray<UInstancedSkinnedMeshComponent*> Trees;
 		It->GetComponents(Trees);
 		for (UInstancedSkinnedMeshComponent* Tree : Trees)
@@ -269,9 +279,9 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 	}
 
 	// The scanned Nanite grass when it is there: single tufts of three kinds and denser clusters, every size and variation.
-	TArray<UStaticMesh*> Grasses;
+	TArray<UStaticMesh*> Grasses = LoadScannedGrass();
 	TArray<UStaticMesh*> Flowers;
-	for (int32 Kind = 1; Kind <= 3; ++Kind)
+	for (int32 Kind = 1; Kind <= 3 && Grasses.IsEmpty(); ++Kind)
 	{
 		for (int32 Size = 1; Size <= 5; ++Size)
 		{
@@ -555,4 +565,78 @@ void UAedirFoliageSubsystem::Recover(float DeltaTime)
 			Crushed.RemoveAtSwap(Index);
 		}
 	}
+}
+
+TArray<UStaticMesh*> UAedirFoliageSubsystem::LoadScannedGrass()
+{
+	TArray<UStaticMesh*> Meshes;
+	for (const TCHAR* Name : FoliageScannedGrass)
+	{
+		const FString Path = FString(FoliageScannedGrassRoot) + Name;
+		if (UStaticMesh* Mesh = LoadObject<UStaticMesh>(nullptr, *(Path + TEXT(".") + FPaths::GetBaseFilename(Path)), nullptr, LOAD_NoWarn | LOAD_Quiet))
+		{
+			Meshes.Add(Mesh);
+		}
+	}
+	return Meshes;
+}
+
+void UAedirFoliageSubsystem::ReplantWithScannedGrass(AActor* Meadow)
+{
+	const TArray<UStaticMesh*> Scanned = LoadScannedGrass();
+	if (Scanned.IsEmpty() || !Meadow)
+	{
+		return;
+	}
+	TArray<UInstancedStaticMeshComponent*> Old;
+	Meadow->GetComponents(Old);
+	TMap<UStaticMesh*, UInstancedStaticMeshComponent*> ByMesh;
+	FRandomStream Random(Old.Num());
+	int32 Replanted = 0;
+	for (UInstancedStaticMeshComponent* Patch : Old)
+	{
+		const UStaticMesh* OldMesh = Patch ? Patch->GetStaticMesh().Get() : nullptr;
+		const FString OldPath = OldMesh ? OldMesh->GetPathName() : FString();
+		const bool bOldGrass = OldPath.StartsWith(FoliageNaniteGrassRoot) || OldPath.Contains(TEXT("openWorld_grass"));
+		if (!bOldGrass)
+		{
+			continue;
+		}
+		const float OldHeight = FMath::Max(static_cast<float>(OldMesh->GetBoundingBox().GetSize().Z), 1.f);
+		for (int32 Index = 0; Index < Patch->GetInstanceCount(); ++Index)
+		{
+			FTransform Where;
+			if (Random.FRand() > FoliageScannedKeepShare || !Patch->GetInstanceTransform(Index, Where, true))
+			{
+				continue;
+			}
+			UStaticMesh* Mesh = Scanned[Random.RandHelper(Scanned.Num())];
+			UInstancedStaticMeshComponent*& NewPatch = ByMesh.FindOrAdd(Mesh);
+			if (!NewPatch)
+			{
+				NewPatch = NewObject<UInstancedStaticMeshComponent>(Meadow);
+				NewPatch->SetStaticMesh(Mesh);
+				NewPatch->SetMobility(EComponentMobility::Movable);
+				NewPatch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+				NewPatch->SetCastShadow(false);
+				NewPatch->SetReceivesDecals(false);
+				NewPatch->SetCullDistances(FoliageCullFromCm, FoliageCullToCm);
+				NewPatch->SetupAttachment(Meadow->GetRootComponent());
+				NewPatch->RegisterComponent();
+				Meadow->AddInstanceComponent(NewPatch);
+				Patches.Add(NewPatch);
+			}
+			// As tall as the blade it takes the place of, never taller than shin-high.
+			const float Height = FMath::Min(static_cast<float>(Where.GetScale3D().Z) * OldHeight, FoliageGrassMaxCm);
+			const float MadeHeight = FMath::Max(static_cast<float>(Mesh->GetBoundingBox().GetSize().Z), 1.f);
+			const float Spread = static_cast<float>(Where.GetScale3D().X) * FoliageScannedWidthScale;
+			Where.SetScale3D(FVector(Spread, Spread, FMath::Clamp(Height / MadeHeight, 0.15f, 1.2f)));
+			Where.SetRotation(Where.GetRotation() * FQuat(FVector::UpVector, Random.FRandRange(0.f, UE_TWO_PI)));
+			NewPatch->AddInstance(Where, true);
+			++Replanted;
+		}
+		Patches.Remove(Patch);
+		Patch->DestroyComponent();
+	}
+	UE_CLOG(Replanted > 0, LogAedir, Log, TEXT("Replanted the meadow with %d clumps of scanned grass."), Replanted);
 }

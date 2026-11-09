@@ -131,8 +131,8 @@ namespace
 	constexpr float AedirFatigueDroopCm = 8.f;
 	constexpr float AedirFatigueDroopPitch = 12.f;
 	// A swing costs breath and builds the arm, a little per unit of travel. Slow aiming costs nothing.
-	constexpr float AedirSwingEffortMinSpeed = 70.f;
-	constexpr float AedirSwingStaminaPerTravel = 0.006f;
+	constexpr float AedirSwingEffortMinSpeed = 220.f;
+	constexpr float AedirSwingStaminaPerTravel = 0.0025f;
 	constexpr float AedirSwingStaminaMassShare = 0.2f;
 	constexpr float AedirSwingStrengthPerTravel = 0.000015f;
 	constexpr float AedirSwingStrengthMassShare = 0.25f;
@@ -350,7 +350,9 @@ namespace
 	constexpr float AedirImpactInjuryPerDamage = 0.012f;
 	constexpr float AedirImpactLimbHealPerSecond = 0.002f;
 	constexpr float AedirImpactRecoilScale = 0.35f;
-	constexpr float AedirImpactStaminaPerEnergy = 0.025f;
+	constexpr float AedirImpactStaminaPerEnergy = 0.01f;
+	// However hard the blow, landing it costs no more breath than a few swings.
+	constexpr float AedirImpactStaminaMax = 6.f;
 	constexpr float AedirImpactPropImpulseScale = 0.6f;
 
 	constexpr float AedirClashCacheInterval = 0.1f;
@@ -1604,7 +1606,7 @@ void UAedirCombatComponent::UpdatePoseAim(EAedirHand Hand, FAedirArmDynamics& Ar
 	if (IsAuthoritative() && Creature->Stats && bSwinging && Speed > AedirSwingEffortMinSpeed)
 	{
 		const float Travel = Speed * DeltaTime;
-		Creature->Stats->ConsumeStamina(FMath::Min(Travel * AedirSwingStaminaPerTravel * (1.f + Load * AedirSwingStaminaMassShare), Creature->Stats->GetStamina()));
+		Creature->Stats->ConsumeStaminaEffort(FMath::Min((Travel - AedirSwingEffortMinSpeed * DeltaTime) * AedirSwingStaminaPerTravel * (1.f + Load * AedirSwingStaminaMassShare), Creature->Stats->GetStamina()), false);
 		Creature->Stats->AddStrengthExperience(Travel * AedirSwingStrengthPerTravel * (1.f + Load * AedirSwingStrengthMassShare));
 	}
 }
@@ -2580,7 +2582,7 @@ void UAedirCombatComponent::ResolveClash(EAedirHand Hand, FAedirArmDynamics& Arm
 	const float ReducedEnergy = ComputeImpactEnergy(MassEff, CombinedSpeed);
 	if (Creature->Stats)
 	{
-		Creature->Stats->ConsumeStamina(AedirClashEnergyShare * ReducedEnergy * AedirImpactStaminaPerEnergy);
+		Creature->Stats->ConsumeStamina(FMath::Min(AedirClashEnergyShare * ReducedEnergy * AedirImpactStaminaPerEnergy, AedirImpactStaminaMax));
 	}
 
 	if (Creature->Balance)
@@ -2713,6 +2715,12 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 
 		if (AAedirCreature* Victim = Cast<AAedirCreature>(HitActor))
 		{
+			// Only the body itself is struck. The capsule the body walks in reaches well past its flesh: a blow that stopped on it
+			// would stop in the air short of the body and hurt it without touching it.
+			if (Hit.GetComponent() != Victim->GetMesh())
+			{
+				continue;
+			}
 			if (ClashedThisTick.Contains(TWeakObjectPtr<AActor>(Victim)))
 			{
 				continue;
@@ -2893,7 +2901,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 
 	if (Creature->Stats)
 	{
-		Creature->Stats->ConsumeStamina(Energy * AedirImpactStaminaPerEnergy);
+		Creature->Stats->ConsumeStamina(FMath::Min(Energy * AedirImpactStaminaPerEnergy, AedirImpactStaminaMax));
 		if (HeldItem)
 		{
 			Creature->Stats->AddSkillExperience(EAedirSkill::SingleHandWeapon, AedirArmedSkillExperience);
@@ -2915,7 +2923,7 @@ void UAedirCombatComponent::ApplyPhysicsImpact(FAedirArmDynamics& Arm, const FHi
 
 	if (Creature->Stats)
 	{
-		Creature->Stats->ConsumeStamina(Energy * AedirImpactStaminaPerEnergy);
+		Creature->Stats->ConsumeStamina(FMath::Min(Energy * AedirImpactStaminaPerEnergy, AedirImpactStaminaMax));
 	}
 
 	OnImpact.Broadcast(Hit.GetActor(), Hit.BoneName, Energy, 0.f);
@@ -3908,7 +3916,7 @@ void UAedirCombatComponent::ResolveKickSweep(const FVector& From, const FVector&
 	for (const FHitResult& Hit : Hits)
 	{
 		AAedirCreature* Victim = Cast<AAedirCreature>(Hit.GetActor());
-		if (!Victim || Victim == Creature)
+		if (!Victim || Victim == Creature || Hit.GetComponent() != Victim->GetMesh())
 		{
 			continue;
 		}

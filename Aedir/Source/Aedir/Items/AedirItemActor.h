@@ -84,6 +84,9 @@ public:
 	// Where the hand closes on the item in the world.
 	FVector GetGripWorld() const;
 
+	// Held, the item passes the body of the one holding it for a while, as while it is drawn up out of the belt.
+	void SetPassesOwnBody(bool bPasses);
+
 	// How the item injures: blunt force, cutting edge or point.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	EAedirDamageType DamageType = EAedirDamageType::Blunt;
@@ -240,6 +243,8 @@ private:
 	void WeldToHand();
 	void UnweldFromHand();
 	TEnumAsByte<ECollisionResponse> FreePawnResponse = ECR_Block;
+
+	bool bPassesOwnBody = false;
 	void ApplyItemMass();
 	FTransform ComputeHoldTransform(const FTransform& HoldOffset) const;
 	FTransform ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const;

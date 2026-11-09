@@ -10,6 +10,7 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "Sound/SoundAttenuation.h"
 #include "Sound/SoundWave.h"
 
 namespace
@@ -25,6 +26,30 @@ namespace
 	const FLinearColor SceneryFlameColor(2.2f, 0.75f, 0.16f);
 	constexpr int32 SceneryTongues = 4;
 	constexpr float ActorsPlaneCm = 100.f;
+	// Water and fire are heard where they are: full near, fading out over a few tens of metres, never inside the head.
+	constexpr float SceneryWaterHeardCm = 600.f;
+	constexpr float SceneryWaterFadeCm = 4500.f;
+	constexpr float SceneryFireHeardCm = 150.f;
+	constexpr float SceneryFireFadeCm = 1800.f;
+
+	void MakeHeardInPlace(UAudioComponent* Audio, float InnerCm, float FadeCm)
+	{
+		FSoundAttenuationSettings Settings;
+		Settings.bAttenuate = true;
+		Settings.bSpatialize = true;
+		Settings.AttenuationShape = EAttenuationShape::Sphere;
+		Settings.AttenuationShapeExtents = FVector(InnerCm, 0.f, 0.f);
+		Settings.FalloffDistance = FadeCm;
+		Settings.DistanceAlgorithm = EAttenuationDistanceModel::NaturalSound;
+		Settings.bAttenuateWithLPF = true;
+		Settings.LPFRadiusMin = InnerCm;
+		Settings.LPFRadiusMax = InnerCm + FadeCm;
+		Settings.NonSpatializedRadiusStart = InnerCm * 0.5f;
+		Settings.NonSpatializedRadiusEnd = InnerCm * 0.25f;
+		Audio->bOverrideAttenuation = true;
+		Audio->AttenuationOverrides = Settings;
+		Audio->bAllowSpatialization = true;
+	}
 
 	template <typename T>
 	T* ActorsLoad(const TCHAR* Path)
@@ -103,6 +128,7 @@ void AAedirFlame::BeginPlay()
 	{
 		Sound->bLooping = true;
 		Crackle->SetSound(Sound);
+		MakeHeardInPlace(Crackle, SceneryFireHeardCm, SceneryFireFadeCm);
 		Crackle->SetVolumeMultiplier(FMath::Clamp(FlameHeightCm / 60.f, 0.2f, 1.f));
 		Crackle->Play(FMath::FRandRange(0.f, 5.f));
 	}
@@ -173,6 +199,7 @@ void AAedirWaterfall::Configure(const FVector& Top, const FVector& Bottom, float
 	{
 		Sound->bLooping = true;
 		Roar->SetSound(Sound);
+		MakeHeardInPlace(Roar, SceneryWaterHeardCm, SceneryWaterFadeCm);
 		Roar->SetWorldLocation(Bottom);
 		Roar->SetVolumeMultiplier(1.f);
 		Roar->Play();

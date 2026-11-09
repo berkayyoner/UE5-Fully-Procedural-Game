@@ -14,15 +14,22 @@
 
 namespace
 {
-	// Twice the size it is drawn at, so the edges of the model come out smooth without any anti-aliasing in the capture.
-	constexpr int32 PreviewTextureSize = 1024;
+	// About twice the size the menu draws it at on a 1080p screen, so the edges of the model come out smooth without any
+	// anti-aliasing in the capture, and still sharp on a 4K screen.
+	constexpr int32 PreviewTextureSize = 2048;
 	constexpr float PreviewFovDegrees = 30.f;
 	// The model is first seen turned a little towards the viewer from above.
 	constexpr float PreviewTiltDegrees = 14.f;
 	constexpr float PreviewTurnDegreesPerPixel = 0.45f;
 	constexpr float PreviewZoomPerStep = 0.88f;
-	constexpr float PreviewZoomNearest = 0.5f;
-	constexpr float PreviewZoomFurthest = 1.7f;
+	// Distances as multiples of the nearest one, where the item's bounding sphere just fills the view. A little room is kept
+	// even there, since the soft dark ground fades out towards the edges of the picture.
+	constexpr float PreviewNearestMargin = 1.06f;
+	constexpr float PreviewStartDistance = 1.3f;
+	constexpr float PreviewFurthestDistance = 2.6f;
+	// How quickly the shown turn and distance close on where the mouse sent them, as in FMath::FInterpTo.
+	constexpr float PreviewTurnFollowSpeed = 12.f;
+	constexpr float PreviewZoomFollowSpeed = 10.f;
 	// Light on the model in lux at its middle: a strong key from the upper left, a soft fill from the right, a rim from behind.
 	constexpr float PreviewKeyLux = 7.f;
 	constexpr float PreviewFillLux = 2.2f;
@@ -265,26 +272,29 @@ void AAedirItemPreview::ShowItem(AAedirItemActor* Item)
 		return;
 	}
 
-	// The middle of the item turns on the spot; the camera stands where the whole of it just fits in view.
+	// The middle of the item turns on the spot. The sphere around its box holds it however it is turned, so a camera no nearer
+	// than where that sphere touches the edges of the (square) view never cuts any of it off.
 	Model->SetRelativeLocation(-Fit.GetCenter());
 	const float Radius = FMath::Max(static_cast<float>(Fit.GetExtent().Size()), 1.f);
-	FitDistance = Radius / FMath::Sin(FMath::DegreesToRadians(PreviewFovDegrees * 0.5f));
-	ZoomFactor = 1.f;
+	NearestDistance = Radius / FMath::Sin(FMath::DegreesToRadians(PreviewFovDegrees * 0.5f)) * PreviewNearestMargin;
+	TargetDistance = NearestDistance * PreviewStartDistance;
+	Distance = TargetDistance;
 
 	// Long items lie across the view; a laid-out piece of armour is stood up with its front to the viewer, a worn one turned to face it.
+	// A new item is shown at once in its starting pose, not swung there from the last one.
 	const FRotator Facing = bLaidOut && !bWorn ? FRotator(90.f, 0.f, 0.f) : FRotator(0.f, 90.f, 0.f);
-	Spin = FQuat(FRotator(PreviewTiltDegrees, 0.f, 0.f)) * FQuat(Facing);
+	TargetSpin = FQuat(FRotator(PreviewTiltDegrees, 0.f, 0.f)) * FQuat(Facing);
+	Spin = TargetSpin;
 	PlaceCameraAndLights();
 }
 
 void AAedirItemPreview::PlaceCameraAndLights()
 {
-	const float Distance = FitDistance * ZoomFactor;
 	Turntable->SetRelativeRotation(Spin);
 	Camera->SetRelativeLocationAndRotation(FVector(-Distance, 0.f, 0.f), FRotator::ZeroRotator);
 
 	// The lights keep their brightness on the model however near the camera comes.
-	const auto Place = [Distance](UPointLightComponent* Light, const FVector& Direction, float Lux)
+	const auto Place = [this](UPointLightComponent* Light, const FVector& Direction, float Lux)
 	{
 		const FVector At = Direction.GetSafeNormal() * Distance * 1.2f;
 		const float Metres = static_cast<float>(At.Size()) / 100.f;
@@ -306,8 +316,7 @@ void AAedirItemPreview::Turn(const FVector2D& Delta)
 	// Sideways turns it about the upright axis, up and down tips it towards or away from the viewer.
 	const FQuat Yaw(FRotator(0.f, static_cast<float>(-Delta.X) * PreviewTurnDegreesPerPixel, 0.f));
 	const FQuat Pitch(FRotator(static_cast<float>(Delta.Y) * PreviewTurnDegreesPerPixel, 0.f, 0.f));
-	Spin = (Yaw * Pitch * Spin).GetNormalized();
-	PlaceCameraAndLights();
+	TargetSpin = (Yaw * Pitch * TargetSpin).GetNormalized();
 }
 
 void AAedirItemPreview::Zoom(float Steps)
@@ -316,16 +325,22 @@ void AAedirItemPreview::Zoom(float Steps)
 	{
 		return;
 	}
-	ZoomFactor = FMath::Clamp(ZoomFactor * FMath::Pow(PreviewZoomPerStep, Steps), PreviewZoomNearest, PreviewZoomFurthest);
-	PlaceCameraAndLights();
+	TargetDistance = FMath::Clamp(TargetDistance * FMath::Pow(PreviewZoomPerStep, Steps), NearestDistance, NearestDistance * PreviewFurthestDistance);
 }
 
-void AAedirItemPreview::Capture()
+void AAedirItemPreview::Capture(float DeltaSeconds)
 {
-	if (HasModel() && Texture && Camera->IsRegistered())
+	if (!HasModel() || !Texture || !Camera->IsRegistered())
 	{
-		Camera->CaptureScene();
+		return;
 	}
+
+	// The same share of the remaining way every frame, as FMath::FInterpTo takes it: quick at first, settling softly.
+	const float TurnShare = FMath::Clamp(DeltaSeconds * PreviewTurnFollowSpeed, 0.f, 1.f);
+	Spin = FQuat::Slerp(Spin, TargetSpin, TurnShare).GetNormalized();
+	Distance = FMath::FInterpTo(Distance, TargetDistance, DeltaSeconds, PreviewZoomFollowSpeed);
+	PlaceCameraAndLights();
+	Camera->CaptureScene();
 }
 
 void SAedirItemPreviewView::Construct(const FArguments& InArgs)
@@ -343,13 +358,14 @@ int32 SAedirItemPreviewView::OnPaint(const FPaintArgs& Args, const FGeometry& Al
 	}
 
 	// A soft dark ground behind the model, so it stands clear of the world behind the menu without a frame.
+	// The area is wider than tall; the ground is round under the square picture, not stretched across the whole area.
 	const FVector2f Size = AllottedGeometry.GetLocalSize();
+	const float Side = FMath::Min(Size.X, Size.Y);
 	FAedirUIMesh Ground(1.f / FMath::Max(AllottedGeometry.Scale, UE_KINDA_SMALL_NUMBER));
-	AedirUIStyle::AddGlow(Ground, Size * 0.5f, Size * 0.5f, FLinearColor(0.f, 0.f, 0.f, 0.6f));
+	AedirUIStyle::AddGlow(Ground, Size * 0.5f, FVector2f(Side, Side) * 0.5f, FLinearColor(0.f, 0.f, 0.f, 0.6f));
 	AedirUIStyle::DrawMesh(OutDrawElements, LayerId, AllottedGeometry, Ground, InWidgetStyle.GetColorAndOpacityTint().A);
 
 	// The capture's alpha says how much of a pixel is empty: inverted it lays the model over the menu with soft, clear edges.
-	const float Side = FMath::Min(Size.X, Size.Y);
 	Brush.SetResourceObject(Picture);
 	Brush.ImageSize = FVector2D(static_cast<double>(Picture->SizeX), static_cast<double>(Picture->SizeY));
 	Brush.DrawAs = ESlateBrushDrawType::Image;
