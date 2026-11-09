@@ -14,6 +14,8 @@
 
 namespace
 {
+	// The most of the arms' rest turn in towards the body that balance and running take away.
+	constexpr float AedirArmMaxSpreadShare = 0.35f;
 	TAutoConsoleVariable<int32> CVarAedirBodyBulk(TEXT("aedir.BodyBulk"), 1, TEXT("Thicken the trunk and thighs of strong bodies by scaling their bones (1) or not (0)."));
 	constexpr float AedirObjectPalmShare = 0.55f;
 	constexpr float AedirObjectContactDownShare = 0.6f;
@@ -30,7 +32,7 @@ namespace
 	// At a full run (the run spread at its most, 0.6) the free hand is turned about 20 degrees in.
 	constexpr float AedirRunWristInwardDegrees = 34.f;
 	// A bent elbow carries the forearm in across the belly, as a runner's does.
-	constexpr float AedirForearmInwardShare = 0.22f;
+	constexpr float AedirForearmInwardShare = 0.6f;
 	constexpr float AedirClavicleFollowShare = 0.25f;
 	constexpr float AedirReachAlphaThreshold = 0.001f;
 	constexpr float AedirElbowOutwardDistance = 60.f;
@@ -392,7 +394,9 @@ void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FB
 	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
 	if (Humerus.IsValid())
 	{
-		RotateBone(CSPose, Humerus, ActorRotationToMesh(FRotator(ArmSwingDegrees + ArmRestForwardDegrees * RestAlpha, 0.f, RestRollDegrees * RestAlpha * (1.f - 3.f * GaitData.ArmBalanceSpread - GaitData.ArmRunSpread)).Quaternion()));
+		// Off balance or running the arms come away from the body a little, never out to the sides like a scarecrow's.
+		const float Spread = FMath::Min(3.f * GaitData.ArmBalanceSpread + GaitData.ArmRunSpread, AedirArmMaxSpreadShare);
+		RotateBone(CSPose, Humerus, ActorRotationToMesh(FRotator(ArmSwingDegrees + ArmRestForwardDegrees * RestAlpha, 0.f, RestRollDegrees * RestAlpha * (1.f - Spread)).Quaternion()));
 	}
 
 	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);

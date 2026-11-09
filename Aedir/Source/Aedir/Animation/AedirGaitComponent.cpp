@@ -15,6 +15,8 @@
 
 namespace
 {
+	// Share of its swing left to an arm carrying a weapon.
+	constexpr float AedirArmedArmSwingShare = 0.15f;
 	constexpr float AedirSwingTwistInterpSpeed = 16.f;
 	// A turn of the chest starts from the hips. A fist adds its weight forward.
 	constexpr float AedirSwingPelvisShare = 0.3f;
@@ -618,6 +620,17 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.ArmSwingRight = FMath::Sin(2.f * UE_PI * (Phase - ArmPhaseLag)) * ArmAmplitude;
 	GaitState.ArmSwingLeft *= 1.f - LeftReachAlpha;
 	GaitState.ArmSwingRight *= 1.f - RightReachAlpha;
+	// A hand with a weapon in it is carried steady and hardly swings; the free one swings for both.
+	if (const UAedirInteractionComponent* Hands = CreatureOwner ? CreatureOwner->Interaction.Get() : nullptr)
+	{
+		const auto Armed = [Hands](EAedirHand Hand)
+		{
+			const AAedirItemActor* Item = Hands->GetHeldItem(Hand);
+			return Item && Item->ItemClass == EAedirItemClass::Weapon;
+		};
+		GaitState.ArmSwingLeft *= Armed(EAedirHand::Left) ? AedirArmedArmSwingShare : 1.f;
+		GaitState.ArmSwingRight *= Armed(EAedirHand::Right) ? AedirArmedArmSwingShare : 1.f;
+	}
 	const float BalanceNow = BalanceComponent ? BalanceComponent->GetBalance() : 1.f;
 	GaitState.ArmBalanceSpread = FMath::FInterpTo(GaitState.ArmBalanceSpread, FMath::Clamp((0.85f - BalanceNow) / 0.5f, 0.f, 1.f), DeltaTime, 10.f);
 	GaitState.ArmRunSpread = RunBlend * RunArmSpreadShare;

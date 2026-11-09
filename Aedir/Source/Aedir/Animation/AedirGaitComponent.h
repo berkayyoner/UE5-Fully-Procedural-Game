@@ -461,7 +461,7 @@ public:
 
 	// Share of the arms' rest inward turn given up at a full run: running, the arms swing a little further from the body.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float RunArmSpreadShare = 0.6f;
+	float RunArmSpreadShare = 0.1f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ArmSideScale = 0.4f;
@@ -480,7 +480,7 @@ public:
 	float ElbowBendWalkDegrees = 5.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float ElbowBendRunDegrees = 48.f;
+	float ElbowBendRunDegrees = 65.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float KneeBendMaxDegrees = 40.f;
