@@ -33,8 +33,12 @@ namespace
 	constexpr float FoliageBareCheckBelowCm = 30.f;
 	constexpr float FoliageFlowerShare = 0.12f;
 	constexpr float FoliageCrushSeconds = 0.1f;
-	constexpr float FoliageCrushRadiusCm = 32.f;
-	constexpr float FoliageCrushFootHeightCm = 60.f;
+	// Only what is under a foot that is down on the ground is pressed, a little more for every moment the foot stands on
+	// it, and it bends down over a moment rather than at once.
+	constexpr float FoliageCrushRadiusCm = 16.f;
+	constexpr float FoliageCrushFootHeightCm = 14.f;
+	constexpr float FoliagePressPerStep = 0.35f;
+	constexpr float FoliageBendPerSecond = 2.5f;
 	constexpr float FoliageFlatZ = 0.3f;
 	constexpr float FoliageHoldSeconds = 7.f;
 	constexpr float FoliageRisePerSecond = 0.1f;
@@ -533,10 +537,14 @@ void UAedirFoliageSubsystem::CrushUnderFeet()
 						Entry.Mesh = Patch;
 						Entry.Instance = Instance;
 						Entry.StandingZ = static_cast<float>(Now.GetScale3D().Z);
-						Entry.Share = 1.f;
+						Entry.Pressed = FoliagePressPerStep;
 						Entry.HoldSeconds = FoliageHoldSeconds;
 						CrushedKeys.Add(Key);
-						SetInstanceFlatness(Entry);
+					}
+					else if (FCrushed* Entry = Crushed.FindByPredicate([Patch, Instance](const FCrushed& Each) { return Each.Mesh.Get() == Patch && Each.Instance == Instance; }))
+					{
+						Entry->Pressed = FMath::Min(Entry->Pressed + FoliagePressPerStep * FoliageCrushSeconds, 1.f);
+						Entry->HoldSeconds = FoliageHoldSeconds;
 					}
 				}
 			}
@@ -565,8 +573,14 @@ void UAedirFoliageSubsystem::Recover(float DeltaTime)
 		Entry.HoldSeconds -= DeltaTime;
 		if (Entry.HoldSeconds > 0.f)
 		{
+			if (Entry.Share < Entry.Pressed)
+			{
+				Entry.Share = FMath::Min(Entry.Share + FoliageBendPerSecond * DeltaTime, Entry.Pressed);
+				SetInstanceFlatness(Entry);
+			}
 			continue;
 		}
+		Entry.Pressed = 0.f;
 		Entry.Share = FMath::Max(Entry.Share - FoliageRisePerSecond * DeltaTime, 0.f);
 		SetInstanceFlatness(Entry);
 		if (Entry.Share <= 0.f)

@@ -48,6 +48,8 @@ private:
 		int32 Instance = 0;
 		float StandingZ = 1.f;
 		float Share = 0.f;
+		// How far the steps on it have pressed it down; it bends there over a moment.
+		float Pressed = 0.f;
 		float HoldSeconds = 0.f;
 	};
 
