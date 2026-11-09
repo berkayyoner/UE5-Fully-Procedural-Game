@@ -17,6 +17,8 @@ namespace
 	// from its middle towards the point, and the pommel lies this share of the grip beyond the hand's place on it.
 	constexpr double ItemHaftedBoxY = 0.035;
 	constexpr float ItemMurderHoldShare = 0.12f;
+	// A piece worn on the arm that is this thin for its width is a shield.
+	constexpr float ItemShieldThinShare = 0.3f;
 	constexpr float ItemPommelBeyondGripShare = 0.6f;
 	// Where armour leaves a body bare, in cm from the bone the blow landed on: the face in front of the head below the brow,
 	// under the arm where it meets the trunk, and high on the sides under the arms.
@@ -221,7 +223,10 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 	}
 	const FVector Palm = HandLocation + (RefLocation(TEXT("middle_01")) - HandLocation) * HandGripPalmShare + PalmNormal * HandGripPalmDepthCm;
 
-	const FQuat ItemRotation = FRotationMatrix::MakeFromXY(KnuckleAxis, FingerAxis).ToQuat();
+	// A shield is gripped by the bar behind its boss: the fist goes into the boss and the face stands across the way the
+	// knuckles point, its round side out.
+	const bool bShield = ItemClass == EAedirItemClass::Armor && ArmorZone == EAedirBodyZone::Arm && BodyScale.Z < ItemShieldThinShare * FMath::Min(BodyScale.X, BodyScale.Y);
+	const FQuat ItemRotation = bShield ? FRotationMatrix::MakeFromXZ(KnuckleAxis, FingerAxis).ToQuat() : FRotationMatrix::MakeFromXY(KnuckleAxis, FingerAxis).ToQuat();
 	// A reversed blade lies end for end in the hand, turned about the palm.
 	const FQuat Turn = GripTurn == EGripTurn::Reversed ? FQuat(FVector::UpVector, UE_PI) : FQuat::Identity;
 	const FQuat RelativeRotation = HandRotation.Inverse() * ItemRotation * Turn;

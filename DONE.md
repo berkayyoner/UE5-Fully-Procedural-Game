@@ -144,3 +144,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - X only changes hands (the kick is on C); a two-handed weapon in one hand can be passed too.
 - Belt back to the cross draw: a hand hangs its weapon on the opposite hip, the first slot in front of the hip with the hilt leaning in across the belly, and reaches it across the body.
 - Stance arms stay in the room in front of the body: the mouse's whole travel maps onto 72 degrees out, 50 across, 60 up and 55 down (was 100/55/78/75), so a raised blade no longer lies back behind the head and two-handed arms do not cross over it. The wrist bends back at most 125 degrees from the forearm, so a carried blade follows the arm instead of the wrist breaking outward.
+- A shield held in the hand is gripped by the bar behind its boss: its face stands across the way the knuckles point, round side out, instead of lying on the palm like a plate with the hand on its outside.
