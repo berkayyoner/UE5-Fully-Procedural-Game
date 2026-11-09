@@ -1370,6 +1370,11 @@ void AAedirPlayerCharacter::LayDecal(const FString& Args)
 	RunDevCommand(TEXT("LayDecal"), Args, false);
 }
 
+void AAedirPlayerCharacter::Dent(const FString& Args)
+{
+	RunDevCommand(TEXT("Dent"), Args, false);
+}
+
 void AAedirPlayerCharacter::ArmourInfo()
 {
 	RunDevCommand(TEXT("ArmourInfo"), FString(), false);

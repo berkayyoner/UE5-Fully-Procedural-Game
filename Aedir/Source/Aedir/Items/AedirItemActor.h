@@ -111,6 +111,10 @@ public:
 	// How much of a blow of this kind the armour takes where it lands, or nothing where it does not cover.
 	FAedirArmorHit GetArmorAt(FName Bone, const FVector& Point, EAedirDamageType Type, const AActor* Wearer) const;
 
+	// How battered the armour is, 0 to 1: every hard blow on metal bends it in a little, and bent it takes less of the next.
+	float ArmorWear = 0.f;
+	void TakeArmorBlow(float EnergyJoules);
+
 	// Armor only. Manny bone that the armor is attached to while worn.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Armor")
 	FName ArmorAttachBone = NAME_None;

@@ -8,6 +8,9 @@
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirGroupSubsystem.h"
 #include "Creature/AedirStatsComponent.h"
+#include "Components/DecalComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/World.h"
 #include "Engine/HitResult.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -352,6 +355,18 @@ namespace
 	// a hard bare-headed blow takes most of them and a second one knocks a man down senseless.
 	constexpr float AedirSensesFreeJoules = 12.f;
 	constexpr float AedirSensesPerJoule = 0.32f;
+	// A dent shows on plate from a blow this hard; a helmet is knocked off by one harder than this, the more likely the harder,
+	// up to this chance, and flies off at this speed and lift.
+	constexpr float AedirDentShowJoules = 70.f;
+	constexpr float AedirHelmetOffFromJoules = 180.f;
+	constexpr float AedirHelmetOffSpreadJoules = 500.f;
+	constexpr float AedirHelmetOffMaxChance = 0.6f;
+	constexpr float AedirHelmetOffSpeed = 250.f;
+	constexpr float AedirHelmetOffLift = 150.f;
+	constexpr float AedirDentDepthCm = 4.f;
+	constexpr float AedirDentRadiusMinCm = 2.5f;
+	constexpr float AedirDentRadiusMaxCm = 6.f;
+	constexpr float AedirDentJoulesPerCm = 120.f;
 	constexpr float AedirLodgeChopShare = 0.6f;
 	constexpr double AedirLodgeHaftedBoxY = 0.035;
 	constexpr float AedirCutBiteKeep = 0.4f;
@@ -2821,6 +2836,20 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	UE_CLOG(Victim->Interaction && Victim->Interaction->HasWornArmor(), LogAedir, Log, TEXT("Armour: %s on %s took %.0f%% (%s)"),
 		StruckAs == EAedirDamageType::Slash ? TEXT("edge") : StruckAs == EAedirDamageType::Pierce ? TEXT("point") : TEXT("blunt"), *Bone.ToString(), VictimZoneProtection * 100.f,
 		!Armour.bCovered ? TEXT("bare") : Armour.Material == EAedirArmorMaterial::Plate ? TEXT("plate") : Armour.Material == EAedirArmorMaterial::Mail ? TEXT("mail") : TEXT("padding"));
+	// Metal takes the blow and bends: the piece is battered for the next one, plate shows the dent where it landed, and a
+	// helmet struck hard enough is knocked off the head.
+	if (AAedirItemActor* Piece = Cast<AAedirItemActor>(Armour.PieceActor.Get()); Piece && Armour.bCovered && IsAuthoritative())
+	{
+		Piece->TakeArmorBlow(Energy);
+		if (Armour.Material == EAedirArmorMaterial::Plate && Energy > AedirDentShowJoules)
+		{
+			MulticastArmourDent(Victim, Bone, Hit.ImpactPoint, Hit.ImpactNormal, Energy);
+		}
+		if (Piece->ArmorZone == EAedirBodyZone::Head && Victim->Interaction && FMath::FRand() < FMath::Clamp((Energy - AedirHelmetOffFromJoules) / AedirHelmetOffSpreadJoules, 0.f, AedirHelmetOffMaxChance))
+		{
+			Victim->Interaction->KnockOffWorn(Piece, TipVelocity.GetSafeNormal() * AedirHelmetOffSpeed + FVector(0.f, 0.f, AedirHelmetOffLift));
+		}
+	}
 	// A blow to the head shakes the senses by what of it gets through: a helmet turns an edge, but the jolt of the blow
 	// reaches the head under it all the same, half through plate.
 	if (Zone == EAedirBodyZone::Head && Victim->Stats)
@@ -4065,4 +4094,29 @@ void UAedirCombatComponent::ServerUpdateArmAim_Implementation(EAedirHand Hand, F
 		FMath::Clamp(Aim.X, -AedirArmAimYawLimit, AedirArmAimYawLimit),
 		FMath::Clamp(Aim.Y, AedirArmAimPitchMin, AedirArmAimPitchMax));
 	Arm.Extension = FMath::Clamp(Extension, 0.f, 1.f);
+}
+
+void UAedirCombatComponent::MulticastArmourDent_Implementation(AAedirCreature* Victim, FName Bone, FVector_NetQuantize Point, FVector_NetQuantizeNormal Normal, float EnergyJoules)
+{
+	USkeletalMeshComponent* Body = Victim ? Victim->GetMesh() : nullptr;
+	static TWeakObjectPtr<UMaterialInterface> DentMaterial;
+	if (!DentMaterial.IsValid())
+	{
+		DentMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/Aedir/Materials/M_ArmourDent.M_ArmourDent"), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	}
+	if (!Body || !DentMaterial.IsValid() || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	// The dent is pressed into whatever lies outermost at the place: the plate over the body.
+	UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(DentMaterial.Get(), Victim);
+	Material->SetScalarParameterValue(TEXT("Depth"), FMath::Clamp(EnergyJoules / 300.f, 0.4f, 1.2f));
+	Material->SetScalarParameterValue(TEXT("Seed"), FMath::FRandRange(0.f, 10.f));
+	const float Radius = FMath::Clamp(AedirDentRadiusMinCm + EnergyJoules / AedirDentJoulesPerCm, AedirDentRadiusMinCm, AedirDentRadiusMaxCm);
+	FRotator Rotation = FRotationMatrix::MakeFromX(-FVector(Normal)).Rotator();
+	Rotation.Roll = FMath::FRandRange(0.f, 360.f);
+	if (UDecalComponent* Dent = UGameplayStatics::SpawnDecalAttached(Material, FVector(AedirDentDepthCm, Radius, Radius), Body, Bone, FVector(Point), Rotation, EAttachLocation::KeepWorldPosition, 0.f))
+	{
+		Dent->SetFadeScreenSize(0.f);
+	}
 }

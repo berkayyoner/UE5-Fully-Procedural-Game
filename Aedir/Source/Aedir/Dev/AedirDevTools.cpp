@@ -289,6 +289,45 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 			DevToolsReport(FString::Printf(TEXT("Decal %s laid in front"), *Path));
 		}
 	}
+	else if (Command == TEXT("Dent"))
+	{
+		// A blow of so many joules on the front of a bone, as the armour there takes it: Dent <bone> <joules>.
+		const TArray<FString> Tokens = DevToolsTokens(Args);
+		const FName Bone(Tokens.IsValidIndex(0) ? *Tokens[0] : TEXT("spine_04"));
+		const float Joules = Tokens.IsValidIndex(1) ? FCString::Atof(*Tokens[1]) : 200.f;
+		USkeletalMeshComponent* Body = Player->GetMesh();
+		const FVector Front = Player->GetActorForwardVector();
+		FVector Point = Body->GetBoneLocation(Bone) + Front * 15.f;
+		FVector Normal = Front;
+		FHitResult Skin;
+		if (Body->LineTraceComponent(Skin, Point + Front * 30.f, Body->GetBoneLocation(Bone), FCollisionQueryParams(SCENE_QUERY_STAT(AedirDevDent), false)))
+		{
+			Point = Skin.ImpactPoint;
+			Normal = Skin.ImpactNormal;
+		}
+		const FAedirArmorHit Hit = Player->Interaction ? Player->Interaction->GetArmorAt(Bone, Point, EAedirDamageType::Blunt) : FAedirArmorHit();
+		if (AAedirItemActor* Piece = Cast<AAedirItemActor>(Hit.PieceActor.Get()))
+		{
+			Piece->TakeArmorBlow(Joules);
+			Player->Combat->MulticastArmourDent(Player, Bone, Point, Normal, Joules);
+			DevToolsReport(FString::Printf(TEXT("%s dented with %.0f J: wear %.2f, takes %.0f%% of a blunt blow now"), *Piece->GetName(), Joules, Piece->ArmorWear,
+				Player->Interaction->GetArmorAt(Bone, Point, EAedirDamageType::Blunt).Protection * 100.f));
+		}
+		else
+		{
+			DevToolsReport(FString::Printf(TEXT("No armour on %s"), *Bone.ToString()));
+		}
+		// "off": the piece is knocked off as a hard blow to it would.
+		if (Tokens.IsValidIndex(2) && Tokens[2] == TEXT("off"))
+		{
+			const FAedirArmorHit Back = Player->Interaction->GetArmorAt(Bone, Body->GetBoneLocation(Bone) - Front * 12.f, EAedirDamageType::Blunt);
+			if (AAedirItemActor* Piece = Cast<AAedirItemActor>(Back.PieceActor.Get()))
+			{
+				Player->Interaction->KnockOffWorn(Piece, Front * -250.f + FVector(0.f, 0.f, 150.f));
+				DevToolsReport(FString::Printf(TEXT("%s knocked off"), *Piece->GetName()));
+			}
+		}
+	}
 	else if (Command == TEXT("ArmourInfo"))
 	{
 		// What the worn armour takes of an edge, a point and a blunt blow on each part of the body, struck from the front, the

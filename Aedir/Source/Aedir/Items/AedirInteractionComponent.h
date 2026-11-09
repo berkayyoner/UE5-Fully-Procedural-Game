@@ -254,6 +254,9 @@ public:
 	FAedirArmorHit GetArmorAt(FName Bone, const FVector& Point, EAedirDamageType Type) const;
 	bool HasWornArmor() const { return !WornItems.IsEmpty(); }
 
+	// A blow knocks a worn piece off the body: it flies off with this speed and lies where it falls.
+	void KnockOffWorn(AAedirItemActor* Item, const FVector& Velocity);
+
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	FAedirHandSlot LeftSlot;
 

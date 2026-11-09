@@ -425,6 +425,10 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Combat")
 	bool IsInFightStance() const;
 
+	// A dent shown where a blow landed on plate, on every machine.
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastArmourDent(class AAedirCreature* Victim, FName Bone, FVector_NetQuantize Point, FVector_NetQuantizeNormal Normal, float EnergyJoules);
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Combat")
 	bool GetGuardPose(EAedirHand Hand, float& OutAlpha) const;
 

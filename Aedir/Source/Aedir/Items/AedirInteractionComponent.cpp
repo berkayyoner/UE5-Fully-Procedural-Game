@@ -1909,6 +1909,25 @@ TArray<AAedirItemActor*> UAedirInteractionComponent::GetWornItemsCopy() const
 	return Copy;
 }
 
+void UAedirInteractionComponent::KnockOffWorn(AAedirItemActor* Item, const FVector& Velocity)
+{
+	AAedirCreature* Creature = GetCreature();
+	const int32 WornIndex = WornItems.IndexOfByKey(Item);
+	if (!IsAuthoritative() || !Creature || !Item || WornIndex == INDEX_NONE)
+	{
+		return;
+	}
+	WornItems.RemoveAt(WornIndex);
+	Item->TakeOff();
+	Item->Detach(Velocity);
+	if (Creature->Combat)
+	{
+		Creature->Combat->SetArmorProtection(Item->ArmorZone, GetWornArmorProtection(Item->ArmorZone));
+	}
+	UpdateCarriedWeight();
+	UE_LOG(LogAedir, Log, TEXT("%s's %s is knocked off"), *Creature->GetName(), *Item->GetName());
+}
+
 void UAedirInteractionComponent::TakeOffWorn(int32 WornIndex)
 {
 	if (!IsAuthoritative())

@@ -39,6 +39,7 @@ struct FAedirArmorHit
 	bool bCovered = false;
 	EAedirArmorMaterial Material = EAedirArmorMaterial::Soft;
 	FName Piece = NAME_None;
+	TWeakObjectPtr<class AActor> PieceActor;
 };
 
 UENUM(BlueprintType)

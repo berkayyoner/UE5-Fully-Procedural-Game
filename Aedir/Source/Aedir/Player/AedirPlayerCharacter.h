@@ -292,6 +292,10 @@ public:
 	UFUNCTION(Exec)
 	void ArmourInfo();
 
+	// A blow of so many joules on the armour over a bone: Dent <bone> <joules>.
+	UFUNCTION(Exec)
+	void Dent(const FString& Args);
+
 	// Turns the weapon in the hand to its next way of holding, as the R key does.
 	UFUNCTION(Exec)
 	void TurnWeapon();

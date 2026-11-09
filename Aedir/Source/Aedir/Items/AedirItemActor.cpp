@@ -26,6 +26,11 @@ namespace
 	constexpr float ArmorArmpitInsideCm = 2.f;
 	constexpr float ArmorSideGapCm = 13.f;
 	constexpr float ArmorMaxTake = 0.97f;
+	// Metal shrugs off blows below this; past it, this many joules all told bend a piece through, and bent through it takes
+	// this much less of a blow.
+	constexpr float ArmorDentFromJoules = 60.f;
+	constexpr float ArmorWearJoules = 2500.f;
+	constexpr float ArmorWearLoss = 0.4f;
 	// Welding a held item onto the hand's body leaves its size in the welded shape's transform, which breaks the physics'
 	// queries and contacts on it; the hand carries its weight by force and its blade stops by the held sweep instead.
 	TAutoConsoleVariable<int32> CVarAedirWeldHeld(TEXT("aedir.WeldHeld"), 0, TEXT("Make a held item part of the hand's physical body."));
@@ -449,11 +454,22 @@ FAedirArmorHit AAedirItemActor::GetArmorAt(FName Bone, const FVector& Point, EAe
 	const int32 TypeIndex = Type == EAedirDamageType::Slash ? 0 : Type == EAedirDamageType::Pierce ? 1 : 2;
 	// The make counts for less than the material: thin plate is still plate.
 	const float Make = FMath::Clamp(ArmorProtection / Usual[MaterialIndex], 0.85f, 1.1f);
-	Hit.Protection = FMath::Min(Takes[MaterialIndex][TypeIndex] * Make, ArmorMaxTake);
+	Hit.Protection = FMath::Min(Takes[MaterialIndex][TypeIndex] * Make, ArmorMaxTake) * (1.f - ArmorWearLoss * ArmorWear);
 	Hit.bCovered = true;
 	Hit.Material = ArmorMaterial;
 	Hit.Piece = GetFName();
+	Hit.PieceActor = const_cast<AAedirItemActor*>(this);
 	return Hit;
+}
+
+void AAedirItemActor::TakeArmorBlow(float EnergyJoules)
+{
+	// Padding does not bend; metal does, a little for every blow past what it shrugs off.
+	if (ArmorMaterial == EAedirArmorMaterial::Soft || EnergyJoules <= ArmorDentFromJoules)
+	{
+		return;
+	}
+	ArmorWear = FMath::Min(ArmorWear + (EnergyJoules - ArmorDentFromJoules) / ArmorWearJoules, 1.f);
 }
 
 FVector AAedirItemActor::GetGripWorld() const
