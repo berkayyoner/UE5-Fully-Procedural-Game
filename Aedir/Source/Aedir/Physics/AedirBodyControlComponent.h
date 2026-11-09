@@ -25,35 +25,35 @@ public:
 
 	// How quickly each part is pulled back to the pose, in Hz at full strength: a higher number is a stiffer muscle.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float SpineStrength = 11.f;
+	float SpineStrength = 17.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float HeadStrength = 7.f;
+	float HeadStrength = 11.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float ArmStrength = 13.f;
+	float ArmStrength = 18.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float LegStrength = 10.f;
+	float LegStrength = 14.f;
 
 	// The hips' hold on the capsule: where they are and how they are turned.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float HipLinearStrength = 10.f;
+	float HipLinearStrength = 15.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float HipAngularStrength = 7.f;
+	float HipAngularStrength = 11.f;
 
 	// How strongly the trunk and head are turned upright in the world, in Hz.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float PostureStrength = 9.f;
+	float PostureStrength = 14.f;
 
 	// How strongly each foot is pulled to where the pose sets it, in Hz.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float FootStrength = 10.f;
+	float FootStrength = 6.f;
 
 	// Share of its weight a body carries while standing at full strength; down it carries all of it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float StandingGravity = 0.5f;
+	float StandingGravity = 0.4f;
 
 	// How hard the hips are lifted while getting up, against how hard they are held standing: the legs and arms do not yet
 	// carry the body, so the hips' muscles lift all of it.
@@ -74,6 +74,16 @@ public:
 
 	// Every frame: how strong the body holds itself up (0..1), and how strong each arm is.
 	void SetStrengths(float Upright, float LeftArm, float RightArm);
+
+	// The leg throwing a kick (0 left, 1 right, -1 none): its foot is driven along the kick much harder than a step.
+	void SetKickLeg(int32 Leg);
+
+	// How much harder a kicking foot is driven than a stepping one.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float KickFootShare = 5.f;
+
+	// Every frame: how much what each hand holds slows its arm (1 for an empty hand).
+	void SetArmLoads(float Left, float Right);
 
 	// Getting up off the ground: the hips stay physical and are lifted by their control, the legs push on the ground.
 	void SetRising(bool bInRising);
@@ -114,11 +124,15 @@ private:
 	TArray<FName> PostureControls;
 	TArray<FName> FootControls;
 	TArray<FName> LegModifiers;
+	TArray<FName> LegBones;
 	TArray<FName> HeadControls;
 	TArray<FName> LeftArmControls;
 	TArray<FName> RightArmControls;
 	TArray<FName> LegControls;
 	FName HipControl;
+	FName LeftFootControl;
+	FName RightFootControl;
+	int32 KickLeg = -1;
 	FPhysicsControlData HipData;
 	FName HipModifier;
 	FName LeftFootModifiers[2];
@@ -134,5 +148,8 @@ private:
 	float Upright = 1.f;
 	float LeftArmShare = 1.f;
 	float RightArmShare = 1.f;
-	float AppliedKey = -1.f;
+	float LeftLoadShare = 1.f;
+	float RightLoadShare = 1.f;
+	double AppliedKey = -1.0;
+	float AppliedTuning = 0.f;
 };

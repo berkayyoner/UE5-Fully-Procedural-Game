@@ -24,7 +24,12 @@ namespace
 {
 	constexpr float AedirWoundPulseSeconds = 0.8f;
 	// How much more than its cutting energy a single blow needs to take off a limb that has not been hurt yet.
-	constexpr float AedirSeverSoundLimbScale = 3.f;
+	// A cut counts towards taking a limb off from this share of what parts it; the limb gives once its cuts add up to this
+	// share, or at once to a single blow of this share; an injured limb needs this share of it.
+	constexpr float AedirSeverGoodCutShare = 0.6f;
+	constexpr float AedirSeverWearShare = 2.2f;
+	constexpr float AedirSeverOneBlowShare = 3.f;
+	constexpr float AedirSeverInjuredShare = 0.7f;
 	constexpr int32 AedirWoundPulseDrops = 5;
 	constexpr float AedirWoundPoolSeconds = 1.5f;
 	constexpr float AedirWoundPoolGrowth = 0.25f;
@@ -364,14 +369,23 @@ bool UAedirWoundComponent::TrySever(FName HitBone, const FVector& PlanePoint, co
 		return false;
 	}
 
-	// A sound limb takes several good cuts before it parts: one blow alone has to be far beyond what cuts it through. Every
-	// blow it has taken weakens it, until a last ordinary one takes it off. Armour turns most of an edge.
+	// As in a real fight, a limb is not taken off by any blade that touches it. A cut has to be a good one, a fair share of
+	// what parts that joint, and the limb has to have taken enough such cuts before it gives: every edge that bites wears it,
+	// a glancing touch does not count. Only a blow far beyond what parts it, a heavy axe swung with the whole body, takes it
+	// at once. An injured limb gives sooner; armour turns most of an edge.
 	const AAedirCreature* Owner = Cast<AAedirCreature>(GetOwner());
 	EAedirLimb Limb;
 	const float Injury = Owner && Owner->Combat && UAedirCombatComponent::GetBoneLimb(Bone, Limb) ? Owner->Combat->GetLimbInjury(Limb) : 0.f;
-	const float Needed = AedirSever::GetSeverJoules(Bone) * FMath::Lerp(AedirSeverSoundLimbScale, 1.f, FMath::Clamp(Injury, 0.f, 1.f))
-		/ FMath::Max(1.f - ArmorProtection, 0.1f);
-	if (EnergyJoules < Needed)
+	const float Through = FMath::Max(1.f - ArmorProtection, 0.1f);
+	const float Needed = AedirSever::GetSeverJoules(Bone) * FMath::Lerp(1.f, AedirSeverInjuredShare, FMath::Clamp(Injury, 0.f, 1.f)) / Through;
+	if (EnergyJoules < Needed * AedirSeverGoodCutShare)
+	{
+		return false;
+	}
+	float& Wear = CutWear.FindOrAdd(Bone);
+	Wear += EnergyJoules;
+	UE_LOG(LogAedir, Log, TEXT("%s: %s cut with %.0f J, worn %.0f of %.0f"), *GetNameSafe(GetOwner()), *Bone.ToString(), EnergyJoules, Wear, Needed * AedirSeverWearShare);
+	if (Wear < Needed * AedirSeverWearShare && EnergyJoules < Needed * AedirSeverOneBlowShare)
 	{
 		return false;
 	}

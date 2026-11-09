@@ -156,6 +156,11 @@ FSlateFontInfo AedirUIStyle::RegularFont(float Size, int32 LetterSpacing)
 	return UIStyleFont(TEXT("Regular"), Size, LetterSpacing);
 }
 
+FSlateFontInfo AedirUIStyle::BoldFont(float Size, int32 LetterSpacing)
+{
+	return UIStyleFont(TEXT("Bold"), Size, LetterSpacing);
+}
+
 FSlateFontInfo AedirUIStyle::TitleFont(float Size)
 {
 	return UIStyleFont(TEXT("Light"), Size, UIStyleTitleSpacing);

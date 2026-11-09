@@ -77,6 +77,23 @@ public:
 
 	float LastLookInputSeconds = 100.f;
 
+	// Whether holding a guard locks the view on a target; Caps Lock turns it on and off.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	bool bLockOnEnabled = true;
+
+	// How far, and how far off the line of sight, a creature can be to be locked on to.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnRangeCm = 1100.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnConeDegrees = 35.f;
+
+	// How quickly the view turns to the locked target.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnTurnSpeed = 7.f;
+
+	TWeakObjectPtr<class AAedirCreature> LockOnTarget;
+
 	FVector CameraRelative = FVector::ZeroVector;
 	FVector CameraPelvisBaseline = FVector::ZeroVector;
 	bool bCameraStateInitialized = false;
@@ -469,6 +486,11 @@ private:
 	UFUNCTION(Server, Reliable)
 	void ServerSendNpc(AAedirNpc* Npc, const FVector& Where, AAedirItemActor* Item);
 	void HandleKickPressed();
+	void HandleLockOnTogglePressed();
+
+	// Lock-on: while a guard is held the camera keeps the nearest creature the view points at in sight.
+	void UpdateLockOn(float DeltaSeconds);
+	class AAedirCreature* FindLockOnTarget() const;
 	void HandleThrustPressed();
 	void HandleThrustReleased();
 	void HandleDynamicKickPressed();

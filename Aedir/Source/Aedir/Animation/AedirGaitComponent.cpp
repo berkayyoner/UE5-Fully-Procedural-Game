@@ -45,6 +45,11 @@ namespace
 	constexpr float AedirMinStrideLength = 10.f;
 	constexpr float AedirStepHeightClearance = 4.f;
 	constexpr float AedirMinStepTriggerCm = 14.f;
+	// Setting off from standing: from this speed, below this share of the walking speed, and once the feet are this far behind.
+	constexpr float AedirSetOffMinSpeed = 4.f;
+	constexpr float AedirSetOffMaxWalkShare = 0.6f;
+	constexpr float AedirSetOffStepTriggerCm = 1.5f;
+	constexpr float AedirSetOffStandSeconds = 0.25f;
 	constexpr float AedirTurnStepTriggerCm = 10.f;
 	constexpr float AedirRestStepTriggerCm = 14.f;
 	constexpr float AedirOutOfTurnStepShare = 1.4f;
@@ -62,8 +67,8 @@ namespace
 	constexpr float AedirFootDropWalkMaxCm = 16.f;
 	constexpr float AedirFootDropRunMaxCm = 6.f;
 	constexpr float AedirStairMinSpeedScale = 0.6f;
-	constexpr float AedirFootDropDownSpeed = 20.f;
-	constexpr float AedirFootDropUpSpeed = 8.f;
+	constexpr float AedirFootDropDownSpeed = 7.f;
+	constexpr float AedirFootDropUpSpeed = 2.5f;
 	constexpr float AedirMinGaitCyclesPerSecond = 0.5f;
 	constexpr float AedirSlowStrideMinScale = 0.8f;
 	constexpr float JumpWindupPeakAt = 0.6f;
@@ -169,7 +174,12 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float SpeedAlpha = MaxGroundSpeed > KINDA_SMALL_NUMBER ? FMath::Clamp(Speed2D / MaxGroundSpeed, 0.f, 1.f) : 0.f;
 	// In the air the legs hang and tuck: no stepping, no target search.
 	const bool bAirborne = MovementComponent->IsFalling();
-	const bool bMoving = !bAirborne && Speed2D > MovingSpeedThreshold;
+	// Setting off: the body is pushed the way it wants to go and has only just begun to move. The first step is taken at once,
+	// as a walker leans into it, not once the body has already been carried past its feet.
+	const FVector InputAcceleration = MovementComponent->GetCurrentAcceleration();
+	const bool bSettingOff = !bAirborne && Speed2D > AedirSetOffMinSpeed && Speed2D < MovementComponent->WalkSpeed * AedirSetOffMaxWalkShare
+		&& FVector::DotProduct(InputAcceleration.GetSafeNormal2D(), Velocity.GetSafeNormal2D()) > 0.5f;
+	const bool bMoving = !bAirborne && (Speed2D > MovingSpeedThreshold || bSettingOff);
 	const bool bTurning = !bAirborne && MovementComponent->IsTurningInPlace();
 	// A falling centre of mass requests a stumble step, which also starts a step from standing.
 	FVector RecoveryDirection = FVector::ZeroVector;
@@ -289,7 +299,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	{
 		const float CycleSeconds = EffectiveStride / FMath::Max(Speed2D, 1.f);
 		const float MovingStepSeconds = FMath::Clamp(CycleSeconds * SwingFraction, AedirMinStepSeconds, AedirMaxStepSeconds);
-		const float Trigger = bMoving ? StepTriggerCm : (bTurning ? AedirTurnStepTriggerCm : AedirRestStepTriggerCm) * ActorScale;
+		const bool bFirstStep = bSettingOff && !bFootInAir && FMath::Min(PlantedSeconds[0], PlantedSeconds[1]) > AedirSetOffStandSeconds;
+		const float Trigger = bFirstStep ? AedirSetOffStepTriggerCm * ActorScale : (bMoving ? StepTriggerCm : (bTurning ? AedirTurnStepTriggerCm : AedirRestStepTriggerCm) * ActorScale);
 		const float StepSeconds = bMoving ? MovingStepSeconds : AedirPlaceStepSeconds;
 
 		const auto FootDistance = [&](int32 Foot)
@@ -304,7 +315,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const bool bMayOverlap = Speed2D > WalkSpeedCm * AedirOverlapMinWalkShare || bRecovering || (BalanceComponent && BalanceComponent->IsStaggering());
 		const bool bDoubleSupportDone = PlantedSeconds[LaterFoot] >= CycleSeconds * FMath::Max(0.5f - SwingFraction, 0.f);
 		const bool bNextMayStep = !bSwinging[NextStepFoot]
-			&& (bSwinging[LaterFoot] ? (bMayOverlap && bLaterLanding && FootDistance(NextStepFoot) >= Trigger * AedirLandingOverlapShare) : (bMayOverlap || bDoubleSupportDone));
+			&& (bSwinging[LaterFoot] ? (bMayOverlap && bLaterLanding && FootDistance(NextStepFoot) >= Trigger * AedirLandingOverlapShare) : (bMayOverlap || bDoubleSupportDone || bFirstStep));
 
 		if (bRecovering && !bFootInAir && (RecoveryCooldownRemaining <= 0.f || RecoveryUrgency > 0.7f))
 		{
@@ -609,6 +620,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.ArmSwingRight *= 1.f - RightReachAlpha;
 	const float BalanceNow = BalanceComponent ? BalanceComponent->GetBalance() : 1.f;
 	GaitState.ArmBalanceSpread = FMath::FInterpTo(GaitState.ArmBalanceSpread, FMath::Clamp((0.85f - BalanceNow) / 0.5f, 0.f, 1.f), DeltaTime, 10.f);
+	GaitState.ArmRunSpread = RunBlend * RunArmSpreadShare;
 	const auto ReadWeaponAim = [Combat, DeltaTime](EAedirHand Hand, FVector& OutDirection, float& OutAlpha)
 	{
 		FVector Direction = FVector::ForwardVector;

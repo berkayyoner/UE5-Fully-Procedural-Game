@@ -4,6 +4,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
+#include "Physics/AedirBalanceComponent.h"
 #include "Engine/OverlapResult.h"
 #include "Engine/World.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -26,9 +27,13 @@ namespace
 	constexpr float BodyGrabStiffnessBase = 40000.f;
 	constexpr float BodyGrabStiffnessPerStrength = 400.f;
 	constexpr float BodyGrabDampingShare = 0.08f;
-	constexpr float BodyGrabTearCm = 100.f;
-	constexpr float BodyGrabDragFromCm = 45.f;
-	constexpr float BodyGrabTearSeconds = 0.35f;
+	constexpr float BodyGrabTearCm = 32.f;
+	constexpr float BodyGrabDragFromCm = 14.f;
+	constexpr float BodyGrabTearSeconds = 0.12f;
+	// A living body pulled by the hand: how hard it is drawn after the hand, and how much of its balance that costs.
+	constexpr float BodyGrabLivePullPerCm = 22.f;
+	constexpr float BodyGrabLivePullMax = 420.f;
+	constexpr float BodyGrabLiveBalancePerSecond = 0.35f;
 	constexpr float BodyGrabCloseCm = 22.f;
 	constexpr float BodyGrabReachSeconds = 2.f;
 	// A grown man drags a body of his own weight over grass, about 400 N of friction, at a walk; a strong one easily.
@@ -309,6 +314,26 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 				Movement->Velocity -= Away * (Outward * Hold);
 			}
 		}
+		// A living body standing on its feet is not dragged by its limbs alone: the pull reaches its whole body, which gives
+		// a little, the more the stronger the hand and the lighter the body, and is thrown off balance by it.
+		AAedirCreature* Held = Cast<AAedirCreature>(Grab.Target.IsValid() ? Grab.Target->GetOwner() : nullptr);
+		if (Held && Held != Creature && Held->Balance && !Held->Balance->IsRagdoll() && Gap > BodyGrabCloseCm * 0.5f)
+		{
+			const FVector Pull = (HandWorld - Point).GetSafeNormal2D();
+			const float HeldStrength = Held->Stats ? FMath::Max(Held->Stats->Strength, 1.f) : 10.f;
+			const float Share = FMath::Clamp(Strength / (Strength + HeldStrength), 0.2f, 0.8f) * FMath::Lerp(0.5f, 1.f, StaminaShare);
+			const float Accel = FMath::Min((Gap - BodyGrabCloseCm * 0.5f) * BodyGrabLivePullPerCm, BodyGrabLivePullMax) * Share;
+			if (UCharacterMovementComponent* HeldMovement = Held->GetCharacterMovement())
+			{
+				HeldMovement->AddImpulse(Pull * Accel * DeltaTime, true);
+			}
+			if (IsAuthoritative())
+			{
+				Held->Balance->ApplyBalanceImpact(Pull, BodyGrabLiveBalancePerSecond * Share * FMath::Clamp(Gap / BodyGrabTearCm, 0.f, 1.f) * DeltaTime);
+			}
+		}
+
+		// Whatever the hand cannot keep up with tears out of it: a load too heavy to carry is dropped once the hand is pulled off it.
 		Grab.TearSeconds = Gap > BodyGrabTearCm ? Grab.TearSeconds + DeltaTime : 0.f;
 		if (Grab.TearSeconds >= BodyGrabTearSeconds)
 		{

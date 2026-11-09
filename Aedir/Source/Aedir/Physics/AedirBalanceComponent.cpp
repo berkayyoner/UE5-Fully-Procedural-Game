@@ -56,6 +56,9 @@ namespace
 	constexpr float AedirPlantedFootLift = 0.12f;
 	// A frame longer than the physics steps through (six substeps of a sixtieth of a second).
 	constexpr float AedirBodyHitchSeconds = 0.1f;
+	// The mass an arm moves by itself, and the strength at which a held load weighs what it weighs.
+	constexpr float AedirArmKilos = 4.f;
+	constexpr float AedirArmLoadStrengthRef = 10.f;
 	// How much further the hips may stray from the pose while getting up before it costs balance.
 	constexpr float AedirGetUpDriftFreeScale = 2.f;
 	// How long a body that was just carried over is left to arrive.
@@ -473,6 +476,30 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	const UAedirCombatComponent* Combat = Creature ? Creature->Combat.Get() : nullptr;
 	const float LeftArm = 1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::LeftArm) : 0.f);
 	const float RightArm = 1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::RightArm) : 0.f);
+	// What a hand holds slows its arm as a muscle of fixed force would be slowed by the extra mass: an arm of a few kilos
+	// swings a light blade almost as fast as nothing, a heavy one much more slowly; strength makes the load lighter, and one
+	// thing held in both hands is shared between them.
+	const UAedirInteractionComponent* Interaction = Creature ? Creature->Interaction.Get() : nullptr;
+	const float StrengthScale = Creature && Creature->Stats ? AedirArmLoadStrengthRef / FMath::Max(Creature->Stats->Strength, 1.f) : 1.f;
+	const auto LoadShare = [Interaction, StrengthScale](EAedirHand Hand)
+	{
+		const AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(Hand) : nullptr;
+		if (!Item)
+		{
+			return 1.f;
+		}
+		const bool bShared = Interaction->GetHeldItem(EAedirHand::Left) == Interaction->GetHeldItem(EAedirHand::Right);
+		const float Kilos = FMath::Max(Item->Weight, 0.f) * (bShared ? 0.5f : 1.f) * StrengthScale;
+		return FMath::Sqrt(AedirArmKilos / (AedirArmKilos + Kilos));
+	};
+	BodyControl->SetArmLoads(LoadShare(EAedirHand::Left), LoadShare(EAedirHand::Right));
+	{
+		bool bKickLeft = false;
+		FVector KickFoot = FVector::ZeroVector;
+		float KickAlpha = 0.f;
+		const bool bKicking = Combat && Combat->IsKicking() && Combat->GetKickPose(bKickLeft, KickFoot, KickAlpha);
+		BodyControl->SetKickLeg(bKicking ? (bKickLeft ? 0 : 1) : -1);
+	}
 	const float Upright = GetUprightStrength();
 	// A crouch remakes the capsule's physical body at its new size: the hips are tied to the new one.
 	const float CapsuleHalfHeight = BodyCapsule ? BodyCapsule->GetUnscaledCapsuleHalfHeight() : 0.f;

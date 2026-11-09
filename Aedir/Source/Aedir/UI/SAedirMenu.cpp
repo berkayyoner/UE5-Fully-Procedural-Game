@@ -10,6 +10,7 @@
 #include "Items/AedirItemActor.h"
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
+#include "UI/AedirItemPreview.h"
 #include "UI/AedirJournalSubsystem.h"
 #include "UI/AedirUIStyle.h"
 #include "Widgets/Layout/SBorder.h"
@@ -39,6 +40,9 @@ namespace
 	constexpr float MenuDetailTitleFontSize = 30.f;
 	constexpr float MenuProgressWidth = 360.f;
 	constexpr float MenuProgressHeight = 12.f;
+	// The turning model of an item stands in the middle of the right side, above the item card.
+	constexpr float MenuPreviewSize = 560.f;
+	constexpr float MenuPreviewTop = 84.f;
 
 	FSlateFontInfo MenuLabelFont(float Size)
 	{
@@ -663,6 +667,24 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 		]
 		+ SOverlay::Slot()
 		[
+			SNew(SHorizontalBox)
+			.Visibility(EVisibility::SelfHitTestInvisible)
+			+ SHorizontalBox::Slot()
+			.FillWidth(MenuListFraction)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.f - MenuListFraction)
+			.HAlign(HAlign_Center)
+			.VAlign(VAlign_Top)
+			.Padding(FMargin(0.f, MenuPreviewTop, 0.f, 0.f))
+			[
+				SAssignNew(PreviewView, SAedirItemPreviewView)
+				.DesiredSize(FVector2D(MenuPreviewSize, MenuPreviewSize))
+				.Cursor(EMouseCursor::GrabHand)
+				.Visibility_Lambda([this]() { return GetPreviewVisibility(); })
+			]
+		]
+		+ SOverlay::Slot()
+		[
 			SNew(SCanvas)
 			.Visibility(EVisibility::SelfHitTestInvisible)
 			+ SCanvas::Slot()
@@ -695,6 +717,16 @@ void SAedirMenu::Construct(const FArguments& InArgs)
 	];
 
 	RefreshView(true);
+}
+
+SAedirMenu::~SAedirMenu()
+{
+	AAedirItemPreview* Studio = Preview.Get();
+	const UWorld* World = Studio ? Studio->GetWorld() : nullptr;
+	if (IsValid(Studio) && World && !World->bIsTearingDown)
+	{
+		Studio->Destroy();
+	}
 }
 
 void SAedirMenu::SetCategory(int32 NewCategory)
@@ -825,6 +857,75 @@ void SAedirMenu::Tick(const FGeometry& AllottedGeometry, const double InCurrentT
 	}
 
 	RefreshView(false);
+	UpdatePreview();
+}
+
+void SAedirMenu::UpdatePreview()
+{
+	AAedirItemActor* Wanted = nullptr;
+	if (CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory))
+	{
+		// The row under the mouse shows its item; while the model is being turned or the mouse rests on it, it stays; otherwise the
+		// selected row's item shows, so the keyboard sees it too.
+		const int32 Hovered = GetHoveredRow();
+		AAedirItemPreview* Shown = Preview.Get();
+		const bool bKeep = PreviewView.IsValid() && (PreviewView->IsTurning() || PreviewView->IsHovered()) && Shown && Shown->HasModel();
+		if (Rows.IsValidIndex(Hovered))
+		{
+			Wanted = GetRowItem(Rows[Hovered]);
+		}
+		else if (bKeep)
+		{
+			Shown->Capture();
+			return;
+		}
+		else if (Rows.IsValidIndex(SelectedRow))
+		{
+			Wanted = GetRowItem(Rows[SelectedRow]);
+		}
+	}
+
+	AAedirItemPreview* Studio = Preview.Get();
+	if (!IsValid(Wanted))
+	{
+		if (Studio)
+		{
+			Studio->ShowItem(nullptr);
+		}
+		return;
+	}
+
+	if (!Studio)
+	{
+		UWorld* World = Creature.IsValid() ? Creature->GetWorld() : nullptr;
+		if (!World)
+		{
+			return;
+		}
+		FActorSpawnParameters Params;
+		Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		Params.ObjectFlags |= RF_Transient;
+		Studio = World->SpawnActor<AAedirItemPreview>(AAedirItemPreview::GetStudioLocation(), FRotator::ZeroRotator, Params);
+		Preview = Studio;
+		if (!Studio)
+		{
+			return;
+		}
+		if (PreviewView.IsValid())
+		{
+			PreviewView->SetPreview(Studio);
+		}
+	}
+
+	Studio->ShowItem(Wanted);
+	Studio->Capture();
+}
+
+EVisibility SAedirMenu::GetPreviewVisibility() const
+{
+	const AAedirItemPreview* Studio = Preview.Get();
+	const bool bShows = CurrentCategory == static_cast<int32>(EAedirMenuCategory::Inventory) && Studio && Studio->HasModel();
+	return bShows ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 TArray<FAedirMenuRow> SAedirMenu::BuildRows() const

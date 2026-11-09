@@ -1,4 +1,5 @@
 #include "AedirPlayerCharacter.h"
+#include "Travel/AedirTravelSubsystem.h"
 #include "EngineUtils.h"
 #include "LandscapeProxy.h"
 #include "Components/DecalComponent.h"
@@ -267,6 +268,7 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		}
 	}
 
+	UpdateLockOn(DeltaSeconds);
 	UpdateTutorialObjectives();
 	UpdateHandUseHold(DeltaSeconds);
 	UpdateSwingInput(DeltaSeconds);
@@ -332,6 +334,99 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::Tilde, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
 	PlayerInputComponent->BindKey(EKeys::Quote, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
 	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AAedirPlayerCharacter::HandleDynamicKickPressed);
+	PlayerInputComponent->BindKey(EKeys::CapsLock, IE_Pressed, this, &AAedirPlayerCharacter::HandleLockOnTogglePressed);
+}
+
+void AAedirPlayerCharacter::HandleLockOnTogglePressed()
+{
+	bLockOnEnabled = !bLockOnEnabled;
+	LockOnTarget.Reset();
+	if (const APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		if (UAedirTravelSubsystem* Travel = PlayerController->GetLocalPlayer() ? PlayerController->GetLocalPlayer()->GetSubsystem<UAedirTravelSubsystem>() : nullptr)
+		{
+			Travel->ShowNotification(bLockOnEnabled ? NSLOCTEXT("Aedir", "LockOnOn", "Target lock on") : NSLOCTEXT("Aedir", "LockOnOff", "Target lock off"), 2.f);
+		}
+	}
+}
+
+AAedirCreature* AAedirPlayerCharacter::FindLockOnTarget() const
+{
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	if (!PlayerController || !GetWorld())
+	{
+		return nullptr;
+	}
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	const FVector Look = ViewRotation.Vector();
+	const float MinCos = FMath::Cos(FMath::DegreesToRadians(LockOnConeDegrees));
+
+	// The living creature nearest to where the view points, among those close enough; a little further away counts a little.
+	AAedirCreature* Best = nullptr;
+	float BestScore = TNumericLimits<float>::Max();
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		AAedirCreature* Other = *It;
+		if (!Other || Other == this || (Other->Stats && Other->Stats->IsDead()))
+		{
+			continue;
+		}
+		const FVector Chest = Other->GetActorLocation() + FVector(0.f, 0.f, 40.f);
+		const FVector To = Chest - ViewLocation;
+		const float Distance = static_cast<float>((Other->GetActorLocation() - GetActorLocation()).Size());
+		const float Cos = static_cast<float>(FVector::DotProduct(To.GetSafeNormal(), Look));
+		if (Distance > LockOnRangeCm || Cos < MinCos)
+		{
+			continue;
+		}
+		const float Score = FMath::Acos(FMath::Clamp(Cos, -1.f, 1.f)) + Distance / LockOnRangeCm * 0.25f;
+		if (Score < BestScore)
+		{
+			BestScore = Score;
+			Best = Other;
+		}
+	}
+	return Best;
+}
+
+void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
+{
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	const bool bGuard = Combat && Combat->IsInFightStance();
+	const bool bDown = Balance && (Balance->IsRagdoll() || Balance->IsGettingUp());
+	if (!bLockOnEnabled || !bGuard || bDown || !PlayerController || IsMenuOpen())
+	{
+		LockOnTarget.Reset();
+		return;
+	}
+
+	AAedirCreature* Target = LockOnTarget.Get();
+	const bool bLost = !Target || (Target->Stats && Target->Stats->IsDead()) || FVector::Dist(Target->GetActorLocation(), GetActorLocation()) > LockOnRangeCm * 1.4f;
+	if (bLost)
+	{
+		Target = FindLockOnTarget();
+		LockOnTarget = Target;
+	}
+	if (!Target)
+	{
+		return;
+	}
+
+	// The view turns to the target's chest, or where its body lies, and keeps it there while the guard is held.
+	FVector Aim = Target->GetActorLocation() + FVector(0.f, 0.f, 30.f);
+	if (const USkeletalMeshComponent* TargetMesh = Target->GetMesh(); TargetMesh && TargetMesh->GetBoneIndex(TEXT("spine_03")) != INDEX_NONE)
+	{
+		Aim = TargetMesh->GetBoneLocation(TEXT("spine_03"));
+	}
+	FVector ViewLocation;
+	FRotator ViewRotation;
+	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
+	const FRotator Want = (Aim - ViewLocation).Rotation();
+	FRotator Control = PlayerController->GetControlRotation();
+	const FRotator Turned = FMath::RInterpTo(Control, FRotator(FMath::Clamp(FRotator::NormalizeAxis(Want.Pitch), MinViewPitch, MaxViewPitch), Want.Yaw, Control.Roll), DeltaSeconds, LockOnTurnSpeed);
+	PlayerController->SetControlRotation(FRotator(Turned.Pitch, Turned.Yaw, Control.Roll));
 }
 
 void AAedirPlayerCharacter::ApplyViewPitchLimits()

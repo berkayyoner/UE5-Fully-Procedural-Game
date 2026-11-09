@@ -104,9 +104,19 @@ void AAedirCreature::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// The player's body has a bit of its own; the others share four, so a weapon can tell its own body from anyone else's.
+	// The body is solid to every other body, held weapon, corpse and loose thing: it is a physics body of its own, and only the
+	// capsules, which carry the bodies about, pass through it.
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		Body->SetCollisionObjectType(ECC_PhysicsBody);
+		Body->SetCollisionResponseToAllChannels(ECR_Block);
+		Body->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+		Body->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	}
+
+	// The player's body has a bit of its own; the others share seven, so a weapon can tell its own body from anyone else's.
 	static uint8 NextCreatureBit = 0;
-	BodyMaskBit = IsPlayerControlled() ? 1 : static_cast<uint8>(1 << (1 + NextCreatureBit++ % 4));
+	BodyMaskBit = IsPlayerControlled() ? 1 : static_cast<uint8>(1 << (1 + NextCreatureBit++ % 7));
 	ApplyBodyMask();
 
 	if (Stats)

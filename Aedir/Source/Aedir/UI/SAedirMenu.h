@@ -6,6 +6,8 @@
 
 class AAedirCreature;
 class AAedirItemActor;
+class AAedirItemPreview;
+class SAedirItemPreviewView;
 class SBorder;
 class SScrollBox;
 class SVerticalBox;
@@ -108,6 +110,7 @@ public:
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
+	virtual ~SAedirMenu() override;
 
 	void SetCategory(int32 NewCategory);
 	void SetInventoryTab(int32 NewTab);
@@ -150,8 +153,13 @@ private:
 	FLinearColor GetTabColor(int32 Index) const;
 	float GetRowMarker(int32 Index) const;
 	FLinearColor GetRowTextColor(int32 Index) const;
+	// The item under the mouse, or the selected one, is shown turning on the right in the inventory.
+	void UpdatePreview();
+	EVisibility GetPreviewVisibility() const;
 
 	TWeakObjectPtr<AAedirCreature> Creature;
+	TWeakObjectPtr<AAedirItemPreview> Preview;
+	TSharedPtr<SAedirItemPreviewView> PreviewView;
 	FSimpleDelegate CloseDelegate;
 
 	int32 CurrentCategory = 0;

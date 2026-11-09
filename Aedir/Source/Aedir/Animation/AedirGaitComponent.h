@@ -65,6 +65,10 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float ArmBalanceSpread = 0.f;
 
+	// 0..1, how much of the arms' rest inward turn is given up while running.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float ArmRunSpread = 0.f;
+
 	// Direction of the blade in each hand and how far the hand turns to it. Zero alpha when no weapon is up.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	FVector LeftWeaponDirWorld = FVector::ForwardVector;
@@ -383,7 +387,7 @@ public:
 	float HipRunLoweringCm = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float HipBounceCm = 3.f;
+	float HipBounceCm = 2.f;
 
 	// Factor on the pelvis bounce at a full run.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
@@ -450,10 +454,14 @@ public:
 	FVector GuardHandOffsetRight = FVector(30.f, 16.f, 50.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxArmSwingWalkDegrees = 12.f;
+	float MaxArmSwingWalkDegrees = 9.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxArmSwingRunDegrees = 36.f;
+	float MaxArmSwingRunDegrees = 27.f;
+
+	// Share of the arms' rest inward turn given up at a full run: running, the arms swing a little further from the body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float RunArmSpreadShare = 0.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float ArmSideScale = 0.4f;

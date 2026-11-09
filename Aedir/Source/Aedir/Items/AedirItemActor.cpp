@@ -373,6 +373,23 @@ void AAedirItemActor::Detach(const FVector& ThrowVelocity)
 	ApplyStowed(false);
 	HeldGripShiftCm = 0.f;
 
+	// Let go in the middle of a swing, it flies on as the hand was carrying it: the speed of the hand's body at the item and
+	// the hand's spin go with it, on top of any toss.
+	FVector CarriedVelocity = ThrowVelocity;
+	FVector CarriedSpin = FVector::ZeroVector;
+	{
+		const USkeletalMeshComponent* HandMesh = Cast<USkeletalMeshComponent>(GetRootComponent() ? GetRootComponent()->GetAttachParent() : nullptr);
+		const FName HandBone = GetRootComponent() ? GetRootComponent()->GetAttachSocketName() : NAME_None;
+		const FBodyInstance* HandBody = HandMesh ? HandMesh->GetBodyInstance(HandMesh->GetSocketBoneName(HandBone)) : nullptr;
+		if (HandBody && HandBody->IsInstanceSimulatingPhysics())
+		{
+			const FVector Center = Mesh ? FVector(Mesh->Bounds.Origin) : GetActorLocation();
+			const FVector HolderVelocity = Holder ? Holder->GetVelocity() : FVector::ZeroVector;
+			CarriedVelocity = HandBody->GetUnrealWorldVelocityAtPoint(Center) + (ThrowVelocity - HolderVelocity);
+			CarriedSpin = HandBody->GetUnrealWorldAngularVelocityInRadians();
+		}
+	}
+
 	SetActorTickEnabled(false);
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	if (Holder)
@@ -386,7 +403,8 @@ void AAedirItemActor::Detach(const FVector& ThrowVelocity)
 	SetFreePhysics(true);
 	if (Mesh)
 	{
-		Mesh->SetPhysicsLinearVelocity(ThrowVelocity);
+		Mesh->SetPhysicsLinearVelocity(CarriedVelocity);
+		Mesh->SetPhysicsAngularVelocityInRadians(CarriedSpin);
 	}
 }
 

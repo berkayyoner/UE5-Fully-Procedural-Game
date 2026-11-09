@@ -93,6 +93,7 @@ int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const F
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Physics/AedirBalanceComponent.h"
+#include "Physics/AedirBodyControlComponent.h"
 #include "TimerManager.h"
 #include "Player/AedirPlayerCharacter.h"
 #include "UObject/Class.h"
@@ -798,6 +799,12 @@ void UAedirDevTools::GaitInfo(AAedirPlayerCharacter* Player, const FString& Args
 		UE_LOG(LogAedir, Display, TEXT("[GaitInfo]   trunkLean=%.1f pelvisAhead=%.1f chestAhead=%.1f pelvisZ=%.1f | pose pelvisPitch=%.1f spinePitch=%.1f hipZ=%.1f"),
 			TrunkLean, Ahead(TEXT("pelvis")), Ahead(TEXT("spine_05")), Height(TEXT("pelvis")),
 			State.PelvisRotation.Pitch, State.SpineLeanPitch, State.HipOffsetZ);
+		// The hips against the capsule: where they are, and where the pose holds them.
+		if (const UAedirBodyControlComponent* Body = Player->FindComponentByClass<UAedirBodyControlComponent>(); Body && Body->IsReady())
+		{
+			UE_LOG(LogAedir, Display, TEXT("[GaitInfo]   hipRel=%.1f poseRel=%.1f capZ=%.1f"), Mesh->GetBoneLocation(FName(TEXT("pelvis"))).Z - ActorLocation.Z,
+				Body->GetPoseLocation(TEXT("pelvis")).Z - ActorLocation.Z, ActorLocation.Z);
+		}
 
 		*Elapsed += Interval;
 		if (*Elapsed >= Seconds)

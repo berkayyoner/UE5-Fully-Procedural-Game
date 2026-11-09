@@ -35,8 +35,8 @@ namespace
 	constexpr float HudTalkRangeCm = 300.f;
 	constexpr float HudTargetGap = 10.f;
 	constexpr float HudTargetFontSize = 14.f;
-	constexpr float HudSubtitleFontSize = 19.f;
-	constexpr float HudSubtitleWidthShare = 0.62f;
+	constexpr float HudSubtitleFontSize = 15.f;
+	constexpr float HudSubtitleWidthShare = 0.5f;
 	constexpr float HudSubtitleBottomMargin = 170.f;
 	constexpr int32 HudSubtitleMaxLines = 2;
 	constexpr float HudTargetBarWidth = 300.f;

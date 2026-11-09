@@ -1099,7 +1099,12 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 		const bool bCarryingObject = Slot.State == EAedirHandState::Holding && Slot.Item && Slot.Item->ItemClass == EAedirItemClass::Object
 			&& GetSlot(GetOtherHand(Hand)).State == EAedirHandState::Holding && GetSlot(GetOtherHand(Hand)).Item == Slot.Item;
 		const bool bHolsterMotion = HolsterMotion[Index] != EAedirHolsterMotion::None;
-		const bool bPassGiver = IsPassingHeld(Hand);
+		// The hand holding a weapon the other hand reaches for, to take it or to join it on the grip, brings it to meet that hand
+		// before the chest rather than holding still while the other arm crosses the body after it.
+		const FAedirHandSlot& OtherSlot = GetSlot(GetOtherHand(Hand));
+		const AAedirItemActor* Held = GetHeldItem(Hand);
+		const bool bJoinGiver = Held && Held->ItemClass == EAedirItemClass::Weapon && OtherSlot.State == EAedirHandState::Reaching && OtherSlot.Item.Get() == Held;
+		const bool bPassGiver = IsPassingHeld(Hand) || bJoinGiver;
 		const bool bPassTaker = IsPassingHeld(GetOtherHand(Hand));
 		const bool bConsumable = Slot.State == EAedirHandState::Holding && Slot.Item && Slot.Item->IsConsumable() && !bHolsterMotion;
 		if (Slot.State == EAedirHandState::Reaching || bCarryingObject || bHolsterMotion || bPassGiver || bConsumable)

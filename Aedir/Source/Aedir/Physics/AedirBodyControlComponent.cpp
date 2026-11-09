@@ -17,6 +17,8 @@ static TAutoConsoleVariable<float> CVarAedirBodyFoot(TEXT("aedir.BodyFoot"), -1.
 
 static TAutoConsoleVariable<float> CVarAedirBodyHips(TEXT("aedir.BodyHips"), -1.f, TEXT("Hz of the hips' hold on the capsule; below 0 uses the component's own."));
 
+static TAutoConsoleVariable<float> CVarAedirBodySpine(TEXT("aedir.BodySpine"), -1.f, TEXT("Hz of the spine's joints; below 0 uses the component's own."));
+
 static TAutoConsoleVariable<float> CVarAedirBodyRise(TEXT("aedir.BodyRise"), -1.f, TEXT("How hard the hips are lifted getting up, against standing; below 0 uses the component's own."));
 
 namespace
@@ -74,6 +76,7 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	PostureControls.Reset();
 	FootControls.Reset();
 	LegModifiers.Reset();
+	LegBones.Reset();
 	HeadControls.Reset();
 	LeftArmControls.Reset();
 	RightArmControls.Reset();
@@ -111,17 +114,11 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 			continue;
 		}
 		const EAedirBodyPart Part = BodyPartOf(Bone);
-		// Standing, the legs are set on the ground by the steps: the floor, a step's edge or a weapon hanging at the side
-		// would only push them out of place. Down, they lie on the ground like everything else.
-		FPhysicsControlModifierData PartData = Simulated;
-		if (Part == EAedirBodyPart::Leg)
-		{
-			PartData.CollisionType = bLimp || bRising ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::QueryOnly;
-		}
-		const FName Modifier = Control->CreateBodyModifier(Mesh, Bone, TEXT("Body"), PartData);
+		const FName Modifier = Control->CreateBodyModifier(Mesh, Bone, TEXT("Body"), Simulated);
 		if (Part == EAedirBodyPart::Leg)
 		{
 			LegModifiers.Add(Modifier);
+			LegBones.Add(Bone);
 		}
 		const FString BoneText = Bone.ToString();
 		if (Part == EAedirBodyPart::Hips)
@@ -154,7 +151,9 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 			// A foot finds where the pose sets it down, in the world: the leg's joints alone carry it too late.
 			FPhysicsControlData Step = Muscle;
 			Step.LinearStrength = 1.f;
-			FootControls.Add(Control->CreateControl(nullptr, NAME_None, Mesh, Bone, Step, FPhysicsControlTarget(), TEXT("Feet")));
+			const FName Foot = Control->CreateControl(nullptr, NAME_None, Mesh, Bone, Step, FPhysicsControlTarget(), TEXT("Feet"));
+			FootControls.Add(Foot);
+			(BoneText == TEXT("foot_l") ? LeftFootControl : RightFootControl) = Foot;
 		}
 		if (Part == EAedirBodyPart::Spine || Part == EAedirBodyPart::Head)
 		{
@@ -176,6 +175,7 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	HipData.LinearStrength = 1.f;
 	HipData.MaxForce = 0.f;
 	HipControl = NAME_None;
+	ApplyLegContacts();
 	RebindHips(InCapsule);
 	AppliedKey = -1.f;
 	ApplyMultipliers();
@@ -189,6 +189,23 @@ void UAedirBodyControlComponent::SetStrengths(float InUpright, float LeftArm, fl
 	LeftArmShare = FMath::Clamp(LeftArm, 0.f, 1.f);
 	RightArmShare = FMath::Clamp(RightArm, 0.f, 1.f);
 	ApplyMultipliers();
+}
+
+void UAedirBodyControlComponent::SetArmLoads(float Left, float Right)
+{
+	LeftLoadShare = FMath::Clamp(Left, 0.1f, 1.f);
+	RightLoadShare = FMath::Clamp(Right, 0.1f, 1.f);
+	ApplyMultipliers();
+}
+
+void UAedirBodyControlComponent::SetKickLeg(int32 Leg)
+{
+	if (KickLeg != Leg)
+	{
+		KickLeg = Leg;
+		AppliedKey = -1.0;
+		ApplyMultipliers();
+	}
 }
 
 void UAedirBodyControlComponent::SetAirborne(bool bInAirborne)
@@ -228,11 +245,17 @@ void UAedirBodyControlComponent::ApplyLegContacts()
 	{
 		return;
 	}
-	// Down, or pushing up off the ground on hands and knees, the legs bear on it; standing, the steps set them.
-	const ECollisionEnabled::Type Contact = bLimp || bRising ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::QueryOnly;
-	for (const FName& Modifier : LegModifiers)
+	// Down, or pushing up off the ground on hands and knees, the legs bear on the ground. Standing, the steps set them on it:
+	// the floor or a step's edge would only push them out of place, so they pass the fixed world, but they stay solid to other
+	// bodies, the dead, weapons and loose things, which can no more pass through a standing man's legs than through his trunk.
+	const ECollisionResponse World = bLimp || bRising ? ECR_Block : ECR_Ignore;
+	for (const FName& Bone : LegBones)
 	{
-		Control->SetBodyModifierCollisionType(Modifier, Contact);
+		if (FBodyInstance* Body = Mesh ? Mesh->GetBodyInstance(Bone) : nullptr)
+		{
+			Body->SetResponseToChannel(ECC_WorldStatic, World);
+			Body->SetResponseToChannel(ECC_WorldDynamic, World);
+		}
 	}
 }
 
@@ -333,12 +356,19 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 		return;
 	}
 	// Only when something changed enough to matter.
-	const float Key = (bLimp ? 1000.f : 0.f) + (bHipsCarried ? 2000.f : 0.f) + (bAirborne ? 4000.f : 0.f) + (bRising ? 8000.f : 0.f) + FMath::RoundToFloat(Upright * 50.f) + FMath::RoundToFloat(LeftArmShare * 50.f) * 0.01f + FMath::RoundToFloat(RightArmShare * 50.f) * 0.0001f;
-	if (FMath::IsNearlyEqual(Key, AppliedKey))
+	const auto Step = [](float Share) { return static_cast<double>(FMath::RoundToInt(Share * 50.f)); };
+	const double Key = (bLimp ? 1.0 : 0.0) + (bHipsCarried ? 2.0 : 0.0) + (bAirborne ? 4.0 : 0.0) + (bRising ? 8.0 : 0.0)
+		+ 16.0 * (Step(Upright) + 64.0 * (Step(LeftArmShare) + 64.0 * (Step(RightArmShare) + 64.0 * (Step(LeftLoadShare) + 64.0 * Step(RightLoadShare)))));
+	// A tuning console variable changed counts as a change too.
+	const float Tuning = CVarAedirBodyPosture.GetValueOnGameThread() + 3.f * CVarAedirBodyGravity.GetValueOnGameThread() + 7.f * CVarAedirBodyFoot.GetValueOnGameThread()
+		+ 13.f * CVarAedirBodyHips.GetValueOnGameThread() + 17.f * CVarAedirBodyRise.GetValueOnGameThread() + 19.f * CVarAedirBodySpine.GetValueOnGameThread();
+	if (Key == AppliedKey && Tuning == AppliedTuning)
 	{
 		return;
 	}
 	AppliedKey = Key;
+	AppliedTuning = Tuning;
+	const float SpineHz = CVarAedirBodySpine.GetValueOnGameThread() >= 0.f ? CVarAedirBodySpine.GetValueOnGameThread() : SpineStrength;
 
 	const float Body = bLimp ? LimpShare : FMath::Lerp(0.35f, 1.f, Upright);
 	const auto Apply = [this](const TArray<FName>& Names, float AngularHz, float LinearHz)
@@ -351,11 +381,11 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 			Control->SetControlMultiplier(Name, Multiplier, true);
 		}
 	};
-	Apply(SpineControls, SpineStrength * Body, 0.f);
+	Apply(SpineControls, SpineHz * Body, 0.f);
 	Apply(HeadControls, HeadStrength * Body, 0.f);
 	Apply(LegControls, LegStrength * Body, 0.f);
-	Apply(LeftArmControls, ArmStrength * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare)), 0.f);
-	Apply(RightArmControls, ArmStrength * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare)), 0.f);
+	Apply(LeftArmControls, ArmStrength * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare), 0.f);
+	Apply(RightArmControls, ArmStrength * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare), 0.f);
 	// Down, the hips are free; carried, the pose places them and the control rests.
 	const bool bHold = !bLimp && !bHipsCarried;
 	const float Hips = CVarAedirBodyHips.GetValueOnGameThread() >= 0.f ? CVarAedirBodyHips.GetValueOnGameThread() : HipLinearStrength;
@@ -374,6 +404,11 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	}
 	const float Foot = CVarAedirBodyFoot.GetValueOnGameThread() >= 0.f ? CVarAedirBodyFoot.GetValueOnGameThread() : FootStrength;
 	Apply(FootControls, bLimp ? 0.f : Foot * Body, bLimp ? 0.f : Foot * Body);
+	// A kicking foot is thrown along its arc by the whole leg, much harder than a step sets a foot down.
+	if (!bLimp && KickLeg >= 0)
+	{
+		Apply({ KickLeg == 0 ? LeftFootControl : RightFootControl }, Foot * Body * KickFootShare, Foot * Body * KickFootShare);
+	}
 	for (const FName& Name : FootControls)
 	{
 		Control->SetControlEnabled(Name, !bLimp && Foot > 0.f);

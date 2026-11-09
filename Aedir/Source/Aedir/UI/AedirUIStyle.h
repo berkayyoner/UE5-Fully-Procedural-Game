@@ -81,9 +81,12 @@ namespace AedirUIStyle
 		return FLinearColor(Color.R, Color.G, Color.B, Color.A * AlphaMultiplier);
 	}
 
-	// Roboto is the only usable family the engine ships. Its light weight with wide tracking sits close to the Elder Scrolls menu type.
+	// Skyrim sets its menus and dialogue in Futura Condensed (light for lines, regular for names). The project carries no font of its
+	// own, so Roboto, the only usable family the engine ships, stands in: its light weight with wide tracking sits closest.
 	AEDIR_API FSlateFontInfo LightFont(float Size, int32 LetterSpacing = 0);
 	AEDIR_API FSlateFontInfo RegularFont(float Size, int32 LetterSpacing = 0);
+	// The heavy weight, for the line under the mouse in a list of choices.
+	AEDIR_API FSlateFontInfo BoldFont(float Size, int32 LetterSpacing = 0);
 	// Spaced uppercase for titles and labels.
 	AEDIR_API FSlateFontInfo TitleFont(float Size);
 

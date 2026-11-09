@@ -351,7 +351,7 @@ void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FB
 	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
 	if (Humerus.IsValid())
 	{
-		RotateBone(CSPose, Humerus, ActorRotationToMesh(FRotator(ArmSwingDegrees + ArmRestForwardDegrees * RestAlpha, 0.f, RestRollDegrees * RestAlpha * (1.f - 3.f * GaitData.ArmBalanceSpread)).Quaternion()));
+		RotateBone(CSPose, Humerus, ActorRotationToMesh(FRotator(ArmSwingDegrees + ArmRestForwardDegrees * RestAlpha, 0.f, RestRollDegrees * RestAlpha * (1.f - 3.f * GaitData.ArmBalanceSpread - GaitData.ArmRunSpread)).Quaternion()));
 	}
 
 	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);

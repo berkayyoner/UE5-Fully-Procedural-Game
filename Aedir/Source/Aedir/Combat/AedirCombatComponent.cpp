@@ -132,7 +132,7 @@ namespace
 	constexpr float AedirFatigueDroopPitch = 12.f;
 	// A swing costs breath and builds the arm, a little per unit of travel. Slow aiming costs nothing.
 	constexpr float AedirSwingEffortMinSpeed = 70.f;
-	constexpr float AedirSwingStaminaPerTravel = 0.012f;
+	constexpr float AedirSwingStaminaPerTravel = 0.006f;
 	constexpr float AedirSwingStaminaMassShare = 0.2f;
 	constexpr float AedirSwingStrengthPerTravel = 0.000015f;
 	constexpr float AedirSwingStrengthMassShare = 0.25f;
@@ -143,10 +143,10 @@ namespace
 	constexpr float AedirWeaponMidPitch = 40.f;
 	// The hand travels a wide arc around the body: out to the side first, then back and up beside the shoulder.
 	constexpr float AedirSwingMidYaw = 50.f;
-	constexpr float AedirSwingEndYaw = 72.f;
+	constexpr float AedirSwingEndYaw = 64.f;
 	constexpr float AedirSwingMidRadiusCm = 52.f;
 	constexpr float AedirSwingMidRadiusTwoHandCm = 44.f;
-	constexpr float AedirSwingEndRadiusCm = 32.f;
+	constexpr float AedirSwingEndRadiusCm = 36.f;
 	constexpr float AedirSwingMidHeightCm = 28.f;
 	constexpr float AedirSwingEndHeightCm = 44.f;
 	constexpr float AedirSwingAcrossForwardCm = 12.f;
@@ -350,7 +350,7 @@ namespace
 	constexpr float AedirImpactInjuryPerDamage = 0.012f;
 	constexpr float AedirImpactLimbHealPerSecond = 0.002f;
 	constexpr float AedirImpactRecoilScale = 0.35f;
-	constexpr float AedirImpactStaminaPerEnergy = 0.12f;
+	constexpr float AedirImpactStaminaPerEnergy = 0.025f;
 	constexpr float AedirImpactPropImpulseScale = 0.6f;
 
 	constexpr float AedirClashCacheInterval = 0.1f;
@@ -373,18 +373,18 @@ namespace
 
 	// A slow chamber (knee up to the belly), then a snapping extension.
 	constexpr float AedirKickDuration = 1.2f;
-	constexpr float AedirKickStrikeStart = 0.6f;
+	constexpr float AedirKickStrikeStart = 0.56f;
 	constexpr float AedirKickStrikeEnd = 0.8f;
 	constexpr float AedirKickHitRadius = 14.f;
-	constexpr float AedirKickMassKg = 8.f;
-	constexpr float AedirKickEnergyScale = 0.8f;
-	constexpr float AedirKickMaxFootSpeed = 500.f;
+	constexpr float AedirKickMassKg = 10.f;
+	constexpr float AedirKickEnergyScale = 1.f;
+	constexpr float AedirKickMaxFootSpeed = 1200.f;
 	constexpr float AedirKickRecoilBalance = 0.04f;
 	constexpr float AedirKickMinBalance = 0.4f;
 	constexpr float AedirKickPoseRiseSeconds = 0.3f;
 	constexpr float AedirKickPoseFallSeconds = 0.35f;
 	constexpr float AedirKickChamberTime = 0.5f;
-	constexpr float AedirKickExtendTime = 0.68f;
+	constexpr float AedirKickExtendTime = 0.62f;
 	constexpr float AedirKickChamberAheadCm = 20.f;
 	constexpr float AedirKickChamberRightCm = 6.f;
 	constexpr float AedirKickChamberBelowHipCm = -40.f;
@@ -428,6 +428,13 @@ namespace
 	constexpr float AedirAIContactRange = 110.f;
 	constexpr float AedirAIShoveChance = 0.12f;
 	constexpr float AedirAIKickChance = 0.08f;
+	// Hearing: the noise of a body standing still, how much each cm/s of speed adds, crouching, a fight, and how much of it
+	// gets through a wall.
+	constexpr float AedirAIHearBaseCm = 250.f;
+	constexpr float AedirAIHearPerSpeed = 3.5f;
+	constexpr float AedirAIHearCrouchShare = 0.4f;
+	constexpr float AedirAIHearFightCm = 600.f;
+	constexpr float AedirAIHearMuffledShare = 0.55f;
 
 	const FName AedirKickFootLeftBone(TEXT("foot_l"));
 	const FName AedirKickFootRightBone(TEXT("foot_r"));
@@ -1521,7 +1528,11 @@ bool UAedirCombatComponent::GetElbowHint(EAedirHand Hand, FVector& OutLocal, flo
 	}
 
 	const float WindShare = CombatSmoothStep01((FMath::Abs(static_cast<float>(Arm.PoseAimDeg.X)) / AedirWeaponYawLimit - AedirWeaponOpenStart) / (1.f - AedirWeaponOpenStart));
-	FVector Hint = FMath::Lerp(FVector(-0.35f, Side * 0.75f, -0.55f), FVector(0.2f, Side * 0.85f, -0.5f), WindShare);
+	// Wound up to the far side across the body, the elbow comes forward and down in front of the chest: pointing it out to its
+	// own side there would wring the arm round at the shoulder.
+	const bool bAcrossBody = !bTwoHandGrip && static_cast<float>(Arm.PoseAimDeg.X) * Side < 0.f;
+	const FVector WoundUp = bAcrossBody ? FVector(0.6f, Side * 0.15f, -0.6f) : FVector(0.2f, Side * 0.85f, -0.5f);
+	FVector Hint = FMath::Lerp(FVector(-0.35f, Side * 0.75f, -0.55f), WoundUp, WindShare);
 	Hint = FMath::Lerp(Hint, FVector(0.45f, Side * 0.85f, 0.1f), CombatRaiseShare(static_cast<float>(Arm.PoseAimDeg.Y), AedirWeaponRaiseFullDegrees));
 	Hint = FMath::Lerp(Hint, FVector(-0.25f, Side * 0.6f, -0.75f), CombatSmoothStep01(HalfSwordAlpha));
 	if (bThrustMode)
@@ -2832,7 +2843,9 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	if (Victim->Wounds && DamageType == EAedirDamageType::Slash && !bGlance)
 	{
 		const FVector CutNormal = FVector::CrossProduct(TipVelocity.GetSafeNormal(), Arm.WeaponDir).GetSafeNormal();
-		bSevered = Victim->Wounds->TrySever(Bone, Hit.ImpactPoint, CutNormal, TipVelocity, Energy, VictimZoneProtection);
+		// Only the edge chops: a blade drawn along its own length, or pushed in point first, opens a wound but takes nothing off.
+		const float EdgeShare = FMath::Clamp(1.f - FMath::Abs(AxialAlignment), 0.f, 1.f);
+		bSevered = Victim->Wounds->TrySever(Bone, Hit.ImpactPoint, CutNormal, TipVelocity, Energy * EdgeShare, VictimZoneProtection);
 	}
 
 	if (Victim->Wounds)
@@ -3323,7 +3336,7 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 		}
 
 		const bool bGrudge = Candidate == AIGrudge && Now < AIGrudgeUntil;
-		if ((Groups->GetRelation(Creature->GroupId, Candidate->GroupId) != EAedirRelation::Enemy && !bGrudge) || !CanSeeTarget(Candidate))
+		if ((Groups->GetRelation(Creature->GroupId, Candidate->GroupId) != EAedirRelation::Enemy && !bGrudge) || (!CanSeeTarget(Candidate) && !CanHearTarget(Candidate)))
 		{
 			continue;
 		}
@@ -3374,6 +3387,41 @@ bool UAedirCombatComponent::CanSeeTarget(const AAedirCreature* Target) const
 
 	FHitResult Hit;
 	return !World->LineTraceSingleByChannel(Hit, EyeLocation, TargetLocation, ECC_Visibility, Params);
+}
+
+bool UAedirCombatComponent::CanHearTarget(const AAedirCreature* Target) const
+{
+	UWorld* World = GetWorld();
+	if (!World || !Creature || !Target)
+	{
+		return false;
+	}
+
+	// A body makes noise as it moves: breathing and the creak of gear close by, footsteps further out, a run or a fight far
+	// off. Crouching keeps it quiet, and a wall or a hill between muffles what gets through.
+	const float Speed = static_cast<float>(Target->GetVelocity().Size2D());
+	float Radius = AedirAIHearBaseCm + Speed * AedirAIHearPerSpeed;
+	if (Target->bIsCrouched)
+	{
+		Radius *= AedirAIHearCrouchShare;
+	}
+	if (Target->Combat && (Target->Combat->IsInFightStance() || Target->Combat->IsKicking()))
+	{
+		Radius += AedirAIHearFightCm;
+	}
+	const FVector Ears = Creature->GetPawnViewLocation();
+	const FVector Source = Target->GetActorLocation();
+	const double DistanceSquared = FVector::DistSquared(Ears, Source);
+	if (DistanceSquared > FMath::Square(Radius))
+	{
+		return false;
+	}
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirCombatHearing), false);
+	Params.AddIgnoredActor(Creature);
+	Params.AddIgnoredActor(Target);
+	FHitResult Hit;
+	const bool bMuffled = World->LineTraceSingleByChannel(Hit, Ears, Source, ECC_Visibility, Params);
+	return !bMuffled || DistanceSquared <= FMath::Square(Radius * AedirAIHearMuffledShare);
 }
 
 bool UAedirCombatComponent::IsTwoHandGrip() const

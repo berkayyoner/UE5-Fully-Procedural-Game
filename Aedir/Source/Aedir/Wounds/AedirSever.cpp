@@ -29,14 +29,14 @@ namespace
 	};
 
 	const FSeverJoint SeverJoints[] = {
-		{ TEXT("hand"), 75.f },
-		{ TEXT("lowerarm"), 95.f },
-		{ TEXT("upperarm"), 135.f },
-		{ TEXT("foot"), 95.f },
-		{ TEXT("calf"), 125.f },
-		{ TEXT("thigh"), 175.f },
-		{ TEXT("neck"), 140.f },
-		{ TEXT("head"), 140.f }
+		{ TEXT("hand"), 120.f },
+		{ TEXT("lowerarm"), 150.f },
+		{ TEXT("upperarm"), 210.f },
+		{ TEXT("foot"), 150.f },
+		{ TEXT("calf"), 200.f },
+		{ TEXT("thigh"), 280.f },
+		{ TEXT("neck"), 220.f },
+		{ TEXT("head"), 220.f }
 	};
 
 	UMaterialInterface* SeverFlesh()

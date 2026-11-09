@@ -73,7 +73,7 @@ public:
 	float ManaRegenPerSecond = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
-	float StaminaRegenPerSecond = 8.f;
+	float StaminaRegenPerSecond = 12.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
 	float StaminaRegenDelay = 1.f;

@@ -9,7 +9,7 @@ class AAedirPlayerCharacter;
 class SVerticalBox;
 class STextBlock;
 
-// Talking: what the other person last said across the top, what you can say down the right side.
+// Talking: what the other person last said low in the middle, what you can say in a column right of the middle.
 class AEDIR_API SAedirDialogue : public SCompoundWidget
 {
 public:
@@ -30,7 +30,11 @@ public:
 private:
 	void RebuildTopics();
 	void Choose(int32 Index);
+	void Select(int32 Index);
 	void RefreshRows();
+	// A line already asked of this person is shown grey, as in Skyrim.
+	bool IsHeard(int32 Index) const;
+	FString GetHeardKey(const FAedirDialogueTopic& Topic) const;
 
 	TWeakObjectPtr<AAedirNpc> Npc;
 	TWeakObjectPtr<AAedirPlayerCharacter> Player;
@@ -41,5 +45,7 @@ private:
 	TSharedPtr<STextBlock> SpeechText;
 	TSharedPtr<STextBlock> StandingText;
 	int32 Selected = 0;
+	// The first line shown when there are more than fit in the column.
+	int32 FirstVisible = 0;
 	bool bClosing = false;
 };

@@ -114,6 +114,9 @@ private:
 	UPROPERTY()
 	TSet<FName> SeveredBones;
 
+	// How much cutting each joint has taken so far, towards parting it.
+	TMap<FName, float> CutWear;
+
 	// Blood running from an open artery comes in beats, and what falls from a lying body gathers under it.
 	float SeverBleedPerSecond = 0.f;
 	float PulseTimer = 0.f;

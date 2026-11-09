@@ -174,7 +174,7 @@ public:
 	float ImpactDamageScale = 0.08f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
-	float SwingStaminaCost = 8.f;
+	float SwingStaminaCost = 5.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingDurationBase = 0.45f;
@@ -561,6 +561,8 @@ private:
 	void UpdateAI(float DeltaTime);
 	void UpdateAITarget(double Now);
 	bool CanSeeTarget(const AAedirCreature* Target) const;
+	// Whether the noise the target makes reaches this creature's ears.
+	bool CanHearTarget(const AAedirCreature* Target) const;
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetGuard(EAedirHand Hand, bool bActive);

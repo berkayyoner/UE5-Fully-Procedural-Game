@@ -34,8 +34,8 @@ bool FAedirMeleeKickArcTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Arc starts at the foot"), UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.f).Equals(Start, 0.01f));
 	TestTrue(TEXT("Arc returns to the foot"), UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 1.f).Equals(Start, 0.01f));
 
-	// The extension is reached at 0.68 of the kick, after the slow chamber at 0.5.
-	const FVector Extension = UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.68f);
+	// The extension is reached at 0.62 of the kick, snapped out quickly after the slow chamber at 0.5.
+	const FVector Extension = UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.62f);
 	TestTrue(TEXT("Full extension is 85 cm ahead of the hip"), FMath::IsNearlyEqual(Extension.X, 85.f, 0.01f) && FMath::IsNearlyEqual(Extension.Y, 0.f, 0.01f));
 	TestTrue(TEXT("Full extension is 55 cm above the ground reference"), FMath::IsNearlyEqual(Extension.Z, 55.f, 0.01f));
 
