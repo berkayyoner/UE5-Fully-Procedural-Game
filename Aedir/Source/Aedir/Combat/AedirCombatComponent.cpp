@@ -357,6 +357,11 @@ namespace
 	constexpr float AedirSensesPerJoule = 0.32f;
 	// A dent shows on plate from a blow this hard; a helmet is knocked off by one harder than this, the more likely the harder,
 	// up to this chance, and flies off at this speed and lift.
+	// What gets through to the bone breaks an arm from this many joules and a leg from this many, for a body of middling
+	// strength; a blow on a hand, a foot or a collarbone counts this share of itself.
+	constexpr float AedirBreakArmJoules = 380.f;
+	constexpr float AedirBreakLegJoules = 520.f;
+	constexpr float AedirBreakEndShare = 0.5f;
 	constexpr float AedirDentShowJoules = 70.f;
 	constexpr float AedirHelmetOffFromJoules = 180.f;
 	constexpr float AedirHelmetOffSpreadJoules = 500.f;
@@ -627,6 +632,11 @@ void UAedirCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 void UAedirCombatComponent::SetGuard(EAedirHand Hand, bool bActive)
 {
 	if (!Creature)
+	{
+		return;
+	}
+	// A broken or lost arm raises no guard.
+	if (bActive && Creature->Wounds && Creature->Wounds->HasUselessArm(Hand == EAedirHand::Left))
 	{
 		return;
 	}
@@ -2887,6 +2897,23 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	if (Victim->Combat && GetBoneLimb(Bone, Limb))
 	{
 		Victim->Combat->ApplyLimbInjury(Limb, Damage * AedirImpactInjuryPerDamage);
+		// A blow that gets through to the long bones of a limb hard enough breaks them; one on the hand or the collarbone
+		// spends half of itself on the small bones there. A strong body's bones take more.
+		// Only a blunt blow breaks: a mace, a fist, the back of an axe or a blade that struck flat or glanced. An edge that
+		// bites cuts instead.
+		const bool bCrushing = StruckAs == EAedirDamageType::Blunt || CutShare < AedirCutGlanceShare;
+		if (bCrushing && Victim->Wounds && IsAuthoritative() && !(Victim->Stats && Victim->Stats->bInvulnerable))
+		{
+			const bool bLeg = Limb == EAedirLimb::LeftLeg || Limb == EAedirLimb::RightLeg;
+			const FString BoneName = Bone.ToString();
+			const float Reach = BoneName.StartsWith(TEXT("hand")) || BoneName.StartsWith(TEXT("clavicle")) || BoneName.StartsWith(TEXT("foot")) ? AedirBreakEndShare : 1.f;
+			const float Through = Energy * Reach * (1.f - (Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f));
+			const float Sturdy = FMath::Clamp((Victim->Stats ? Victim->Stats->Strength : 10.f) / 10.f, 0.8f, 1.3f);
+			if (Through > (bLeg ? AedirBreakLegJoules : AedirBreakArmJoules) * Sturdy)
+			{
+				Victim->Wounds->BreakLimb(Limb);
+			}
+		}
 	}
 
 	if (Victim->Balance)
@@ -3082,8 +3109,8 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	const AAedirItemActor* Weapon = GetHeldItem(WeaponHand);
 	const bool bArmed = Weapon && Weapon->ItemClass == EAedirItemClass::Weapon;
 	bAIHadWeapon |= bArmed;
-	const bool bLeftGone = Creature->Wounds && Creature->Wounds->HasLostArm(true);
-	const bool bRightGone = Creature->Wounds && Creature->Wounds->HasLostArm(false);
+	const bool bLeftGone = Creature->Wounds && Creature->Wounds->HasUselessArm(true);
+	const bool bRightGone = Creature->Wounds && Creature->Wounds->HasUselessArm(false);
 	const bool bCanRearm = Creature->Interaction && Creature->Interaction->FindWaistWeaponSlot() != INDEX_NONE;
 	if ((bLeftGone && bRightGone) || (bAIHadWeapon && !bArmed && !bCanRearm) || ((bLeftGone || bRightGone) && !bArmed && !bCanRearm))
 	{

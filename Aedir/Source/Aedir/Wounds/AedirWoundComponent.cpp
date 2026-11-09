@@ -201,6 +201,7 @@ void UAedirWoundComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UAedirWoundComponent, ActiveWounds);
+	DOREPLIFETIME(UAedirWoundComponent, BrokenLimbs);
 }
 
 EAedirWoundType UAedirWoundComponent::ClassifyWound(EAedirDamageType DamageType)
@@ -438,6 +439,31 @@ bool UAedirWoundComponent::TrySever(FName HitBone, const FVector& PlanePoint, co
 		Creature->Balance->SetLegLost();
 	}
 	UE_LOG(LogAedir, Log, TEXT("%s lost %s to a %.0f J cut"), *Creature->GetName(), *Bone.ToString(), EnergyJoules);
+	return true;
+}
+
+bool UAedirWoundComponent::BreakLimb(EAedirLimb Limb)
+{
+	AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
+	if (!IsAuthoritative() || !Creature || IsLimbBroken(Limb))
+	{
+		return false;
+	}
+	BrokenLimbs |= 1 << static_cast<int32>(Limb);
+	const bool bArm = Limb == EAedirLimb::LeftArm || Limb == EAedirLimb::RightArm;
+	if (bArm && Creature->Interaction)
+	{
+		// A broken arm cannot hold anything.
+		Creature->Interaction->DropHeld(Limb == EAedirLimb::LeftArm ? EAedirHand::Left : EAedirHand::Right);
+	}
+	else if (!bArm && Creature->Balance)
+	{
+		// A broken leg buckles under the body and will not carry it up again.
+		Creature->Balance->ApplyBalanceImpact(FVector::DownVector, 1.f);
+		Creature->Balance->SetLegLost();
+	}
+	static const TCHAR* const Names[] = { TEXT("left arm"), TEXT("right arm"), TEXT("left leg"), TEXT("right leg") };
+	UE_LOG(LogAedir, Log, TEXT("[Bone] %s's %s breaks."), *Creature->GetName(), Names[static_cast<int32>(Limb)]);
 	return true;
 }
 

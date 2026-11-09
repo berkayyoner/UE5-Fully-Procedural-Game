@@ -14,6 +14,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
+#include "Wounds/AedirWoundComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Aedir.h"
@@ -91,6 +92,8 @@ namespace
 	constexpr float HitReactionDazeMaxSeconds = 2.5f;
 	constexpr float HitReactionDazeRecoveryScale = 0.5f;
 	constexpr float AedirGroggyBelow = 0.65f;
+	// What is left of the muscles of a broken arm.
+	constexpr float AedirBrokenArmShare = 0.05f;
 	constexpr float AedirGroggyMaxDaze = 0.85f;
 	constexpr float HitReactionKnockdownExtraSeconds = 0.8f;
 	// The blow moves the part it lands on, not the whole body through the air.
@@ -478,8 +481,17 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	// Strength from stamina, health, a daze and getting up; each arm loses what its wounds take.
 	const AAedirCreature* Creature = Cast<AAedirCreature>(CharacterOwner);
 	const UAedirCombatComponent* Combat = Creature ? Creature->Combat.Get() : nullptr;
-	const float LeftArm = 1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::LeftArm) : 0.f);
-	const float RightArm = 1.f - 0.75f * (Combat ? Combat->GetLimbInjury(EAedirLimb::RightArm) : 0.f);
+	// A broken arm hangs limp.
+	const auto ArmShare = [Creature, Combat](EAedirLimb Limb)
+	{
+		if (Creature && Creature->Wounds && Creature->Wounds->IsLimbBroken(Limb))
+		{
+			return AedirBrokenArmShare;
+		}
+		return 1.f - 0.75f * (Combat ? Combat->GetLimbInjury(Limb) : 0.f);
+	};
+	const float LeftArm = ArmShare(EAedirLimb::LeftArm);
+	const float RightArm = ArmShare(EAedirLimb::RightArm);
 	// What a hand holds slows its arm as a muscle of fixed force would be slowed by the extra mass: an arm of a few kilos
 	// swings a light blade almost as fast as nothing, a heavy one much more slowly; strength makes the load lighter, and one
 	// thing held in both hands is shared between them.

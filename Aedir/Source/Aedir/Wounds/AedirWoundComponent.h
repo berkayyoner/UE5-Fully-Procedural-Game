@@ -83,6 +83,14 @@ public:
 	bool TrySever(FName HitBone, const FVector& PlanePoint, const FVector& PlaneNormal, const FVector& Push, float EnergyJoules, float ArmorProtection);
 	bool IsSevered(FName Bone) const { return SeveredBones.Contains(Bone); }
 
+	// Server only. A blow hard enough breaks the bones of a limb: a broken arm hangs limp and lets go of what it held, a
+	// broken leg will not carry the body. Says whether it was whole until now.
+	bool BreakLimb(EAedirLimb Limb);
+	bool IsLimbBroken(EAedirLimb Limb) const { return (BrokenLimbs & (1 << static_cast<int32>(Limb))) != 0; }
+
+	// Whether the arm on that side is of no use: gone, or broken.
+	bool HasUselessArm(bool bLeft) const { return HasLostArm(bLeft) || IsLimbBroken(bLeft ? EAedirLimb::LeftArm : EAedirLimb::RightArm); }
+
 	// Whether the arm on that side is gone, at the shoulder, the elbow or the wrist.
 	bool HasLostArm(bool bLeft) const
 	{
@@ -124,6 +132,10 @@ private:
 
 	UPROPERTY()
 	TSet<FName> SeveredBones;
+
+	// Which limbs have broken bones, one bit each in the order of EAedirLimb.
+	UPROPERTY(Replicated)
+	uint8 BrokenLimbs = 0;
 
 	// How much cutting each joint has taken so far, towards parting it.
 	TMap<FName, float> CutWear;
