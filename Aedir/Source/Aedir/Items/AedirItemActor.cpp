@@ -13,7 +13,9 @@
 
 namespace
 {
-	TAutoConsoleVariable<int32> CVarAedirWeldHeld(TEXT("aedir.WeldHeld"), 1, TEXT("Make a held item part of the hand's physical body."));
+	// Welding a held item onto the hand's body leaves its size in the welded shape's transform, which breaks the physics'
+	// queries and contacts on it; the hand carries its weight by force and its blade stops by the held sweep instead.
+	TAutoConsoleVariable<int32> CVarAedirWeldHeld(TEXT("aedir.WeldHeld"), 0, TEXT("Make a held item part of the hand's physical body."));
 	constexpr int32 AedirHighlightStencilValue = 250;
 }
 

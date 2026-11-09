@@ -10,9 +10,11 @@
 #include "Creature/AedirStatsComponent.h"
 #include "GameFramework/Actor.h"
 #include "TwoBoneIK.h"
+#include "HAL/IConsoleManager.h"
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarAedirBodyBulk(TEXT("aedir.BodyBulk"), 1, TEXT("Thicken the trunk and thighs of strong bodies by scaling their bones (1) or not (0)."));
 	constexpr float AedirObjectPalmShare = 0.55f;
 	constexpr float AedirObjectContactDownShare = 0.6f;
 	constexpr float AedirObjectPalmClearanceCm = 2.5f;
@@ -343,7 +345,7 @@ float FAedirProceduralAnimProxy::GetBreathWave() const
 
 void FAedirProceduralAnimProxy::ApplyBulk(FCompactPose& Pose, const FBoneContainer& Bones) const
 {
-	if (FMath::IsNearlyEqual(BulkScale, 1.f, 0.005f))
+	if (CVarAedirBodyBulk.GetValueOnAnyThread() == 0 || FMath::IsNearlyEqual(BulkScale, 1.f, 0.005f))
 	{
 		return;
 	}

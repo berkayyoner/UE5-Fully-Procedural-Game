@@ -437,6 +437,8 @@ bool AAedirCreature::IsInFightStance() const
 	return Movement && Movement->bWantsFightStance;
 }
 
+static TAutoConsoleVariable<int32> CVarAedirBodySizeVariation(TEXT("aedir.BodySizeVariation"), 1, TEXT("Every body a little taller or shorter by its name (1) or all of one height (0)."));
+
 void AAedirCreature::ApplySizeScale(float NewSizeScale)
 {
 	SetActorScale3D(FVector(NewSizeScale * AppearanceHeight));
@@ -451,6 +453,10 @@ void AAedirCreature::ApplyAppearance()
 		FLinearColor(0.47f, 0.32f, 0.23f), FLinearColor(0.34f, 0.23f, 0.17f), FLinearColor(0.96f, 0.82f, 0.72f), FLinearColor(0.80f, 0.62f, 0.50f) };
 	FRandomStream Random(static_cast<int32>(GetTypeHash(GetName())));
 	AppearanceHeight = Random.FRandRange(0.95f, 1.05f);
+	if (CVarAedirBodySizeVariation.GetValueOnGameThread() == 0)
+	{
+		AppearanceHeight = 1.f;
+	}
 	AppearanceBulk = Random.FRandRange(0.92f, 1.08f);
 	SkinTint = Skins[Random.RandHelper(UE_ARRAY_COUNT(Skins))] * Random.FRandRange(0.94f, 1.06f);
 	SkinTint.A = 1.f;

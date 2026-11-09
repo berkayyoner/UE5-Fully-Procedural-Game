@@ -113,7 +113,12 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	AActor* Piece = World->SpawnActor<AActor>(AActor::StaticClass(), Body->GetComponentTransform(), Params);
+	// The piece is placed without the body's size as a scale: the physics takes a scaled hull only in a wrapper, and a bare
+	// one with a scale breaks its queries, so the size goes into the vertices instead.
+	FTransform PieceTransform = Body->GetComponentTransform();
+	const FVector BodySize = PieceTransform.GetScale3D();
+	PieceTransform.SetScale3D(FVector::OneVector);
+	AActor* Piece = World->SpawnActor<AActor>(AActor::StaticClass(), PieceTransform, Params);
 	if (!Piece)
 	{
 		return nullptr;
@@ -122,7 +127,7 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 	Mesh->bUseComplexAsSimpleCollision = false;
 	Mesh->bUseAsyncCooking = false;
 	Piece->SetRootComponent(Mesh);
-	Mesh->SetWorldTransform(Body->GetComponentTransform());
+	Mesh->SetWorldTransform(PieceTransform);
 	Mesh->RegisterComponent();
 
 	TArray<FVector> HullPoints;
@@ -160,7 +165,7 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 	const FTransform LayerToBody = Layer->GetComponentTransform().GetRelativeTransform(Body->GetComponentTransform());
 	for (FVector3f& Point : Skinned)
 	{
-		Point = FVector3f(LayerToBody.TransformPosition(FVector(Point)));
+		Point = FVector3f(LayerToBody.TransformPosition(FVector(Point)) * BodySize);
 	}
 
 	const FRawStaticIndexBuffer16or32Interface* Indices = Lod.MultiSizeIndexContainer.GetIndexBuffer();
@@ -239,7 +244,7 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 	}
 
 	// The cut itself: the plane of the blow through the joint, keeping the side away from the body.
-	const FTransform& ToBody = Body->GetComponentTransform();
+	const FTransform& ToBody = PieceTransform;
 	const FVector JointWorld = Body->GetBoneLocation(SeverBone);
 	const FVector ParentWorld = Body->GetBoneLocation(Body->GetParentBone(SeverBone));
 	FVector Normal = (JointWorld - ParentWorld).GetSafeNormal();
