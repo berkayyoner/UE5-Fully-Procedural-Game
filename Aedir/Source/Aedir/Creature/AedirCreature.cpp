@@ -1,4 +1,6 @@
 #include "AedirCreature.h"
+#include "HAL/IConsoleManager.h"
+#include "PhysicsEngine/BodySetup.h"
 
 #include "Creature/AedirWayFinder.h"
 
@@ -20,6 +22,14 @@
 #include "Physics/AedirBalanceComponent.h"
 #include "Surface/AedirFootstepComponent.h"
 #include "Wounds/AedirWoundComponent.h"
+
+static TAutoConsoleVariable<int32> CVarAedirSelfCollision(TEXT("aedir.SelfCollision"), 1, TEXT("Whether a body stands against its own weapon and its arms against its trunk (1), or passes through them (0)."));
+
+namespace
+{
+	// The bit the hands of every body and what they hold share, so two hands can hold one grip.
+	constexpr uint8 AedirHandMaskBit = 128;
+}
 
 namespace
 {
@@ -87,7 +97,12 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 
 void AAedirCreature::ApplyBodyMask()
 {
-	if (USkeletalMeshComponent* Body = GetMesh())
+	USkeletalMeshComponent* Body = GetMesh();
+	if (!Body)
+	{
+		return;
+	}
+	if (CVarAedirSelfCollision.GetValueOnGameThread() == 0)
 	{
 		Body->BodyInstance.SetMaskFilter(BodyMaskBit);
 		for (FBodyInstance* Part : Body->Bodies)
@@ -97,7 +112,25 @@ void AAedirCreature::ApplyBodyMask()
 				Part->SetMaskFilter(BodyMaskBit);
 			}
 		}
+		return;
 	}
+	// Nothing passes through a body, not even what it holds itself: the trunk, the arms and the legs stand against its own
+	// weapon as against anyone's, and the arms against the trunk, as the physics asset pairs them. Only the hands pass each
+	// other, so two hands can close on one grip.
+	Body->BodyInstance.SetMaskFilter(0);
+	for (FBodyInstance* Part : Body->Bodies)
+	{
+		if (Part && Part->BodySetup.IsValid())
+		{
+			const FString Bone = Part->BodySetup->BoneName.ToString();
+			Part->SetMaskFilter(Bone.StartsWith(TEXT("hand")) ? AedirHandMaskBit : 0);
+		}
+	}
+}
+
+uint8 AAedirCreature::GetHeldMaskBit() const
+{
+	return CVarAedirSelfCollision.GetValueOnGameThread() == 0 ? BodyMaskBit : AedirHandMaskBit;
 }
 
 void AAedirCreature::BeginPlay()

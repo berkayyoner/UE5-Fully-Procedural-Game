@@ -14,7 +14,7 @@
 
 namespace
 {
-	const TCHAR* const SceneryPlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
+	const TCHAR* const ActorsPlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
 	const TCHAR* const SceneryGlowMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirPrecip.M_AedirPrecip");
 	const TCHAR* const SceneryWaterMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirStream.M_AedirStream");
 	const TCHAR* const ScenerySmokePath = TEXT("/Game/Effects/NS_WellSmoke.NS_WellSmoke");
@@ -24,10 +24,10 @@ namespace
 	// The glow of a flame's tongue, hot white-yellow at full and orange as it dies down; a few tongues crossed around the fire.
 	const FLinearColor SceneryFlameColor(2.2f, 0.75f, 0.16f);
 	constexpr int32 SceneryTongues = 4;
-	constexpr float SceneryPlaneCm = 100.f;
+	constexpr float ActorsPlaneCm = 100.f;
 
 	template <typename T>
-	T* SceneryLoad(const TCHAR* Path)
+	T* ActorsLoad(const TCHAR* Path)
 	{
 		return LoadObject<T>(nullptr, Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
 	}
@@ -74,10 +74,10 @@ void AAedirFlame::BeginPlay()
 	Light->SetRelativeLocation(FVector(0.f, 0.f, FlameHeightCm * 0.6f));
 	Light->SetAttenuationRadius(FMath::Max(900.f, FlameHeightCm * 40.f));
 
-	if (UStaticMesh* Plane = SceneryLoad<UStaticMesh>(SceneryPlanePath))
+	if (UStaticMesh* Plane = ActorsLoad<UStaticMesh>(ActorsPlanePath))
 	{
 		Tongues->SetStaticMesh(Plane);
-		if (UMaterialInterface* Glow = SceneryLoad<UMaterialInterface>(SceneryGlowMaterialPath))
+		if (UMaterialInterface* Glow = ActorsLoad<UMaterialInterface>(SceneryGlowMaterialPath))
 		{
 			TongueMaterial = UMaterialInstanceDynamic::Create(Glow, this);
 			TongueMaterial->SetVectorParameterValue(TEXT("Color"), SceneryFlameColor);
@@ -91,7 +91,7 @@ void AAedirFlame::BeginPlay()
 	}
 	if (bSmoke)
 	{
-		if (UNiagaraSystem* SmokeSystem = SceneryLoad<UNiagaraSystem>(ScenerySmokePath))
+		if (UNiagaraSystem* SmokeSystem = ActorsLoad<UNiagaraSystem>(ScenerySmokePath))
 		{
 			Smoke->SetAsset(SmokeSystem);
 			Smoke->SetRelativeLocation(FVector(0.f, 0.f, FlameHeightCm));
@@ -99,7 +99,7 @@ void AAedirFlame::BeginPlay()
 			Smoke->Activate(true);
 		}
 	}
-	if (USoundWave* Sound = SceneryLoad<USoundWave>(SceneryFireSoundPath))
+	if (USoundWave* Sound = ActorsLoad<USoundWave>(SceneryFireSoundPath))
 	{
 		Sound->bLooping = true;
 		Crackle->SetSound(Sound);
@@ -127,7 +127,7 @@ void AAedirFlame::Tick(float DeltaSeconds)
 		const float Height = FlameHeightCm * (0.75f + 0.35f * Own + 0.15f * Swell);
 		const float Width = FlameHeightCm * (0.45f - 0.08f * Own);
 		const FRotator Turn(0.f, Index * 180.f / SceneryTongues + 8.f * FMath::Sin(Phase * 1.3f + Index), 90.f);
-		Tongues->UpdateInstanceTransform(Index, FTransform(Turn, FVector(0.f, 0.f, Height * 0.5f), FVector(Width / SceneryPlaneCm, 1.f, Height / SceneryPlaneCm) * FVector(1.f, 1.f, 1.f)), false, Index == Tongues->GetInstanceCount() - 1, true);
+		Tongues->UpdateInstanceTransform(Index, FTransform(Turn, FVector(0.f, 0.f, Height * 0.5f), FVector(Width / ActorsPlaneCm, 1.f, Height / ActorsPlaneCm) * FVector(1.f, 1.f, 1.f)), false, Index == Tongues->GetInstanceCount() - 1, true);
 	}
 }
 
@@ -156,10 +156,10 @@ void AAedirWaterfall::Configure(const FVector& Top, const FVector& Bottom, float
 	{
 		Across = FVector::RightVector;
 	}
-	if (UStaticMesh* Plane = SceneryLoad<UStaticMesh>(SceneryPlanePath))
+	if (UStaticMesh* Plane = ActorsLoad<UStaticMesh>(ActorsPlanePath))
 	{
 		Sheet->SetStaticMesh(Plane);
-		if (UMaterialInterface* Water = SceneryLoad<UMaterialInterface>(SceneryWaterMaterialPath))
+		if (UMaterialInterface* Water = ActorsLoad<UMaterialInterface>(SceneryWaterMaterialPath))
 		{
 			Sheet->SetMaterial(0, Water);
 		}
@@ -167,9 +167,9 @@ void AAedirWaterfall::Configure(const FVector& Top, const FVector& Bottom, float
 		const FVector Normal = FVector::CrossProduct(Across, Down).GetSafeNormal();
 		Sheet->SetWorldRotation(FRotationMatrix::MakeFromXZ(Down, Normal).Rotator());
 		Sheet->SetWorldLocation((Top + Bottom) * 0.5);
-		Sheet->SetWorldScale3D(FVector(Fall.Size() / SceneryPlaneCm, Width / SceneryPlaneCm, 1.f));
+		Sheet->SetWorldScale3D(FVector(Fall.Size() / ActorsPlaneCm, Width / ActorsPlaneCm, 1.f));
 	}
-	if (USoundWave* Sound = SceneryLoad<USoundWave>(SceneryWaterSoundPath))
+	if (USoundWave* Sound = ActorsLoad<USoundWave>(SceneryWaterSoundPath))
 	{
 		Sound->bLooping = true;
 		Roar->SetSound(Sound);
@@ -189,7 +189,7 @@ void AAedirWaterfall::Tick(float DeltaSeconds)
 	}
 	// Where the water lands it bursts up again and again along the width of the fall.
 	NextSpray = FMath::FRandRange(0.08f, 0.2f);
-	if (UNiagaraSystem* Spray = SceneryLoad<UNiagaraSystem>(ScenerySprayPath))
+	if (UNiagaraSystem* Spray = ActorsLoad<UNiagaraSystem>(ScenerySprayPath))
 	{
 		const FVector Where = Landing + Across * FMath::FRandRange(-0.45f, 0.45f) * Width;
 		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Spray, Where, FRotator::ZeroRotator, FVector(FMath::FRandRange(0.5f, 0.9f)));

@@ -625,7 +625,7 @@ void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
 	Mesh->SetSimulatePhysics(false);
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
-	Mesh->BodyInstance.SetMaskFilter(Creature->GetBodyMaskBit());
+	Mesh->BodyInstance.SetMaskFilter(Creature->GetHeldMaskBit());
 	if (SettleAlpha >= 1.f)
 	{
 		WeldToHand();

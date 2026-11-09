@@ -67,6 +67,8 @@ public:
 
 	// The collision mask the body and what it holds share, so its own weapon and fists pass through it.
 	uint8 GetBodyMaskBit() const { return BodyMaskBit; }
+	// The collision mask of what the hands hold.
+	uint8 GetHeldMaskBit() const;
 	void ApplyBodyMask();
 
 	UFUNCTION(Server, Reliable, BlueprintCallable, Category="Aedir|Groups")
