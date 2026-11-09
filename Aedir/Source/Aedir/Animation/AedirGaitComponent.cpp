@@ -1124,6 +1124,20 @@ void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatCom
 		const FVector& GuardOffset = Hand == EAedirHand::Left ? GuardHandOffsetLeft : GuardHandOffsetRight;
 		Blend.Apply(ActorTransform.TransformPosition(GuardOffset), GuardAlpha);
 	}
+	else if (Combat && Interaction && !Interaction->GetHeldItem(Hand))
+	{
+		// The other hand's guard brings this one up with it.
+		float OtherGuardAlpha = 0.f;
+		if (Combat->GetGuardPose(Hand == EAedirHand::Left ? EAedirHand::Right : EAedirHand::Left, OtherGuardAlpha))
+		{
+			FVector ReadyOffset = ReadyHandOffsetRight;
+			if (Hand == EAedirHand::Left)
+			{
+				ReadyOffset.Y = -ReadyOffset.Y;
+			}
+			Blend.Apply(ActorTransform.TransformPosition(ReadyOffset), FMath::SmoothStep(0.f, 1.f, OtherGuardAlpha) * ReadyHandShare);
+		}
+	}
 
 	FVector ReachTarget = FVector::ZeroVector;
 	float ReachAlpha = 0.f;

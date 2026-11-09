@@ -453,6 +453,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
 	FVector GuardHandOffsetRight = FVector(30.f, 16.f, 50.f);
 
+	// In the fight stance an empty hand that is not on guard itself is held ready in front of the chest, the right offset mirrored for the left.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
+	FVector ReadyHandOffsetRight = FVector(22.f, 12.f, 40.f);
+
+	// How far the ready hand goes to that point (0 = left to hang, 1 = held right there).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
+	float ReadyHandShare = 0.8f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MaxArmSwingWalkDegrees = 9.f;
 
