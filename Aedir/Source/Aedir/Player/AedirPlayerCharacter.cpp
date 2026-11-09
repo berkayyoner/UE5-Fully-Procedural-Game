@@ -939,8 +939,8 @@ void AAedirPlayerCharacter::HandleTurnWeaponPressed()
 	}
 	if (Item)
 	{
-		const AAedirItemActor::EGripTurn Turn = Item->TurnInHand(this);
-		static const TCHAR* const Names[] = { TEXT("as made"), TEXT("turned on its haft") };
+		const AAedirItemActor::EGripTurn Turn = Item->TurnInHand(this, Combat->IsHalfSwording());
+		static const TCHAR* const Names[] = { TEXT("as made"), TEXT("turned on its haft"), TEXT("reversed"), TEXT("by the blade") };
 		UE_LOG(LogAedir, Log, TEXT("[Grip] %s held %s"), *Item->GetName(), Names[static_cast<int32>(Turn)]);
 	}
 }

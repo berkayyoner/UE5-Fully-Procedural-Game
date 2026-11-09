@@ -621,13 +621,16 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float BalanceNow = BalanceComponent ? BalanceComponent->GetBalance() : 1.f;
 	GaitState.ArmBalanceSpread = FMath::FInterpTo(GaitState.ArmBalanceSpread, FMath::Clamp((0.85f - BalanceNow) / 0.5f, 0.f, 1.f), DeltaTime, 10.f);
 	GaitState.ArmRunSpread = RunBlend * RunArmSpreadShare;
-	const auto ReadWeaponAim = [Combat, DeltaTime](EAedirHand Hand, FVector& OutDirection, float& OutAlpha)
+	const UAedirInteractionComponent* Hands = CreatureOwner ? CreatureOwner->Interaction.Get() : nullptr;
+	const auto ReadWeaponAim = [Combat, Hands, DeltaTime](EAedirHand Hand, FVector& OutDirection, float& OutAlpha)
 	{
 		FVector Direction = FVector::ForwardVector;
 		float Alpha = 0.f;
 		if (Combat && Combat->GetWeaponAim(Hand, Direction, Alpha))
 		{
-			OutDirection = Direction;
+			// Reversed in the hand, what strikes comes out by the little finger: the hand is pointed the other way round.
+			const AAedirItemActor* Held = Hands ? Hands->GetHeldItem(Hand) : nullptr;
+			OutDirection = Held && Held->IsAimedReversed() ? -Direction : Direction;
 			OutAlpha = FMath::FInterpConstantTo(OutAlpha, Alpha, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 		}
 		else

@@ -13,8 +13,11 @@
 
 namespace
 {
-	// A weapon whose body is a box this thin across is a haft.
+	// A weapon whose body is a box this thin across is a haft. Held by the blade, the hand is this share of the blade's length
+	// from its middle towards the point, and the pommel lies this share of the grip beyond the hand's place on it.
 	constexpr double ItemHaftedBoxY = 0.035;
+	constexpr float ItemMurderHoldShare = 0.12f;
+	constexpr float ItemPommelBeyondGripShare = 0.6f;
 	// Where armour leaves a body bare, in cm from the bone the blow landed on: the face in front of the head below the brow,
 	// under the arm where it meets the trunk, and high on the sides under the arms.
 	constexpr float ArmorFaceForwardCm = 4.f;
@@ -214,7 +217,9 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 	const FVector Palm = HandLocation + (RefLocation(TEXT("middle_01")) - HandLocation) * HandGripPalmShare + PalmNormal * HandGripPalmDepthCm;
 
 	const FQuat ItemRotation = FRotationMatrix::MakeFromXY(KnuckleAxis, FingerAxis).ToQuat();
-	const FQuat RelativeRotation = HandRotation.Inverse() * ItemRotation;
+	// A reversed blade lies end for end in the hand, turned about the palm.
+	const FQuat Turn = GripTurn == EGripTurn::Reversed ? FQuat(FVector::UpVector, UE_PI) : FQuat::Identity;
+	const FQuat RelativeRotation = HandRotation.Inverse() * ItemRotation * Turn;
 	const FVector RelativePalm = HandRotation.Inverse().RotateVector(Palm - HandLocation);
 	return FTransform(RelativeRotation, RelativePalm - RelativeRotation.RotateVector(FVector(GripLocalCm + HeldGripShiftCm, 0.f, 0.f)));
 }
@@ -603,30 +608,66 @@ float AAedirItemActor::GetWeaponLength() const
 
 EAedirDamageType AAedirItemActor::GetDamageType() const
 {
-	// The back of an axe strikes blunt.
-	return GripTurn == EGripTurn::Back ? EAedirDamageType::Blunt : DamageType;
+	// The back of an axe and the hilt of a sword held by its blade strike blunt.
+	return GripTurn == EGripTurn::Back || GripTurn == EGripTurn::Murder ? EAedirDamageType::Blunt : DamageType;
 }
 
-AAedirItemActor::EGripTurn AAedirItemActor::TurnInHand(AAedirCreature* Creature)
+AAedirItemActor::EGripTurn AAedirItemActor::TurnInHand(AAedirCreature* Creature, bool bHalfSword)
 {
-	// Only a hafted weapon (its body a thin round box) turns over: its head has a back to strike with and its haft is the
-	// same all round, so the hand holds it as before.
-	if (!Creature || Holder != Creature || ItemClass != EAedirItemClass::Weapon || BodyScale.Y > ItemHaftedBoxY)
+	if (!Creature || Holder != Creature || ItemClass != EAedirItemClass::Weapon || !GetRootComponent())
 	{
 		return GripTurn;
 	}
-	GripTurn = GripTurn == EGripTurn::Normal ? EGripTurn::Back : EGripTurn::Normal;
-	TurnLookOnHaft();
+	const EGripTurn Was = GripTurn;
+	ResetGripTurn();
+	if (Was == EGripTurn::Normal)
+	{
+		if (BodyScale.Y <= ItemHaftedBoxY)
+		{
+			// A hafted weapon (its body a thin round box) turns over: its head has a back to strike with and its haft is the
+			// same all round, so the hand holds it as before.
+			GripTurn = EGripTurn::Back;
+			TurnLookOnHaft();
+		}
+		else if (bHalfSword)
+		{
+			// Held by the blade in both hands, a sword strikes with its hilt: the hand moves up the blade, and the reach is from
+			// there back to the pommel.
+			GripTurn = EGripTurn::Murder;
+			MadeGripLocalCm = GripLocalCm;
+			MadeWeaponLength = WeaponLength;
+			const float BladeCm = static_cast<float>(BodyScale.X) * 100.f;
+			const float HoldCm = BladeCm * ItemMurderHoldShare;
+			const float PommelCm = GripLocalCm - GripSpanCm * ItemPommelBeyondGripShare;
+			GripLocalCm = HoldCm;
+			WeaponLength = HoldCm - PommelCm;
+			// Its point now lies back towards the body that holds it, which it passes rather than shoves.
+			SetPassesOwnBody(true);
+		}
+		else if (!bTwoHanded)
+		{
+			GripTurn = EGripTurn::Reversed;
+		}
+	}
+	SettleAlpha = 1.f;
+	SetActorRelativeTransform(ComputeHandGrip(Creature, HeldHand));
 	return GripTurn;
 }
 
 void AAedirItemActor::ResetGripTurn()
 {
-	if (GripTurn != EGripTurn::Normal)
+	if (GripTurn == EGripTurn::Back)
 	{
-		GripTurn = EGripTurn::Normal;
 		TurnLookOnHaft();
 	}
+	else if (GripTurn == EGripTurn::Murder)
+	{
+		GripLocalCm = MadeGripLocalCm;
+		WeaponLength = MadeWeaponLength;
+		GripTurn = EGripTurn::Normal;
+		SetPassesOwnBody(false);
+	}
+	GripTurn = EGripTurn::Normal;
 }
 
 void AAedirItemActor::TurnLookOnHaft()

@@ -220,13 +220,18 @@ public:
 
 	static bool IsPickable(const AAedirItemActor* Item);
 
-	// How the held item is turned in the hand: as it is made, or an axe or a hammer turned over on its haft to strike with
-	// its back.
-	enum class EGripTurn : uint8 { Normal, Back };
+	// How the held item is turned in the hand: as it is made, an axe or a hammer turned over on its haft to strike with its
+	// back, a blade reversed so it comes out by the little finger, or a sword held by its blade to strike with its hilt.
+	enum class EGripTurn : uint8 { Normal, Back, Reversed, Murder };
 	EGripTurn GetGripTurn() const { return GripTurn; }
 
-	// Turns a hafted weapon held in this creature's hand over on its haft, or back. Returns the new way.
-	EGripTurn TurnInHand(AAedirCreature* Creature);
+	// The hand holds it so that what it strikes with comes out by the little finger, not the thumb: the arm points the hand
+	// the other way round for it.
+	bool IsAimedReversed() const { return GripTurn == EGripTurn::Reversed || GripTurn == EGripTurn::Murder; }
+
+	// Turns the weapon held in this creature's hand to its next way of holding: a hafted one over on its haft, a blade
+	// reversed, or held by the blade while half-swording. Returns the new way.
+	EGripTurn TurnInHand(AAedirCreature* Creature, bool bHalfSword);
 
 private:
 	UFUNCTION()
@@ -266,6 +271,8 @@ private:
 	FTransform ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const;
 
 	EGripTurn GripTurn = EGripTurn::Normal;
+	float MadeGripLocalCm = 0.f;
+	float MadeWeaponLength = 0.f;
 	void ResetGripTurn();
 	// Turns what the item looks like half a turn about its length; the item itself, as the hand holds it, stays as it is.
 	void TurnLookOnHaft();

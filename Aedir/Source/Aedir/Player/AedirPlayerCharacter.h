@@ -292,7 +292,7 @@ public:
 	UFUNCTION(Exec)
 	void ArmourInfo();
 
-	// Turns a hafted weapon in the hand over on its haft, as the R key does.
+	// Turns the weapon in the hand to its next way of holding, as the R key does.
 	UFUNCTION(Exec)
 	void TurnWeapon();
 
@@ -543,7 +543,7 @@ private:
 	bool bThrustLatched = false;
 	void EndLatchedThrust();
 
-	// Turns an axe or a hammer in the hand over on its haft, to strike with its back.
+	// Turns the weapon in the hand that holds one: over on its haft, reversed, or held by the blade while half-swording.
 	void HandleTurnWeaponPressed();
 	void HandleDynamicKickPressed();
 
