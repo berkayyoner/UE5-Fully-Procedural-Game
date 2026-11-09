@@ -532,7 +532,7 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerSendNpc(AAedirNpc* Npc, const FVector& Where, AAedirItemActor* Item);
-	void HandleKickPressed();
+	void HandleChangeHandsPressed();
 	void HandleLockOnTogglePressed();
 
 	// Lock-on: while a guard is held the camera keeps the nearest creature the view points at in sight.

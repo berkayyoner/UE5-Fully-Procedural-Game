@@ -63,8 +63,11 @@ namespace
 	constexpr float PassMeetUpCm = 18.f;
 	constexpr float WaistSlotRadiusCm = 22.f;
 	constexpr float WaistSlotUpCm = -4.f;
-	constexpr float WaistSlotYawDegrees[3] = { 95.f, 130.f, 160.f };
+	// The first slot of a hip is in front of it, where the other hand reaches it across the belly; the rest go on round to the back.
+	constexpr float WaistSlotYawDegrees[3] = { 55.f, 100.f, 140.f };
 	constexpr float SwordHangBackShare = 1.15f;
+	// A sword on one hip leans its point out and its hilt in across the belly, towards the hand that draws it.
+	constexpr float SwordHangOutShare = 0.35f;
 	constexpr float BigObjectHandClearanceCm = 7.f;
 	constexpr float BigObjectHandSpanShare = 0.9f;
 	constexpr float TwoHandLiftMultiplier = 2.5f;
@@ -106,16 +109,14 @@ namespace
 	}
 
 	// A hand wears its items on the opposite hip, where it can draw them across the body.
-	// Each hand hangs its weapons on its own hip, where it reaches without crossing the belly: the slots of the left hip come
-	// first, those of the right after them.
 	int32 GetWaistSideBegin(EAedirHand Hand)
 	{
-		return Hand == EAedirHand::Left ? 0 : WaistSlotsPerSide;
+		return Hand == EAedirHand::Left ? WaistSlotsPerSide : 0;
 	}
 
 	int32 GetWaistSideIndex(EAedirHand Hand)
 	{
-		return Hand == EAedirHand::Left ? 0 : 1;
+		return Hand == EAedirHand::Left ? 1 : 0;
 	}
 
 	void ResetSlot(FAedirHandSlot& Slot)
@@ -799,7 +800,7 @@ void UAedirInteractionComponent::GetWaistSlot(int32 WaistIndex, const AAedirItem
 	OutPivotCm = 0.f;
 	if (bDiagonal)
 	{
-		LongAxis = FVector(-SwordHangBackShare, 0.f, -1.f).GetSafeNormal();
+		LongAxis = FVector(-SwordHangBackShare, Side * SwordHangOutShare, -1.f).GetSafeNormal();
 		OutPivotCm = Item->GripLocalCm + Item->GripSpanCm;
 	}
 	else if (bWeapon)
@@ -1607,7 +1608,7 @@ bool UAedirInteractionComponent::PassToOtherHand()
 	const EAedirHand FromHand = RightItem ? EAedirHand::Right : EAedirHand::Left;
 	AAedirItemActor* Item = GetHeldItem(FromHand);
 	const EAedirHand ToHand = GetOtherHand(FromHand);
-	if ((LeftItem && RightItem) || !Item || Item->ItemClass != EAedirItemClass::Weapon || Item->bTwoHanded || GetHandState(ToHand) != EAedirHandState::Idle)
+	if ((LeftItem && RightItem) || !Item || Item->ItemClass != EAedirItemClass::Weapon || GetHandState(ToHand) != EAedirHandState::Idle)
 	{
 		return false;
 	}
@@ -1674,7 +1675,7 @@ bool UAedirInteractionComponent::HolsterImmediate(int32 SlotIndex, AAedirItemAct
 		return false;
 	}
 
-	const EAedirHand Hand = SlotIndex < WaistSlotsPerSide ? EAedirHand::Left : EAedirHand::Right;
+	const EAedirHand Hand = SlotIndex < WaistSlotsPerSide ? EAedirHand::Right : EAedirHand::Left;
 
 	WaistItems[SlotIndex] = Item;
 	LastStoredWaistIndex[GetWaistSideIndex(Hand)] = SlotIndex;

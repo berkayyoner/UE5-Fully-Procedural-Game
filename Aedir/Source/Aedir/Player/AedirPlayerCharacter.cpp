@@ -330,7 +330,7 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 
 	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleTalkPressed);
 	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
-	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleKickPressed);
+	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleChangeHandsPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &AAedirPlayerCharacter::HandleThrustPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Released, this, &AAedirPlayerCharacter::HandleThrustReleased);
 	PlayerInputComponent->BindKey(EKeys::R, IE_Pressed, this, &AAedirPlayerCharacter::HandleTurnWeaponPressed);
@@ -961,27 +961,26 @@ void AAedirPlayerCharacter::HandleDynamicKickPressed()
 	Combat->StartKick();
 }
 
-void AAedirPlayerCharacter::HandleKickPressed()
+void AAedirPlayerCharacter::HandleChangeHandsPressed()
 {
 	if (!Combat || IsMenuOpen() || IsCharacterCreationOpen())
 	{
 		return;
 	}
 
-	// With a two-handed weapon in both hands X swaps the grip: the upper hand and the lower hand change places.
-	if (Interaction && Combat->IsTwoHandGrip() && Interaction->GetHeldItem(EAedirHand::Left) && Interaction->GetHeldItem(EAedirHand::Left) == Interaction->GetHeldItem(EAedirHand::Right))
+	// X only ever changes hands; the kick is on C. With a weapon held in both hands the upper hand and the lower hand change
+	// places, and with one weapon and a free hand it is passed over.
+	if (!Interaction)
+	{
+		return;
+	}
+	const AAedirItemActor* LeftItem = Interaction->GetHeldItem(EAedirHand::Left);
+	if (LeftItem && LeftItem == Interaction->GetHeldItem(EAedirHand::Right))
 	{
 		Interaction->SwapGripOrder();
 		return;
 	}
-
-	// With one weapon and a free hand X passes it over.
-	if (Interaction && !Combat->IsTwoHandGrip() && Interaction->PassToOtherHand())
-	{
-		return;
-	}
-
-	Combat->StartKick();
+	Interaction->PassToOtherHand();
 }
 
 void AAedirPlayerCharacter::HandleHandPressed(EAedirHand Hand)

@@ -141,3 +141,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Running arms: the bent forearms turn in toward the midline, the arms spread less, and the hand holding a weapon barely swings while running.
 - Fight stance: an empty hand that is not on guard is held ready in front of the chest while the other hand guards.
 - Blows come only from the real weapon: the held item's own body (or the knuckles) is swept along the path it really took, a few cm thick instead of an 18 cm ball, each point at its own speed. Other bodies no longer stop the blade short of them; kicks reach 8 cm instead of 14.
+- X only changes hands (the kick is on C); a two-handed weapon in one hand can be passed too.
+- Belt back to the cross draw: a hand hangs its weapon on the opposite hip, the first slot in front of the hip with the hilt leaning in across the belly, and reaches it across the body.
