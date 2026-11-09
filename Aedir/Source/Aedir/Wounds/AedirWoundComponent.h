@@ -29,6 +29,16 @@ struct FAedirWoundVisual
 
 	UPROPERTY()
 	TObjectPtr<UMaterialInstanceDynamic> Material;
+
+	// The blood that runs down the skin from an open wound: how far it has got (0 to 1 of its length) and how wet it still is.
+	UPROPERTY()
+	TObjectPtr<UDecalComponent> Run;
+
+	UPROPERTY()
+	TObjectPtr<UMaterialInstanceDynamic> RunMaterial;
+
+	float RunLength = 0.f;
+	float RunWet = 1.f;
 };
 
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
@@ -104,6 +114,7 @@ private:
 	void UpdateWoundVisuals(float DeltaTime);
 	FAedirWoundVisual* FindVisual(uint8 Id);
 	UDecalComponent* CreateWoundDecal(USkeletalMeshComponent* Mesh, const FAedirWound& Wound, UMaterialInstanceDynamic* Material, float Radius, float Roll);
+	UDecalComponent* CreateRunDecal(USkeletalMeshComponent* Mesh, const FAedirWound& Wound, UMaterialInstanceDynamic* Material);
 
 	UFUNCTION()
 	void OnRep_Wounds();

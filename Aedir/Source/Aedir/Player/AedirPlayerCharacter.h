@@ -292,6 +292,10 @@ public:
 	UFUNCTION(Exec)
 	void ArmourInfo();
 
+	// A decal material laid flat in front of the feet, to look at on its own.
+	UFUNCTION(Exec)
+	void LayDecal(const FString& Args);
+
 	UFUNCTION(Exec)
 	void DropHand(int32 RightHand);
 

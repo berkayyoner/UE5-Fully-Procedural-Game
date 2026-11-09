@@ -1321,6 +1321,11 @@ void AAedirPlayerCharacter::WaistInfo()
 	RunDevCommand(TEXT("WaistInfo"), FString(), false);
 }
 
+void AAedirPlayerCharacter::LayDecal(const FString& Args)
+{
+	RunDevCommand(TEXT("LayDecal"), Args, false);
+}
+
 void AAedirPlayerCharacter::ArmourInfo()
 {
 	RunDevCommand(TEXT("ArmourInfo"), FString(), false);

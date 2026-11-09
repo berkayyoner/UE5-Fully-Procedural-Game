@@ -98,6 +98,24 @@ namespace
 		return Slot;
 	}
 
+	FWoundMaterialSlot& WoundRunSlot()
+	{
+		static FWoundMaterialSlot Slot(TEXT("/Game/Aedir/Materials/M_BloodRun.M_BloodRun"));
+		return Slot;
+	}
+
+	// Blood runs from an open wound down the skin: this wide, this long for the worst wound, at this share of its length a
+	// second for a wound bleeding at a point of health a second, and it dries over a minute once the wound has closed.
+	constexpr float WoundRunHalfWidthCm = 3.2f;
+	constexpr float WoundRunHalfLengthMinCm = 7.f;
+	constexpr float WoundRunHalfLengthPerSeverityCm = 11.f;
+	constexpr float WoundRunShareBase = 0.03f;
+	constexpr float WoundRunSharePerBleed = 0.05f;
+	constexpr float WoundRunDrySeconds = 60.f;
+	constexpr float WoundRunDepthCm = 10.f;
+	constexpr float WoundRunOpenShare = 0.15f;
+	constexpr float WoundRunOpenPerSeverity = 0.35f;
+
 	FWoundMaterialSlot& WoundCutSlot()
 	{
 		static FWoundMaterialSlot Slot(TEXT("/Game/Aedir/Materials/M_Wound_Cut.M_Wound_Cut"));
@@ -603,6 +621,10 @@ void UAedirWoundComponent::EnsureWoundVisuals()
 			{
 				Visuals[Index].Decal->DestroyComponent();
 			}
+			if (Visuals[Index].Run)
+			{
+				Visuals[Index].Run->DestroyComponent();
+			}
 
 			Visuals.RemoveAt(Index);
 		}
@@ -634,7 +656,20 @@ void UAedirWoundComponent::EnsureWoundVisuals()
 				Visual->DecalRadius = Radius;
 			}
 		}
-		else if (!FMath::IsNearlyEqual(Visual->DecalRadius, Radius))
+		// An open wound has blood running from it down the skin.
+		if (!Visual->Run && Mesh && Wound.Type != EAedirWoundType::Bruise)
+		{
+			if (UMaterialInterface* RunParent = WoundResolveMaterial(WoundRunSlot()))
+			{
+				Visual->RunMaterial = UMaterialInstanceDynamic::Create(RunParent, this);
+				Visual->RunMaterial->SetScalarParameterValue(TEXT("Seed"), static_cast<float>(Visual->Random.FRandRange(0.0, 10.0)));
+				// The cut itself lets out a little at once, more the worse it is; bleeding carries it on from there.
+				Visual->RunLength = WoundRunOpenShare + WoundRunOpenPerSeverity * FMath::Clamp(Wound.GetSeverity(), 0.f, 1.f);
+				Visual->RunMaterial->SetScalarParameterValue(TEXT("Length01"), Visual->RunLength);
+				Visual->Run = CreateRunDecal(Mesh, Wound, Visual->RunMaterial);
+			}
+		}
+		if (Visual->Decal && !FMath::IsNearlyEqual(Visual->DecalRadius, Radius))
 		{
 			Visual->Decal->DecalSize = FVector(WoundDecalDepth, Radius, Radius);
 			Visual->Decal->MarkRenderStateDirty();
@@ -674,6 +709,21 @@ void UAedirWoundComponent::UpdateWoundVisuals(float DeltaTime)
 		}
 
 		const float Rate = ComputeBleedRate(Wound.Type, Severity, Age);
+		// The run creeps further down while the wound bleeds, quicker the more it bleeds, and dries once it has stopped.
+		if (Visual->RunMaterial)
+		{
+			if (Rate > 0.f)
+			{
+				Visual->RunLength = FMath::Min(Visual->RunLength + DeltaTime * (WoundRunShareBase + Rate * WoundRunSharePerBleed), 1.f);
+				Visual->RunWet = 1.f;
+			}
+			else
+			{
+				Visual->RunWet = FMath::Max(Visual->RunWet - DeltaTime / WoundRunDrySeconds, 0.f);
+			}
+			Visual->RunMaterial->SetScalarParameterValue(TEXT("Length01"), Visual->RunLength);
+			Visual->RunMaterial->SetScalarParameterValue(TEXT("Wet"), Visual->RunWet);
+		}
 		if (Rate <= 0.f || Wound.Type == EAedirWoundType::Bruise || !Blood)
 		{
 			continue;
@@ -720,6 +770,35 @@ UDecalComponent* UAedirWoundComponent::CreateWoundDecal(USkeletalMeshComponent* 
 	Rotation.Roll = Roll;
 	Decal->SetRelativeLocationAndRotation(Wound.Offset, Rotation);
 
+	return Decal;
+}
+
+UDecalComponent* UAedirWoundComponent::CreateRunDecal(USkeletalMeshComponent* Mesh, const FAedirWound& Wound, UMaterialInstanceDynamic* Material)
+{
+	AActor* Owner = GetOwner();
+	if (!Owner || !Mesh || !Material)
+	{
+		return nullptr;
+	}
+	// Laid on the skin with its top at the wound and its length the way down the skin goes as the body stands when struck.
+	const FTransform Reference = WoundBoneTransform(Mesh, Wound.Bone);
+	const FVector Normal = Wound.Normal.GetSafeNormal();
+	FVector Down = FVector::VectorPlaneProject(Reference.InverseTransformVectorNoScale(-FVector::UpVector), Normal).GetSafeNormal();
+	if (Down.IsNearlyZero())
+	{
+		Down = FVector::VectorPlaneProject(Reference.InverseTransformVectorNoScale(-Owner->GetActorForwardVector()), Normal).GetSafeNormal();
+	}
+	const float HalfLength = WoundRunHalfLengthMinCm + WoundRunHalfLengthPerSeverityCm * FMath::Clamp(Wound.GetSeverity(), 0.f, 1.f);
+
+	UDecalComponent* Decal = NewObject<UDecalComponent>(Owner, NAME_None, RF_Transient);
+	Owner->AddInstanceComponent(Decal);
+	Decal->SetDecalMaterial(Material);
+	Decal->DecalSize = FVector(WoundRunDepthCm, WoundRunHalfWidthCm, HalfLength);
+	Decal->SetFadeScreenSize(0.f);
+	Decal->RegisterComponent();
+	Decal->AttachToComponent(Mesh, FAttachmentTransformRules::KeepRelativeTransform, Wound.Bone);
+	// The top of the decal's picture lies towards its own -Z: turned so that end is at the wound and the runs go down.
+	Decal->SetRelativeLocationAndRotation(Wound.Offset + Down * HalfLength, FRotationMatrix::MakeFromXZ(-Normal, Down).Rotator());
 	return Decal;
 }
 

@@ -60,10 +60,11 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 
 	bUseControllerRotationYaw = false;
 
-	// Footprints and blood on the ground land on the ground, not on the legs standing over it.
+	// The skin takes its own wounds and the blood running from them. What lies on the ground reaches only a few centimetres
+	// up from it, so at most the soles standing in it take some.
 	if (USkeletalMeshComponent* Body = GetMesh())
 	{
-		Body->SetReceivesDecals(false);
+		Body->SetReceivesDecals(true);
 	}
 
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())

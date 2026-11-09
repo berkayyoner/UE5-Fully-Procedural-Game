@@ -1,3 +1,5 @@
+#include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Dev/AedirDevTools.h"
 #include "AnimationRuntime.h"
 #include "Engine/SkeletalMesh.h"
@@ -260,6 +262,31 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 					Hands->RemoveOwnedItem(Item);
 				}
 			}
+		}
+	}
+	else if (Command == TEXT("LayDecal"))
+	{
+		// A decal material laid flat on the ground in front of the feet, large, to look at it on its own.
+		const TArray<FString> Tokens = DevToolsTokens(Args);
+		const FString Path = Tokens.IsValidIndex(0) ? Tokens[0] : FString(TEXT("/Game/Aedir/Materials/M_BloodRun.M_BloodRun"));
+		if (UMaterialInterface* Parent = LoadObject<UMaterialInterface>(nullptr, *Path))
+		{
+			UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(Parent, Player);
+			Material->SetScalarParameterValue(TEXT("Length01"), Tokens.IsValidIndex(1) ? FCString::Atof(*Tokens[1]) : 1.f);
+			Material->SetScalarParameterValue(TEXT("Wet"), 1.f);
+			Material->SetScalarParameterValue(TEXT("Severity"), 1.f);
+			if (Tokens.IsValidIndex(2) && Tokens[2] == TEXT("body"))
+			{
+				// On the chest instead, projected into it from the front, with its top at the breastbone.
+				const FVector Chest = Player->GetMesh()->GetBoneLocation(TEXT("spine_04")) + Player->GetActorForwardVector() * 12.f - FVector(0.f, 0.f, 10.f);
+				UGameplayStatics::SpawnDecalAttached(Material, FVector(12.f, 5.f, 14.f), Player->GetMesh(), TEXT("spine_04"), Chest, FRotationMatrix::MakeFromXZ(-Player->GetActorForwardVector(), -FVector::UpVector).Rotator(), EAttachLocation::KeepWorldPosition, 60.f);
+			}
+			else
+			{
+				const FVector At = Player->GetActorLocation() + Player->GetActorForwardVector() * 80.f - FVector(0.f, 0.f, 90.f);
+				UGameplayStatics::SpawnDecalAtLocation(Player, Material, FVector(30.f, 15.f, 40.f), At, FRotationMatrix::MakeFromXZ(-FVector::UpVector, Player->GetActorForwardVector()).Rotator(), 60.f);
+			}
+			DevToolsReport(FString::Printf(TEXT("Decal %s laid in front"), *Path));
 		}
 	}
 	else if (Command == TEXT("ArmourInfo"))
@@ -717,8 +744,14 @@ void UAedirDevTools::Wound(AAedirPlayerCharacter* Player, const FString& Args)
 		return;
 	}
 
+	// On the skin in front of the bone, where a blow from the front would have landed.
 	const FVector Normal = Player->GetActorForwardVector();
-	const FVector Location = BodyMesh->GetBoneLocation(Bone);
+	FVector Location = BodyMesh->GetBoneLocation(Bone);
+	FHitResult Skin;
+	if (const_cast<USkeletalMeshComponent*>(BodyMesh)->LineTraceComponent(Skin, Location + Normal * 40.f, Location, FCollisionQueryParams(SCENE_QUERY_STAT(AedirDevWound), false)))
+	{
+		Location = Skin.ImpactPoint;
+	}
 	const bool bOpened = Player->Wounds->AddWound(Bone, Location, Normal, DamageType, DevToolsWoundEnergyJoules, 0.f, Normal);
 	DevToolsReport(bOpened ? FString::Printf(TEXT("%s wound on %s"), *TypeToken, *Bone.ToString()) : TEXT("The wound was not created"));
 }

@@ -20,9 +20,9 @@ namespace
 {
 	const TCHAR* const BloodBurstLight = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Once.NS_Blood_Splat_Directional_01_Floor_Once");
 	const TCHAR* const BloodBurstHeavy = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Bunch_Once.NS_Blood_Splat_Directional_01_Floor_Bunch_Once");
-	constexpr float BloodBurstHeavyAbove = 0.6f;
-	constexpr float BloodBurstMinScale = 0.25f;
-	constexpr float BloodBurstMaxScale = 0.7f;
+	constexpr float BloodBurstHeavyAbove = 0.85f;
+	constexpr float BloodBurstMinScale = 0.12f;
+	constexpr float BloodBurstMaxScale = 0.35f;
 	constexpr float BloodDropScale = 0.012f;
 	constexpr float BloodDropLifeSpan = 4.f;
 	constexpr float BloodDropLinearDamping = 0.05f;
