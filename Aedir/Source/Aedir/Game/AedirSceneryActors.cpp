@@ -31,6 +31,8 @@ namespace
 	constexpr float SceneryWaterFadeCm = 4500.f;
 	constexpr float SceneryFireHeardCm = 150.f;
 	constexpr float SceneryFireFadeCm = 1800.f;
+	constexpr float SceneryCampfireCm = 55.f;
+	constexpr float SceneryFireMinVolume = 0.06f;
 
 	void MakeHeardInPlace(UAudioComponent* Audio, float InnerCm, float FadeCm)
 	{
@@ -128,8 +130,8 @@ void AAedirFlame::BeginPlay()
 	{
 		Sound->bLooping = true;
 		Crackle->SetSound(Sound);
-		MakeHeardInPlace(Crackle, SceneryFireHeardCm, SceneryFireFadeCm);
-		Crackle->SetVolumeMultiplier(FMath::Clamp(FlameHeightCm / 60.f, 0.2f, 1.f));
+		MakeHeardInPlace(Crackle, SceneryFireHeardCm * FMath::Clamp(FlameHeightCm / SceneryCampfireCm, 0.3f, 1.f), SceneryFireFadeCm * FMath::Clamp(FlameHeightCm / SceneryCampfireCm, 0.3f, 1.f));
+		Crackle->SetVolumeMultiplier(FMath::Max(SceneryFireMinVolume, FMath::Cube(FMath::Clamp(FlameHeightCm / SceneryCampfireCm, 0.3f, 1.f))));
 		Crackle->Play(FMath::FRandRange(0.f, 5.f));
 	}
 }

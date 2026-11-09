@@ -65,6 +65,15 @@ namespace
 	constexpr float FoliageTrunkHalfCm = 200.f;
 	constexpr float FoliageWindExtentsCm = 100000.f;
 	constexpr float FoliageWindYaw = 35.f;
+
+	// Grass is too small and too many to light the world around it: kept out of Lumen's scene and the ray-traced one, or every
+	// stirred blade has the whole meadow re-captured into the surface cache.
+	void KeepOutOfLumen(UInstancedStaticMeshComponent* Patch)
+	{
+		Patch->SetAffectDynamicIndirectLighting(false);
+		Patch->SetAffectDistanceFieldLighting(false);
+		Patch->SetVisibleInRayTracing(false);
+	}
 }
 
 TStatId UAedirFoliageSubsystem::GetStatId() const
@@ -353,6 +362,7 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 			// Prints, blood and wounds lie on the ground under the blades, not wrapped over them.
 			Patch->SetReceivesDecals(false);
 			Patch->SetCullDistances(FoliageCullFromCm, FoliageCullToCm);
+			KeepOutOfLumen(Patch);
 			AddToMeadow(Patch);
 			Patches.Add(Patch);
 		}
@@ -621,6 +631,7 @@ void UAedirFoliageSubsystem::ReplantWithScannedGrass(AActor* Meadow)
 				NewPatch->SetCastShadow(false);
 				NewPatch->SetReceivesDecals(false);
 				NewPatch->SetCullDistances(FoliageCullFromCm, FoliageCullToCm);
+				KeepOutOfLumen(NewPatch);
 				NewPatch->SetupAttachment(Meadow->GetRootComponent());
 				NewPatch->RegisterComponent();
 				Meadow->AddInstanceComponent(NewPatch);

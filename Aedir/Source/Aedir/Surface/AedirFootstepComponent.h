@@ -79,6 +79,11 @@ private:
 	static class USoundBase* FindStepSound(const FString& Family, const TCHAR* Gait);
 	static class UNiagaraSystem* FindStepEffect(const TCHAR* Name);
 
+	// How a step is heard: from where the foot is, fading with distance, so a far walker is barely heard and never inside the head.
+	UPROPERTY(Transient)
+	TObjectPtr<class USoundAttenuation> StepAttenuation;
+	class USoundAttenuation* GetStepAttenuation();
+
 	// Whether each foot has been lifted since it last came down.
 	bool bFootRaised[2] = { false, false };
 	float SurfaceQueryTimer = 0.1f;

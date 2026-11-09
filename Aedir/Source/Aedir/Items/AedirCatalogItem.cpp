@@ -249,7 +249,9 @@ void AAedirCatalogItem::BuildSheath(const FAedirItemDef& Def)
 	const FVector Size = Box.GetSize();
 	const float Length = FMath::Max(Def.ScabbardLengthCm, 1.f);
 	const float Scale = Length / FMath::Max(static_cast<float>(Size.Z), 1.f);
-	const FRotator Turn(90.f, 0.f, 0.f);
+	// Turned with the blade, so its flat lies along the blade's flat.
+	const FQuat Fix = Def.ModelFixRotation.Quaternion();
+	const FQuat Turn = Fix * FRotator(90.f, 0.f, 0.f).Quaternion();
 	const float Blade = Def.WeaponLengthCm;
 	Sheath = NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transient);
 	Sheath->SetupAttachment(Mesh);
@@ -259,7 +261,7 @@ void AAedirCatalogItem::BuildSheath(const FAedirItemDef& Def)
 	Sheath->SetWorldScale3D(FVector(Scale));
 	Sheath->SetRelativeRotation(Turn);
 	const FVector Middle(-Blade * 0.5f + Length * 0.5f - 2.f, 0.f, 0.f);
-	Sheath->SetRelativeLocation((Turn.RotateVector(-Box.GetCenter() * Scale) + Middle) / BodyScale);
+	Sheath->SetRelativeLocation((Turn.RotateVector(-Box.GetCenter() * Scale) + Middle + Def.ModelShiftCm) / BodyScale);
 	Sheath->RegisterComponent();
 	Sheath->SetVisibility(bHolstered);
 	DetailMeshes.Add(Sheath);
@@ -315,8 +317,11 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 				const int32 LongAxis = Longest == Size.X ? 0 : Longest == Size.Y ? 1 : 2;
 				Scale3D[LongAxis] = ModelScale;
 				Model->SetWorldScale3D(Scale3D);
-				Model->SetRelativeRotation(Turn);
-				Model->SetRelativeLocation((Turn.RotateVector(-Box.GetCenter() * ModelScale) + FVector(Def.ModelCenterCm, 0.f, 0.f)) / BodyScale);
+				// Laid along the item, then turned and set off as the model's own measure asks, so the handle is where the palm is.
+				const FQuat Fix = Def.ModelFixRotation.Quaternion();
+				const FQuat Placed = Fix * Turn.Quaternion();
+				Model->SetRelativeRotation(Placed);
+				Model->SetRelativeLocation((Fix.RotateVector(Turn.RotateVector(-Box.GetCenter() * ModelScale) + FVector(Def.ModelCenterCm, 0.f, 0.f)) + Def.ModelShiftCm) / BodyScale);
 				Model->RegisterComponent();
 				AedirScannedMaterial::Apply(Model, AedirScannedMaterial::FolderOfPath(Def.MeshPath));
 				DetailMeshes.Add(Model);
@@ -333,7 +338,7 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 					Part->SetStaticMesh(PartMesh);
 					Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 					Part->SetWorldScale3D(Scale3D);
-					Part->SetRelativeRotation(Turn);
+					Part->SetRelativeRotation(Placed);
 					Part->SetRelativeLocation(Model->GetRelativeLocation());
 					Part->RegisterComponent();
 					DetailMeshes.Add(Part);

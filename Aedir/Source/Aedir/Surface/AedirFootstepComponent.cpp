@@ -22,6 +22,7 @@
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
+#include "Sound/SoundAttenuation.h"
 #include "Sound/SoundBase.h"
 #include "Surface/AedirPhysicalMaterial.h"
 #include "Surface/AedirSurfaceSubsystem.h"
@@ -303,7 +304,7 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 		const TCHAR* Gait = bStepIsLanding ? TEXT("Land") : Speed2D > AedirStepRunSpeed ? TEXT("Run") : TEXT("Walk");
 		if (USoundBase* Sound = FindStepSound(Family, Gait))
 		{
-			UGameplayStatics::PlaySoundAtLocation(this, Sound, Point, Volume * AedirStepSoundShare * UAedirSettingsSubsystem::GetValues().FootstepVolume);
+			UGameplayStatics::PlaySoundAtLocation(this, Sound, Point, Volume * AedirStepSoundShare * UAedirSettingsSubsystem::GetValues().FootstepVolume, 1.f, 0.f, GetStepAttenuation());
 		}
 	}
 
@@ -379,6 +380,28 @@ USoundBase* UAedirFootstepComponent::FindStepSound(const FString& Family, const 
 	return nullptr;
 }
 
+USoundAttenuation* UAedirFootstepComponent::GetStepAttenuation()
+{
+	if (!StepAttenuation)
+	{
+		// Full within two metres, gone past about twenty; muffled as it fades, and always placed where the foot is.
+		StepAttenuation = NewObject<USoundAttenuation>(this);
+		FSoundAttenuationSettings& Settings = StepAttenuation->Attenuation;
+		Settings.bAttenuate = true;
+		Settings.bSpatialize = true;
+		Settings.AttenuationShape = EAttenuationShape::Sphere;
+		Settings.AttenuationShapeExtents = FVector(200.f, 0.f, 0.f);
+		Settings.FalloffDistance = 1800.f;
+		Settings.DistanceAlgorithm = EAttenuationDistanceModel::NaturalSound;
+		Settings.bAttenuateWithLPF = true;
+		Settings.LPFRadiusMin = 300.f;
+		Settings.LPFRadiusMax = 2000.f;
+		Settings.NonSpatializedRadiusStart = 40.f;
+		Settings.NonSpatializedRadiusEnd = 10.f;
+	}
+	return StepAttenuation;
+}
+
 UNiagaraSystem* UAedirFootstepComponent::FindStepEffect(const TCHAR* Name)
 {
 	static TMap<FString, TWeakObjectPtr<UNiagaraSystem>> Found;
@@ -402,7 +425,7 @@ void UAedirFootstepComponent::PlayFootEffects(const UAedirPhysicalMaterial* Mate
 	const FSoftObjectPath& SoundPath = bUseWetSound ? Material->WetFootstepSound.ToSoftObjectPath() : Material->FootstepSound.ToSoftObjectPath();
 	if (USoundBase* Sound = Cast<USoundBase>(ResolveAsset(SoundPath)))
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, Sound, Location, Volume * UAedirSettingsSubsystem::GetValues().FootstepVolume);
+		UGameplayStatics::PlaySoundAtLocation(this, Sound, Location, Volume * UAedirSettingsSubsystem::GetValues().FootstepVolume, 1.f, 0.f, GetStepAttenuation());
 	}
 
 	if (UNiagaraSystem* ParticleSystem = Cast<UNiagaraSystem>(ResolveAsset(Material->FootstepParticle.ToSoftObjectPath())))

@@ -278,7 +278,7 @@ namespace
 		};
 		const auto Axes = [](const FVector& X, const FVector& Y, const FVector& Z) { return FMatrix(X, Y, Z, FVector::ZeroVector).Rotator(); };
 		AddWornModel(TEXT("IronSouthernHelmet"), TEXT("Iron Southern Helmet"), 2.2f, EAedirBodyZone::Head, 0.6f, TEXT("head"), FVector(0.24, 0.26, 0.3),
-			TEXT("/Game/Aedir/Fab/IronSouthernHelmet/helmet.helmet"), 41.f, Axes(FVector(0, 0, 1), FVector(0, -1, 0), FVector(1, 0, 0)), FVector(3.f, 1.f, 0.f));
+			TEXT("/Game/Aedir/Fab/IronSouthernHelmet/helmet.helmet"), 41.f, Axes(FVector(0, 0, -1), FVector(0, 1, 0), FVector(1, 0, 0)), FVector(-7.f, 2.f, 0.f));
 		AddWornModel(TEXT("RustyIronShield"), TEXT("Rusty Iron Shield"), 4.5f, EAedirBodyZone::Arm, 0.7f, TEXT("lowerarm_l"), FVector(0.6, 0.6, 0.08),
 			TEXT("/Game/Aedir/Fab/RustyIronShield/Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High.Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High"), 62.f, FRotator::ZeroRotator, FVector(13.f, 0.f, 9.f));
 		AddWornModel(TEXT("RustyShoulders"), TEXT("Rusty Layered Pauldrons"), 3.f, EAedirBodyZone::Arm, 0.35f, TEXT("spine_05"), FVector(0.2, 0.5, 0.2),
@@ -295,6 +295,53 @@ namespace
 					TEXT("/Game/Aedir/Fab/SteelLongsword/scene/StaticMeshes/defaultMaterial_fd62cd4a56349dc7e26ee6101f086fee.defaultMaterial_fd62cd4a56349dc7e26ee6101f086fee"),
 					TEXT("/Game/Aedir/Fab/SteelLongsword/scene/StaticMeshes/defaultMaterial_a60f1a9783c5539b702e73b37cf282d1.defaultMaterial_a60f1a9783c5539b702e73b37cf282d1"),
 					TEXT("/Game/Aedir/Fab/SteelLongsword/scene/StaticMeshes/defaultMaterial_6b8974456b5c21b2111eb0640c4a41c7.defaultMaterial_6b8974456b5c21b2111eb0640c4a41c7") };
+			}
+		}
+
+		// Each model measured on its own: the edge of a blade and the head of an axe across the fingers, as a hand really holds
+		// them, and the handle's middle in the palm. The elven axe was modelled lying aslant and is stood along its haft.
+		const auto SetModelFix = [&Definitions, &Axes](const TCHAR* Id, const FVector& X, const FVector& Y, const FVector& Z, const FVector& Shift)
+		{
+			for (FAedirItemDef& Item : Definitions)
+			{
+				if (Item.Id == FName(Id))
+				{
+					Item.ModelFixRotation = Axes(X, Y, Z);
+					Item.ModelShiftCm = Shift;
+				}
+			}
+		};
+		SetModelFix(TEXT("BloodySword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 0.f, 0.589f));
+		SetModelFix(TEXT("RustySword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector::ZeroVector);
+		SetModelFix(TEXT("AshwardBlade"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector::ZeroVector);
+		SetModelFix(TEXT("WardenSword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector::ZeroVector);
+		SetModelFix(TEXT("AncestralSword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector::ZeroVector);
+		SetModelFix(TEXT("RidgeSword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector::ZeroVector);
+		SetModelFix(TEXT("SlenderSword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector::ZeroVector);
+		SetModelFix(TEXT("Cleaver"), FVector(0.991f, -0.134f, 0.005f), FVector(-0.005f, 0.001f, 1.f), FVector(-0.134f, -0.991f, 0.f), FVector(0.f, -2.553f, 0.408f));
+		SetModelFix(TEXT("Axe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, -6.446f, 0.f));
+		SetModelFix(TEXT("ElvenBattleaxe"), FVector(0.885f, -0.466f, -0.006f), FVector(-0.005f, 0.003f, -1.f), FVector(0.466f, 0.885f, 0.f), FVector(0.f, -1.131f, 0.f));
+		SetModelFix(TEXT("WoodsmanAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 3.009f, 0.f));
+		SetModelFix(TEXT("BeardedGreataxe"), FVector(0.992f, 0.017f, -0.125f), FVector(0.125f, 0.002f, 0.992f), FVector(0.017f, -1.f, 0.f), FVector(0.f, 1.102f, -6.531f));
+		SetModelFix(TEXT("HandAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 3.768f, 0.f));
+		SetModelFix(TEXT("RaiderAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, -0.418f, 0.f));
+		SetModelFix(TEXT("CrescentAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 9.294f, 0.f));
+		SetModelFix(TEXT("WarAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 1.166f, 0.f));
+		SetModelFix(TEXT("Longsword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, -0.739f, 0.f));
+		SetModelFix(TEXT("Sword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 3.62f, 0.f));
+		SetModelFix(TEXT("ShortSword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector::ZeroVector);
+		SetModelFix(TEXT("BattleAxe"), FVector(0.994f, 0.111f, -0.003f), FVector(-0.003f, 0.f, -1.f), FVector(-0.111f, 0.994f, 0.f), FVector(0.f, -5.307f, 0.f));
+		SetModelFix(TEXT("Dagger"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector::ZeroVector);
+		SetModelFix(TEXT("Mace"), FVector(1.f, 0.f, 0.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, 0.f, 0.666f));
+		SetModelFix(TEXT("Warhammer"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector::ZeroVector);
+		SetModelFix(TEXT("Spear"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 0.886f, 0.f));
+		SetModelFix(TEXT("Halberd"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 14.03f, 0.f));
+		// Stood along its haft the elven axe is longer than its slanted box: brought back to its length.
+		for (FAedirItemDef& Item : Definitions)
+		{
+			if (Item.Id == FName(TEXT("ElvenBattleaxe")))
+			{
+				Item.ModelLengthCm *= 0.912f;
 			}
 		}
 

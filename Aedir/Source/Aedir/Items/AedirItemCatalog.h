@@ -98,6 +98,11 @@ struct AEDIR_API FAedirItemDef
 	// to the shaft of the real weapon.
 	float ModelThickShare = 1.f;
 
+	// Measured from each model's own shape: turned about the item's middle so the edge or the head lies across the fingers
+	// and the handle along the item, then set off so the handle's middle is on the item's axis, where the palm closes.
+	FRotator ModelFixRotation = FRotator::ZeroRotator;
+	FVector ModelShiftCm = FVector::ZeroVector;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	FLinearColor Color = FLinearColor::Gray;
 
