@@ -110,9 +110,9 @@ namespace
 	constexpr float AedirWeaponFightHandPitch = -5.f;
 	constexpr float AedirWeaponHandPitchShare = 0.7f;
 	constexpr float AedirWeaponTurnRate = 48.f;
-	constexpr float AedirWeaponTurnFrequencyShare = 1.4f;
+	constexpr float AedirWeaponTurnFrequencyShare = 1.8f;
 	constexpr float AedirWeaponTurnDampingLight = 0.78f;
-	constexpr float AedirWeaponTurnDampingHeavy = 0.5f;
+	constexpr float AedirWeaponTurnDampingHeavy = 0.65f;
 	constexpr float AedirWeaponTurnDampingPerKg = 0.05f;
 	constexpr float AedirWeaponTurnSubstep = 1.f / 120.f;
 	constexpr float AedirWeaponWeightDroopPerKg = 1.5f;
@@ -343,9 +343,14 @@ namespace
 	constexpr float AedirGlanceBounce = 0.35f;
 	constexpr float AedirGlanceDamageShare = 0.4f;
 	constexpr float AedirCutThroughKeep = 0.7f;
-	constexpr float AedirLodgedMinSeconds = 0.25f;
-	constexpr float AedirLodgedMaxSeconds = 0.9f;
-	constexpr float AedirLodgedTearCm = 32.f;
+	constexpr float AedirLodgedMinSeconds = 0.12f;
+	constexpr float AedirLodgedMaxSeconds = 0.45f;
+	constexpr float AedirLodgedTearCm = 14.f;
+	// A point driven in along the blade, or an axe's bit chopped this deep into its cut, stays in; any other edge drags on through.
+	constexpr float AedirLodgeThrustAlignment = 0.75f;
+	constexpr float AedirLodgeChopShare = 0.6f;
+	constexpr double AedirLodgeHaftedBoxY = 0.035;
+	constexpr float AedirCutBiteKeep = 0.4f;
 	// Below this many joules a blow does no harm at all.
 	constexpr float AedirImpactNoHarmJoules = 25.f;
 	// Most of a blow goes into the wound. This share of it is what pushes the body off its feet.
@@ -2888,6 +2893,17 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		Outcome = TEXT("went through");
 		Arm.HandVelocity *= AedirCutThroughKeep;
 		Arm.PoseAimSpeed *= AedirCutThroughKeep;
+		PassVictim[HandIndex(Hand)] = Victim;
+		PassUntil[HandIndex(Hand)] = GetWorld()->GetTimeSeconds() + AedirPassThroughSeconds;
+	}
+	else if (AxialAlignment < AedirLodgeThrustAlignment && !(HeldItem && HeldItem->BodyScale.Y <= AedirLodgeHaftedBoxY && CutShare >= AedirLodgeChopShare))
+	{
+		// An edge that bit in without going through drags on through the cut, slowed by it, and is not held there: only a point
+		// driven in or an axe chopped deep stays in what it struck.
+		Outcome = TEXT("dragged through");
+		Arm.HandVelocity *= AedirCutBiteKeep;
+		Arm.PoseAimSpeed *= AedirCutBiteKeep;
+		Arm.WeaponDirSpeed *= AedirCutBiteKeep;
 		PassVictim[HandIndex(Hand)] = Victim;
 		PassUntil[HandIndex(Hand)] = GetWorld()->GetTimeSeconds() + AedirPassThroughSeconds;
 	}
