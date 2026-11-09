@@ -249,6 +249,11 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Interaction")
 	float GetWornArmorProtection(EAedirBodyZone Zone) const;
 
+	// What the worn armour does to a blow of this kind landing on this bone at this point: the piece that takes the most of it,
+	// or nothing where the body is bare.
+	FAedirArmorHit GetArmorAt(FName Bone, const FVector& Point, EAedirDamageType Type) const;
+	bool HasWornArmor() const { return !WornItems.IsEmpty(); }
+
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	FAedirHandSlot LeftSlot;
 

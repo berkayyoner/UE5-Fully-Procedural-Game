@@ -228,6 +228,9 @@ void AAedirCatalogItem::ApplyDefinition()
 	ArmorZone = Def->ArmorZone;
 	ArmorProtection = Def->ArmorProtection;
 	ArmorAttachBone = Def->ArmorAttachBone;
+	ArmorMaterial = Def->ArmorMaterial;
+	ArmorBones = Def->ArmorBones;
+	bOpenFace = Def->bOpenFace;
 	WornTransform = FTransform(Def->WornRotation, Def->WornOffsetCm);
 	BodyScale = Def->BodyScale;
 

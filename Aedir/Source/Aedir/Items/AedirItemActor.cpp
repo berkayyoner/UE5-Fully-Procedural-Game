@@ -13,6 +13,14 @@
 
 namespace
 {
+	// Where armour leaves a body bare, in cm from the bone the blow landed on: the face in front of the head below the brow,
+	// under the arm where it meets the trunk, and high on the sides under the arms.
+	constexpr float ArmorFaceForwardCm = 4.f;
+	constexpr float ArmorBrowHeightCm = 14.f;
+	constexpr float ArmorArmpitDropCm = 3.f;
+	constexpr float ArmorArmpitInsideCm = 2.f;
+	constexpr float ArmorSideGapCm = 13.f;
+	constexpr float ArmorMaxTake = 0.97f;
 	// Welding a held item onto the hand's body leaves its size in the welded shape's transform, which breaks the physics'
 	// queries and contacts on it; the hand carries its weight by force and its blade stops by the held sweep instead.
 	TAutoConsoleVariable<int32> CVarAedirWeldHeld(TEXT("aedir.WeldHeld"), 0, TEXT("Make a held item part of the hand's physical body."));
@@ -383,6 +391,62 @@ void AAedirItemActor::UpdateHangContact(const FTransform& BoneWorld, float Delta
 	HangSwing = (HangSwing + BoneWorld.GetRotation().Inverse().RotateVector(Turn) * (HangBlockRadiansPerSecond * DeltaSeconds)).GetClampedToMaxSize(HangSwingMaxRadians);
 	HangSwingSpeed = FVector::ZeroVector;
 	HangContactHold = HangContactHoldSeconds;
+}
+
+FAedirArmorHit AAedirItemActor::GetArmorAt(FName Bone, const FVector& Point, EAedirDamageType Type, const AActor* Wearer) const
+{
+	FAedirArmorHit Hit;
+	const AAedirCreature* Body = Cast<AAedirCreature>(Wearer);
+	const USkeletalMeshComponent* Mesh3 = Body ? Body->GetMesh() : nullptr;
+	if (!Mesh3 || !ArmorBones.Contains(Bone))
+	{
+		return Hit;
+	}
+	const float Scale = static_cast<float>(Body->GetActorScale3D().Z);
+	const FVector Forward = Body->GetActorForwardVector();
+	const FVector Up = Body->GetActorUpVector();
+	const FVector Rel = Point - Mesh3->GetBoneLocation(Bone);
+	const FString Name = Bone.ToString();
+
+	// An open helmet leaves the face bare: in front of the head and below the brow.
+	if (bOpenFace && Name == TEXT("head") && FVector::DotProduct(Rel, Forward) > ArmorFaceForwardCm * Scale && FVector::DotProduct(Rel, Up) < ArmorBrowHeightCm * Scale)
+	{
+		return Hit;
+	}
+	// Plate over the shoulder and down the arm is open underneath, where the arm meets the trunk; a breastplate is open at the
+	// sides high under the arms.
+	const bool bLeft = Name.EndsWith(TEXT("_l"));
+	const FVector Outward = Body->GetActorRightVector() * (bLeft ? -1.f : 1.f);
+	if ((Name.StartsWith(TEXT("upperarm")) || Name.StartsWith(TEXT("clavicle"))) && FVector::DotProduct(Rel, Up) < -ArmorArmpitDropCm * Scale && FVector::DotProduct(Rel, Outward) < ArmorArmpitInsideCm * Scale)
+	{
+		return Hit;
+	}
+	if (Name == TEXT("spine_05") || Name == TEXT("spine_04"))
+	{
+		const FVector Side = FVector::VectorPlaneProject(Rel, Forward);
+		if (FMath::Abs(FVector::DotProduct(Side, Body->GetActorRightVector())) > ArmorSideGapCm * Scale && FVector::DotProduct(Rel, Up) < 0.f && Name == TEXT("spine_05"))
+		{
+			return Hit;
+		}
+	}
+
+	// What each material takes of an edge, a point and a blunt blow, before its make and thickness.
+	static const float Takes[3][3] = {
+		// Slash, Pierce, Blunt
+		{ 0.45f, 0.30f, 0.35f }, // Soft
+		{ 0.85f, 0.45f, 0.25f }, // Mail
+		{ 0.95f, 0.90f, 0.50f }, // Plate
+	};
+	static const float Usual[3] = { 0.3f, 0.5f, 0.6f };
+	const int32 MaterialIndex = static_cast<int32>(ArmorMaterial);
+	const int32 TypeIndex = Type == EAedirDamageType::Slash ? 0 : Type == EAedirDamageType::Pierce ? 1 : 2;
+	// The make counts for less than the material: thin plate is still plate.
+	const float Make = FMath::Clamp(ArmorProtection / Usual[MaterialIndex], 0.85f, 1.1f);
+	Hit.Protection = FMath::Min(Takes[MaterialIndex][TypeIndex] * Make, ArmorMaxTake);
+	Hit.bCovered = true;
+	Hit.Material = ArmorMaterial;
+	Hit.Piece = GetFName();
+	return Hit;
 }
 
 FVector AAedirItemActor::GetGripWorld() const

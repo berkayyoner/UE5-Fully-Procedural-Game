@@ -64,6 +64,12 @@ struct AEDIR_API FAedirItemDef
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
 	FName ArmorAttachBone;
 
+	// What the armour is made of and the bones it covers; anywhere else it leaves the body bare. An open helmet leaves the
+	// face bare as well.
+	EAedirArmorMaterial ArmorMaterial = EAedirArmorMaterial::Soft;
+	TArray<FName> ArmorBones;
+	bool bOpenFace = false;
+
 	// Worn armour: a model on the body's own skeleton that moves with it, instead of a shape on one bone.
 	FString WornMeshPath;
 

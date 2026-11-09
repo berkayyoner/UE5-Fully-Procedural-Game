@@ -103,6 +103,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Armor")
 	float ArmorProtection = 0.f;
 
+	// What the armour is made of, the bones it covers and whether it leaves the face bare (an open helmet).
+	EAedirArmorMaterial ArmorMaterial = EAedirArmorMaterial::Soft;
+	TArray<FName> ArmorBones;
+	bool bOpenFace = false;
+
+	// How much of a blow of this kind the armour takes where it lands, or nothing where it does not cover.
+	FAedirArmorHit GetArmorAt(FName Bone, const FVector& Point, EAedirDamageType Type, const AActor* Wearer) const;
+
 	// Armor only. Manny bone that the armor is attached to while worn.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Armor")
 	FName ArmorAttachBone = NAME_None;

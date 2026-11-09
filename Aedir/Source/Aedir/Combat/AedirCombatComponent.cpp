@@ -2807,8 +2807,16 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	const EAedirBodyZone Zone = ClassifyBodyZone(Bone);
 	const EAedirDamageType DamageType = HeldItem ? HeldItem->GetDamageType() : EAedirDamageType::Blunt;
 	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
-	const float VictimZoneProtection = Victim->Combat ? Victim->Combat->GetArmorProtection(Zone) : 0.f;
+	// The armour where it landed, for the way it landed: an edge, a point driven in along the blade, or a blunt blow. Bare
+	// places (the face under an open helmet, the neck, under the arms, the hands) take it all.
+	const bool bPointFirst = HeldItem && DamageType != EAedirDamageType::Blunt && AxialAlignment >= AedirLodgeThrustAlignment;
+	const EAedirDamageType StruckAs = bPointFirst ? EAedirDamageType::Pierce : DamageType;
+	const FAedirArmorHit Armour = Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, StruckAs) : FAedirArmorHit();
+	const float VictimZoneProtection = Armour.Protection;
 	const float ArmorFactor = 1.f - VictimZoneProtection;
+	UE_CLOG(Victim->Interaction && Victim->Interaction->HasWornArmor(), LogAedir, Log, TEXT("Armour: %s on %s took %.0f%% (%s)"),
+		StruckAs == EAedirDamageType::Slash ? TEXT("edge") : StruckAs == EAedirDamageType::Pierce ? TEXT("point") : TEXT("blunt"), *Bone.ToString(), VictimZoneProtection * 100.f,
+		!Armour.bCovered ? TEXT("bare") : Armour.Material == EAedirArmorMaterial::Plate ? TEXT("plate") : Armour.Material == EAedirArmorMaterial::Mail ? TEXT("mail") : TEXT("padding"));
 	// Only a real blow hurts: a touch, blades resting on each other or bodies rubbing shake the balance and do no harm; from
 	// there the harm grows smoothly to the full of a hard blow.
 	const float Harm = FMath::SmoothStep(AedirImpactNoHarmJoules, AedirImpactFullFlatJoules, Energy * ArmorFactor);
@@ -3959,7 +3967,7 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 	}
 
 	const float Energy = ComputeImpactEnergy(AedirKickMassKg, FootSpeed) * AedirKickEnergyScale;
-	const float VictimZoneProtection = Victim->Combat ? Victim->Combat->GetArmorProtection(Zone) : 0.f;
+	const float VictimZoneProtection = Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f;
 	const float Damage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(EAedirDamageType::Blunt, 0.f) * GetZoneDamageMultiplier(Zone) * (1.f - VictimZoneProtection);
 	Victim->ReceiveCreatureDamage(Damage);
 

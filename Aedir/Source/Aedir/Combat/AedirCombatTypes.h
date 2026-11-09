@@ -21,6 +21,26 @@ enum class EAedirBodyZone : uint8
 	Leg
 };
 
+// What a piece of armour is made of, which decides what it stops: padding takes the sting out of a blow, mail stops an edge
+// but not a point driven hard, plate turns edge and point alike but passes a heavy blow on to the body under it.
+UENUM(BlueprintType)
+enum class EAedirArmorMaterial : uint8
+{
+	Soft,
+	Mail,
+	Plate
+};
+
+// What the armour did at the place a blow landed.
+struct FAedirArmorHit
+{
+	// Share of the blow's harm it took, 0 where nothing covers the place.
+	float Protection = 0.f;
+	bool bCovered = false;
+	EAedirArmorMaterial Material = EAedirArmorMaterial::Soft;
+	FName Piece = NAME_None;
+};
+
 UENUM(BlueprintType)
 enum class EAedirLimb : uint8
 {

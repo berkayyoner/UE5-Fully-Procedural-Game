@@ -883,6 +883,23 @@ float UAedirInteractionComponent::GetCarriedWeight() const
 	return Total;
 }
 
+FAedirArmorHit UAedirInteractionComponent::GetArmorAt(FName Bone, const FVector& Point, EAedirDamageType Type) const
+{
+	FAedirArmorHit Best;
+	for (const TObjectPtr<AAedirItemActor>& WornItem : WornItems)
+	{
+		if (WornItem)
+		{
+			const FAedirArmorHit Hit = WornItem->GetArmorAt(Bone, Point, Type, GetOwner());
+			if (Hit.bCovered && Hit.Protection > Best.Protection)
+			{
+				Best = Hit;
+			}
+		}
+	}
+	return Best;
+}
+
 float UAedirInteractionComponent::GetWornArmorProtection(EAedirBodyZone Zone) const
 {
 	float Best = 0.f;

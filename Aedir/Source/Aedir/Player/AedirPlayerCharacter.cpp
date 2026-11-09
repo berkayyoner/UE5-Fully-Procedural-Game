@@ -1321,6 +1321,11 @@ void AAedirPlayerCharacter::WaistInfo()
 	RunDevCommand(TEXT("WaistInfo"), FString(), false);
 }
 
+void AAedirPlayerCharacter::ArmourInfo()
+{
+	RunDevCommand(TEXT("ArmourInfo"), FString(), false);
+}
+
 void AAedirPlayerCharacter::ClearItems()
 {
 	RunDevCommand(TEXT("ClearItems"), FString(), false);

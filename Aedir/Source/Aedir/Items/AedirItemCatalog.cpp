@@ -336,6 +336,48 @@ namespace
 		SetModelFix(TEXT("Warhammer"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector::ZeroVector);
 		SetModelFix(TEXT("Spear"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 0.886f, 0.f));
 		SetModelFix(TEXT("Halberd"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 14.03f, 0.f));
+		// What each piece of armour is made of and the bones it covers. Whatever it does not cover is bare: the neck, the hands,
+		// the thighs under greaves, the groin under a cuirass, the face under an open helmet.
+		const auto SetArmour = [&Definitions](const TCHAR* Id, EAedirArmorMaterial Material, std::initializer_list<const TCHAR*> Bones, bool bOpenFace = false)
+		{
+			for (FAedirItemDef& Item : Definitions)
+			{
+				if (Item.Id == FName(Id))
+				{
+					Item.ArmorMaterial = Material;
+					Item.ArmorBones.Reset();
+					for (const TCHAR* Bone : Bones)
+					{
+						Item.ArmorBones.Add(FName(Bone));
+					}
+					Item.bOpenFace = bOpenFace;
+				}
+			}
+		};
+		SetArmour(TEXT("LeatherCap"), EAedirArmorMaterial::Soft, { TEXT("head") }, true);
+		SetArmour(TEXT("IronHelm"), EAedirArmorMaterial::Plate, { TEXT("head") }, true);
+		SetArmour(TEXT("IronSouthernHelmet"), EAedirArmorMaterial::Plate, { TEXT("head") }, true);
+		SetArmour(TEXT("LeatherArmor"), EAedirArmorMaterial::Soft, { TEXT("spine_01"), TEXT("spine_02"), TEXT("spine_03"), TEXT("spine_04"), TEXT("spine_05") });
+		SetArmour(TEXT("IronCuirass"), EAedirArmorMaterial::Plate, { TEXT("spine_01"), TEXT("spine_02"), TEXT("spine_03"), TEXT("spine_04"), TEXT("spine_05") });
+		SetArmour(TEXT("Bracers"), EAedirArmorMaterial::Soft, { TEXT("lowerarm_l"), TEXT("lowerarm_r") });
+		SetArmour(TEXT("IronGreaves"), EAedirArmorMaterial::Plate, { TEXT("calf_l"), TEXT("calf_r") });
+		SetArmour(TEXT("RustyShoulders"), EAedirArmorMaterial::Plate, { TEXT("clavicle_l"), TEXT("clavicle_r"), TEXT("upperarm_l"), TEXT("upperarm_r") });
+		SetArmour(TEXT("RustyIronShield"), EAedirArmorMaterial::Plate, { TEXT("lowerarm_l"), TEXT("hand_l") });
+		// Any other armour covers the bones of its own part of the body.
+		for (FAedirItemDef& Item : Definitions)
+		{
+			if (Item.ItemClass == EAedirItemClass::Armor && Item.ArmorBones.IsEmpty())
+			{
+				switch (Item.ArmorZone)
+				{
+				case EAedirBodyZone::Head: Item.ArmorBones = { TEXT("head") }; break;
+				case EAedirBodyZone::Torso: Item.ArmorBones = { TEXT("spine_01"), TEXT("spine_02"), TEXT("spine_03"), TEXT("spine_04"), TEXT("spine_05") }; break;
+				case EAedirBodyZone::Arm: Item.ArmorBones = { TEXT("lowerarm_l"), TEXT("lowerarm_r") }; break;
+				case EAedirBodyZone::Leg: Item.ArmorBones = { TEXT("thigh_l"), TEXT("thigh_r"), TEXT("calf_l"), TEXT("calf_r") }; break;
+				}
+			}
+		}
+
 		// Stood along its haft the elven axe is longer than its slanted box: brought back to its length.
 		for (FAedirItemDef& Item : Definitions)
 		{

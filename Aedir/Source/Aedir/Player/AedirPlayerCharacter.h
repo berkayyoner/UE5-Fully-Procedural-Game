@@ -288,6 +288,10 @@ public:
 	UFUNCTION(Exec)
 	void WaistInfo();
 
+	// What the worn armour takes of an edge, a point and a blunt blow on each part of the body.
+	UFUNCTION(Exec)
+	void ArmourInfo();
+
 	UFUNCTION(Exec)
 	void DropHand(int32 RightHand);
 

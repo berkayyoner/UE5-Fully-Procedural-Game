@@ -262,6 +262,37 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 			}
 		}
 	}
+	else if (Command == TEXT("ArmourInfo"))
+	{
+		// What the worn armour takes of an edge, a point and a blunt blow on each part of the body, struck from the front, the
+		// back, the outer side and from below.
+		const USkeletalMeshComponent* Body = Player->GetMesh();
+		const UAedirInteractionComponent* Hands = Player->Interaction;
+		if (Body && Hands)
+		{
+			const FVector Forward = Player->GetActorForwardVector();
+			const FVector Right = Player->GetActorRightVector();
+			const FVector Up = Player->GetActorUpVector();
+			for (const TCHAR* Bone : { TEXT("head"), TEXT("neck_01"), TEXT("spine_05"), TEXT("spine_03"), TEXT("spine_01"), TEXT("pelvis"), TEXT("clavicle_r"), TEXT("upperarm_r"), TEXT("lowerarm_r"), TEXT("hand_r"), TEXT("thigh_r"), TEXT("calf_r") })
+			{
+				FString Line = FString::Printf(TEXT("%-11s"), Bone);
+				const FVector At = Body->GetBoneLocation(FName(Bone));
+				const FString Side = FString(Bone);
+				const FVector Outer = Side.EndsWith(TEXT("_l")) ? -Right : Right;
+				for (const TPair<const TCHAR*, FVector>& From : { TPair<const TCHAR*, FVector>(TEXT("front"), Forward * 8.f + Up * 5.f), TPair<const TCHAR*, FVector>(TEXT("back"), -Forward * 8.f + Up * 5.f),
+					TPair<const TCHAR*, FVector>(TEXT("side"), Outer * 8.f + Up * 4.f), TPair<const TCHAR*, FVector>(TEXT("below"), -Up * 6.f - Outer * 1.f) })
+				{
+					Line += FString::Printf(TEXT(" %s"), From.Key);
+					for (const EAedirDamageType Type : { EAedirDamageType::Slash, EAedirDamageType::Pierce, EAedirDamageType::Blunt })
+					{
+						const FAedirArmorHit Hit = Hands->GetArmorAt(FName(Bone), At + From.Value, Type);
+						Line += FString::Printf(TEXT(" %3.0f"), Hit.Protection * 100.f);
+					}
+				}
+				UE_LOG(LogAedir, Display, TEXT("[Armour] %s"), *Line);
+			}
+		}
+	}
 	else if (Command == TEXT("CloudFlash"))
 	{
 		// A flash in the clouds straight ahead of the view, a kilometre and a half away.
