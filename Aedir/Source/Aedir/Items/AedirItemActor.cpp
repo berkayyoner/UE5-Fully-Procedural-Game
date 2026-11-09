@@ -195,6 +195,11 @@ bool AAedirItemActor::WasJustReleasedBy(const AActor* Creature) const
 	return World && LastHolder.Get() == Creature && World->GetTimeSeconds() - LastReleaseTime < ReleaseGraceSeconds;
 }
 
+bool AAedirItemActor::IsShield() const
+{
+	return ItemClass == EAedirItemClass::Armor && ArmorZone == EAedirBodyZone::Arm && BodyScale.Z < ItemShieldThinShare * FMath::Min(BodyScale.X, BodyScale.Y);
+}
+
 FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const
 {
 	const USkeletalMesh* BodyAsset = Creature->GetMesh() ? Creature->GetMesh()->GetSkeletalMeshAsset() : nullptr;
@@ -225,8 +230,7 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 
 	// A shield is gripped by the bar behind its boss: the fist goes into the boss and the face stands across the way the
 	// knuckles point, its round side out.
-	const bool bShield = ItemClass == EAedirItemClass::Armor && ArmorZone == EAedirBodyZone::Arm && BodyScale.Z < ItemShieldThinShare * FMath::Min(BodyScale.X, BodyScale.Y);
-	const FQuat ItemRotation = bShield ? FRotationMatrix::MakeFromXZ(KnuckleAxis, FingerAxis).ToQuat() : FRotationMatrix::MakeFromXY(KnuckleAxis, FingerAxis).ToQuat();
+	const FQuat ItemRotation = IsShield() ? FRotationMatrix::MakeFromXZ(KnuckleAxis, FingerAxis).ToQuat() : FRotationMatrix::MakeFromXY(KnuckleAxis, FingerAxis).ToQuat();
 	// A reversed blade lies end for end in the hand, turned about the palm.
 	const FQuat Turn = GripTurn == EGripTurn::Reversed ? FQuat(FVector::UpVector, UE_PI) : FQuat::Identity;
 	const FQuat RelativeRotation = HandRotation.Inverse() * ItemRotation * Turn;

@@ -1300,6 +1300,14 @@ bool UAedirCombatComponent::GetWeaponAim(EAedirHand Hand, FVector& OutDirectionW
 	{
 		return true;
 	}
+	if (HeldItem && HeldItem->IsShield())
+	{
+		// A shield brought up on guard has its grip bar stood upright, so the fist points ahead along the forearm and the face
+		// of the shield is turned to what comes, not to the sky.
+		OutAlpha = GuardAlpha[HandIndex(Hand)];
+		OutDirectionWorld = Creature ? Creature->GetActorUpVector() : FVector::UpVector;
+		return OutAlpha > 0.001f;
+	}
 	if (!HeldItem || HeldItem->ItemClass != EAedirItemClass::Weapon)
 	{
 		// On its way to the belt the hand already turns to how the handle hangs there.

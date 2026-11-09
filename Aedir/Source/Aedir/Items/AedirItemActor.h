@@ -84,6 +84,9 @@ public:
 	// Where the hand closes on the item in the world.
 	FVector GetGripWorld() const;
 
+	// A flat piece worn on the arm, gripped by the bar behind its boss when held.
+	bool IsShield() const;
+
 	// Held, the item passes the body of the one holding it for a while, as while it is drawn up out of the belt.
 	void SetPassesOwnBody(bool bPasses);
 

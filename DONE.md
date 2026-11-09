@@ -148,3 +148,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The upper hand of a two-handed hold stays on the handle: on a hilted weapon it closes 4.5 cm below the guard however short the handle is (it went past the guard onto the blade on the Fab swords). Half-swording with the right button is unchanged.
 - Grass is pressed only under a foot that is down on the ground (16 cm round, not 32 cm under a foot up to 60 cm in the air), a little more each moment it stands there, and bends down over a moment instead of flattening at once.
 - Pauldrons fitted to the body: 64 cm across instead of 52 and 3 cm lower, so they cap the shoulders instead of sitting small on the trapezius.
+- A shield brought up on guard stands its grip bar upright, so the fist points ahead and the shield's face is turned forward in front of the body instead of lying flat over the head.
