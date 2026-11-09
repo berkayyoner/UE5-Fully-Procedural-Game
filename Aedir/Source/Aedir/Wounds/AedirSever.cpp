@@ -16,6 +16,8 @@
 
 namespace
 {
+	// A severed part's collision is at least this thick every way.
+	constexpr double SeverMinThicknessCm = 4.0;
 	constexpr float SeverPieceLifeSeconds = 240.f;
 	constexpr float SeverPushShare = 0.5f;
 	constexpr int32 SeverSpurtDrops = 14;
@@ -254,9 +256,19 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 		const FVector Blade = FVector::DotProduct(PlaneNormal, Normal) >= 0.0 ? PlaneNormal : -PlaneNormal;
 		Normal = (Normal + Blade.GetSafeNormal() * 0.6).GetSafeNormal();
 	}
-	Mesh->AddCollisionConvexMesh(HullPoints);
 	UProceduralMeshComponent* Other = nullptr;
 	UKismetProceduralMeshLibrary::SliceProceduralMesh(Mesh, JointWorld, Normal, false, Other, EProcMeshSliceCapOption::CreateNewSectionForCap, SeverFlesh());
+	// Its collision is the box round its points, never thinner than a finger: a hull of a few hundred thinned-out points
+	// can come out flat, and a flat hull breaks the physics' queries on it.
+	FBox Bounds(HullPoints);
+	const FVector Thin = FVector(SeverMinThicknessCm) - Bounds.GetExtent() * 2.0;
+	Bounds = Bounds.ExpandBy(FVector(FMath::Max(Thin.X, 0.0), FMath::Max(Thin.Y, 0.0), FMath::Max(Thin.Z, 0.0)) * 0.5);
+	TArray<FVector> Corners;
+	for (int32 Corner = 0; Corner < 8; ++Corner)
+	{
+		Corners.Add(FVector(Corner & 1 ? Bounds.Max.X : Bounds.Min.X, Corner & 2 ? Bounds.Max.Y : Bounds.Min.Y, Corner & 4 ? Bounds.Max.Z : Bounds.Min.Z));
+	}
+	Mesh->AddCollisionConvexMesh(Corners);
 
 	Mesh->SetCollisionProfileName(TEXT("PhysicsActor"));
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);

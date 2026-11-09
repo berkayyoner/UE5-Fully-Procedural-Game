@@ -92,6 +92,10 @@ namespace
 	constexpr float HitReactionDazeMaxSeconds = 2.5f;
 	constexpr float HitReactionDazeRecoveryScale = 0.5f;
 	constexpr float AedirGroggyBelow = 0.65f;
+	// Put back on the capsule, the mesh keeps its place relative to it but its size in the world: let go, its relative
+	// scale is its world one, and taken as relative it would be scaled by the capsule's once more for a moment, which
+	// resizes every moving part of the body twice and breaks the physics on them.
+	const FAttachmentTransformRules AedirMeshOnCapsuleRules(EAttachmentRule::KeepRelative, EAttachmentRule::KeepRelative, EAttachmentRule::KeepWorld, false);
 	// What is left of the muscles of a broken arm.
 	constexpr float AedirBrokenArmShare = 0.05f;
 	constexpr float AedirGroggyMaxDaze = 0.85f;
@@ -1703,7 +1707,7 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		{
 			if (BodyMesh->GetAttachParent() != BodyCapsule)
 			{
-				BodyMesh->AttachToComponent(BodyCapsule, FAttachmentTransformRules::KeepRelativeTransform);
+				BodyMesh->AttachToComponent(BodyCapsule, AedirMeshOnCapsuleRules);
 			}
 			// Physical hips stay where they lay and are pulled up from there; pose-driven ones are put back on the legs at once.
 			BodyMesh->SetRelativeTransform(MeshRelativeAtFall, false, nullptr, bActivePelvis ? ETeleportType::None : ETeleportType::ResetPhysics);
@@ -1781,7 +1785,7 @@ void UAedirBalanceComponent::PutMeshOnCapsule()
 	{
 		Pelvis->SetInstanceSimulatePhysics(false, false, true);
 	}
-	BodyMesh->AttachToComponent(BodyCapsule, FAttachmentTransformRules::KeepRelativeTransform);
+	BodyMesh->AttachToComponent(BodyCapsule, AedirMeshOnCapsuleRules);
 	BodyMesh->SetRelativeTransform(MeshRelativeAtFall, false, nullptr, ETeleportType::None);
 	// The same relative transform is not applied again, while the world one was the hips': it is worked out anew.
 	BodyMesh->UpdateComponentToWorld(EUpdateTransformFlags::None, ETeleportType::None);

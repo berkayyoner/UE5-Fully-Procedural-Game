@@ -440,8 +440,15 @@ bool AAedirCreature::IsInFightStance() const
 
 static TAutoConsoleVariable<int32> CVarAedirBodySizeVariation(TEXT("aedir.BodySizeVariation"), 1, TEXT("Every body a little taller or shorter by its name (1) or all of one height (0)."));
 
+static TAutoConsoleVariable<int32> CVarAedirBodySizeScale(TEXT("aedir.BodySizeScale"), 1, TEXT("Bodies sized by their strength and race (1) or all of one size (0)."));
+
 void AAedirCreature::ApplySizeScale(float NewSizeScale)
 {
+	if (CVarAedirBodySizeScale.GetValueOnGameThread() == 0)
+	{
+		SetActorScale3D(FVector::OneVector);
+		return;
+	}
 	SetActorScale3D(FVector(NewSizeScale * AppearanceHeight));
 }
 
