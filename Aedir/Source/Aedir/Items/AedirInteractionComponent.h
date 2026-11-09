@@ -337,6 +337,14 @@ private:
 	uint8 MouthHands = 0;
 
 	float MouthElapsed[2] = { 0.f, 0.f };
+
+	// A piece of armour is put on by the hand that holds it: carried to where it is worn, and fastened there once it arrives.
+	UPROPERTY(Replicated)
+	uint8 DonHands = 0;
+	float DonElapsed[2] = { 0.f, 0.f };
+	bool IsDonning(EAedirHand Hand) const { return (DonHands & (1 << static_cast<int32>(Hand))) != 0; }
+	void UpdateDon(EAedirHand Hand, float DeltaTime);
+	FVector GetDonHandTarget(EAedirHand Hand, const AAedirItemActor* Item) const;
 	float BiteElapsed[2] = { 0.f, 0.f };
 
 	UPROPERTY(Transient)

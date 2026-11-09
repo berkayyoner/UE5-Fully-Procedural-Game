@@ -149,3 +149,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Grass is pressed only under a foot that is down on the ground (16 cm round, not 32 cm under a foot up to 60 cm in the air), a little more each moment it stands there, and bends down over a moment instead of flattening at once.
 - Pauldrons fitted to the body: 64 cm across instead of 52 and 3 cm lower, so they cap the shoulders instead of sitting small on the trapezius.
 - A shield brought up on guard stands its grip bar upright, so the fist points ahead and the shield's face is turned forward in front of the body instead of lying flat over the head.
+- Armour is put on by hand: using a held piece makes the hand carry it over 1.3 s from before the chest to where it is worn (the helmet up to the head, greaves down to the thigh, pauldrons to the shoulder; a piece for the holding arm is held before the chest), and it is fastened there once the hand arrives. Dev: SpawnItem <id> don.

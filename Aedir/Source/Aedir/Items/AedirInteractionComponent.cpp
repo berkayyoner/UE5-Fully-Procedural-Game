@@ -88,6 +88,9 @@ namespace
 	constexpr float MouthHandSideCm = 3.f;
 	constexpr float MouthHandDownCm = 14.f;
 	constexpr float MouthSeconds = 0.7f;
+	// Putting a piece of armour on: the hand takes this long to bring it to its place, and holds it this far off the body.
+	constexpr float DonSeconds = 1.3f;
+	constexpr float DonOffBodyCm = 9.f;
 	constexpr float BiteSeconds = 1.1f;
 	constexpr float MouthDrinkTipUp = 0.45f;
 	constexpr float MouthDrinkTipBack = 0.9f;
@@ -159,6 +162,8 @@ void UAedirInteractionComponent::TickComponent(float DeltaTime, ELevelTick TickT
 	UpdateHolsterMotion(EAedirHand::Right, DeltaTime);
 	UpdateMouth(EAedirHand::Left, DeltaTime);
 	UpdateMouth(EAedirHand::Right, DeltaTime);
+	UpdateDon(EAedirHand::Left, DeltaTime);
+	UpdateDon(EAedirHand::Right, DeltaTime);
 	UpdateReachBlend(DeltaTime);
 	UpdatePelvisLower(DeltaTime);
 
@@ -183,6 +188,7 @@ void UAedirInteractionComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProp
 	DOREPLIFETIME(UAedirInteractionComponent, WornItems);
 	DOREPLIFETIME(UAedirInteractionComponent, Backpack);
 	DOREPLIFETIME(UAedirInteractionComponent, MouthHands);
+	DOREPLIFETIME(UAedirInteractionComponent, DonHands);
 }
 
 void UAedirInteractionComponent::StartReach(EAedirHand Hand)
@@ -347,10 +353,72 @@ void UAedirInteractionComponent::UseHeld(EAedirHand Hand)
 
 	AAedirCreature* Creature = GetCreature();
 	AAedirItemActor* Item = GetHeldItem(Hand);
+	if (Creature && Item && Item->ItemClass == EAedirItemClass::Armor && !Item->bWorn && !Item->ArmorAttachBone.IsNone())
+	{
+		// Armour is not put on at a touch: the hand first takes it to where it is worn.
+		DonHands |= 1 << static_cast<int32>(Hand);
+		DonElapsed[static_cast<int32>(Hand)] = 0.f;
+		return;
+	}
 	if (Creature && Item)
 	{
 		Item->Use(Creature);
 	}
+}
+
+void UAedirInteractionComponent::UpdateDon(EAedirHand Hand, float DeltaTime)
+{
+	const int32 Index = static_cast<int32>(Hand);
+	AAedirItemActor* Item = GetHeldItem(Hand);
+	if (!IsDonning(Hand) || !Item || Item->ItemClass != EAedirItemClass::Armor || Item->bWorn)
+	{
+		DonElapsed[Index] = 0.f;
+		if (IsDonning(Hand) && IsAuthoritative())
+		{
+			DonHands &= ~(1 << Index);
+		}
+		return;
+	}
+
+	DonElapsed[Index] += DeltaTime;
+	if (DonElapsed[Index] < DonSeconds || !IsAuthoritative())
+	{
+		return;
+	}
+	DonHands &= ~(1 << Index);
+	DonElapsed[Index] = 0.f;
+	if (AAedirCreature* Creature = GetCreature())
+	{
+		Item->Use(Creature);
+	}
+}
+
+FVector UAedirInteractionComponent::GetDonHandTarget(EAedirHand Hand, const AAedirItemActor* Item) const
+{
+	const AAedirCreature* Creature = GetCreature();
+	const USkeletalMeshComponent* Body = Creature ? Creature->GetMesh() : nullptr;
+	if (!Body || !Item)
+	{
+		return FVector::ZeroVector;
+	}
+
+	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
+	const FTransform Actor = Creature->GetActorTransform();
+	const FVector Rest = Actor.TransformPositionNoScale(FVector(ConsumableRestForwardCm, Side * ConsumableRestSideCm, ConsumableRestUpCm));
+	// A piece for the arm that holds it cannot be reached by that same hand: it is held up before the chest and the arm
+	// goes into it there.
+	const FString BoneName = Item->ArmorAttachBone.ToString();
+	const bool bOwnArm = (BoneName.Contains(TEXT("arm")) || BoneName.Contains(TEXT("hand"))) && BoneName.EndsWith(Hand == EAedirHand::Right ? TEXT("_r") : TEXT("_l"));
+	FVector Place = Rest;
+	if (!bOwnArm && Body->GetBoneIndex(Item->ArmorAttachBone) != INDEX_NONE)
+	{
+		// The hand comes to the place from in front of it, a little off the body so the piece goes on over it.
+		const FVector Bone = Body->GetBoneLocation(Item->ArmorAttachBone);
+		const FVector Centre = Actor.GetLocation() + FVector(0.f, 0.f, Bone.Z - Actor.GetLocation().Z);
+		const FVector Out = (FVector(Bone - Centre) + Actor.GetRotation().GetForwardVector() * 10.0).GetSafeNormal();
+		Place = Bone + Out * DonOffBodyCm;
+	}
+	return FMath::Lerp(Rest, Place, static_cast<double>(HolsterSmoothStep(DonElapsed[static_cast<int32>(Hand)] / DonSeconds)));
 }
 
 void UAedirInteractionComponent::HolsterToWaist(EAedirHand Hand)
@@ -1145,7 +1213,7 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 		const bool bJoinGiver = Held && Held->ItemClass == EAedirItemClass::Weapon && OtherSlot.State == EAedirHandState::Reaching && OtherSlot.Item.Get() == Held;
 		const bool bPassGiver = IsPassingHeld(Hand) || bJoinGiver;
 		const bool bPassTaker = IsPassingHeld(GetOtherHand(Hand));
-		const bool bConsumable = Slot.State == EAedirHandState::Holding && Slot.Item && Slot.Item->IsConsumable() && !bHolsterMotion;
+		const bool bConsumable = Slot.State == EAedirHandState::Holding && Slot.Item && (Slot.Item->IsConsumable() || IsDonning(Hand)) && !bHolsterMotion;
 		if (Slot.State == EAedirHandState::Reaching || bCarryingObject || bHolsterMotion || bPassGiver || bConsumable)
 		{
 			const float BlendIn = bPassGiver || bPassTaker ? PassBlendInSeconds : (bConsumable ? ConsumableBlendInSeconds : (bHolsterMotion ? HolsterBlendInSeconds : ReachBlendInSeconds));
@@ -1172,7 +1240,7 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 		}
 		else if (bConsumable)
 		{
-			ReachTargetCache[Index] = GetConsumableHandTarget(Hand, Slot.Item.Get());
+			ReachTargetCache[Index] = IsDonning(Hand) ? GetDonHandTarget(Hand, Slot.Item.Get()) : GetConsumableHandTarget(Hand, Slot.Item.Get());
 		}
 		else if (bPassGiver)
 		{

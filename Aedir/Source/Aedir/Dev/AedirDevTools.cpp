@@ -545,6 +545,18 @@ void UAedirDevTools::SpawnItem(AAedirPlayerCharacter* Player, const FString& Arg
 		return;
 	}
 
+	// "don": into the right hand, which then puts it on as a player does.
+	if (Tokens.IsValidIndex(1) && DevToolsIsToken(Tokens[1], TEXT("don")))
+	{
+		const bool bTaken = Player->Interaction && Player->Interaction->EquipImmediate(EAedirHand::Right, Item);
+		if (bTaken)
+		{
+			Player->Interaction->UseHeld(EAedirHand::Right);
+		}
+		DevToolsReport(FString::Printf(TEXT("%s %s"), *Tokens[0], bTaken ? TEXT("being put on") : TEXT("could not be taken")));
+		return;
+	}
+
 	const bool bHold = Tokens.IsValidIndex(1) && DevToolsIsToken(Tokens[1], TEXT("hold"));
 	if (!bHold)
 	{
