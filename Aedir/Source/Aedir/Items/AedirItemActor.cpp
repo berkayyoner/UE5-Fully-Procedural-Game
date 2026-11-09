@@ -110,6 +110,11 @@ void AAedirItemActor::AttachToCreatureHand(AAedirCreature* Creature, EAedirHand 
 	}
 
 	HeldGripShiftCm = GripShiftCm;
+	// Drawn from the belt, the blade comes out of its scabbard, which stays where it hung.
+	if (bHolstered)
+	{
+		LeaveSheathOnBelt();
+	}
 	const FName BoneName = Hand == EAedirHand::Left ? Creature->Interaction->LeftHandBone : Creature->Interaction->RightHandBone;
 	AttachToBone(Creature, BoneName, bUseHandGrip ? ComputeHandGrip(Creature, Hand) : HeldTransform);
 
@@ -202,6 +207,41 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 	return FTransform(RelativeRotation, RelativePalm - RelativeRotation.RotateVector(FVector(GripLocalCm + HeldGripShiftCm, 0.f, 0.f)));
 }
 
+void AAedirItemActor::LeaveSheathOnBelt()
+{
+	USceneComponent* Hip = GetRootComponent() ? GetRootComponent()->GetAttachParent() : nullptr;
+	UE_LOG(LogTemp, Verbose, TEXT("[Sheath] %s drawn: sheath %d visible %d on %s"), *GetName(), Sheath ? 1 : 0, Sheath && Sheath->IsVisible() ? 1 : 0, *GetNameSafe(Hip));
+	if (!Sheath || !Sheath->IsVisible() || !Hip || BeltSheath)
+	{
+		return;
+	}
+	BeltSheath = NewObject<UStaticMeshComponent>(Hip->GetOwner(), NAME_None, RF_Transient);
+	BeltSheath->SetStaticMesh(Sheath->GetStaticMesh());
+	for (int32 Slot = 0; Slot < Sheath->GetNumMaterials(); ++Slot)
+	{
+		BeltSheath->SetMaterial(Slot, Sheath->GetMaterial(Slot));
+	}
+	BeltSheath->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	BeltSheath->SetWorldTransform(Sheath->GetComponentTransform());
+	BeltSheath->SetupAttachment(Hip, GetRootComponent()->GetAttachSocketName());
+	BeltSheath->RegisterComponent();
+	BeltSheath->AttachToComponent(Hip, FAttachmentTransformRules::KeepWorldTransform, GetRootComponent()->GetAttachSocketName());
+	Sheath->SetVisibility(false);
+}
+
+void AAedirItemActor::TakeSheathBack()
+{
+	if (BeltSheath)
+	{
+		BeltSheath->DestroyComponent();
+		BeltSheath = nullptr;
+	}
+	if (Sheath)
+	{
+		Sheath->SetVisibility(true);
+	}
+}
+
 void AAedirItemActor::AttachToWaist(AAedirCreature* Creature, FName BoneName, const FVector& SlotOnBone, const FQuat& RotationOnBone, float PivotCm)
 {
 	if (!HasAuthority() || !Creature)
@@ -211,6 +251,8 @@ void AAedirItemActor::AttachToWaist(AAedirCreature* Creature, FName BoneName, co
 
 	HeldGripShiftCm = 0.f;
 	AttachToBone(Creature, BoneName, FTransform(RotationOnBone, SlotOnBone - RotationOnBone.RotateVector(FVector(PivotCm, 0.f, 0.f))));
+	// Put away, the blade goes back into its scabbard.
+	TakeSheathBack();
 
 	Holder = Creature;
 	bHolstered = true;
@@ -390,6 +432,16 @@ void AAedirItemActor::Detach(const FVector& ThrowVelocity)
 		}
 	}
 
+	if (bHolstered)
+	{
+		// Let go of from the belt, the blade falls in its scabbard.
+		TakeSheathBack();
+	}
+	else if (Sheath && !BeltSheath)
+	{
+		Sheath->SetVisibility(false);
+	}
+
 	SetActorTickEnabled(false);
 	DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 	if (Holder)
@@ -521,7 +573,7 @@ void AAedirItemActor::AttachToWornBone(AAedirCreature* Creature)
 		return;
 	}
 
-	AttachToBone(Creature, ArmorAttachBone, FTransform::Identity);
+	AttachToBone(Creature, ArmorAttachBone, WornTransform);
 
 	Holder = Creature;
 	bHolstered = false;

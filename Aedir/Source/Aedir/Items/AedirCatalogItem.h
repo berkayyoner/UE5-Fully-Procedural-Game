@@ -66,6 +66,9 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInterface> BaseMaterial;
 
+	// A blade's scabbard, built along it from the catalog.
+	void BuildSheath(const FAedirItemDef& Def);
+
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> DetailMeshes;
 

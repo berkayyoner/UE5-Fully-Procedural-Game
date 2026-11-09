@@ -228,6 +228,7 @@ void AAedirCatalogItem::ApplyDefinition()
 	ArmorZone = Def->ArmorZone;
 	ArmorProtection = Def->ArmorProtection;
 	ArmorAttachBone = Def->ArmorAttachBone;
+	WornTransform = FTransform(Def->WornRotation, Def->WornOffsetCm);
 	BodyScale = Def->BodyScale;
 
 	Mesh->SetMassOverrideInKg(NAME_None, Weight, true);
@@ -235,9 +236,39 @@ void AAedirCatalogItem::ApplyDefinition()
 	BuildVisual(*Def);
 }
 
+void AAedirCatalogItem::BuildSheath(const FAedirItemDef& Def)
+{
+	UStaticMesh* Model = Def.ScabbardMeshPath.IsEmpty() ? nullptr : LoadObject<UStaticMesh>(nullptr, *Def.ScabbardMeshPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (!Model)
+	{
+		return;
+	}
+	// The scabbard runs along the blade from the guard to past the point, its mouth at the guard. Its model stands on its
+	// tip with the mouth up, as the blade's own model does.
+	const FBox Box = Model->GetBoundingBox();
+	const FVector Size = Box.GetSize();
+	const float Length = FMath::Max(Def.ScabbardLengthCm, 1.f);
+	const float Scale = Length / FMath::Max(static_cast<float>(Size.Z), 1.f);
+	const FRotator Turn(90.f, 0.f, 0.f);
+	const float Blade = Def.WeaponLengthCm;
+	Sheath = NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transient);
+	Sheath->SetupAttachment(Mesh);
+	Sheath->SetAbsolute(false, false, true);
+	Sheath->SetStaticMesh(Model);
+	Sheath->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Sheath->SetWorldScale3D(FVector(Scale));
+	Sheath->SetRelativeRotation(Turn);
+	const FVector Middle(-Blade * 0.5f + Length * 0.5f - 2.f, 0.f, 0.f);
+	Sheath->SetRelativeLocation((Turn.RotateVector(-Box.GetCenter() * Scale) + Middle) / BodyScale);
+	Sheath->RegisterComponent();
+	Sheath->SetVisibility(bHolstered);
+	DetailMeshes.Add(Sheath);
+}
+
 void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 {
 	ClearDetails();
+	Sheath = nullptr;
 
 	if (Def.MeshPath.IsEmpty() && !Def.WornMeshPath.IsEmpty() && BuildLaidArmour(Def))
 	{
@@ -258,6 +289,15 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 			const bool bSquat = Def.bStandsUpright;
 			if (Size.Z > Longest && !bSquat) { Longest = Size.Z; Turn = FRotator(Def.DrinkValue > 0.f || Def.bModelTopForward ? -90.f : 90.f, 0.f, 0.f); } // A jug has its top towards the front of the item, where it is drunk from.
 			Longest = FMath::Max(Longest, Size.Z * (bSquat ? 1.0 : 0.0));
+			if (Def.bModelAsIs)
+			{
+				Turn = FRotator::ZeroRotator;
+				Longest = FMath::Max3(Size.X, Size.Y, Size.Z);
+			}
+			if (Def.bModelReversed)
+			{
+				Turn = (FRotator(0.f, 180.f, 0.f).Quaternion() * Turn.Quaternion()).Rotator();
+			}
 			const double Wanted = Def.ModelLengthCm > 0.f ? Def.ModelLengthCm : Def.WeaponLengthCm > 0.f ? Def.WeaponLengthCm : FMath::Max3(Def.BodyScale.X, Def.BodyScale.Y, Def.BodyScale.Z) * 100.0;
 			const float ModelScale = static_cast<float>(Wanted / FMath::Max(Longest, 1.0));
 			Mesh->SetStaticMesh(GetShapeMesh(EAedirCatalogShape::Cube));
@@ -280,6 +320,25 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 				Model->RegisterComponent();
 				AedirScannedMaterial::Apply(Model, AedirScannedMaterial::FolderOfPath(Def.MeshPath));
 				DetailMeshes.Add(Model);
+				for (const FString& PartPath : Def.ExtraMeshPaths)
+				{
+					UStaticMesh* PartMesh = LoadObject<UStaticMesh>(nullptr, *PartPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+					UStaticMeshComponent* Part = PartMesh ? NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transient) : nullptr;
+					if (!Part)
+					{
+						continue;
+					}
+					Part->SetupAttachment(Mesh);
+					Part->SetAbsolute(false, false, true);
+					Part->SetStaticMesh(PartMesh);
+					Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+					Part->SetWorldScale3D(Scale3D);
+					Part->SetRelativeRotation(Turn);
+					Part->SetRelativeLocation(Model->GetRelativeLocation());
+					Part->RegisterComponent();
+					DetailMeshes.Add(Part);
+				}
+				BuildSheath(Def);
 				return;
 			}
 		}
@@ -423,24 +482,22 @@ bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
 	}
 	const FReferenceSkeleton& Skeleton = Model->GetRefSkeleton();
 
-	// A piece worn on one side of the body comes as a pair, one on each arm or leg; each is laid out on its own, side by side.
-	TArray<FName> Pieces;
-	const FString Bone = Def.ArmorAttachBone.ToString();
-	if (Bone.EndsWith(TEXT("_l")) || Bone.EndsWith(TEXT("_r")))
-	{
-		const FString Stem = Bone.LeftChop(2);
-		Pieces = { FName(Stem + TEXT("_l")), FName(Stem + TEXT("_r")) };
-	}
-	else
-	{
-		Pieces = { Def.ArmorAttachBone };
-	}
+	// The whole model is laid down once: a pair worn on both arms or legs lies as the pair it is, not as two copies of it
+	// (a scanned pair is skinned to both sides at once, so hiding one side does not take it away).
+	TArray<FName> Pieces = { Def.ArmorAttachBone };
 
 	// The body faces +Y in the model and stands along +Z: laid on its back, its front looks up and its head points along
 	// the item's length.
 	const FRotator OnItsBack = FMatrix(FVector(0.f, 1.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(1.f, 0.f, 0.f), FVector::ZeroVector).Rotator();
 	const FVector Size = Def.BodyScale * 100.f;
-	BodyScale = FVector(Size.Z, Size.Y * Pieces.Num(), Size.X * CatalogLaidThickShare) / 100.f;
+	// A pair lies as wide as the two sides stand apart.
+	float PairSpan = 0.f;
+	if (Def.ArmorAttachBone.ToString().EndsWith(TEXT("_l")) || Def.ArmorAttachBone.ToString().EndsWith(TEXT("_r")))
+	{
+		const int32 SideIndex = Skeleton.FindBoneIndex(Def.ArmorAttachBone);
+		PairSpan = SideIndex == INDEX_NONE ? 0.f : 2.f * FMath::Abs(static_cast<float>(FAnimationRuntime::GetComponentSpaceTransformRefPose(Skeleton, SideIndex).GetLocation().X));
+	}
+	BodyScale = FVector(Size.Z, Size.Y * Pieces.Num() + PairSpan, Size.X * CatalogLaidThickShare) / 100.f;
 	Mesh->SetStaticMesh(GetShapeMesh(EAedirCatalogShape::Cube));
 	Mesh->SetMaterial(0, nullptr);
 	Mesh->SetRelativeScale3D(BodyScale);
@@ -467,6 +524,11 @@ bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
 					Middle = (Middle + FAnimationRuntime::GetComponentSpaceTransformRefPose(Skeleton, Next).GetLocation()) * 0.5;
 				}
 			}
+		}
+		// A pair lies with its middle between the two sides.
+		if (Name.EndsWith(TEXT("_l")) || Name.EndsWith(TEXT("_r")))
+		{
+			Middle.X = 0.0;
 		}
 
 		UPoseableMeshComponent* Piece = NewObject<UPoseableMeshComponent>(this, NAME_None, RF_Transient);

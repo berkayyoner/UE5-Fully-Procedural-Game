@@ -472,6 +472,13 @@ float UAedirStatsComponent::GetSizeScale() const
 	return UAedirRaceCatalog::ComputeRaceSizeScale(StrengthScale, RaceSizeMultiplier);
 }
 
+float UAedirStatsComponent::GetBulkScale() const
+{
+	const float Range = StrengthMax - StrengthMin;
+	const float Alpha = Range > 0.f ? FMath::Clamp((Strength - StrengthMin) / Range, 0.f, 1.f) : 0.f;
+	return FMath::Lerp(MinBulkScale, MaxBulkScale, Alpha);
+}
+
 float UAedirStatsComponent::GetSpeedMultiplier() const
 {
 	return 1.f + Athletism / AedirStatMax * AedirSpeedPerAthletism;

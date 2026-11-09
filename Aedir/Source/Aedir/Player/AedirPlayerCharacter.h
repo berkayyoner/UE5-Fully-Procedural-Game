@@ -222,6 +222,14 @@ public:
 	UFUNCTION(Exec)
 	void GaitInfo(float Seconds, float Interval);
 
+	// Diagnostics: where the named bones' axes point on the standing body.
+	UFUNCTION(Exec)
+	void BoneAxes(const FString& Bones);
+
+	// Diagnostics: a flash in the clouds ahead.
+	UFUNCTION(Exec)
+	void CloudFlash();
+
 	UFUNCTION(Exec)
 	void AutoMove(float Forward, float Right, int32 Run, float TurnDegrees);
 

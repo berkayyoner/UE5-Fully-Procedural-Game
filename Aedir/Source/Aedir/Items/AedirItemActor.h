@@ -21,6 +21,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	TObjectPtr<UStaticMeshComponent> Mesh;
 
+	// A blade's scabbard, sheathing it while it hangs on the belt; the catalog builds it.
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> Sheath;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	FText ItemName;
 
@@ -99,6 +103,9 @@ public:
 	// Armor only. Manny bone that the armor is attached to while worn.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Armor")
 	FName ArmorAttachBone = NAME_None;
+
+	// Where a worn piece sits on its bone and how it is turned there.
+	FTransform WornTransform = FTransform::Identity;
 
 	// Set on the server while the item is worn. Worn items are not pickable.
 	UPROPERTY(ReplicatedUsing=OnRep_Worn, BlueprintReadOnly, Category="Aedir|Item")
@@ -252,4 +259,12 @@ private:
 	TWeakObjectPtr<const AActor> LastHolder;
 	double LastReleaseTime = -1000.0;
 	FVector GetStaticBoundsCenter() const;
+
+private:
+	// The scabbard left on the belt while its blade is out of it.
+	UPROPERTY(Transient)
+	TObjectPtr<UStaticMeshComponent> BeltSheath;
+
+	void LeaveSheathOnBelt();
+	void TakeSheathBack();
 };

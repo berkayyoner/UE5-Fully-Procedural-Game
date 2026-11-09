@@ -74,6 +74,23 @@ struct AEDIR_API FAedirItemDef
 	// The model's top is the working end, as on an axe standing on its handle. Swords stand on their point instead.
 	bool bModelTopForward = false;
 
+	// A model that came in several parts sharing one frame (blade, guard, grip): the other parts, placed as the main one.
+	TArray<FString> ExtraMeshPaths;
+
+	// Worn on a bone as it was modelled: the model is not turned to lie along its length, only scaled to ModelLengthCm by its
+	// largest side; worn, it is turned and set off on the bone by these.
+	bool bModelAsIs = false;
+	FRotator WornRotation = FRotator::ZeroRotator;
+	FVector WornOffsetCm = FVector::ZeroVector;
+
+	// A blade that comes with a scabbard: the scabbard's model and length. Put away, the blade sits in it on the belt; drawn,
+	// the scabbard stays on the belt.
+	FString ScabbardMeshPath;
+	float ScabbardLengthCm = 0.f;
+
+	// The model's working end lies the other way along its length than the item's: it is turned end for end.
+	bool bModelReversed = false;
+
 	// The model stands as it was made, open side up, instead of being laid along its longest side: a bucket, a pot.
 	bool bStandsUpright = false;
 

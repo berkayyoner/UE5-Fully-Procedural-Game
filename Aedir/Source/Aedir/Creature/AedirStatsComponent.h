@@ -96,6 +96,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
 	float MaxSizeScale = 1.2f;
 
+	// How thick the trunk and limbs are against the plain body, from the weakest to the strongest: a weak body is lean, a
+	// strong one broad and heavy with muscle.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats")
+	float MinBulkScale = 0.86f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats")
+	float MaxBulkScale = 1.2f;
+
 	// While set, ApplyDamage ignores every hit, including bleeding.
 	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats")
 	bool bInvulnerable = false;
@@ -198,6 +206,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetSpeedMultiplier() const;
+
+	// Thickness of trunk and limbs from strength, 1 for a plain body.
+	float GetBulkScale() const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetJumpHeightMultiplier() const;

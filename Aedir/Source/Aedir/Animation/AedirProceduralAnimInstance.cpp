@@ -7,6 +7,7 @@
 #include "BonePose.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
+#include "Creature/AedirStatsComponent.h"
 #include "GameFramework/Actor.h"
 #include "TwoBoneIK.h"
 
@@ -159,6 +160,8 @@ void FAedirProceduralAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float D
 
 	MeshToWorld = Mesh->GetComponentTransform();
 	const FQuat ActorToWorld = Owner->GetActorQuat();
+	const AAedirCreature* Creature = Cast<AAedirCreature>(Owner);
+	BulkScale = Creature && Creature->Stats ? Creature->Stats->GetBulkScale() : 1.f;
 	// Maps actor-local directions into mesh space: MeshToWorld^-1 * ActorToWorld.
 	ActorToMesh = MeshToWorld.GetRotation().Inverse() * ActorToWorld;
 }
@@ -227,6 +230,7 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 
 	FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(CSPose, Output.Pose);
 	Output.Pose.NormalizeRotations();
+	ApplyBulk(Output.Pose, Bones);
 
 	return true;
 }
@@ -333,6 +337,39 @@ void FAedirProceduralAnimProxy::ApplyNeckAndHead(FCSPose<FCompactPose>& CSPose, 
 float FAedirProceduralAnimProxy::GetBreathWave() const
 {
 	return FMath::Sin(2.f * UE_PI * GaitData.BreathPhase) * GaitData.MotionAlpha;
+}
+
+void FAedirProceduralAnimProxy::ApplyBulk(FCompactPose& Pose, const FBoneContainer& Bones) const
+{
+	if (FMath::IsNearlyEqual(BulkScale, 1.f, 0.005f))
+	{
+		return;
+	}
+	// The bones run along their own X: thickening the trunk and limbs scales their other two axes. The parts hung on them,
+	// the head, the hands and the feet, keep their own size; the shoulders, set out to the sides of the chest, sit wider.
+	const FVector Thick(1.f, BulkScale, BulkScale);
+	const FVector Kept(1.f, 1.f / BulkScale, 1.f / BulkScale);
+	const auto Scale = [&Pose, &Bones](const TCHAR* Name, const FVector& By)
+	{
+		const int32 MeshIndex = Bones.GetPoseBoneIndexForBoneName(FName(Name));
+		if (MeshIndex == INDEX_NONE)
+		{
+			return;
+		}
+		const FCompactPoseBoneIndex Index = Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(MeshIndex));
+		if (Index != INDEX_NONE)
+		{
+			Pose[Index].SetScale3D(Pose[Index].GetScale3D() * By);
+		}
+	};
+	Scale(TEXT("spine_01"), Thick);
+	Scale(TEXT("neck_01"), Kept);
+	for (const TCHAR* Side : { TEXT("_l"), TEXT("_r") })
+	{
+		Scale(*(FString(TEXT("thigh")) + Side), Thick);
+		Scale(*(FString(TEXT("foot")) + Side), Kept);
+		Scale(*(FString(TEXT("hand")) + Side), Kept);
+	}
 }
 
 void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& ClavicleName, const FName& HumerusName, const FName& RadiusName, const FName& HandName, float ArmSwingDegrees, float ElbowDegrees, float ReachAlpha, float RestRollDegrees, float ClavicleRollDegrees) const

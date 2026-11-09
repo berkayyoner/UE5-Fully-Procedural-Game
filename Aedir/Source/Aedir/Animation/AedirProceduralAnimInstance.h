@@ -26,6 +26,7 @@ private:
 	void ApplyPelvis(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
 	void ApplySpine(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
 	void ApplyNeckAndHead(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
+	void ApplyBulk(FCompactPose& Pose, const FBoneContainer& Bones) const;
 	void ApplyArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& ClavicleName, const FName& HumerusName, const FName& RadiusName, const FName& HandName, float ArmSwingDegrees, float ElbowDegrees, float ReachAlpha, float RestRollDegrees, float ClavicleRollDegrees) const;
 	// Breathing wave in [-1, 1], zero while dead.
 	float GetBreathWave() const;
@@ -60,6 +61,8 @@ private:
 	float ArmRestForwardDegrees = 0.f;
 	float ElbowRestBendDegrees = 0.f;
 	float BreathChestDegrees = 0.f;
+	// Thickness of trunk and limbs from strength.
+	float BulkScale = 1.f;
 	float BreathClavicleDegrees = 0.f;
 	float BreathNeckCounterDegrees = 0.f;
 };

@@ -1289,6 +1289,16 @@ void AAedirPlayerCharacter::Knockdown()
 	RunDevCommand(TEXT("Knockdown"), FString(), true);
 }
 
+void AAedirPlayerCharacter::BoneAxes(const FString& Bones)
+{
+	RunDevCommand(TEXT("BoneAxes"), Bones, false);
+}
+
+void AAedirPlayerCharacter::CloudFlash()
+{
+	RunDevCommand(TEXT("CloudFlash"), FString(), false);
+}
+
 void AAedirPlayerCharacter::GaitInfo(float Seconds, float Interval)
 {
 	RunDevCommand(TEXT("GaitInfo"), Interval > 0.f ? FString::Printf(TEXT("%f %f"), Seconds, Interval) : FString::Printf(TEXT("%f"), Seconds), false);

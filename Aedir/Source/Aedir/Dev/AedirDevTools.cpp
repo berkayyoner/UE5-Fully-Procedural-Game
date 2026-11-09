@@ -1,4 +1,6 @@
 #include "Dev/AedirDevTools.h"
+#include "AnimationRuntime.h"
+#include "Engine/SkeletalMesh.h"
 #include "Npc/AedirNpc.h"
 #include "Combat/AedirCombatTypes.h"
 #include "Combat/AedirCombatComponent.h"
@@ -200,6 +202,24 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		KillAll(Player, Args);
 	}
+	else if (Command == TEXT("BoneAxes"))
+	{
+		// Where a bone's own axes point on the standing body, in the mesh's frame: for fitting what is worn on it.
+		if (const USkeletalMeshComponent* Body = Player->GetMesh())
+		{
+			for (const FString& Bone : DevToolsTokens(Args))
+			{
+				const int32 Index = Body->GetBoneIndex(FName(*Bone));
+				if (Index == INDEX_NONE)
+				{
+					continue;
+				}
+				const FTransform Ref = FAnimationRuntime::GetComponentSpaceTransformRefPose(Body->GetSkeletalMeshAsset()->GetRefSkeleton(), Index);
+				DevToolsReport(FString::Printf(TEXT("BoneAxes %s at %s: X %s Y %s Z %s"), *Bone, *Ref.GetLocation().ToCompactString(),
+					*Ref.GetUnitAxis(EAxis::X).ToCompactString(), *Ref.GetUnitAxis(EAxis::Y).ToCompactString(), *Ref.GetUnitAxis(EAxis::Z).ToCompactString()));
+			}
+		}
+	}
 	else if (Command == TEXT("CloudFlash"))
 	{
 		// A flash in the clouds straight ahead of the view, a kilometre and a half away.
@@ -375,6 +395,14 @@ void UAedirDevTools::SpawnItem(AAedirPlayerCharacter* Player, const FString& Arg
 		}
 		const bool bWorn = Nearest && Nearest->Interaction && Nearest->Interaction->EquipImmediate(EAedirHand::Left, Item) && Nearest->Interaction->WearItem(Item, EAedirHand::Left);
 		DevToolsReport(FString::Printf(TEXT("%s %s on %s"), *Tokens[0], bWorn ? TEXT("worn") : TEXT("could not be worn"), Nearest ? *Nearest->GetName() : TEXT("nobody")));
+		return;
+	}
+
+	// "wear": the player puts it on at once.
+	if (Tokens.IsValidIndex(1) && DevToolsIsToken(Tokens[1], TEXT("wear")))
+	{
+		const bool bWorn = Player->Interaction && Player->Interaction->EquipImmediate(EAedirHand::Left, Item) && Player->Interaction->WearItem(Item, EAedirHand::Left);
+		DevToolsReport(FString::Printf(TEXT("%s %s"), *Tokens[0], bWorn ? TEXT("worn") : TEXT("could not be worn")));
 		return;
 	}
 
