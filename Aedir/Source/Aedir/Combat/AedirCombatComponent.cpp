@@ -199,6 +199,8 @@ namespace
 	constexpr float AedirBladeGuardCm = 10.f;
 	constexpr float AedirBladeRadiusCm = 2.5f;
 	constexpr int32 AedirBladeSweepTries = 4;
+	// The middle of the upper fist of a two-handed hold lies this far below the guard.
+	constexpr float AedirUpperHandBelowGuardCm = 4.5f;
 	constexpr float AedirBladeBlockMassKg = 40.f;
 	constexpr float AedirBladePushMaxSpeed = 500.f;
 	// A clash of weapons: the fastest a blade's tip counts, and how much of the push the struck hand takes.
@@ -1252,7 +1254,15 @@ float UAedirCombatComponent::GetSecondaryGripLocalCm(const AAedirItemActor* Item
 {
 	// The upper hand slides from the handle up onto the blade; the carrying hand stays on the handle.
 	const float BladeCm = Item->GripLocalCm + FMath::Clamp(Item->GetWeaponLength() * AedirHalfSwordHandsApartShare, AedirHalfSwordHandsApartMinCm, AedirHalfSwordHandsApartMaxCm);
-	return FMath::Lerp(Item->GripLocalCm + Item->GripSpanCm, BladeCm, CombatSmoothStep01(HalfSwordAlpha));
+	// On a hilted weapon the handle ends at the guard, where the body's box begins: the upper hand closes below it, on the
+	// handle, however short the handle is.
+	float HandleCm = Item->GripLocalCm + Item->GripSpanCm;
+	const float GuardCm = static_cast<float>(-Item->BodyScale.X * 50.0);
+	if (Item->GripLocalCm < GuardCm)
+	{
+		HandleCm = FMath::Min(HandleCm, GuardCm - AedirUpperHandBelowGuardCm);
+	}
+	return FMath::Lerp(HandleCm, BladeCm, CombatSmoothStep01(HalfSwordAlpha));
 }
 
 bool UAedirCombatComponent::GetSecondaryGrip(EAedirHand& OutHand, FVector& OutPointInPrimaryHand, FVector& OutBladeInPrimaryHand, float& OutAlpha) const
