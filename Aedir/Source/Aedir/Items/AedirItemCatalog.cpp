@@ -282,7 +282,7 @@ namespace
 		AddWornModel(TEXT("RustyIronShield"), TEXT("Rusty Iron Shield"), 4.5f, EAedirBodyZone::Arm, 0.7f, TEXT("lowerarm_l"), FVector(0.6, 0.6, 0.08),
 			TEXT("/Game/Aedir/Fab/RustyIronShield/Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High.Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High"), 62.f, FRotator::ZeroRotator, FVector(13.f, 0.f, 9.f));
 		AddWornModel(TEXT("RustyShoulders"), TEXT("Rusty Layered Pauldrons"), 3.f, EAedirBodyZone::Arm, 0.35f, TEXT("spine_05"), FVector(0.2, 0.5, 0.2),
-			TEXT("/Game/Aedir/Fab/RustyShoulders/shoulder.shoulder"), 52.f, Axes(FVector(0, 1, 0), FVector(0, 0, 1), FVector(1, 0, 0)), FVector(9.f, -1.f, 0.f));
+			TEXT("/Game/Aedir/Fab/RustyShoulders/shoulder.shoulder"), 64.f, Axes(FVector(0, 1, 0), FVector(0, 0, 1), FVector(1, 0, 0)), FVector(6.f, -1.f, 0.f));
 
 		// The steel longsword came as a blade with its guard and grip in separate parts.
 		AddModelWeapon(TEXT("SteelLongsword"), TEXT("Steel Longsword"), 1.6f, 96.8f, 0.f, 96.8f, EAedirDamageType::Slash, 15.f, true, FVector(0.968, 0.05, 0.01),
