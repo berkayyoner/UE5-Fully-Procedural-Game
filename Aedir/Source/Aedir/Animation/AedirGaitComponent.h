@@ -424,19 +424,19 @@ public:
 
 	// Pelvis drop in cm at a full fighting stance.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
-	float StanceHipLowerCm = 12.f;
+	float StanceHipLowerCm = 20.f;
 
 	// Extra knee flexion in degrees at a full fighting stance.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
-	float StanceKneeBendDegrees = 20.f;
+	float StanceKneeBendDegrees = 34.f;
 
 	// Multiplier on the foot home half-width at a full fighting stance.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
-	float StanceFootWidthMultiplier = 1.7f;
+	float StanceFootWidthMultiplier = 2.2f;
 
 	// Forward shift in cm of the lead foot's home location at a full fighting stance. The rear foot moves back by half of it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
-	float StanceLeadFootForwardCm = 22.f;
+	float StanceLeadFootForwardCm = 28.f;
 
 	// Walking stride multiplier at a full fighting stance. Running is not affected.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -444,7 +444,7 @@ public:
 
 	// Forward torso lean in degrees at a full fighting stance.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
-	float StanceSpineLeanDegrees = 6.f;
+	float StanceSpineLeanDegrees = 9.f;
 
 	// Guard hand position in cm relative to the actor: forward, right, up. Scaled by the actor transform.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")

@@ -31,7 +31,7 @@ public:
 	TObjectPtr<UCameraComponent> FirstPersonCamera;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	float ThirdPersonArmLength = 165.f;
+	float ThirdPersonArmLength = 150.f;
 
 	// The mouse wheel moves the camera between these distances.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
@@ -43,7 +43,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float CameraZoomStepCm = 22.f;
 
-	float CameraZoomTargetCm = 165.f;
+	float CameraZoomTargetCm = 150.f;
 
 	// Height of the camera boom pivot above the capsule centre while standing.
 	float CameraBoomBaseZ = 60.f;
@@ -107,7 +107,21 @@ public:
 	FRotator FightCameraSway = FRotator::ZeroRotator;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	FVector ThirdPersonShoulderOffset = FVector(0.f, 18.f, 8.f);
+	FVector ThirdPersonShoulderOffset = FVector(0.f, 26.f, 22.f);
+
+	// In the fight stance the view comes in close over the right shoulder and looks down on the fight from above it, so the
+	// body and both weapons fill the frame and the mouse is free for the arms.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float FightArmLengthCm = 155.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	FVector FightShoulderOffset = FVector(0.f, 42.f, 12.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float FightViewPitch = -28.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float FightViewPitchSpeed = 3.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	FVector FirstPersonEyeOffset = FVector(14.f, 0.f, 62.f);

@@ -402,7 +402,9 @@ void UAedirBalanceComponent::HoldPelvis(float DeltaTime)
 			{
 				if (Body)
 				{
+					// A body's transform carries the body's size as its scale; the physics takes poses without one.
 					FTransform Moved = Body->GetUnrealWorldTransform();
+					Moved.SetScale3D(FVector::OneVector);
 					Moved.AddToTranslation(Shift);
 					Body->SetBodyTransform(Moved, ETeleportType::TeleportPhysics);
 					Body->SetLinearVelocity(CharacterOwner->GetVelocity(), false);
@@ -1547,7 +1549,9 @@ void UAedirBalanceComponent::DrivePelvis()
 	}
 
 	// Everything hangs from the pelvis, which goes exactly where the pose has it.
-	Pelvis->SetBodyTransform(BodyMesh->GetSocketTransform(PelvisBoneName, RTS_World), ETeleportType::None);
+	FTransform PelvisPose = BodyMesh->GetSocketTransform(PelvisBoneName, RTS_World);
+	PelvisPose.SetScale3D(FVector::OneVector);
+	Pelvis->SetBodyTransform(PelvisPose, ETeleportType::None);
 }
 
 void UAedirBalanceComponent::SetRagdollPresentation(bool bRagdoll)
@@ -1642,7 +1646,9 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		Lying.Reserve(BodyMesh->Bodies.Num());
 		for (const FBodyInstance* Body : BodyMesh->Bodies)
 		{
-			Lying.Add(Body ? Body->GetUnrealWorldTransform() : FTransform::Identity);
+			FTransform Lay = Body ? Body->GetUnrealWorldTransform() : FTransform::Identity;
+			Lay.SetScale3D(FVector::OneVector);
+			Lying.Add(Lay);
 		}
 
 		if (IsAuthoritative())

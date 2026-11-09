@@ -199,12 +199,15 @@ namespace
 	static TAutoConsoleVariable<int32> CVarAedirHandLedSwing(TEXT("aedir.HandLedSwing"), 1, TEXT("The mouse moves the hand and the blade follows it by its weight (1), or swings go through set poses (0)."));
 	constexpr float AedirHandLedYawShare = 1.1f;
 	constexpr float AedirHandLedInwardYaw = 12.f;
-	constexpr float AedirHandLedRestPitch = -22.f;
+	constexpr float AedirHandLedRestPitch = 18.f;
 	constexpr float AedirHandLedPitchMin = -75.f;
 	constexpr float AedirHandLedPitchMax = 78.f;
-	constexpr float AedirHandLedNearCm = 42.f;
-	constexpr float AedirHandLedFarCm = 58.f;
+	constexpr float AedirHandLedNearCm = 32.f;
+	constexpr float AedirHandLedFarCm = 50.f;
 	constexpr float AedirHandLedBehindShorterCm = 10.f;
+	// How far round a hand can be held: out to its own side, and across in front of the body to the other.
+	constexpr float AedirHandLedOutwardYaw = 100.f;
+	constexpr float AedirHandLedAcrossYaw = 55.f;
 	constexpr float AedirHandLedTwoHandSideCm = 6.f;
 	// The blade stands out of the fist this far above the line of the arm; weight and tiredness let it sink.
 	constexpr float AedirHandLedBladeRaise = 50.f;
@@ -1295,7 +1298,10 @@ FVector UAedirCombatComponent::ComputeHandLedHandLocal(EAedirHand Hand, const FA
 {
 	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
 	const FVector2D Aim = Arm.PoseAimDeg;
-	const float Yaw = static_cast<float>(Aim.X) * AedirHandLedYawShare - Side * AedirHandLedInwardYaw;
+	// Round to the far side the arm runs out of shoulder before the mouse runs out: the hand stops there, elbow down, rather
+	// than the elbow turning over to reach further.
+	const float RawYaw = static_cast<float>(Aim.X) * AedirHandLedYawShare - Side * AedirHandLedInwardYaw;
+	const float Yaw = Side > 0.f ? FMath::Clamp(RawYaw, -AedirHandLedAcrossYaw, AedirHandLedOutwardYaw) : FMath::Clamp(RawYaw, -AedirHandLedOutwardYaw, AedirHandLedAcrossYaw);
 	const float Pitch = FMath::Clamp(AedirHandLedRestPitch + static_cast<float>(Aim.Y), AedirHandLedPitchMin, AedirHandLedPitchMax);
 	// The wheel sets how far out the hand is held, a quick throw takes it all the way, and round behind the body the arm
 	// cannot reach as far.

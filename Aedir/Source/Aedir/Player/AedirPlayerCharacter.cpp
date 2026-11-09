@@ -413,6 +413,10 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 	}
 	if (!Target)
 	{
+		// With nobody to look at, the guard still brings the view down over the shoulder.
+		FRotator Control = PlayerController->GetControlRotation();
+		const float Pitch = FMath::FInterpTo(static_cast<float>(FRotator::NormalizeAxis(Control.Pitch)), FightViewPitch, DeltaSeconds, FightViewPitchSpeed);
+		PlayerController->SetControlRotation(FRotator(Pitch, Control.Yaw, Control.Roll));
 		return;
 	}
 
@@ -427,7 +431,9 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
 	const FRotator Want = (Aim - ViewLocation).Rotation();
 	FRotator Control = PlayerController->GetControlRotation();
-	const FRotator Turned = FMath::RInterpTo(Control, FRotator(FMath::Clamp(FRotator::NormalizeAxis(Want.Pitch), MinViewPitch, MaxViewPitch), Want.Yaw, Control.Roll), DeltaSeconds, LockOnTurnSpeed);
+	// Never looking up at the fight from below its own shoulder: at least as steeply down as the fight view.
+	const float WantPitch = FMath::Min(static_cast<float>(FRotator::NormalizeAxis(Want.Pitch)), FightViewPitch);
+	const FRotator Turned = FMath::RInterpTo(Control, FRotator(FMath::Clamp(WantPitch, MinViewPitch, MaxViewPitch), Want.Yaw, Control.Roll), DeltaSeconds, LockOnTurnSpeed);
 	PlayerController->SetControlRotation(FRotator(Turned.Pitch, Turned.Yaw, Control.Roll));
 }
 
@@ -567,7 +573,11 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 {
 	if (CameraBoom)
 	{
-		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, CameraZoomTargetCm, DeltaSeconds, 10.f);
+		// The fight stance draws the view in close and up over the shoulder; out of it the view goes back to where it was set.
+		const float FightAlpha = FMath::SmoothStep(0.f, 1.f, FightCameraAlpha);
+		const float WantedLength = FMath::Lerp(CameraZoomTargetCm, FightArmLengthCm, FightAlpha);
+		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, WantedLength, DeltaSeconds, 10.f);
+		CameraBoom->SocketOffset = FMath::Lerp(ThirdPersonShoulderOffset, FightShoulderOffset, FightAlpha);
 	}
 
 	LastLookInputSeconds += DeltaSeconds;

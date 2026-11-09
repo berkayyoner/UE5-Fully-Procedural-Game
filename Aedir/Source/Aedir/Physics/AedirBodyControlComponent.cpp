@@ -340,6 +340,7 @@ void UAedirBodyControlComponent::Teleported(const FVector& Offset)
 		if (Body && Body->IsValidBodyInstance())
 		{
 			FTransform Moved = Body->GetUnrealWorldTransform();
+			Moved.SetScale3D(FVector::OneVector);
 			Moved.AddToTranslation(Offset);
 			Body->SetBodyTransform(Moved, ETeleportType::TeleportPhysics);
 		}
