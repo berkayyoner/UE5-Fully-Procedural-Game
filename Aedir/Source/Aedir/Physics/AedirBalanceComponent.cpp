@@ -90,6 +90,8 @@ namespace
 	constexpr float HitReactionDazeEnergyRef = 60.f;
 	constexpr float HitReactionDazeMaxSeconds = 2.5f;
 	constexpr float HitReactionDazeRecoveryScale = 0.5f;
+	constexpr float AedirGroggyBelow = 0.65f;
+	constexpr float AedirGroggyMaxDaze = 0.85f;
 	constexpr float HitReactionKnockdownExtraSeconds = 0.8f;
 	// The blow moves the part it lands on, not the whole body through the air.
 	constexpr float GrippedArmMotorShare = 0.3f;
@@ -957,7 +959,12 @@ float UAedirBalanceComponent::GetDazeSeconds() const
 
 float UAedirBalanceComponent::GetDazeFactor() const
 {
-	return FMath::Clamp(DazeSeconds / HitReactionDazeMaxSeconds, 0.f, 1.f);
+	// Dazed by the last blow, or groggy from senses that have not all come back yet: below two thirds of them the body moves,
+	// swings and stands ever worse.
+	const AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
+	const float Senses = Creature && Creature->Stats ? Creature->Stats->GetConsciousnessFraction() : 1.f;
+	const float Groggy = FMath::Clamp((AedirGroggyBelow - Senses) / AedirGroggyBelow, 0.f, 1.f) * AedirGroggyMaxDaze;
+	return FMath::Max(FMath::Clamp(DazeSeconds / HitReactionDazeMaxSeconds, 0.f, 1.f), Groggy);
 }
 
 FRotator UAedirBalanceComponent::GetPelvisLean() const
@@ -1396,6 +1403,8 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	const float Athletism = StatsComponent ? StatsComponent->Athletism : 0.f;
 	// A dying body is down for good: it does not get up again.
 	const bool bDead = StatsComponent && (StatsComponent->IsDead() || StatsComponent->IsDying());
+	// Knocked senseless, the body drops where it stands and lies limp until it comes round.
+	const bool bSenseless = StatsComponent && StatsComponent->IsKnockedOut();
 
 	const AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
 	const float MaxLegInjury = Creature && Creature->Combat
@@ -1445,16 +1454,22 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 
 	// One leg short, a body only ever gets as far as its knees before it goes down again.
 	const bool bLegGivesWay = bLegLost && (!IsGettingUp() || GetGetUpProgress() >= LegLostGetUpGivesWayAt);
-	if (!bIsRagdoll && (bDead || bLegGivesWay || TimeBelowThreshold >= FallDelaySeconds))
+	if (!bIsRagdoll && (bDead || bSenseless || bLegGivesWay || TimeBelowThreshold >= FallDelaySeconds))
 	{
-		UE_LOG(LogAedir, Log, TEXT("[Fall] %s goes down: dead %d, leg %d, balance %.2f."), *GetNameSafe(GetOwner()), bDead ? 1 : 0, bLegGivesWay ? 1 : 0, Balance);
+		UE_LOG(LogAedir, Log, TEXT("[Fall] %s goes down: dead %d, senseless %d, leg %d, balance %.2f."), *GetNameSafe(GetOwner()), bDead ? 1 : 0, bSenseless ? 1 : 0, bLegGivesWay ? 1 : 0, Balance);
 		EnterRagdoll(MinRagdollSeconds);
+		// Nothing is held by a hand that has gone slack.
+		if (bSenseless && Creature && Creature->Interaction)
+		{
+			Creature->Interaction->DropHeld(EAedirHand::Right);
+			Creature->Interaction->DropHeld(EAedirHand::Left);
+		}
 	}
 	else if (bIsRagdoll)
 	{
 		LyingStyle = ReadLyingStyle();
 		const bool bWasReady = bReadyToGetUp;
-		bReadyToGetUp = !bDead && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds;
+		bReadyToGetUp = !bDead && !bSenseless && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds;
 		if (bReadyToGetUp && !bWasReady && BodyMesh)
 		{
 			UE_LOG(LogAedir, Verbose, TEXT("[GetUp] %s can get up, lies %s, head %s from the pelvis."), *GetNameSafe(GetOwner()),

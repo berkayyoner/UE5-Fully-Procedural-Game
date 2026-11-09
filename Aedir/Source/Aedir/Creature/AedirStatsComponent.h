@@ -49,6 +49,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Strength, Category="Aedir|Stats")
 	float Strength = 10.f;
 
+	// How much the body still knows of the world, out of 100: blows to the head and a hand at the throat take it, it comes
+	// back a few seconds after the last of them. Low, the body moves, swings and keeps its feet worse; at nothing it drops
+	// senseless and lies there until enough of it is back.
+	UPROPERTY(BlueprintReadOnly, Replicated, Category="Aedir|Stats")
+	float Consciousness = 100.f;
+
+	UPROPERTY(BlueprintReadOnly, Replicated, Category="Aedir|Stats")
+	bool bKnockedOut = false;
+
+	void LoseConsciousness(float Amount);
+	float GetConsciousnessFraction() const { return Consciousness / 100.f; }
+	bool IsKnockedOut() const { return bKnockedOut; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Stats, Category="Aedir|Stats")
 	float Athletism = 10.f;
 
@@ -230,6 +243,9 @@ public:
 	void ApplySavedState(float InHealth, float InMaxHealth, float InMana, float InMaxMana, float InStamina, float InMaxStamina, float InStrength, float InAthletism, const TArray<float>& InSkills);
 
 private:
+	// Seconds since the senses were last knocked or choked.
+	float ConsciousnessQuietSeconds = 100.f;
+
 	bool IsAuthoritative() const;
 
 	UFUNCTION()

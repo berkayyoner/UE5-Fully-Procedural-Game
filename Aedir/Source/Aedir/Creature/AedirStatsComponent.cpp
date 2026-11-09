@@ -1,10 +1,17 @@
 #include "AedirStatsComponent.h"
+#include "Aedir.h"
 
 #include "Creature/AedirRaceCatalog.h"
 #include "Net/UnrealNetwork.h"
 
 namespace
 {
+	// The senses come back this long after the last blow, at this many points a second, quicker on one's feet; one knocked
+	// senseless wakes with this many back.
+	constexpr float StatsConsciousnessQuietSeconds = 3.f;
+	constexpr float StatsConsciousnessRegen = 9.f;
+	constexpr float StatsConsciousnessOutRegen = 6.f;
+	constexpr float StatsConsciousnessWakeAt = 35.f;
 	constexpr float StatsHungerSeconds = 2400.f;
 	constexpr float StatsThirstSeconds = 1500.f;
 	constexpr float StatsNeedRunSpeed = 500.f;
@@ -59,6 +66,21 @@ void UAedirStatsComponent::InitializeComponent()
 	}
 }
 
+void UAedirStatsComponent::LoseConsciousness(float Amount)
+{
+	if (!IsAuthoritative() || bIsDead || Amount <= 0.f)
+	{
+		return;
+	}
+	ConsciousnessQuietSeconds = 0.f;
+	Consciousness = FMath::Max(Consciousness - Amount, 0.f);
+	if (Consciousness <= 0.f && !bKnockedOut)
+	{
+		bKnockedOut = true;
+		UE_LOG(LogAedir, Log, TEXT("[Senses] %s is knocked senseless."), *GetNameSafe(GetOwner()));
+	}
+}
+
 void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -79,6 +101,19 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 			Die();
 		}
 		return;
+	}
+
+	// The senses come back a while after the last blow or the hand leaves the throat, quicker while still standing; one
+	// knocked out comes round once enough of them are back.
+	ConsciousnessQuietSeconds += DeltaTime;
+	if (Consciousness < 100.f && ConsciousnessQuietSeconds >= StatsConsciousnessQuietSeconds)
+	{
+		Consciousness = FMath::Min(Consciousness + DeltaTime * (bKnockedOut ? StatsConsciousnessOutRegen : StatsConsciousnessRegen), 100.f);
+		if (bKnockedOut && Consciousness >= StatsConsciousnessWakeAt)
+		{
+			bKnockedOut = false;
+			UE_LOG(LogAedir, Log, TEXT("[Senses] %s comes round."), *GetNameSafe(GetOwner()));
+		}
 	}
 
 	// A body at work burns through both faster. Thirst comes first.
@@ -160,6 +195,8 @@ void UAedirStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(UAedirStatsComponent, Mana);
 	DOREPLIFETIME(UAedirStatsComponent, MaxMana);
 	DOREPLIFETIME(UAedirStatsComponent, Stamina);
+	DOREPLIFETIME(UAedirStatsComponent, Consciousness);
+	DOREPLIFETIME(UAedirStatsComponent, bKnockedOut);
 	DOREPLIFETIME(UAedirStatsComponent, MaxStamina);
 	DOREPLIFETIME(UAedirStatsComponent, Strength);
 	DOREPLIFETIME(UAedirStatsComponent, Athletism);

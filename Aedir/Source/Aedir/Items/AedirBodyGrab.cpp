@@ -41,6 +41,11 @@ namespace
 	constexpr float BodyGrabForcePerStrengthN = 14.f;
 	constexpr float BodyGrabAimRangeCm = 230.f;
 	constexpr float BodyGrabAimRadiusCm = 20.f;
+	// A throat within this reach is taken first; one hand on it takes this many points of the senses a second from an even
+	// match, so it takes several seconds to choke a man senseless and as long again to kill him.
+	constexpr float BodyGrabThroatCm = 26.f;
+	constexpr float BodyGrabChokePerSecond = 14.f;
+	constexpr float BodyGrabChokeKillPerSecond = 9.f;
 }
 
 bool UAedirInteractionComponent::FindAimedBody(FVector& OutPoint) const
@@ -155,6 +160,12 @@ bool UAedirInteractionComponent::TryGrabBody(EAedirHand Hand, const FVector* Aim
 			while (!Bone.IsNone() && !Skeletal->GetBodyInstance(Bone))
 			{
 				Bone = Skeletal->GetParentBone(Bone);
+			}
+			// A hand that comes near a living throat takes the throat before anything else.
+			const FName Throat(TEXT("neck_01"));
+			if (Cast<AAedirCreature>(Skeletal->GetOwner()) && Skeletal->GetBodyInstance(Throat) && FVector::Dist(Skeletal->GetBoneLocation(Throat), Center) < BodyGrabThroatCm * Scale)
+			{
+				Bone = Throat;
 			}
 			const FBodyInstance* Part = Bone.IsNone() ? nullptr : Skeletal->GetBodyInstance(Bone);
 			if (!Part || !Part->IsInstanceSimulatingPhysics())
@@ -330,6 +341,22 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 			if (IsAuthoritative())
 			{
 				Held->Balance->ApplyBalanceImpact(Pull, BodyGrabLiveBalancePerSecond * Share * FMath::Clamp(Gap / BodyGrabTearCm, 0.f, 1.f) * DeltaTime);
+			}
+		}
+
+		// A hand closed on a living throat chokes it: the senses go the faster the stronger the hand against the neck, and
+		// with them the strength to fight it.
+		AAedirCreature* Choked = Cast<AAedirCreature>(Grab.Target.IsValid() ? Grab.Target->GetOwner() : nullptr);
+		if (Choked && Choked != Creature && Choked->Stats && !Choked->Stats->IsDead() && Grab.Bone.ToString().StartsWith(TEXT("neck")) && Gap < BodyGrabTearCm && IsAuthoritative())
+		{
+			const float ChokedStrength = FMath::Max(Choked->Stats->Strength, 1.f);
+			const float Grip = FMath::Clamp(Strength / ChokedStrength, 0.4f, 2.f) * FMath::Lerp(0.5f, 1.f, StaminaShare);
+			const bool bWasOut = Choked->Stats->IsKnockedOut();
+			Choked->Stats->LoseConsciousness(BodyGrabChokePerSecond * Grip * DeltaTime);
+			// Held on past senselessness, the choking kills.
+			if (bWasOut)
+			{
+				Choked->ReceiveCreatureDamage(BodyGrabChokeKillPerSecond * Grip * DeltaTime);
 			}
 		}
 

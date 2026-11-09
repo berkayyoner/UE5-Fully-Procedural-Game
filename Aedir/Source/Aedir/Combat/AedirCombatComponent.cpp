@@ -348,6 +348,10 @@ namespace
 	constexpr float AedirLodgedTearCm = 14.f;
 	// A point driven in along the blade, or an axe's bit chopped this deep into its cut, stays in; any other edge drags on through.
 	constexpr float AedirLodgeThrustAlignment = 0.75f;
+	// What a blow to the head takes of the senses: nothing below a tap, then a point for every few joules that get through, so
+	// a hard bare-headed blow takes most of them and a second one knocks a man down senseless.
+	constexpr float AedirSensesFreeJoules = 12.f;
+	constexpr float AedirSensesPerJoule = 0.32f;
 	constexpr float AedirLodgeChopShare = 0.6f;
 	constexpr double AedirLodgeHaftedBoxY = 0.035;
 	constexpr float AedirCutBiteKeep = 0.4f;
@@ -2817,6 +2821,15 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	UE_CLOG(Victim->Interaction && Victim->Interaction->HasWornArmor(), LogAedir, Log, TEXT("Armour: %s on %s took %.0f%% (%s)"),
 		StruckAs == EAedirDamageType::Slash ? TEXT("edge") : StruckAs == EAedirDamageType::Pierce ? TEXT("point") : TEXT("blunt"), *Bone.ToString(), VictimZoneProtection * 100.f,
 		!Armour.bCovered ? TEXT("bare") : Armour.Material == EAedirArmorMaterial::Plate ? TEXT("plate") : Armour.Material == EAedirArmorMaterial::Mail ? TEXT("mail") : TEXT("padding"));
+	// A blow to the head shakes the senses by what of it gets through: a helmet turns an edge, but the jolt of the blow
+	// reaches the head under it all the same, half through plate.
+	if (Zone == EAedirBodyZone::Head && Victim->Stats)
+	{
+		const float Jolt = Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f;
+		const float Lost = FMath::Max(Energy * (1.f - Jolt) - AedirSensesFreeJoules, 0.f) * AedirSensesPerJoule;
+		Victim->Stats->LoseConsciousness(Lost);
+		UE_CLOG(Lost > 1.f, LogAedir, Log, TEXT("[Senses] %s took %.0f to the head, senses %.0f"), *Victim->GetName(), Lost, Victim->Stats->Consciousness);
+	}
 	// Only a real blow hurts: a touch, blades resting on each other or bodies rubbing shake the balance and do no harm; from
 	// there the harm grows smoothly to the full of a hard blow.
 	const float Harm = FMath::SmoothStep(AedirImpactNoHarmJoules, AedirImpactFullFlatJoules, Energy * ArmorFactor);
