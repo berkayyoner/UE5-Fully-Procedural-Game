@@ -34,6 +34,19 @@
 
 namespace
 {
+	// The day: it starts at nine in the morning and goes round in 72 real minutes; the sun stands this high at noon, it is
+	// full day once it is this high and night once it is this far below the horizon. The moon stands this high, gives this
+	// many lux in this blue, and at night the sky gives this share of its daylight.
+	TAutoConsoleVariable<float> CVarAedirHour(TEXT("aedir.Hour"), -1.f, TEXT("Holds the time of day at this hour (0 to 24); below 0 the day goes round."));
+	constexpr double WeatherStartHour = 9.0;
+	constexpr double WeatherDayRealSeconds = 72.0 * 60.0;
+	constexpr float WeatherSunHighestDegrees = 55.f;
+	constexpr float WeatherDayAboveDegrees = 8.f;
+	constexpr float WeatherDuskBelowDegrees = -4.f;
+	constexpr float WeatherMoonHighDegrees = 40.f;
+	constexpr float WeatherMoonLux = 0.25f;
+	const FLinearColor WeatherMoonColor(0.55f, 0.68f, 1.f);
+	constexpr float WeatherNightSkyShare = 0.06f;
 	constexpr float WeatherManagerSceneSearchInterval = 5.f;
 	constexpr float WeatherManagerSkyLightApplyInterval = 0.25f;
 	// The engine's cloud material and how the weather's cover maps onto its controls: negative coverage thins the sky to
@@ -807,12 +820,14 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 	{
 		if (UDirectionalLightComponent* SunComponent = Cast<UDirectionalLightComponent>(Sun->GetLightComponent()))
 		{
-			SunComponent->SetIntensity(Profile.SunIntensityLux * WeatherManagerSunBrightnessScale + FlashBoost);
-
-			if (!AppliedSunColor.Equals(Profile.SunColor, 0.001f))
+			ApplyDayCycle(SunComponent, Profile.SunIntensityLux * WeatherManagerSunBrightnessScale);
+			SunComponent->SetIntensity(SunComponent->Intensity + FlashBoost);
+			
+			const FLinearColor Color = bMoonUp ? WeatherMoonColor : Profile.SunColor;
+			if (!AppliedSunColor.Equals(Color, 0.001f))
 			{
-				SunComponent->SetLightColor(Profile.SunColor);
-				AppliedSunColor = Profile.SunColor;
+				SunComponent->SetLightColor(Color);
+				AppliedSunColor = Color;
 			}
 		}
 	}
@@ -832,17 +847,72 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 		if (USkyLightComponent* SkyComponent = Sky->GetLightComponent())
 		{
 			const float Reference = FMath::Max(AppliedSkyLightIntensity, KINDA_SMALL_NUMBER);
+			const float Wanted = Profile.SkyLightIntensity * FMath::Lerp(WeatherNightSkyShare, 1.f, GetDaylight(World));
 			const bool bChangedNotably = AppliedSkyLightIntensity < 0.f
-				|| FMath::Abs(Profile.SkyLightIntensity - AppliedSkyLightIntensity) > Reference * WeatherManagerSkyLightChangeFraction;
+				|| FMath::Abs(Wanted - AppliedSkyLightIntensity) > Reference * WeatherManagerSkyLightChangeFraction;
 
 			if (bChangedNotably && WorldTime >= NextSkyLightApplyTime)
 			{
-				SkyComponent->SetIntensity(Profile.SkyLightIntensity * WeatherManagerSkyBrightnessScale);
+				SkyComponent->SetIntensity(Wanted * WeatherManagerSkyBrightnessScale);
 				SkyComponent->MarkRenderStateDirty();
-				AppliedSkyLightIntensity = Profile.SkyLightIntensity;
+				AppliedSkyLightIntensity = Wanted;
 				NextSkyLightApplyTime = WorldTime + WeatherManagerSkyLightApplyInterval;
 			}
 		}
+	}
+}
+
+float AAedirWeatherManager::GetHourOfDay(const UWorld* World)
+{
+	const float Fixed = CVarAedirHour.GetValueOnGameThread();
+	if (Fixed >= 0.f)
+	{
+		return FMath::Fmod(Fixed, 24.f);
+	}
+	const double Seconds = World ? World->GetTimeSeconds() : 0.0;
+	return static_cast<float>(FMath::Fmod(WeatherStartHour + Seconds * 24.0 / WeatherDayRealSeconds, 24.0));
+}
+
+float AAedirWeatherManager::GetDaylight(const UWorld* World)
+{
+	// Full day once the sun stands a little above the horizon; nothing once it is a little below it.
+	const float Elevation = WeatherSunHighestDegrees * FMath::Sin(UE_PI * (GetHourOfDay(World) - 6.f) / 12.f);
+	return FMath::SmoothStep(WeatherDuskBelowDegrees, WeatherDayAboveDegrees, Elevation);
+}
+
+void AAedirWeatherManager::ApplyDayCycle(UDirectionalLightComponent* SunComponent, float WeatherLux)
+{
+	AActor* Sun = SunComponent->GetOwner();
+	if (!Sun)
+	{
+		return;
+	}
+	if (!bNoonYawKnown)
+	{
+		NoonYaw = static_cast<float>(Sun->GetActorRotation().Yaw);
+		bNoonYawKnown = true;
+	}
+	const float Hour = GetHourOfDay(GetWorld());
+	const float Elevation = WeatherSunHighestDegrees * FMath::Sin(UE_PI * (Hour - 6.f) / 12.f);
+	const float Daylight = GetDaylight(GetWorld());
+	const bool bMoon = Elevation < WeatherDuskBelowDegrees;
+	if (bMoon)
+	{
+		// At night the light is the moon, high over the other way, faint and blue; the sky has no sun in it and goes dark.
+		const float FromMidnight = Hour < 12.f ? Hour : Hour - 24.f;
+		Sun->SetActorRotation(FRotator(-WeatherMoonHighDegrees, NoonYaw + 180.f + FromMidnight * 15.f, 0.f));
+		SunComponent->SetIntensity(WeatherMoonLux);
+	}
+	else
+	{
+		Sun->SetActorRotation(FRotator(-FMath::Max(Elevation, 0.5f), NoonYaw + (Hour - 12.f) * 15.f, 0.f));
+		SunComponent->SetIntensity(WeatherLux * Daylight);
+	}
+	if (bMoon != bMoonUp)
+	{
+		bMoonUp = bMoon;
+		SunComponent->SetAtmosphereSunLight(!bMoon);
+		UE_LOG(LogAedir, Log, TEXT("[Day] %s at %.1f o'clock"), bMoon ? TEXT("Night falls") : TEXT("Day breaks"), Hour);
 	}
 }
 

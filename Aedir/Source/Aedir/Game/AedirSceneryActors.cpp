@@ -6,6 +6,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Weather/AedirWeatherManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
@@ -33,6 +34,8 @@ namespace
 	constexpr float SceneryFireFadeCm = 1800.f;
 	constexpr float SceneryCampfireCm = 55.f;
 	constexpr float SceneryFireMinVolume = 0.06f;
+	// A fire's light by full day, as a share of its light by night.
+	constexpr float SceneryFireDayShare = 0.1f;
 
 	void MakeHeardInPlace(UAudioComponent* Audio, float InnerCm, float FadeCm)
 	{
@@ -144,7 +147,9 @@ void AAedirFlame::Tick(float DeltaSeconds)
 	const float Swell = 0.5f + 0.5f * FMath::Sin(Phase * 2.1f) * FMath::Sin(Phase * 0.7f + 1.3f);
 	const float Flutter = FMath::PerlinNoise1D(Phase * 9.f);
 	const float Flicker = FMath::Clamp(0.75f + 0.18f * Swell + 0.22f * Flutter, 0.35f, 1.2f);
-	Light->SetIntensity(LightCandelas * Flicker);
+	// By day a fire hardly lights what the sun already does; at dusk and at night it lights all round it.
+	const float Glow = FMath::Lerp(1.f, SceneryFireDayShare, AAedirWeatherManager::GetDaylight(GetWorld()));
+	Light->SetIntensity(LightCandelas * Flicker * Glow);
 	if (TongueMaterial)
 	{
 		TongueMaterial->SetScalarParameterValue(TEXT("Strength"), Flicker);

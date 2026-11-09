@@ -96,6 +96,21 @@ private:
 	float AppliedCloudStorm = -100.f;
 
 	TWeakObjectPtr<ADirectionalLight> SunLight;
+
+	// The day goes round: the sun rises in the east, stands highest at noon and sets in the west; at night the same light is
+	// a faint blue moon high in the sky and the sky is dark. The yaw the sun was placed at is where it stands at noon.
+	float NoonYaw = 0.f;
+	bool bNoonYawKnown = false;
+	bool bMoonUp = false;
+	void ApplyDayCycle(UDirectionalLightComponent* SunComponent, float WeatherLux);
+
+public:
+	// The hour of the day, 0 to 24, and how much of full day it is (0 at night, 1 with the sun well up), for anything lit by
+	// its own fire or lamp.
+	static float GetHourOfDay(const UWorld* World);
+	static float GetDaylight(const UWorld* World);
+
+private:
 	TWeakObjectPtr<AExponentialHeightFog> HeightFog;
 	TWeakObjectPtr<ASkyLight> SkyLight;
 	TWeakObjectPtr<UAedirSurfaceSubsystem> SurfaceSubsystem;
