@@ -67,6 +67,13 @@ public:
 
 	// The collision mask the body and what it holds share, so its own weapon and fists pass through it.
 	uint8 GetBodyMaskBit() const { return BodyMaskBit; }
+
+	// What makes this body look like nobody else: its own height and build around what its strength gives, and its skin.
+	float GetAppearanceBulk() const { return AppearanceBulk; }
+	float AppearanceHeight = 1.f;
+	float AppearanceBulk = 1.f;
+	FLinearColor SkinTint = FLinearColor::White;
+	void ApplyAppearance();
 	// The collision mask of what the hands hold.
 	uint8 GetHeldMaskBit() const;
 	void ApplyBodyMask();

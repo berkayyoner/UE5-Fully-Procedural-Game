@@ -1,5 +1,6 @@
 #include "AedirCreature.h"
 #include "HAL/IConsoleManager.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "PhysicsEngine/BodySetup.h"
 
 #include "Creature/AedirWayFinder.h"
@@ -152,6 +153,7 @@ void AAedirCreature::BeginPlay()
 	BodyMaskBit = IsPlayerControlled() ? 1 : static_cast<uint8>(1 << (1 + NextCreatureBit++ % 7));
 	ApplyBodyMask();
 
+	ApplyAppearance();
 	if (Stats)
 	{
 		Stats->OnStrengthChanged.AddDynamic(this, &AAedirCreature::ApplySizeScale);
@@ -425,7 +427,31 @@ bool AAedirCreature::IsInFightStance() const
 
 void AAedirCreature::ApplySizeScale(float NewSizeScale)
 {
-	SetActorScale3D(FVector(NewSizeScale));
+	SetActorScale3D(FVector(NewSizeScale * AppearanceHeight));
+}
+
+void AAedirCreature::ApplyAppearance()
+{
+	// Drawn from the body's own name, so the same person looks the same every time: a little taller or shorter, a little
+	// heavier or slighter in build than strength alone makes them, and a skin of its own.
+	static const FLinearColor Skins[] = {
+		FLinearColor(0.93f, 0.76f, 0.64f), FLinearColor(0.86f, 0.66f, 0.52f), FLinearColor(0.76f, 0.56f, 0.42f), FLinearColor(0.62f, 0.44f, 0.32f),
+		FLinearColor(0.47f, 0.32f, 0.23f), FLinearColor(0.34f, 0.23f, 0.17f), FLinearColor(0.96f, 0.82f, 0.72f), FLinearColor(0.80f, 0.62f, 0.50f) };
+	FRandomStream Random(static_cast<int32>(GetTypeHash(GetName())));
+	AppearanceHeight = Random.FRandRange(0.95f, 1.05f);
+	AppearanceBulk = Random.FRandRange(0.92f, 1.08f);
+	SkinTint = Skins[Random.RandHelper(UE_ARRAY_COUNT(Skins))] * Random.FRandRange(0.94f, 1.06f);
+	SkinTint.A = 1.f;
+	if (USkeletalMeshComponent* Body = GetMesh())
+	{
+		for (int32 Slot = 0; Slot < Body->GetNumMaterials(); ++Slot)
+		{
+			if (UMaterialInstanceDynamic* Skin = Body->CreateDynamicMaterialInstance(Slot))
+			{
+				Skin->SetVectorParameterValue(TEXT("Tint"), SkinTint);
+			}
+		}
+	}
 }
 
 void AAedirCreature::OnRep_GroupId()

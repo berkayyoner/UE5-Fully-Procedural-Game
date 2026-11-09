@@ -485,7 +485,7 @@ namespace
 		}
 		if (AStaticMeshActor* Pole = SceneryProp(World, TEXT("OldWoodenPole"), Ground, FMath::FRandRange(0.f, 360.f), 0.55f, 10.f))
 		{
-			SceneryFire(World, FVector(Ground.X, Ground.Y, DirectorTopOf(Pole) - 4.f), 26.f, 600.f, false);
+			SceneryFire(World, FVector(Ground.X, Ground.Y, DirectorTopOf(Pole) - 4.f), 26.f, 260.f, false);
 		}
 	}
 
@@ -694,7 +694,7 @@ void AedirWorldDirector::AddScenery(UWorld* World)
 		}
 		SceneryProp(World, TEXT("IcelandicBoulder"), At(150.f, -650.f), Yaw + 20.f, 1.8f, 30.f);
 		SceneryProp(World, TEXT("MossyRocksB"), At(200.f, 600.f), Yaw - 40.f, 1.6f, 20.f);
-		SceneryFire(World, Inside + FVector(0.f, 0.f, 5.f), 30.f, 900.f, false);
+		SceneryFire(World, Inside + FVector(0.f, 0.f, 5.f), 30.f, 500.f, false);
 		if (AStaticMeshActor* Chest = SceneryProp(World, TEXT("OldWoodenChest"), At(-650.f, -150.f), Yaw + 10.f, 1.f, 2.f))
 		{
 			const float Top = DirectorTopOf(Chest) + 10.f;
@@ -719,7 +719,7 @@ void AedirWorldDirector::AddScenery(UWorld* World)
 			}
 			SceneryProp(World, TEXT("CoalA"), Ground, 0.f, 1.6f, 2.f);
 			SceneryProp(World, TEXT("CoalB"), Ground + FVector(15.f, 10.f, 0.f), 40.f, 1.6f, 2.f);
-			SceneryFire(World, Ground + FVector(0.f, 0.f, 8.f), 55.f, 1800.f, false);
+			SceneryFire(World, Ground + FVector(0.f, 0.f, 8.f), 55.f, 700.f, false);
 			SceneryProp(World, TEXT("MossyLog"), Ground + FVector(220.f, 0.f, 0.f), 90.f, 0.8f, 8.f);
 			SceneryProp(World, TEXT("MossyLog"), Ground + FVector(-60.f, 220.f, 0.f), 10.f, 0.8f, 8.f);
 		}

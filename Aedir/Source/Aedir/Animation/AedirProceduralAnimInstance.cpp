@@ -161,7 +161,7 @@ void FAedirProceduralAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float D
 	MeshToWorld = Mesh->GetComponentTransform();
 	const FQuat ActorToWorld = Owner->GetActorQuat();
 	const AAedirCreature* Creature = Cast<AAedirCreature>(Owner);
-	BulkScale = Creature && Creature->Stats ? Creature->Stats->GetBulkScale() : 1.f;
+	BulkScale = Creature && Creature->Stats ? Creature->Stats->GetBulkScale() * Creature->GetAppearanceBulk() : 1.f;
 	// Maps actor-local directions into mesh space: MeshToWorld^-1 * ActorToWorld.
 	ActorToMesh = MeshToWorld.GetRotation().Inverse() * ActorToWorld;
 }
