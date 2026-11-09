@@ -159,6 +159,7 @@ void UAedirFoliageSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		for (UInstancedStaticMeshComponent* Patch : Grass)
 		{
 			Patches.AddUnique(Patch);
+			Patch->SetReceivesDecals(false);
 			// Grass planted before the rule that it only grows on bare ground is pulled out of anything standing over it.
 			TArray<int32> Covered;
 			for (int32 Index = 0; Index < Patch->GetInstanceCount(); ++Index)
@@ -339,6 +340,8 @@ void UAedirFoliageSubsystem::PlantMeadow(const FVector& Around, float HalfSizeCm
 			Patch->SetMobility(EComponentMobility::Movable);
 			Patch->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			Patch->SetCastShadow(false);
+			// Prints, blood and wounds lie on the ground under the blades, not wrapped over them.
+			Patch->SetReceivesDecals(false);
 			Patch->SetCullDistances(FoliageCullFromCm, FoliageCullToCm);
 			AddToMeadow(Patch);
 			Patches.Add(Patch);
@@ -465,8 +468,9 @@ void UAedirFoliageSubsystem::UpdateWind(float DeltaTime)
 		Parameters.SimulationCenter = Viewer && Viewer->GetPawn() ? Viewer->GetPawn()->GetActorLocation() : FVector::ZeroVector;
 		Parameters.SimulationExtents = FoliageWindExtentsCm;
 		Parameters.WindDirection = FRotator(0.f, FoliageWindYaw, 0.f).Vector();
-		Parameters.WindSpeed = FMath::Lerp(4.f, 45.f, WindNow);
-		Parameters.WindAmplitude = FMath::Lerp(0.5f, 2.f, WindNow);
+		// Even a storm only sways a spruce and bends its crown a little; a gale that lays trees over is beyond any weather here.
+		Parameters.WindSpeed = FMath::Lerp(3.f, 16.f, WindNow);
+		Parameters.WindAmplitude = FMath::Lerp(0.4f, 0.9f, WindNow);
 		TreeWind->UpdateWindParameters(Parameters);
 	}
 
@@ -474,8 +478,8 @@ void UAedirFoliageSubsystem::UpdateWind(float DeltaTime)
 	{
 		return;
 	}
-	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Intensity"), FMath::Lerp(0.12f, 1.1f, WindNow));
-	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Speed"), FMath::Lerp(0.35f, 1.1f, WindNow));
+	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Intensity"), FMath::Lerp(0.12f, 0.7f, WindNow));
+	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Speed"), FMath::Lerp(0.35f, 0.85f, WindNow));
 }
 
 void UAedirFoliageSubsystem::CrushUnderFeet()

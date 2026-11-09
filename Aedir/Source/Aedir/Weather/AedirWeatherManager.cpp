@@ -1,4 +1,4 @@
-#include "Weather/AedirWeatherManager.h"
+﻿#include "Weather/AedirWeatherManager.h"
 
 #include "Settings/AedirSettingsSubsystem.h"
 #include "Aedir.h"
@@ -11,6 +11,7 @@
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
 #include "Engine/StaticMesh.h"
+#include "HAL/IConsoleManager.h"
 #include "Creature/AedirCreature.h"
 #include "EngineUtils.h"
 #include "Engine/DirectionalLight.h"
@@ -61,6 +62,18 @@ namespace
 	constexpr float WeatherManagerBoltLightCandelas = 50000.f;
 	constexpr float WeatherManagerBoltLightRadius = 12000.f;
 	constexpr float WeatherManagerLightningBalanceImpact = 0.6f;
+	// Flashes inside the clouds: how bright and how far their light reaches, how long one lasts, where they happen around
+	// the viewer, how many for every bolt to the ground, and the cloud layer when none is found.
+	constexpr float WeatherManagerCloudFlashCandelas = 2.5e9f;
+	constexpr float WeatherManagerCloudFlashRadiusCm = 900000.f;
+	constexpr float WeatherManagerCloudFlashLife = 0.7f;
+	constexpr float WeatherManagerCloudFlashNearCm = 150000.f;
+	constexpr float WeatherManagerCloudFlashFarCm = 900000.f;
+	constexpr float WeatherManagerCloudFlashesPerStrike = 5.f;
+	constexpr float WeatherManagerCloudFlashDefaultBottomCm = 500000.f;
+	constexpr float WeatherManagerCloudFlashDefaultThicknessCm = 1000000.f;
+	constexpr int32 WeatherManagerCloudFlashShadowSamples = 4;
+	constexpr float WeatherManagerCloudFlashSkyShare = 0.45f;
 	constexpr float WeatherManagerSoundSpeedCmPerSecond = 34300.f;
 	constexpr float WeatherManagerFullSunLux = 14.f;
 	// The level exposure made the profile values glare, so the applied light is toned down.
@@ -205,6 +218,10 @@ void AAedirWeatherManager::Tick(float DeltaSeconds)
 	StepBolt(DeltaSeconds);
 
 	const FAedirWeatherProfile Profile = GetBlendedProfile();
+	if (GetNetMode() != NM_DedicatedServer)
+	{
+		StepCloudFlashes(DeltaSeconds, Profile.LightningPerMinute);
+	}
 
 	if (HasAuthority())
 	{
@@ -427,6 +444,99 @@ void AAedirWeatherManager::StepBolt(float DeltaSeconds)
 	BoltMesh->BatchUpdateInstancesTransforms(0, Transforms, true, true, true);
 }
 
+void AAedirWeatherManager::FlashClouds(const FVector& Below)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	if (!CloudFlashLight)
+	{
+		CloudFlashLight = NewObject<UPointLightComponent>(this);
+		CloudFlashLight->SetAbsolute(true, true, true);
+		CloudFlashLight->SetupAttachment(GetRootComponent());
+		CloudFlashLight->SetIntensityUnits(ELightUnits::Candelas);
+		CloudFlashLight->SetAttenuationRadius(WeatherManagerCloudFlashRadiusCm);
+		CloudFlashLight->SetLightColor(FLinearColor(0.78f, 0.84f, 1.f));
+		CloudFlashLight->SetCastShadows(false);
+		CloudFlashLight->SetVolumetricScatteringIntensity(1.f);
+		CloudFlashLight->RegisterComponent();
+	}
+	// The flash sits in the lower part of the cloud layer, above where it is seen from.
+	float BottomCm = WeatherManagerCloudFlashDefaultBottomCm;
+	float ThicknessCm = WeatherManagerCloudFlashDefaultThicknessCm;
+	if (const UVolumetricCloudComponent* Clouds = CloudComponent.Get())
+	{
+		BottomCm = Clouds->LayerBottomAltitude * 100000.f;
+		ThicknessCm = Clouds->LayerHeight * 100000.f;
+	}
+	CloudFlashSeed = FMath::FRand();
+	CloudFlashLight->SetWorldLocation(FVector(Below.X, Below.Y, BottomCm + ThicknessCm * FMath::FRandRange(0.1f, 0.35f)));
+	CloudFlashAge = 0.f;
+	UE_LOG(LogAedir, Log, TEXT("[Weather] Lightning flashes in the clouds at %s"), *CloudFlashLight->GetComponentLocation().ToCompactString());
+}
+
+void AAedirWeatherManager::StepCloudFlashes(float DeltaSeconds, float LightningPerMinute)
+{
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+	// Clouds take local lights only while a storm can flash in them: the engine marks it as costly.
+	const bool bStorm = LightningPerMinute > 0.f;
+	if (bStorm != bCloudLightsOn)
+	{
+		bCloudLightsOn = bStorm;
+		if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VolumetricCloud.EnableLocalLightsSampling")))
+		{
+			Variable->Set(bStorm ? 1 : 0, ECVF_SetByCode);
+		}
+		if (IConsoleVariable* Samples = IConsoleManager::Get().FindConsoleVariable(TEXT("r.VolumetricCloud.LocalLights.ShadowSampleCount")))
+		{
+			Samples->Set(WeatherManagerCloudFlashShadowSamples, ECVF_SetByCode);
+		}
+	}
+
+	// Most lightning never reaches the ground: it flickers from cloud to cloud, here and there over the sky.
+	const double Now = World->GetTimeSeconds();
+	if (bStorm && (NextCloudFlashTime < 0.0 || Now >= NextCloudFlashTime))
+	{
+		if (NextCloudFlashTime >= 0.0)
+		{
+			FVector Eye = FVector::ZeroVector;
+			if (const APlayerController* LocalController = World->GetFirstPlayerController(); LocalController && LocalController->PlayerCameraManager)
+			{
+				Eye = LocalController->PlayerCameraManager->GetCameraLocation();
+			}
+			const FVector Away = FRotator(0.f, FMath::FRandRange(0.f, 360.f), 0.f).Vector() * FMath::FRandRange(WeatherManagerCloudFlashNearCm, WeatherManagerCloudFlashFarCm);
+			FlashClouds(Eye + Away);
+		}
+		const float PerMinute = LightningPerMinute * WeatherManagerCloudFlashesPerStrike;
+		// The first one comes soon after the storm breaks.
+		NextCloudFlashTime = Now + (NextCloudFlashTime < 0.0 ? FMath::FRandRange(1.f, 4.f) : FMath::FRandRange(0.4f, 1.6f) * 60.f / FMath::Max(PerMinute, 0.1f));
+	}
+	else if (!bStorm)
+	{
+		NextCloudFlashTime = -1.0;
+	}
+
+	if (!CloudFlashLight || CloudFlashAge > WeatherManagerCloudFlashLife + 1.f)
+	{
+		CloudFlashGlow = 0.f;
+		return;
+	}
+	CloudFlashAge += DeltaSeconds;
+	// A sheet of light that flickers two or three times inside the cloud and dies.
+	const float T = CloudFlashAge / WeatherManagerCloudFlashLife;
+	const float Pulses = CloudFlashSeed < 0.5f ? 3.f : 2.f;
+	const float Flicker = T >= 1.f ? 0.f : FMath::Max(0.f, FMath::Sin(T * UE_PI * Pulses * 2.f)) * (1.f - T) * (0.6f + 0.4f * CloudFlashSeed);
+	CloudFlashGlow = Flicker;
+	CloudFlashLight->SetIntensity(WeatherManagerCloudFlashCandelas * Flicker);
+	CloudFlashLight->SetVisibility(Flicker > 0.f);
+}
+
 void AAedirWeatherManager::MulticastLightning_Implementation(FVector StrikeLocation, float Seed)
 {
 	UWorld* World = GetWorld();
@@ -449,6 +559,8 @@ void AAedirWeatherManager::MulticastLightning_Implementation(FVector StrikeLocat
 	{
 		BuildBolt(StrikeLocation, Seed);
 	}
+	// The channel lights up the cloud it came out of.
+	FlashClouds(StrikeLocation);
 
 	if (!Settings->ThunderSound.IsNull())
 	{
@@ -688,7 +800,8 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 		NextSceneSearchTime = WorldTime + WeatherManagerSceneSearchInterval;
 	}
 
-	const float FlashBoost = WeatherManagerFlashCurve(static_cast<float>(WorldTime - LightningFlashWorldTime)) * WeatherManagerLightningFlashLux;
+	// A bolt lights the whole sky for a moment; a flash inside the clouds lights it less, through the clouds and the haze.
+	const float FlashBoost = (WeatherManagerFlashCurve(static_cast<float>(WorldTime - LightningFlashWorldTime)) + CloudFlashGlow * WeatherManagerCloudFlashSkyShare) * WeatherManagerLightningFlashLux;
 
 	if (ADirectionalLight* Sun = SunLight.Get())
 	{

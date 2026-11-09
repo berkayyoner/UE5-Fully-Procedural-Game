@@ -16,6 +16,10 @@ class AEDIR_API AAedirWeatherManager : public AActor
 	GENERATED_BODY()
 
 public:
+	// Lightning in the clouds: a flash inside the cloud layer above a point, lighting the clouds from within (the engine's
+	// local lights in volumetric clouds, switched on only while a storm has lightning).
+	void FlashClouds(const FVector& Below);
+
 	AAedirWeatherManager();
 
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Weather")
@@ -121,4 +125,13 @@ private:
 	TArray<FVector> BoltPoints;
 	TArray<float> BoltWidths;
 	float BoltAge = 1000.f;
+
+	void StepCloudFlashes(float DeltaSeconds, float LightningPerMinute);
+	UPROPERTY(Transient)
+	TObjectPtr<class UPointLightComponent> CloudFlashLight;
+	float CloudFlashAge = 1000.f;
+	float CloudFlashSeed = 0.f;
+	float CloudFlashGlow = 0.f;
+	double NextCloudFlashTime = -1.0;
+	bool bCloudLightsOn = false;
 };

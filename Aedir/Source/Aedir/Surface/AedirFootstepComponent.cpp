@@ -30,7 +30,9 @@ namespace
 	constexpr float AedirStepBloodRadiusCm = 12.f;
 	constexpr float AedirStepBloodReachCm = 30.f;
 	constexpr float AedirStepCarryShare = 0.78f;
-	constexpr float AedirStepDirtStrength = 0.8f;
+	constexpr float AedirStepDirtStrength = 0.5f;
+	// How deep a print is projected: just the ground's own unevenness, so it does not climb plants and stones beside it.
+	constexpr float AedirStepPrintDepthCm = 4.f;
 	constexpr float AedirStepHalfWidthCm = 6.f;
 	constexpr float AedirStepHalfLengthCm = 14.f;
 	constexpr float AedirStepForwardCm = 8.f;
@@ -220,7 +222,7 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 		WaterOnFoot[Foot] = 1.f;
 	}
 
-	FLinearColor Color(0.06f, 0.045f, 0.03f);
+	FLinearColor Color(0.11f, 0.085f, 0.06f);
 	float Strength = AedirStepDirtStrength;
 	float Roughness = 0.95f;
 	if (BloodOnFoot[Foot] > 0.02f)
@@ -258,7 +260,7 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 	{
 		const FVector Forward = FVector::VectorPlaneProject(CreatureOwner->GetActorForwardVector(), PrintNormal).GetSafeNormal();
 		const float Scale = static_cast<float>(CreatureOwner->GetActorScale3D().Z);
-		if (UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(this, Base, FVector(14.f, AedirStepHalfWidthCm, AedirStepHalfLengthCm) * Scale, PrintPoint + Forward * (AedirStepForwardCm * Scale), FRotationMatrix::MakeFromXZ(-PrintNormal, Forward).Rotator(), AedirStepLifeSeconds))
+		if (UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(this, Base, FVector(AedirStepPrintDepthCm, AedirStepHalfWidthCm, AedirStepHalfLengthCm) * Scale, PrintPoint + Forward * (AedirStepForwardCm * Scale), FRotationMatrix::MakeFromXZ(-PrintNormal, Forward).Rotator(), AedirStepLifeSeconds))
 		{
 			Decal->SetFadeScreenSize(0.f);
 			if (UMaterialInstanceDynamic* Print = Decal->CreateDynamicMaterialInstance())

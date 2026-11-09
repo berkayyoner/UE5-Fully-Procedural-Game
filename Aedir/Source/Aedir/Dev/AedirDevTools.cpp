@@ -200,6 +200,15 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		KillAll(Player, Args);
 	}
+	else if (Command == TEXT("CloudFlash"))
+	{
+		// A flash in the clouds straight ahead of the view, a kilometre and a half away.
+		if (UAedirWeatherSubsystem* Weather = Player->GetWorld()->GetSubsystem<UAedirWeatherSubsystem>(); Weather && Weather->GetManager())
+		{
+			const FVector Ahead = Player->GetControlRotation().Vector().GetSafeNormal2D() * 150000.f;
+			const_cast<AAedirWeatherManager*>(Weather->GetManager())->FlashClouds(Player->GetActorLocation() + Ahead);
+		}
+	}
 	else if (Command == TEXT("SetWeatherType"))
 	{
 		SetWeather(Player, Args);
