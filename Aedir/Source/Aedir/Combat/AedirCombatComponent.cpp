@@ -208,17 +208,21 @@ namespace
 	// The mouse moves the hand: around its own shoulder (two hands on one grip around the middle of the chest), the mouse's
 	// side to side turning it around the body and its up and down raising it from low to over the head.
 	static TAutoConsoleVariable<int32> CVarAedirHandLedSwing(TEXT("aedir.HandLedSwing"), 1, TEXT("The mouse moves the hand and the blade follows it by its weight (1), or swings go through set poses (0)."));
-	constexpr float AedirHandLedYawShare = 1.1f;
+	// The whole of the mouse's travel moves the hand over the room the arm really has, in front of the body: no part of
+	// the travel is spent pressing against a limit.
+	constexpr float AedirHandLedYawShare = 0.72f;
+	constexpr float AedirHandLedUpShare = 0.55f;
+	constexpr float AedirHandLedDownShare = 0.75f;
 	constexpr float AedirHandLedInwardYaw = 12.f;
 	constexpr float AedirHandLedRestPitch = 18.f;
-	constexpr float AedirHandLedPitchMin = -75.f;
-	constexpr float AedirHandLedPitchMax = 78.f;
+	constexpr float AedirHandLedPitchMin = -55.f;
+	constexpr float AedirHandLedPitchMax = 60.f;
 	constexpr float AedirHandLedNearCm = 32.f;
 	constexpr float AedirHandLedFarCm = 50.f;
 	constexpr float AedirHandLedBehindShorterCm = 10.f;
 	// How far round a hand can be held: out to its own side, and across in front of the body to the other.
-	constexpr float AedirHandLedOutwardYaw = 100.f;
-	constexpr float AedirHandLedAcrossYaw = 55.f;
+	constexpr float AedirHandLedOutwardYaw = 72.f;
+	constexpr float AedirHandLedAcrossYaw = 50.f;
 	constexpr float AedirHandLedTwoHandSideCm = 6.f;
 	// The blade stands out of the fist this far above the line of the arm; weight and tiredness let it sink.
 	constexpr float AedirHandLedBladeRaise = 50.f;
@@ -1363,11 +1367,12 @@ FVector UAedirCombatComponent::ComputeHandLedHandLocal(EAedirHand Hand, const FA
 	// than the elbow turning over to reach further.
 	const float RawYaw = static_cast<float>(Aim.X) * AedirHandLedYawShare - Side * AedirHandLedInwardYaw;
 	const float Yaw = Side > 0.f ? FMath::Clamp(RawYaw, -AedirHandLedAcrossYaw, AedirHandLedOutwardYaw) : FMath::Clamp(RawYaw, -AedirHandLedOutwardYaw, AedirHandLedAcrossYaw);
-	const float Pitch = FMath::Clamp(AedirHandLedRestPitch + static_cast<float>(Aim.Y), AedirHandLedPitchMin, AedirHandLedPitchMax);
+	const float AimPitch = static_cast<float>(Aim.Y);
+	const float Pitch = FMath::Clamp(AedirHandLedRestPitch + AimPitch * (AimPitch > 0.f ? AedirHandLedUpShare : AedirHandLedDownShare), AedirHandLedPitchMin, AedirHandLedPitchMax);
 	// The wheel sets how far out the hand is held, a quick throw takes it all the way, and round behind the body the arm
 	// cannot reach as far.
 	const float Out = FMath::Lerp(FMath::Clamp(Arm.Extension, 0.f, 1.f), 1.f, Arm.PunchBlend);
-	const float Behind = FMath::Clamp((FMath::Abs(Yaw) - 70.f) / 40.f, 0.f, 1.f);
+	const float Behind = FMath::Clamp((FMath::Abs(Yaw) - 50.f) / 22.f, 0.f, 1.f);
 	const float Reach = FMath::Lerp(AedirHandLedNearCm, AedirHandLedFarCm, Out) - Behind * AedirHandLedBehindShorterCm;
 	FVector Hand3 = ComputeHandLedPivotLocal(Hand) + FRotator(Pitch, Yaw, 0.f).Vector() * Reach;
 	Hand3.Z -= Creature->Stats ? Creature->Stats->GetFatigue() * AedirFatigueDroopCm : 0.f;

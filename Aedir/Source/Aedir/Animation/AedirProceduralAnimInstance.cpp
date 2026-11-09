@@ -47,6 +47,8 @@ namespace
 	constexpr float AedirElbowRaisedForwardCm = 18.f;
 	// The handle crosses the palm, so it never lies closer to the line of the forearm than this.
 	constexpr float AedirWristMinBladeDegrees = 28.f;
+	// A fist round a handle holds the blade at most this far from the line of the forearm, bent back at the wrist.
+	constexpr float AedirWristMaxBladeDegrees = 125.f;
 	// A weapon in a fist comes out of it at about this angle to the forearm, a little towards the hand; in a fight it stays
 	// there and the arm does the aiming.
 	constexpr double AedirBladeForearmDegrees = 80.0;
@@ -557,6 +559,17 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 			Across = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector), Forearm);
 		}
 		Blade = Forearm * (Along > 0.0 ? LimitCos : -LimitCos) + Across.GetSafeNormal() * FMath::Sin(FMath::DegreesToRadians(MinBladeDegrees));
+	}
+	// Nor does it bend back far enough to point the blade behind the forearm: past this the blade follows the arm round.
+	const double BackCos = FMath::Cos(FMath::DegreesToRadians(AedirWristMaxBladeDegrees));
+	if (FVector::DotProduct(Blade, Forearm) < BackCos)
+	{
+		FVector Across = FVector::VectorPlaneProject(Blade, Forearm);
+		if (Across.IsNearlyZero(0.01))
+		{
+			Across = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector), Forearm);
+		}
+		Blade = Forearm * BackCos + Across.GetSafeNormal() * FMath::Sin(FMath::DegreesToRadians(AedirWristMaxBladeDegrees));
 	}
 
 	// The blade runs across the knuckles and the fingers run on from the forearm, so a change of direction comes from the arm.
