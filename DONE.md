@@ -190,3 +190,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The two-handed sword at rest lies aslant before the hips as in the reference, point low out to the right (asked further round, measured, since the arms and second hand turn it back to the front).
 - A thrust goes through the same key-pose way as the swings: drawn back the hands wait by the head before the right shoulder with the point raised, out the arms are straight ahead and the blade goes on from them; the view raises or lowers it, the mouse to the side steers it. The hands no longer stick turned over when the thrust is taken up.
 - Dev command OffHandFree 0|1 lets go of a one-handed weapon's second hand, as holding the right button does.
+- A thrust with a pole weapon waits with it upright by the hip on the leading side, as in the reference, and goes out level ahead from the chest.

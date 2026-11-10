@@ -1509,7 +1509,7 @@ FVector UAedirCombatComponent::ComputeWeaponTargetDir(EAedirHand Hand, const FAe
 	const double ActorYaw = Creature->GetActorRotation().Yaw;
 	const FVector2D Aim = Arm.PoseAimDeg;
 	const float HandSide = Hand == EAedirHand::Right ? 1.f : -1.f;
-	if (bThrustMode && !UsesHandLedSwing(Hand))
+	if (bThrustMode && !UsesHandLedSwing(Hand) && !(bTwoHandGrip && IsPolearm(GetHeldItem(Hand))))
 	{
 		const double CameraPitch = FMath::Clamp(FRotator::NormalizeAxis(Creature->GetControlRotation().Pitch) + AedirThrustViewPitchOffset, AedirThrustPitchMin, AedirThrustPitchMax);
 		return FRotator(CameraPitch,ActorYaw - HandSide * AedirThrustInwardYaw + Aim.X * AedirThrustSteerShare, 0.0).Vector();
@@ -1897,11 +1897,29 @@ namespace
 		FVector2D(-8, -9), FVector2D(-15, 29), FVector2D(-15, 28), FVector2D(11, 1), FVector2D(15, -30),
 	};
 	static_assert(UE_ARRAY_COUNT(AedirPolearmKeyFix) == UE_ARRAY_COUNT(AedirPolearmKeys), "One correction for each pole key pose.");
+	const FAedirPolearmKey AedirPolearmThrustBack = { 0.f, 0.f, FVector(14.f, 18.f, 6.f), 78.f, 0.f };
+	const FAedirPolearmKey AedirPolearmThrustOut = { 0.f, 0.f, FVector(48.f, 6.f, 34.f), 22.f, 6.f };
 }
 
 void UAedirCombatComponent::ComputePolearmPose(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item, FVector& OutHandLocal, FVector& OutDirLocal) const
 {
 	const float HandSide = Hand == EAedirHand::Right ? 1.f : -1.f;
+	if (CVarAedirKeyPoses.GetValueOnGameThread() != 0 && bThrustMode)
+	{
+		// A thrust with a pole: drawn back it stands upright by the hip on the leading side, out it goes level ahead from the
+		// chest with the arms straight (asked higher than level: the weight of the head takes it down that far).
+		const float Out = FMath::Clamp(Arm.Extension, 0.f, 1.f);
+		FVector Middle = FMath::Lerp(AedirPolearmThrustBack.Middle, AedirPolearmThrustOut.Middle, Out);
+		FVector Head = FRotator(FMath::Lerp(AedirPolearmThrustBack.HeadPitch, AedirPolearmThrustOut.HeadPitch, Out), FMath::Lerp(AedirPolearmThrustBack.HeadYaw, AedirPolearmThrustOut.HeadYaw, Out) + Arm.PoseAimDeg.X * HandSide * AedirThrustSteerShare, 0.f).Vector();
+		if (HandSide < 0.f)
+		{
+			Middle.Y = -Middle.Y;
+			Head.Y = -Head.Y;
+		}
+		OutDirLocal = Head;
+		OutHandLocal = Middle - OutDirLocal * ((GetSecondaryGripLocalCm(Item) - Item->GripLocalCm) * 0.5f);
+		return;
+	}
 	if (CVarAedirKeyPoses.GetValueOnGameThread() != 0 && GetFightShare() > 0.f)
 	{
 		// The same blend as the sword's poses, by inverse distance in the mouse's travel.
@@ -2867,7 +2885,7 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 		const float HalfSwordShare = CombatSmoothStep01(HalfSwordAlpha);
 		const FTransform& Body = Creature->GetActorTransform();
 		FVector HandTarget;
-		if (bThrustMode && !UsesHandLedSwing(Hand))
+		if (bThrustMode && !UsesHandLedSwing(Hand) && !(bTwoHandGrip && IsPolearm(GetHeldItem(Hand))))
 		{
 			const float HandSide = Hand == EAedirHand::Right ? 1.f : -1.f;
 			const FVector Waist = Body.TransformPositionNoScale(FVector(AedirThrustWaistForwardCm, HandSide * (bTwoHandGrip ? AedirThrustWaistSideTwoHandCm : AedirThrustWaistSideCm), AedirThrustWaistUpCm) * WeaponScale);
