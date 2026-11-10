@@ -33,10 +33,12 @@ struct FAedirGameplaySettings
 	bool bInvertMouseY = false;
 	float FieldOfView = 90.f;
 	float CameraBodyMotion = 1.f;
+	float CameraShake = 1.f;
 	bool bShowCompass = true;
 	bool bShowBars = true;
 	float FootstepVolume = 1.f;
 	float WeatherVolume = 1.f;
+	float EffectsVolume = 1.f;
 };
 
 // All player settings. The options are stored in GameUserSettings.ini and applied again on the next start.

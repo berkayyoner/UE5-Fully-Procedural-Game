@@ -325,8 +325,11 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::E, IE_Released, this, &AAedirPlayerCharacter::HandleRightHandReleased);
 
 	// A hand goes across the body to the belt, so T works the left side of the belt with the right hand and Y the right side with the left.
-	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightHolsterPressed);
-	PlayerInputComponent->BindKey(EKeys::Y, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftHolsterPressed);
+	// T uses what the right hand holds, Y what the left one holds.
+	PlayerInputComponent->BindKey(EKeys::T, IE_Pressed, this, &AAedirPlayerCharacter::HandleRightUsePressed);
+	PlayerInputComponent->BindKey(EKeys::T, IE_Released, this, &AAedirPlayerCharacter::HandleRightUseReleased);
+	PlayerInputComponent->BindKey(EKeys::Y, IE_Pressed, this, &AAedirPlayerCharacter::HandleLeftUsePressed);
+	PlayerInputComponent->BindKey(EKeys::Y, IE_Released, this, &AAedirPlayerCharacter::HandleLeftUseReleased);
 
 	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleTalkPressed);
 	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
@@ -542,17 +545,46 @@ void AAedirPlayerCharacter::HandleJumpReleased()
 
 void AAedirPlayerCharacter::HandleLeftGuardPressed()
 {
-	if (Combat)
+	// With a weapon held in both hands the right button means two things: clicked, the hand slides up onto the blade or
+	// back; held down, the left hand lets go and is raised on its own. Anything else raises the left guard at once.
+	bRightButtonDown = true;
+	RightButtonHeldSeconds = 0.f;
+	bRightButtonFreedHand = false;
+	if (Combat && !Combat->IsTwoHandGrip())
 	{
 		Combat->SetGuard(EAedirHand::Left, true);
+		bRightButtonFreedHand = true;
 	}
 }
 
 void AAedirPlayerCharacter::HandleLeftGuardReleased()
 {
-	if (Combat)
+	bRightButtonDown = false;
+	if (!Combat)
 	{
-		Combat->SetGuard(EAedirHand::Left, false);
+		return;
+	}
+	if (!bRightButtonFreedHand)
+	{
+		Combat->ToggleHalfSword();
+		return;
+	}
+	Combat->SetGuard(EAedirHand::Left, false);
+	Combat->SetOffHandFree(false);
+}
+
+void AAedirPlayerCharacter::UpdateRightButtonHold(float DeltaSeconds)
+{
+	if (!bRightButtonDown || bRightButtonFreedHand || !Combat)
+	{
+		return;
+	}
+	RightButtonHeldSeconds += DeltaSeconds;
+	if (RightButtonHeldSeconds >= RightButtonHoldSeconds)
+	{
+		bRightButtonFreedHand = true;
+		Combat->SetOffHandFree(true);
+		Combat->SetGuard(EAedirHand::Left, true);
 	}
 }
 
@@ -576,6 +608,7 @@ void AAedirPlayerCharacter::HandleRightGuardReleased()
 
 void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 {
+	UpdateRightButtonHold(DeltaSeconds);
 	if (CameraBoom)
 	{
 		// The fight stance draws the view in close and up over the shoulder; out of it the view goes back to where it was set.
@@ -643,7 +676,11 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 			(FMath::Sin(Time * 0.9f + 1.f) * 0.15f + MouseLean.X * 0.2f) * FightCameraAlpha,
 			(FMath::Sin(Time * 1.1f + 2.f) * 0.15f + MouseLean.X * 0.4f) * FightCameraAlpha);
 		FightCameraSway = FMath::RInterpTo(FightCameraSway, Sway, DeltaSeconds, 6.f);
-		FollowCamera->SetRelativeRotation(FightCameraSway);
+		// A blow taken jolts the view a little, quickly and fading, never so much that the fight is lost from sight.
+		HitShake = FMath::Max(HitShake - DeltaSeconds / 0.25f, 0.f);
+		const float ShakeDegrees = HitShakeStrength * HitShake * HitShake * UAedirSettingsSubsystem::GetValues().CameraShake;
+		const FRotator Shake(FMath::PerlinNoise1D(Time * 31.f) * ShakeDegrees, FMath::PerlinNoise1D(Time * 27.f + 7.f) * ShakeDegrees, FMath::PerlinNoise1D(Time * 23.f + 13.f) * ShakeDegrees * 0.6f);
+		FollowCamera->SetRelativeRotation(FightCameraSway + Shake);
 	}
 
 	if (Combat)
@@ -990,19 +1027,16 @@ void AAedirPlayerCharacter::HandleHandPressed(EAedirHand Hand)
 		return;
 	}
 
+	// A tap takes hold of what is in reach or lets go of what is held; holding the key down puts the held thing on the
+	// belt, or with the hand empty takes the next one from it. Which it was is known once the key comes up or has been
+	// held long enough.
 	const int32 Index = static_cast<int32>(Hand);
-	switch (Interaction->GetHandState(Hand))
+	const EAedirHandState State = Interaction->GetHandState(Hand);
+	if (State == EAedirHandState::Idle || State == EAedirHandState::Holding)
 	{
-	case EAedirHandState::Idle:
-		Interaction->StartReach(Hand);
-		break;
-	case EAedirHandState::Holding:
 		bHandKeyTracked[Index] = true;
 		bHandUseTriggered[Index] = false;
 		HandKeyHeldSeconds[Index] = 0.f;
-		break;
-	default:
-		break;
 	}
 }
 
@@ -1019,26 +1053,26 @@ void AAedirPlayerCharacter::HandleHandReleased(EAedirHand Hand)
 		Interaction->SetMouthHold(Hand, false);
 	}
 
-	const bool bUseTriggered = bHandUseTriggered[Index];
-	const bool bLongPress = Interaction && HandKeyHeldSeconds[Index] >= Interaction->UseHoldTime;
+	const bool bHolstered = bHandUseTriggered[Index];
 
 	bHandKeyTracked[Index] = false;
 	bHandUseTriggered[Index] = false;
 	HandKeyHeldSeconds[Index] = 0.f;
 
-	if (!Interaction || bUseTriggered || Interaction->GetHandState(Hand) != EAedirHandState::Holding)
+	if (!Interaction || bHolstered)
 	{
 		return;
 	}
-
-	const AAedirItemActor* HeldItem = Interaction->GetHeldItem(Hand);
-	if (bLongPress && HeldItem && HeldItem->IsUsable())
+	switch (Interaction->GetHandState(Hand))
 	{
-		Interaction->UseHeld(Hand);
-	}
-	else
-	{
+	case EAedirHandState::Idle:
+		Interaction->StartReach(Hand);
+		break;
+	case EAedirHandState::Holding:
 		Interaction->DropHeld(Hand);
+		break;
+	default:
+		break;
 	}
 }
 
@@ -1063,23 +1097,40 @@ void AAedirPlayerCharacter::UpdateHandUseHold(float DeltaSeconds)
 		}
 
 		const EAedirHand Hand = static_cast<EAedirHand>(Index);
-		if (Interaction->GetHandState(Hand) != EAedirHandState::Holding)
+		const EAedirHandState State = Interaction->GetHandState(Hand);
+		if (State != EAedirHandState::Holding && State != EAedirHandState::Idle)
 		{
 			continue;
 		}
+		// Held down: to the belt, or from it.
+		Interaction->HolsterToWaist(Hand);
+		bHandUseTriggered[Index] = true;
+	}
+}
 
-		const AAedirItemActor* HeldItem = Interaction->GetHeldItem(Hand);
-		if (HeldItem && HeldItem->IsConsumable())
-		{
-			// It goes to the mouth for as long as the key stays down.
-			Interaction->SetMouthHold(Hand, true);
-			bHandUseTriggered[Index] = true;
-		}
-		else if (HeldItem && HeldItem->IsUsable())
-		{
-			Interaction->UseHeld(Hand);
-			bHandUseTriggered[Index] = true;
-		}
+void AAedirPlayerCharacter::HandleUsePressed(EAedirHand Hand)
+{
+	// Using what the hand holds: food and drink go to the mouth while the key is down, anything else is used at once.
+	const AAedirItemActor* HeldItem = Interaction ? Interaction->GetHeldItem(Hand) : nullptr;
+	if (!HeldItem || Interaction->GetHandState(Hand) != EAedirHandState::Holding)
+	{
+		return;
+	}
+	if (HeldItem->IsConsumable())
+	{
+		Interaction->SetMouthHold(Hand, true);
+	}
+	else if (HeldItem->IsUsable())
+	{
+		Interaction->UseHeld(Hand);
+	}
+}
+
+void AAedirPlayerCharacter::HandleUseReleased(EAedirHand Hand)
+{
+	if (Interaction && Interaction->IsMouthHold(Hand))
+	{
+		Interaction->SetMouthHold(Hand, false);
 	}
 }
 

@@ -1,4 +1,5 @@
 #include "Combat/AedirCombatComponent.h"
+#include "Audio/AedirSfxSubsystem.h"
 
 #include "Aedir.h"
 #include "Components/PrimitiveComponent.h"
@@ -196,6 +197,22 @@ namespace
 	constexpr float AedirCarryHangPitch = 30.f;
 	// On the move the carried blade leans this much towards the line of the forearm, fading in between these speeds.
 	constexpr float AedirCarryForearmShare = 1.5f;
+	// Rest poses out of the fight stance: how far below level and how far out to the carrying hand's side the point lies.
+	constexpr float AedirRestOneHandPitch = -62.f;
+	constexpr float AedirRestOneHandOutYaw = 20.f;
+	constexpr float AedirRestTwoHandPitch = -38.f;
+	constexpr float AedirRestTwoHandOutYaw = 50.f;
+	constexpr float AedirRestPolePitch = 72.f;
+	constexpr float AedirRestPoleOutYaw = 10.f;
+	// The hand at rest is about this high over the ground, which keeps a long blade's point off it.
+	constexpr float AedirRestHandHeightCm = 78.f;
+	// Where the carrying hand of a weapon held in both hands rests out of the stance, from the middle of the shoulders: low
+	// before the hips. A pole is held out to the side and higher, upright.
+	constexpr float AedirRestTwoHandForwardCm = 24.f;
+	constexpr float AedirRestTwoHandSideCm = 6.f;
+	constexpr float AedirRestTwoHandHeightCm = -2.f;
+	constexpr float AedirRestPoleSideCm = 14.f;
+	constexpr float AedirRestPoleRaiseCm = 8.f;
 	constexpr float AedirCarryAimFadeFromSpeed = 60.f;
 	constexpr float AedirCarryAimFadeFullSpeed = 250.f;
 	constexpr float AedirCarryHandHeightCm = 72.f;
@@ -211,6 +228,9 @@ namespace
 	constexpr float AedirUpperHandBelowGuardCm = 5.5f;
 	// Two fists on a haft: the upper one this far above the lower.
 	constexpr float AedirTwoHandHaftSpanCm = 18.f;
+	// A weapon at least this long is held in both hands by a player whose other hand is free; shorter ones (knives, daggers,
+	// tools) in one.
+	constexpr float AedirTwoHandMinLengthCm = 50.f;
 	constexpr float AedirBladeBlockMassKg = 40.f;
 	constexpr float AedirBladePushMaxSpeed = 500.f;
 	// A clash of weapons: the fastest a blade's tip counts, and how much of the push the struck hand takes.
@@ -457,6 +477,16 @@ namespace
 	constexpr float AedirImpactBodyEnergyShare = 0.6f;
 	// A weapon no button holds up any more strikes only while it is still really flying.
 	constexpr double AedirLooseStrikeMinSpeed = 400.0;
+	// A blow this hard is heard at full; a harder edged one also thumps the body it lands on.
+	constexpr float AedirSfxFullJoules = 250.f;
+	constexpr float AedirSfxHeavyJoules = 300.f;
+	// A clash or a knock on the world is heard from this speed on, at full from this one.
+	constexpr float AedirSfxHitMinSpeed = 250.f;
+	constexpr float AedirSfxHitFullSpeed = 1500.f;
+	// The point of a swing hissing through the air: from this speed, at most once in this long.
+	constexpr float AedirSfxWhooshSpeed = 1100.f;
+	constexpr float AedirSfxWhooshFullSpeed = 2600.f;
+	constexpr double AedirSfxWhooshSeconds = 0.3;
 	constexpr float AedirImpactInjuryPerDamage = 0.012f;
 	constexpr float AedirImpactLimbHealPerSecond = 0.002f;
 	constexpr float AedirImpactRecoilScale = 0.35f;
@@ -588,6 +618,17 @@ namespace
 		return A * (Inverse * Inverse) + Control * (2.f * Inverse * T) + B * (T * T);
 	}
 
+	// A weapon made of wood: a club, a staff. The rest of what is held to strike with is steel.
+	bool CombatIsWooden(const AAedirItemActor* Item)
+	{
+		if (!Item)
+		{
+			return false;
+		}
+		const FString Name = Item->ItemName.ToString();
+		return Name.Contains(TEXT("Club")) || Name.Contains(TEXT("Staff")) || Name.Contains(TEXT("Cudgel")) || Name.Contains(TEXT("Stick"));
+	}
+
 	bool CombatBoneNameContainsAny(const FString& BoneName, const TCHAR* const* Tokens, int32 TokenCount)
 	{
 		for (int32 Index = 0; Index < TokenCount; ++Index)
@@ -696,6 +737,8 @@ void UAedirCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UAedirCombatComponent, bLeftGuard);
+	DOREPLIFETIME(UAedirCombatComponent, bOffHandFree);
+	DOREPLIFETIME(UAedirCombatComponent, bHalfSwordToggled);
 	DOREPLIFETIME(UAedirCombatComponent, bRightGuard);
 	DOREPLIFETIME(UAedirCombatComponent, LeftSwing);
 	DOREPLIFETIME(UAedirCombatComponent, RightSwing);
@@ -1082,6 +1125,13 @@ void UAedirCombatComponent::ResolveHeldCollision(EAedirHand Hand, FAedirArmDynam
 			const float TheirMass = OtherItem->Weight + ForearmMass;
 			const FVector Push = TipMotion.GetClampedToMaxSize(AedirClashMaxSpeed) * (MyMass / (MyMass + TheirMass));
 			OtherCombat->ReceiveClash(OtherHand, Push);
+			const float ClashSpeed = static_cast<float>(TipMotion.Size());
+			if (ClashSpeed > AedirSfxHitMinSpeed && GetWorld()->GetTimeSeconds() - LastClashSoundTime > 0.12)
+			{
+				LastClashSoundTime = GetWorld()->GetTimeSeconds();
+				const bool bWood = CombatIsWooden(Item) || CombatIsWooden(OtherItem);
+				UAedirSfxSubsystem::Play(this, bWood ? EAedirSfx::WoodHit : EAedirSfx::Clash, Hit.ImpactPoint, FMath::GetRangePct(AedirSfxHitMinSpeed, AedirSfxHitFullSpeed, ClashSpeed));
+			}
 			UE_CLOG(TipMotion.Size() > AedirClashLogSpeed, LogAedir, Log, TEXT("[Clash] %s's %s met %s's %s at %.0f cm/s"), *Creature->GetName(), *Item->GetName(), *Holder->GetName(), *OtherItem->GetName(), TipMotion.Size());
 		}
 	}
@@ -1096,6 +1146,19 @@ void UAedirCombatComponent::ResolveHeldCollision(EAedirHand Hand, FAedirArmDynam
 			Other->AddImpulseAtLocation((TipMotion / DeltaTime).GetClampedToMaxSize(AedirBladePushMaxSpeed) * (Other->GetMass() * AedirBladePushShare), Hit.ImpactPoint);
 		}
 		return;
+	}
+
+	// Steel or wood knocking on the world: a wall, a tree, the ground, a table.
+	if (DeltaTime > KINDA_SMALL_NUMBER && !Cast<AAedirCreature>(Hit.GetActor()) && !Cast<AAedirItemActor>(Hit.GetActor()))
+	{
+		const float KnockSpeed = static_cast<float>(((Arm.HandWorld + Arm.WeaponDir * Length) - (PrevHand + PrevDir * Length)).Size() / DeltaTime);
+		if (KnockSpeed > AedirSfxHitMinSpeed && GetWorld()->GetTimeSeconds() - LastClashSoundTime > 0.15)
+		{
+			LastClashSoundTime = GetWorld()->GetTimeSeconds();
+			const bool bWoodenThing = Hit.GetActor() && (Hit.GetActor()->GetName().Contains(TEXT("Wood")) || Hit.GetActor()->GetName().Contains(TEXT("Log")) || Hit.GetActor()->GetName().Contains(TEXT("Tree")));
+			const EAedirSfx Kind = CombatIsWooden(Item) ? EAedirSfx::WoodHit : (bWoodenThing && Item->GetDamageType() == EAedirDamageType::Slash ? EAedirSfx::WoodCut : EAedirSfx::MetalHit);
+			UAedirSfxSubsystem::Play(this, Kind, Hit.ImpactPoint, FMath::GetRangePct(AedirSfxHitMinSpeed, AedirSfxHitFullSpeed, KnockSpeed));
+		}
 	}
 
 	// The body walked the blade into it: the hand gives way along the blade and the elbow bends.
@@ -1252,7 +1315,9 @@ void UAedirCombatComponent::UpdateGrip(float DeltaTime)
 	SecondaryGripBlend = FMath::FInterpConstantTo(SecondaryGripBlend, IsGripHeld() && !bRagdoll ? 1.f : 0.f, DeltaTime, 1.f / AedirSecondaryGripBlendSeconds);
 
 	// A weapon that is in one hand only gets the second one on its handle first; the hand moves up the blade from a proper two-handed hold.
-	const bool bHalfSwordWanted = bTwoHandGrip && bLeftGuard && CanHalfSword(Item) && IsGripHeld() && bBothOnItem;
+	// A player slides the hand up the blade with a click of the right button and back with another; others while they hold it.
+	const bool bHalfSwordAsked = Creature->IsPlayerControlled() ? bHalfSwordToggled : bLeftGuard;
+	const bool bHalfSwordWanted = bTwoHandGrip && bHalfSwordAsked && CanHalfSword(Item) && IsGripHeld() && bBothOnItem;
 	HalfSwordAlpha = FMath::FInterpConstantTo(HalfSwordAlpha, bHalfSwordWanted ? 1.f : 0.f, DeltaTime, 1.f / AedirHalfSwordSlideSeconds);
 
 	// The mouse means something else in this hold, so it starts from the middle.
@@ -1437,6 +1502,12 @@ FVector UAedirCombatComponent::ComputeWeaponTargetDir(EAedirHand Hand, const FAe
 		const FVector RaisedDir = FRotator(0.0, ActorYaw + Aim.X * AedirWeaponRaisedYawShare, 0.0).RotateVector(RaisedLocal);
 		StanceDir = FMath::Lerp(SwingDir, RaisedDir, RaiseShare).GetSafeNormal();
 	}
+	// Held in both hands but not raised, the weapon rests as it is carried: not pointed at anyone.
+	const float RestShare = bTwoHandGrip && !bThrustMode ? 1.f - GetFightShare() : 0.f;
+	if (RestShare > 0.f && HalfSwordAlpha <= 0.f)
+	{
+		StanceDir = FMath::Lerp(StanceDir, ComputeCarriedDir(Hand), RestShare).GetSafeNormal();
+	}
 	return HalfSwordAlpha > 0.f ? FMath::Lerp(StanceDir, ComputeHalfSwordDir(Hand, Arm), CombatSmoothStep01(HalfSwordAlpha)).GetSafeNormal() : StanceDir;
 }
 
@@ -1578,8 +1649,23 @@ FVector UAedirCombatComponent::ComputeCarriedDir(EAedirHand Hand) const
 {
 	const AAedirItemActor* Item = GetHeldItem(Hand);
 	const float Length = Item ? Item->GetWeaponLength() : 0.f;
-	const float HangPitch = Length > AedirCarryHandHeightCm ? FMath::RadiansToDegrees(FMath::Asin(AedirCarryHandHeightCm / Length)) : AedirCarryHangPitch;
-	const FVector Carried = FRotator(-FMath::Min(HangPitch, AedirCarryHangPitch), Creature->GetActorRotation().Yaw, 0.0).Vector();
+	// Out of the fight stance a weapon is not pointed at anyone. A pole stands upright beside the body, head up; a blade in
+	// both hands lies aslant before the hips, point low and out to the side of the carrying hand; one in a single hand hangs
+	// point down and a little out. A long one is kept just off the ground.
+	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
+	float RestPitch = bTwoHandGrip ? AedirRestTwoHandPitch : AedirRestOneHandPitch;
+	float RestYaw = Side * (bTwoHandGrip ? AedirRestTwoHandOutYaw : AedirRestOneHandOutYaw);
+	if (IsPolearm(Item))
+	{
+		RestPitch = AedirRestPolePitch;
+		RestYaw = Side * AedirRestPoleOutYaw;
+	}
+	else if (Length > KINDA_SMALL_NUMBER)
+	{
+		const float GroundPitch = -FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(AedirRestHandHeightCm / Length, 0.f, 1.f)));
+		RestPitch = FMath::Max(RestPitch, GroundPitch);
+	}
+	const FVector Carried = FRotator(RestPitch, Creature->GetActorRotation().Yaw + RestYaw, 0.0).Vector();
 	// Walking and running the carrying arm swings, and a blade held at one angle to the world would bend the wrist over at
 	// each end of the swing: on the move the blade goes partly along with the forearm, so the wrist stays near straight.
 	const USkeletalMeshComponent* Body = Creature->GetMesh();
@@ -1656,17 +1742,22 @@ FVector UAedirCombatComponent::ComputeStanceHandLocal(EAedirHand Hand, const FAe
 	const float HandSide = Hand == EAedirHand::Right ? 1.f : -1.f;
 	const float FightShare = GetFightShare();
 
+	// Held in both hands but not raised to fight, the weapon is carried low before the hips, the hands together there; it
+	// comes up into the stance as the guard is raised.
+	const float RestShare = bTwoHandGrip ? 1.f - FightShare : 0.f;
+	const FVector Resting(AedirRestTwoHandForwardCm, HandSide * AedirRestTwoHandSideCm, AedirRestTwoHandHeightCm);
+
 	if (bTwoHandGrip && IsPolearm(Item))
 	{
 		FVector PolearmHand;
 		FVector PolearmDir;
 		ComputePolearmPose(Hand, Arm, Item, PolearmHand, PolearmDir);
-		return PolearmHand;
+		return FMath::Lerp(PolearmHand, Resting + FVector(0.f, HandSide * AedirRestPoleSideCm, AedirRestPoleRaiseCm), RestShare);
 	}
 
 	if (UsesHandLedSwing(Hand))
 	{
-		return ComputeHandLedHandLocal(Hand, Arm);
+		return FMath::Lerp(ComputeHandLedHandLocal(Hand, Arm), Resting, RestShare);
 	}
 
 	// Where the hand is with the mouse in the middle.
@@ -3016,10 +3107,23 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 	{
 		return;
 	}
+	// Only a living, standing body strikes: a weapon in a dead, senseless or fallen hand only lies or tumbles about.
+	const bool bHolderDown = (Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying() || Creature->Stats->IsKnockedOut()))
+		|| (Creature->Balance && Creature->Balance->IsRagdoll() && !Creature->Balance->IsGettingUp());
+	if (bHolderDown)
+	{
+		return;
+	}
 
 	const FVector FromVelocity = (From - PrevFrom) / DeltaTime;
 	const FVector ToVelocity = (To - PrevTo) / DeltaTime;
 	const double FastestEnd = FMath::Max(FromVelocity.Size(), ToVelocity.Size());
+	// A fast swing is heard cutting the air, the faster the louder.
+	if (FastestEnd > AedirSfxWhooshSpeed && World->GetTimeSeconds() - LastWhooshTime[Index] > AedirSfxWhooshSeconds)
+	{
+		LastWhooshTime[Index] = World->GetTimeSeconds();
+		UAedirSfxSubsystem::Play(this, EAedirSfx::Whoosh, To, FMath::GetRangePct(AedirSfxWhooshSpeed, AedirSfxWhooshFullSpeed, static_cast<float>(FastestEnd)));
+	}
 	if (FastestEnd <= AedirArmMinSpeed || (bLoose && FastestEnd < AedirLooseStrikeMinSpeed))
 	{
 		return;
@@ -3301,6 +3405,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 			if (Through > (bLeg ? AedirBreakLegJoules : AedirBreakArmJoules) * Sturdy)
 			{
 				Victim->Wounds->BreakLimb(Limb);
+				UAedirSfxSubsystem::Play(this, EAedirSfx::Bone, Hit.ImpactPoint, 1.f);
 			}
 		}
 	}
@@ -3390,6 +3495,37 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		HeldItem->SetLodged(true);
 	}
 	UE_LOG(LogAedir, Log, TEXT("Cut: %s, share %.2f"), Outcome, CutShare);
+
+	// What the blow sounds like: steel on plate, a point going in, an edge opening skin, or a dull blow on flesh; a hard one
+	// is heard in the whole body as well.
+	{
+		const float Loud = FMath::Clamp(Energy / AedirSfxFullJoules, 0.f, 1.f);
+		const FVector At = Hit.ImpactPoint;
+		if (Armour.bCovered && Armour.Material != EAedirArmorMaterial::Soft)
+		{
+			UAedirSfxSubsystem::Play(this, EAedirSfx::Armour, At, Loud);
+		}
+		if (!bEdged)
+		{
+			UAedirSfxSubsystem::Play(this, HeldItem ? EAedirSfx::BodyImpact : EAedirSfx::Punch, At, Loud);
+		}
+		else if (bGlance)
+		{
+			UAedirSfxSubsystem::Play(this, EAedirSfx::Punch, At, Loud * 0.6f);
+		}
+		else if (bPointFirst)
+		{
+			UAedirSfxSubsystem::Play(this, EAedirSfx::Stab, At, Loud);
+		}
+		else
+		{
+			UAedirSfxSubsystem::Play(this, EAedirSfx::Cut, At, Loud);
+		}
+		if (Energy > AedirSfxHeavyJoules && bEdged)
+		{
+			UAedirSfxSubsystem::Play(this, EAedirSfx::BodyImpact, At + FVector(0.f, 0.f, 1.f), Loud * 0.6f);
+		}
+	}
 
 	if (Creature->Stats)
 	{
@@ -3964,13 +4100,24 @@ bool UAedirCombatComponent::EvaluateTwoHandGrip() const
 		return LeftItem && RightItem;
 	}
 
-	// The right mouse button brings the free left hand onto a weapon in the right hand. Otherwise an empty hand joins only while both guards are held.
+	// A player holds every weapon but a knife or a tool in both hands, while the other hand is empty and not let go of it on
+	// purpose (right button held down). Others still bring the free hand on with the right button, or both guards.
+	const AAedirItemActor* Single = LeftItem ? LeftItem : RightItem;
+	if (Creature && Creature->IsPlayerControlled() && !(LeftItem && RightItem))
+	{
+		return !bOffHandFree && Single->ItemClass == EAedirItemClass::Weapon && Single->GetWeaponLength() >= AedirTwoHandMinLengthCm;
+	}
 	return (LeftItem && RightItem) || (bLeftGuard && RightItem && RightItem->ItemClass == EAedirItemClass::Weapon) || (bLeftGuard && bRightGuard);
 }
 
 void UAedirCombatComponent::UpdateTwoHandGrip()
 {
 	bTwoHandGrip = EvaluateTwoHandGrip();
+	// Let go of with one hand, the weapon is no longer held by its blade either.
+	if (!bTwoHandGrip)
+	{
+		bHalfSwordToggled = false;
+	}
 }
 
 FVector UAedirCombatComponent::GetGripPointWorld() const
@@ -4500,6 +4647,30 @@ void UAedirCombatComponent::ServerStartKick_Implementation()
 void UAedirCombatComponent::ServerSetGuard_Implementation(EAedirHand Hand, bool bActive)
 {
 	SetGuardInternal(Hand, bActive);
+}
+
+void UAedirCombatComponent::ServerSetHandModes_Implementation(bool bNewOffHandFree, bool bNewHalfSword)
+{
+	bOffHandFree = bNewOffHandFree;
+	bHalfSwordToggled = bNewHalfSword;
+}
+
+void UAedirCombatComponent::SetOffHandFree(bool bFree)
+{
+	bOffHandFree = bFree;
+	if (!IsAuthoritative())
+	{
+		ServerSetHandModes(bOffHandFree, bHalfSwordToggled);
+	}
+}
+
+void UAedirCombatComponent::ToggleHalfSword()
+{
+	bHalfSwordToggled = !bHalfSwordToggled;
+	if (!IsAuthoritative())
+	{
+		ServerSetHandModes(bOffHandFree, bHalfSwordToggled);
+	}
 }
 
 void UAedirCombatComponent::ServerUpdateArmAim_Implementation(EAedirHand Hand, FVector2D Aim, float Extension)

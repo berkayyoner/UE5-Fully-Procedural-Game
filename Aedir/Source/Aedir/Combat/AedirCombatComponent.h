@@ -555,6 +555,9 @@ private:
 	double PassUntil[2] = { 0.0, 0.0 };
 
 	// The body each hand's weapon last touched, and when: a blade that stays against it does not strike again.
+	// When a clash or a knock on the world was last heard, and each hand's last swing through the air.
+	double LastClashSoundTime = -1.0;
+	double LastWhooshTime[2] = { -1.0, -1.0 };
 	TWeakObjectPtr<AActor> TouchVictim[2];
 	FName TouchPart[2];
 	double TouchTime[2] = { -1.0, -1.0 };
@@ -603,6 +606,21 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerSetThrustMode(bool bActive);
+
+	UFUNCTION(Server, Reliable)
+	void ServerSetHandModes(bool bNewOffHandFree, bool bNewHalfSword);
+
+public:
+	// The player's own way of holding: the off hand let go of a weapon it would hold with both (right button held down), and
+	// the hand slid up onto the blade (right button clicked).
+	void SetOffHandFree(bool bFree);
+	void ToggleHalfSword();
+	bool IsHalfSwordToggled() const { return bHalfSwordToggled; }
+private:
+	UPROPERTY(Replicated)
+	bool bOffHandFree = false;
+	UPROPERTY(Replicated)
+	bool bHalfSwordToggled = false;
 
 	// True while the hand holds a weapon up in the stance, where the mouse moves the blade and not a fist.
 	bool IsWeaponStance(EAedirHand Hand) const;

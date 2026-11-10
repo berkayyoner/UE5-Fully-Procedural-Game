@@ -106,6 +106,9 @@ public:
 	float FightCameraAlpha = 0.f;
 	FRotator FightCameraSway = FRotator::ZeroRotator;
 
+	float HitShake = 0.f;
+	float HitShakeStrength = 0.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	FVector ThirdPersonShoulderOffset = FVector(0.f, 26.f, 22.f);
 
@@ -278,6 +281,9 @@ public:
 
 	UFUNCTION(Exec)
 	void GripInfo();
+
+	// A blow taken shakes the view: the shake starts full and fades, turning further the harder the blow.
+	void ShakeViewFromBlow(float EnergyJoules) { HitShake = 1.f; HitShakeStrength = FMath::Clamp(0.4f + EnergyJoules * 0.006f, 0.4f, 2.2f); }
 
 	UFUNCTION(Exec)
 	void JitterProbe(const FString& ProbeArgs);
@@ -522,6 +528,18 @@ private:
 	void HandleRightHandReleased();
 	void HandleLeftHolsterPressed();
 	void HandleRightHolsterPressed();
+	void UpdateRightButtonHold(float DeltaSeconds);
+	bool bRightButtonDown = false;
+	bool bRightButtonFreedHand = false;
+	float RightButtonHeldSeconds = 0.f;
+	// The right button held this long lets the off hand go; let go sooner, it was a click.
+	static constexpr float RightButtonHoldSeconds = 0.25f;
+	void HandleUsePressed(EAedirHand Hand);
+	void HandleUseReleased(EAedirHand Hand);
+	void HandleRightUsePressed() { HandleUsePressed(EAedirHand::Right); }
+	void HandleRightUseReleased() { HandleUseReleased(EAedirHand::Right); }
+	void HandleLeftUsePressed() { HandleUsePressed(EAedirHand::Left); }
+	void HandleLeftUseReleased() { HandleUseReleased(EAedirHand::Left); }
 	void HandleShovePressed();
 	TWeakObjectPtr<AAedirNpc> PointingNpc;
 	void AimForTest(TWeakObjectPtr<AActor> Target, bool bPress);

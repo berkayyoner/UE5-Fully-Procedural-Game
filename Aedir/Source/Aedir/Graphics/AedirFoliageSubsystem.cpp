@@ -27,6 +27,8 @@ namespace
 	const TCHAR* const FoliageMeshRoot = TEXT("/Game/PN_OpenWorldFoliage/Meshes/");
 	constexpr float FoliageCullFromCm = 5000.f;
 	constexpr float FoliageCullToCm = 7500.f;
+	TAutoConsoleVariable<int32> CVarAedirGrassShadows(TEXT("aedir.Grass.Shadows"), 2, TEXT("Grass shadows: 0 off, 1 contact only, 2 cached, 3 swaying with the wind."));
+	TAutoConsoleVariable<int32> CVarAedirGrassDistance(TEXT("aedir.Grass.Distance"), 2, TEXT("How far grass is drawn: 0 short, 1 medium, 2 far, 3 the whole meadow."));
 	constexpr float FoliageSkipAboveCm = 160.f;
 	// A blade is on bare ground when, looking down from this far over its root to this far under it, the ground comes first.
 	constexpr float FoliageBareCheckAboveCm = 300.f;
@@ -437,6 +439,7 @@ void UAedirFoliageSubsystem::Tick(float DeltaTime)
 		bBendSet = true;
 		UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Bending_Distance"), FoliageBendDistance);
 	}
+	ApplyGrassSettings();
 	UpdateBending();
 	UpdateWind(DeltaTime);
 	CrushTimer -= DeltaTime;
@@ -446,6 +449,40 @@ void UAedirFoliageSubsystem::Tick(float DeltaTime)
 		CrushUnderFeet();
 	}
 	Recover(DeltaTime);
+}
+
+void UAedirFoliageSubsystem::ApplyGrassSettings()
+{
+	// The player's choice of grass shadows and draw distance, put on every patch whenever it changes or a patch is added.
+	const int32 Shadows = CVarAedirGrassShadows.GetValueOnGameThread();
+	const int32 Distance = CVarAedirGrassDistance.GetValueOnGameThread();
+	if (Shadows == AppliedGrassShadows && Distance == AppliedGrassDistance && Patches.Num() == AppliedGrassPatches)
+	{
+		return;
+	}
+	AppliedGrassShadows = Shadows;
+	AppliedGrassDistance = Distance;
+	AppliedGrassPatches = Patches.Num();
+	static const float CullFrom[] = { 2000.f, 3000.f, 4500.f, FoliageCullFromCm };
+	static const float CullTo[] = { 3000.f, 4500.f, 6000.f, FoliageCullToCm };
+	const int32 DistanceIndex = FMath::Clamp(Distance, 0, 3);
+	for (UInstancedStaticMeshComponent* Patch : Patches)
+	{
+		if (!Patch)
+		{
+			continue;
+		}
+		// Off: none. Low: only the short contact shadow at the foot of each blade, which costs no shadow map. Medium: real
+		// shadows, cached as if the grass stood still. High: real shadows that sway with the wind.
+		Patch->SetCastShadow(Shadows > 0);
+		Patch->bCastDynamicShadow = Shadows >= 2;
+		Patch->bCastContactShadow = Shadows >= 1;
+		Patch->ShadowCacheInvalidationBehavior = Shadows >= 3 ? EShadowCacheInvalidationBehavior::Auto : EShadowCacheInvalidationBehavior::Rigid;
+		Patch->SetWorldPositionOffsetDisableDistance(Shadows >= 3 ? 3000 : 2000);
+		Patch->SetCullDistances(CullFrom[DistanceIndex], CullTo[DistanceIndex]);
+		Patch->MarkRenderStateDirty();
+	}
+	UE_LOG(LogAedir, Log, TEXT("[Grass] %d patches: shadows %d, distance %d"), Patches.Num(), Shadows, Distance);
 }
 
 void UAedirFoliageSubsystem::UpdateBending()

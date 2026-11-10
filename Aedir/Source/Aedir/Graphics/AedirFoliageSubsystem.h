@@ -60,6 +60,10 @@ private:
 	void AddToMeadow(USceneComponent* Component);
 	void EnsureTreeWindData();
 	void CrushUnderFeet();
+	void ApplyGrassSettings();
+	int32 AppliedGrassShadows = -1;
+	int32 AppliedGrassDistance = -1;
+	int32 AppliedGrassPatches = -1;
 	void Recover(float DeltaTime);
 	void SetInstanceFlatness(FCrushed& Entry);
 	// The scanned Megascans grass clumps, when they are in the project.

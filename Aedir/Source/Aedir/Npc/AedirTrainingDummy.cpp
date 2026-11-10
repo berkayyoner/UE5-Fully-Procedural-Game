@@ -1,4 +1,5 @@
-﻿#include "Npc/AedirTrainingDummy.h"
+#include "Npc/AedirTrainingDummy.h"
+#include "Audio/AedirSfxSubsystem.h"
 
 #include "Aedir.h"
 #include "Engine/World.h"
@@ -203,6 +204,8 @@ void AAedirTrainingDummy::ReceiveStrike(UPrimitiveComponent* Part, const FVector
 	{
 		RebuildAt = GetWorld()->GetTimeSeconds() + DummyRebuildSeconds;
 	}
+	// Wood struck: an edge biting into it, or a dull knock.
+	UAedirSfxSubsystem::Play(this, bCuts ? EAedirSfx::WoodCut : EAedirSfx::WoodHit, Location, FMath::Clamp(EnergyJoules / 250.f, 0.f, 1.f));
 	MulticastStrike(Part, Location, Normal, TipVelocity, EnergyJoules, bSlice);
 }
 

@@ -39,7 +39,8 @@ namespace
 		{ TEXT("DepthOfField"), { 0, 2, 3, 4 } },
 		{ TEXT("Bloom"), { 1, 2, 3, 4 } },
 		{ TEXT("Anisotropy"), { 2, 3, 4, 4 } },
-		{ TEXT("GrassDensity"), { 1, 2, 3, 3 } }
+		{ TEXT("GrassShadows"), { 0, 1, 2, 3 } },
+		{ TEXT("GrassDistance"), { 0, 1, 2, 3 } }
 	};
 	const TArray<FString> SettingsPercentNames = { TEXT("0%"), TEXT("10%"), TEXT("25%"), TEXT("50%"), TEXT("75%"), TEXT("100%") };
 	const TArray<float> SettingsPercentValues = { 0.f, 0.1f, 0.25f, 0.5f, 0.75f, 1.f };
@@ -453,7 +454,8 @@ void UAedirSettingsSubsystem::BuildQualityOptions()
 	AddCVar(TEXT("ViewDistanceScale"), TEXT("View distance scale"), TEXT("Fine multiplier on the distance objects disappear at."), TEXT("r.ViewDistanceScale"), { TEXT("50%"), TEXT("75%"), TEXT("100%"), TEXT("150%"), TEXT("200%") }, { 0.5f, 0.75f, 1.f, 1.5f, 2.f });
 	AddCVar(TEXT("MeshDetail"), TEXT("Mesh detail distance"), TEXT("How long meshes keep their full detail. Lower is more detail."), TEXT("r.StaticMeshLODDistanceScale"), { TEXT("50%"), TEXT("100%"), TEXT("150%"), TEXT("200%") }, { 0.5f, 1.f, 1.5f, 2.f });
 	AddCVar(TEXT("CharacterDetail"), TEXT("Character detail"), TEXT("Detail steps skipped on characters."), TEXT("r.SkeletalMeshLODBias"), { TEXT("Full"), TEXT("Reduced"), TEXT("Low") }, { 0.f, 1.f, 2.f });
-	AddCVar(TEXT("GrassDensity"), TEXT("Grass density"), TEXT("Amount of generated grass."), TEXT("grass.DensityScale"), { TEXT("25%"), TEXT("50%"), TEXT("75%"), TEXT("100%") }, { 0.25f, 0.5f, 0.75f, 1.f });
+	AddCVar(TEXT("GrassShadows"), TEXT("Grass shadows"), TEXT("Off; contact only (cheap); cached shadows; shadows that sway with the wind (costly)."), TEXT("aedir.Grass.Shadows"), { TEXT("Off"), TEXT("Contact"), TEXT("Cached"), TEXT("Full") }, { 0.f, 1.f, 2.f, 3.f });
+	AddCVar(TEXT("GrassDistance"), TEXT("Grass distance"), TEXT("How far away grass is still drawn."), TEXT("aedir.Grass.Distance"), { TEXT("Short"), TEXT("Medium"), TEXT("Far"), TEXT("All") }, { 0.f, 1.f, 2.f, 3.f });
 
 	// Read by the engine every frame, so a new rate counts from the next frame on.
 	const TArray<float> RateValues = { 30.f, 60.f, 90.f, 120.f, 180.f, 240.f };
@@ -488,6 +490,7 @@ void UAedirSettingsSubsystem::BuildAudioOptions()
 
 	FAedirGameplaySettings& Values = GetValues();
 	AddFloat(EAedirSettingsPage::Audio, TEXT("FootstepVolume"), TEXT("Footsteps"), TEXT("Volume of steps and landings."), SettingsPercentNames, SettingsPercentValues, &Values.FootstepVolume);
+	AddFloat(EAedirSettingsPage::Audio, TEXT("EffectsVolume"), TEXT("Combat sounds"), TEXT("Volume of blows, cuts, clashing steel and swings."), SettingsPercentNames, SettingsPercentValues, &Values.EffectsVolume);
 	AddFloat(EAedirSettingsPage::Audio, TEXT("WeatherVolume"), TEXT("Weather"), TEXT("Volume of rain, wind and thunder."), SettingsPercentNames, SettingsPercentValues, &Values.WeatherVolume);
 	AddChoice(EAedirSettingsPage::Audio, TEXT("BackgroundSound"), TEXT("Sound in the background"), TEXT("Whether the game stays audible while another window has the focus."), SettingsOffOn,
 		[]() { return FApp::GetUnfocusedVolumeMultiplier() > 0.f ? 1 : 0; },
@@ -502,6 +505,7 @@ void UAedirSettingsSubsystem::BuildGameplayOptions()
 	AddFloat(EAedirSettingsPage::Gameplay, TEXT("MouseSensitivity"), TEXT("Camera sensitivity"), TEXT("How fast the mouse turns the camera."), SpeedNames, SpeedValues, &Values.MouseSensitivity);
 	AddFloat(EAedirSettingsPage::Gameplay, TEXT("WeaponSensitivity"), TEXT("Weapon sensitivity"), TEXT("How fast the mouse moves arms and weapons in the stance."), SpeedNames, SpeedValues, &Values.WeaponSensitivity);
 	AddBool(EAedirSettingsPage::Gameplay, TEXT("InvertMouseY"), TEXT("Invert camera"), TEXT("Moving the mouse up looks down."), &Values.bInvertMouseY);
+	AddFloat(EAedirSettingsPage::Gameplay, TEXT("CameraShake"), TEXT("Camera shake"), TEXT("How much the view jolts when you are struck."), { TEXT("Off"), TEXT("Low"), TEXT("Normal"), TEXT("Strong") }, { 0.f, 0.5f, 1.f, 1.6f }, &Values.CameraShake);
 	AddFloat(EAedirSettingsPage::Gameplay, TEXT("FieldOfView"), TEXT("Field of view"), TEXT("How wide the third person camera sees."), { TEXT("70"), TEXT("80"), TEXT("90"), TEXT("100"), TEXT("110") }, { 70.f, 80.f, 90.f, 100.f, 110.f }, &Values.FieldOfView);
 	AddFloat(EAedirSettingsPage::Gameplay, TEXT("CameraBodyMotion"), TEXT("Camera body motion"), TEXT("How much the camera moves with steps, jumps and landings."), { TEXT("Off"), TEXT("50%"), TEXT("100%") }, { 0.f, 0.5f, 1.f }, &Values.CameraBodyMotion);
 	AddBool(EAedirSettingsPage::Gameplay, TEXT("ShowCompass"), TEXT("Compass"), TEXT("Shows the compass at the top of the screen."), &Values.bShowCompass);

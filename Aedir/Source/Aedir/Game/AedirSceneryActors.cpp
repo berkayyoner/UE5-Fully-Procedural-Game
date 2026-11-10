@@ -1,4 +1,4 @@
-﻿#include "Game/AedirSceneryActors.h"
+#include "Game/AedirSceneryActors.h"
 
 #include "Components/AudioComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
@@ -20,22 +20,28 @@ namespace
 	const TCHAR* const SceneryGlowMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirPrecip.M_AedirPrecip");
 	const TCHAR* const SceneryWaterMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirStream.M_AedirStream");
 	const TCHAR* const ScenerySmokePath = TEXT("/Game/Effects/NS_WellSmoke.NS_WellSmoke");
-	const TCHAR* const SceneryFireSoundPath = TEXT("/Game/Audio/_Content/SFX/Fire/wav/Amb_Fire_Burn_Large_Dist_LP_01.Amb_Fire_Burn_Large_Dist_LP_01");
+	const TCHAR* const SceneryFireSoundPath = TEXT("/Game/Aedir/Sounds/Combat/SFX_CampfireLoop.SFX_CampfireLoop");
 	const TCHAR* const SceneryWaterSoundPath = TEXT("/Game/Aedir/Sounds/S_Rain_Loop.S_Rain_Loop");
 	const TCHAR* const ScenerySprayPath = TEXT("/Game/A_Surface_Footstep/Niagara_FX/ParticleSystems/PSN_WaterHeavy_Surface.PSN_WaterHeavy_Surface");
 	// The glow of a flame's tongue, hot white-yellow at full and orange as it dies down; a few tongues crossed around the fire.
-	const FLinearColor SceneryFlameColor(2.2f, 0.75f, 0.16f);
+	const FLinearColor SceneryFlameColor(0.9f, 0.32f, 0.07f);
 	constexpr int32 SceneryTongues = 4;
 	constexpr float ActorsPlaneCm = 100.f;
 	// Water and fire are heard where they are: full near, fading out over a few tens of metres, never inside the head.
 	constexpr float SceneryWaterHeardCm = 600.f;
 	constexpr float SceneryWaterFadeCm = 4500.f;
-	constexpr float SceneryFireHeardCm = 150.f;
-	constexpr float SceneryFireFadeCm = 1800.f;
+	constexpr float SceneryFireHeardCm = 80.f;
+	constexpr float SceneryFireFadeCm = 700.f;
 	constexpr float SceneryCampfireCm = 55.f;
-	constexpr float SceneryFireMinVolume = 0.06f;
+	constexpr float SceneryFireMinVolume = 0.04f;
 	// A fire's light by full day, as a share of its light by night.
 	constexpr float SceneryFireDayShare = 0.1f;
+	// A small fire is heard softly and lights its own ring and the faces round it, not the whole camp; its flames are low
+	// and narrow, more a bed of embers with tongues rising off it than a bonfire.
+	constexpr float SceneryFireVolume = 0.35f;
+	constexpr float SceneryFireLightShare = 0.35f;
+	constexpr float SceneryTongueHeightShare = 0.55f;
+	constexpr float SceneryTongueWidthShare = 0.6f;
 
 	void MakeHeardInPlace(UAudioComponent* Audio, float InnerCm, float FadeCm)
 	{
@@ -134,7 +140,7 @@ void AAedirFlame::BeginPlay()
 		Sound->bLooping = true;
 		Crackle->SetSound(Sound);
 		MakeHeardInPlace(Crackle, SceneryFireHeardCm * FMath::Clamp(FlameHeightCm / SceneryCampfireCm, 0.3f, 1.f), SceneryFireFadeCm * FMath::Clamp(FlameHeightCm / SceneryCampfireCm, 0.3f, 1.f));
-		Crackle->SetVolumeMultiplier(FMath::Max(SceneryFireMinVolume, FMath::Cube(FMath::Clamp(FlameHeightCm / SceneryCampfireCm, 0.3f, 1.f))));
+		Crackle->SetVolumeMultiplier(SceneryFireVolume * FMath::Max(SceneryFireMinVolume, FMath::Cube(FMath::Clamp(FlameHeightCm / SceneryCampfireCm, 0.3f, 1.f))));
 		Crackle->Play(FMath::FRandRange(0.f, 5.f));
 	}
 }
@@ -149,7 +155,7 @@ void AAedirFlame::Tick(float DeltaSeconds)
 	const float Flicker = FMath::Clamp(0.75f + 0.18f * Swell + 0.22f * Flutter, 0.35f, 1.2f);
 	// By day a fire hardly lights what the sun already does; at dusk and at night it lights all round it.
 	const float Glow = FMath::Lerp(1.f, SceneryFireDayShare, AAedirWeatherManager::GetDaylight(GetWorld()));
-	Light->SetIntensity(LightCandelas * Flicker * Glow);
+	Light->SetIntensity(LightCandelas * SceneryFireLightShare * Flicker * Glow);
 	if (TongueMaterial)
 	{
 		TongueMaterial->SetScalarParameterValue(TEXT("Strength"), Flicker);
@@ -157,8 +163,8 @@ void AAedirFlame::Tick(float DeltaSeconds)
 	for (int32 Index = 0; Index < Tongues->GetInstanceCount(); ++Index)
 	{
 		const float Own = FMath::PerlinNoise1D(Phase * 6.f + Index * 3.7f);
-		const float Height = FlameHeightCm * (0.75f + 0.35f * Own + 0.15f * Swell);
-		const float Width = FlameHeightCm * (0.45f - 0.08f * Own);
+		const float Height = FlameHeightCm * SceneryTongueHeightShare * (0.75f + 0.35f * Own + 0.15f * Swell);
+		const float Width = FlameHeightCm * SceneryTongueWidthShare * (0.45f - 0.08f * Own);
 		const FRotator Turn(0.f, Index * 180.f / SceneryTongues + 8.f * FMath::Sin(Phase * 1.3f + Index), 90.f);
 		Tongues->UpdateInstanceTransform(Index, FTransform(Turn, FVector(0.f, 0.f, Height * 0.5f), FVector(Width / ActorsPlaneCm, 1.f, Height / ActorsPlaneCm) * FVector(1.f, 1.f, 1.f)), false, Index == Tongues->GetInstanceCount() - 1, true);
 	}
