@@ -498,7 +498,7 @@ void AAedirItemActor::SetPassesOwnBody(bool bPasses)
 	// does not notice.
 	if (Mesh && bHeldCollision)
 	{
-		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Ignore);
+		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged ? ECR_Ignore : ECR_Block);
 	}
 }
 
@@ -512,7 +512,7 @@ void AAedirItemActor::SetLodged(bool bNewLodged)
 	// Stuck in a body it lies inside that body's flesh, which it must not shove out of its way.
 	if (Mesh && bHeldCollision)
 	{
-		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Ignore);
+		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged ? ECR_Ignore : ECR_Block);
 	}
 }
 
@@ -824,9 +824,8 @@ void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
 	{
 		return;
 	}
-	// In the hand it is solid against the world but passes bodies, limbs, other weapons and loose things: what it does to
-	// those the blow and the blade's own sweep decide, where it really lands. Pushed by the physics as well, the hand would be
-	// shoved short of what it struck and the arm would shake between the two.
+	// In the hand it is solid against the world and against every body, also the holder's own trunk and limbs; it passes only
+	// the holder's own hands, which close on it (the mask bit it shares with them), and the standing bodies' capsules.
 	if (!bHeldCollision)
 	{
 		FreePawnResponse = Mesh->GetCollisionResponseToChannel(ECC_Pawn);
@@ -836,7 +835,7 @@ void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	Mesh->BodyInstance.SetMaskFilter(Creature->GetHeldMaskBit());
-	Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Ignore);
+	Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged ? ECR_Ignore : ECR_Block);
 	if (SettleAlpha >= 1.f)
 	{
 		WeldToHand();

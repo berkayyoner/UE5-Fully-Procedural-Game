@@ -953,6 +953,12 @@ float UAedirCombatComponent::GetFistAlpha(EAedirHand Hand) const
 	{
 		return 1.f;
 	}
+	// The second hand of a two-handed hold closes on the grip as it comes onto it, whether or not the weapon counts as held
+	// by it (a sword that is only one hand's but held in both).
+	if (IsSecondaryGripHand(Hand) && !IsObjectGrip())
+	{
+		return FMath::Max(CombatSmoothStep01(SecondaryGripBlend), GuardAlpha[HandIndex(Hand)]);
+	}
 
 	return GuardAlpha[HandIndex(Hand)];
 }

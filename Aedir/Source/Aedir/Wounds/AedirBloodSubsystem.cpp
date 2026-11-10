@@ -21,18 +21,19 @@ namespace
 	const TCHAR* const BloodBurstLight = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Once.NS_Blood_Splat_Directional_01_Floor_Once");
 	const TCHAR* const BloodBurstHeavy = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Bunch_Once.NS_Blood_Splat_Directional_01_Floor_Bunch_Once");
 	constexpr float BloodBurstHeavyAbove = 0.85f;
-	constexpr float BloodBurstMinScale = 0.12f;
-	constexpr float BloodBurstMaxScale = 0.35f;
-	constexpr float BloodDropScale = 0.012f;
+	constexpr float BloodBurstMinScale = 0.35f;
+	constexpr float BloodBurstMaxScale = 0.9f;
+	constexpr float BloodDropScale = 0.032f;
 	constexpr float BloodDropLifeSpan = 4.f;
+	constexpr float BloodDropStartOutCm = 6.f;
 	constexpr float BloodDropLinearDamping = 0.05f;
-	constexpr float BloodSprayConeHalfAngleDeg = 25.f;
-	constexpr int32 BloodCutDropMin = 6;
-	constexpr int32 BloodCutDropMax = 14;
-	constexpr int32 BloodPunctureDropMin = 3;
-	constexpr int32 BloodPunctureDropMax = 6;
-	constexpr float BloodCutSpeedMin = 150.f;
-	constexpr float BloodCutSpeedMax = 450.f;
+	constexpr float BloodSprayConeHalfAngleDeg = 18.f;
+	constexpr int32 BloodCutDropMin = 18;
+	constexpr int32 BloodCutDropMax = 34;
+	constexpr int32 BloodPunctureDropMin = 8;
+	constexpr int32 BloodPunctureDropMax = 14;
+	constexpr float BloodCutSpeedMin = 280.f;
+	constexpr float BloodCutSpeedMax = 900.f;
 	constexpr float BloodPunctureSpeedMin = 60.f;
 	constexpr float BloodPunctureSpeedMax = 180.f;
 	constexpr float BloodSeverityMinSpeedScale = 0.6f;
@@ -115,6 +116,9 @@ AAedirBloodDrop::AAedirBloodDrop()
 	Mesh->SetRelativeScale3D(FVector(BloodDropScale));
 	Mesh->SetCastShadow(false);
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+	// A drop is of a kind nothing else blocks, not even another drop: as world-dynamic they struck each other leaving the
+	// wound and all burst in the air within a few hundredths of a second, so no spray was ever seen.
+	Mesh->SetCollisionObjectType(ECC_Destructible);
 	Mesh->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Mesh->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
 	Mesh->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
@@ -143,6 +147,7 @@ void AAedirBloodDrop::OnDropHit(UPrimitiveComponent* HitComponent, AActor* Other
 	}
 
 	bSplatted = true;
+	UE_LOG(LogAedir, Verbose, TEXT("[Blood] drop hit %s after %.2f s at %s"), *GetNameSafe(OtherActor), GetGameTimeSinceCreation(), *Hit.ImpactPoint.ToCompactString());
 
 	if (UWorld* World = GetWorld())
 	{
@@ -227,8 +232,10 @@ void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Di
 	{
 		const FVector DropDirection = Random.VRandCone(SprayDirection, ConeHalfAngleRad);
 		const float Speed = static_cast<float>(Random.FRandRange(MinSpeed, MaxSpeed)) * SeverityScale;
-		SpawnDrop(Location, DropDirection * Speed);
+		// Out of the wound a little first, so a drop does not start inside the body it came from.
+		SpawnDrop(Location + DropDirection * BloodDropStartOutCm, DropDirection * Speed);
 	}
+	UE_LOG(LogAedir, Log, TEXT("[Blood] spray of %d drops at %s towards %s, severity %.2f, %d drops flying"), DropCount, *Location.ToCompactString(), *SprayDirection.ToCompactString(), Severity, Drops.Num());
 }
 
 bool UAedirBloodSubsystem::IsBloodAt(const FVector& Location, float RadiusCm)
@@ -304,7 +311,7 @@ UMaterialInterface* UAedirBloodSubsystem::GetDropMaterial()
 		if (UMaterialInterface* Base = BloodResolveMaterial(BloodDropSlot()))
 		{
 			DropMaterial = UMaterialInstanceDynamic::Create(Base, this);
-			DropMaterial->SetVectorParameterValue(FName(TEXT("Color")), FLinearColor(0.35f, 0.f, 0.01f, 1.f));
+			DropMaterial->SetVectorParameterValue(FName(TEXT("Color")), FLinearColor(0.55f, 0.01f, 0.02f, 1.f));
 		}
 	}
 

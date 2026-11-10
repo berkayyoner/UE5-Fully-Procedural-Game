@@ -41,7 +41,7 @@ class AEDIR_API UAedirBloodSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	static constexpr int32 MaxDrops = 64;
+	static constexpr int32 MaxDrops = 200;
 	static constexpr int32 MaxSplats = 700;
 	// Three game days at Skyrim's pace, where a day passes in 72 real minutes.
 	static constexpr float SplatLifetime = 3.f * 72.f * 60.f;

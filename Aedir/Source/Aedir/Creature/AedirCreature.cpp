@@ -128,14 +128,16 @@ void AAedirCreature::ApplyBodyMask()
 		if (Part && Part->BodySetup.IsValid())
 		{
 			const FString Bone = Part->BodySetup->BoneName.ToString();
-			Part->SetMaskFilter(Bone.StartsWith(TEXT("hand")) ? AedirHandMaskBit : Bone.StartsWith(TEXT("foot")) || Bone.StartsWith(TEXT("ball")) ? AedirFootMaskBit : 0);
+			// The hands carry the body's own bit as well: what this body holds passes through its own hands, which close on it,
+			// and strikes everyone else's.
+			Part->SetMaskFilter(Bone.StartsWith(TEXT("hand")) ? (AedirHandMaskBit | BodyMaskBit) : Bone.StartsWith(TEXT("foot")) || Bone.StartsWith(TEXT("ball")) ? AedirFootMaskBit : 0);
 		}
 	}
 }
 
 uint8 AAedirCreature::GetHeldMaskBit() const
 {
-	return CVarAedirSelfCollision.GetValueOnGameThread() == 0 ? BodyMaskBit : AedirHandMaskBit;
+	return BodyMaskBit;
 }
 
 void AAedirCreature::BeginPlay()
@@ -154,7 +156,8 @@ void AAedirCreature::BeginPlay()
 
 	// The player's body has a bit of its own; the others share seven, so a weapon can tell its own body from anyone else's.
 	static uint8 NextCreatureBit = 0;
-	BodyMaskBit = IsPlayerControlled() ? 1 : static_cast<uint8>(1 << (1 + NextCreatureBit++ % 7));
+	// Bits 64 and 128 are the feet's and the hands'; the others share the five between.
+	BodyMaskBit = IsPlayerControlled() ? 1 : static_cast<uint8>(1 << (1 + NextCreatureBit++ % 5));
 	ApplyBodyMask();
 
 	ApplyAppearance();
