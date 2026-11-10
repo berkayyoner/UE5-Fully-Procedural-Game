@@ -288,7 +288,15 @@ namespace
 	constexpr float AedirCockShoulderPitch = 10.f;
 	constexpr float AedirCockOverheadFromPitch = 40.f;
 	// The cocked blade points this much out to the side the hand is on, as well as back.
-	constexpr float AedirCockSideShare = 0.45f;	static TAutoConsoleVariable<int32> CVarAedirSwingCock(TEXT("aedir.SwingCock"), 1, TEXT("Drawn back, the wrist cocks the blade back over the shoulder (1), or the blade always stands over the arm (0)."));
+	constexpr float AedirCockSideShare = 0.45f;	// Within this much of the middle of its travel the mouse keeps the point on the enemy, from that much out it is the
+	// swing; the point then stands this far over level and leans this share of the mouse's way.
+	constexpr float AedirPointOnEnemyToDeg = 18.f;
+	constexpr float AedirPointOnEnemyFromDeg = 42.f;
+	constexpr float AedirPointOnEnemyPitch = 22.f;
+	constexpr float AedirPointOnEnemyLeanShare = 0.45f;
+	static TAutoConsoleVariable<int32> CVarAedirArmLedWithHand(TEXT("aedir.ArmLedWithHand"), 1, TEXT("The arm also turns about the blade when the mouse leads the hand (1)."));
+	static TAutoConsoleVariable<int32> CVarAedirPointZone(TEXT("aedir.PointZone"), 1, TEXT("Near the middle of the mouse's travel the point stays on the enemy (1)."));
+	static TAutoConsoleVariable<int32> CVarAedirSwingCock(TEXT("aedir.SwingCock"), 1, TEXT("Drawn back, the wrist cocks the blade back over the shoulder (1), or the blade always stands over the arm (0)."));
 	// Between these heights of the arm's line, "above the arm" turns from straight up to back over the head.
 	constexpr float AedirHandLedUprightFromZ = 0.5f;
 	constexpr float AedirHandLedUprightFullZ = 0.95f;
@@ -397,8 +405,8 @@ namespace
 
 	// A graze does little of what a weapon can do; the full damage takes a blow with this much energy behind it.
 	constexpr float AedirImpactFullFlatJoules = 60.f;
-	constexpr float AedirImpactMaxHealthShare = 0.4f;
-	constexpr float AedirImpactMaxHealthShareHead = 0.65f;
+	constexpr float AedirImpactMaxHealthShare = 0.25f;
+	constexpr float AedirImpactMaxHealthShareHead = 0.4f;
 	constexpr float AedirAIRestStaminaShare = 0.15f;
 	constexpr float AedirAIFleeCm = 1500.f;
 	constexpr float AedirImpactMaxSpeed = 5000.f;
@@ -474,7 +482,7 @@ namespace
 	// Below this many joules a blow does no harm at all.
 	constexpr float AedirImpactNoHarmJoules = 6.f;
 	// Most of a blow goes into the wound. This share of it is what pushes the body off its feet.
-	constexpr float AedirImpactBodyEnergyShare = 0.6f;
+	constexpr float AedirImpactBodyEnergyShare = 0.45f;
 	// A weapon no button holds up any more strikes only while it is still really flying.
 	constexpr double AedirLooseStrikeMinSpeed = 400.0;
 	// A blow this hard is heard at full; a harder edged one also thumps the body it lands on.
@@ -942,6 +950,19 @@ float UAedirCombatComponent::GetFistAlpha(EAedirHand Hand) const
 	}
 
 	return GuardAlpha[HandIndex(Hand)];
+}
+
+FString UAedirCombatComponent::DevDescribeArm(EAedirHand Hand) const
+{
+	const FAedirArmDynamics& Arm = GetArm(Hand);
+	const FTransform& Body = Creature->GetActorTransform();
+	const FVector Target = IsWeaponStance(Hand) ? ComputeWeaponTargetDir(Hand, Arm) : ComputeCarriedDir(Hand);
+	const FRotator Want = Body.InverseTransformVectorNoScale(Target).Rotation();
+	const FRotator Has = Body.InverseTransformVectorNoScale(Arm.WeaponDir).Rotation();
+	const FVector HandLocal = Body.InverseTransformPosition(Arm.HandWorld);
+	const FVector Wanted = Body.InverseTransformPosition(ComputeArmTarget(Hand, Arm));
+	return FString::Printf(TEXT("aim %.0f %.0f stance %d grip %d blade want p%.0f y%.0f has p%.0f y%.0f hand %.0f %.0f %.0f wants %.0f %.0f %.0f"), Arm.PoseAimDeg.X, Arm.PoseAimDeg.Y, IsWeaponStance(Hand) ? 1 : 0, bTwoHandGrip ? 1 : 0,
+		Want.Pitch, Want.Yaw, Has.Pitch, Has.Yaw, HandLocal.X, HandLocal.Y, HandLocal.Z, Wanted.X, Wanted.Y, Wanted.Z);
 }
 
 void UAedirCombatComponent::DevSetArmAim(EAedirHand Hand, FVector2D AimDegrees, float Extension)
@@ -1592,6 +1613,16 @@ FVector UAedirCombatComponent::ComputeHandLedBladeDir(EAedirHand Hand, const FAe
 	{
 		Local = FVector::UpVector;
 	}
+
+	// Near the middle of the mouse's travel the point is kept on the enemy, only leaning the way the mouse goes; past a ring
+	// around it the blade turns out and back into the wide swings. The ring is the same for every direction.
+	const float Travel = static_cast<float>(Arm.PoseAimDeg.Size());
+	const float Inner = 1.f - FMath::SmoothStep(AedirPointOnEnemyToDeg, AedirPointOnEnemyFromDeg, Travel);
+	if (Inner > 0.f && CVarAedirPointZone.GetValueOnGameThread() != 0)
+	{
+		const FVector OnEnemy = FRotator(AedirPointOnEnemyPitch + Arm.PoseAimDeg.Y * AedirPointOnEnemyLeanShare - Droop * 0.5f, Arm.PoseAimDeg.X * AedirPointOnEnemyLeanShare, 0.0).Vector();
+		Local = FMath::Lerp(Local, OnEnemy, Inner).GetSafeNormal();
+	}
 	return FRotator(0.0, Creature->GetActorRotation().Yaw, 0.0).RotateVector(Local).GetSafeNormal();
 }
 
@@ -1864,6 +1895,12 @@ float UAedirCombatComponent::GetArmLedShare(EAedirHand Hand) const
 	// and a long shaft is steered by both hands, so those keep their own wrists.
 	const AAedirItemActor* Item = GetHeldItem(Hand);
 	if (!Item || !IsWeaponStance(Hand) || IsSecondaryGripHand(Hand) || bThrustMode || (bTwoHandGrip && IsPolearm(Item)) || GetArm(Hand).bScriptedControl)
+	{
+		return 0.f;
+	}
+	// Where the mouse leads the hand, the hand is already where it should be and the wrist points the blade: turning the
+	// arm about the blade as well would move the hand off its place and point the blade somewhere else.
+	if (UsesHandLedSwing(Hand) && CVarAedirArmLedWithHand.GetValueOnGameThread() == 0)
 	{
 		return 0.f;
 	}

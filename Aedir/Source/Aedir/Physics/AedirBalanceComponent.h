@@ -88,7 +88,7 @@ public:
 	float FallBalanceThreshold = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float FallDelaySeconds = 1.f;
+	float FallDelaySeconds = 1.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float GetUpBalanceThreshold = 0.6f;
@@ -244,7 +244,7 @@ public:
 
 	// A knockdown tips the body over the way the blow went: the head starts off at this share of the speed a stagger would give.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
-	float KnockdownToppleShare = 1.2f;
+	float KnockdownToppleShare = 0.6f;
 
 	// Going down, no part of the body is thrown upwards faster than this, in cm/s.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
@@ -441,6 +441,10 @@ private:
 	UAedirStatsComponent* FindStats() const;
 	void SetBalance(float NewBalance);
 	void AddLeanDirection(const FVector& WorldDirection, float Magnitude);
+public:
+	// A step taken to catch the body has landed.
+	void OnRecoveryStepTaken();
+private:
 	void DecayLeanDirection(float Amount);
 	void UpdateFallState();
 	void UpdateServerState(float DeltaTime);

@@ -1348,6 +1348,10 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 			}
 		}
 		DevToolsReport(FString::Printf(TEXT("  %s model along the item: %.1f .. %.1f"), *Item->ItemName.ToString(), Low, High));
+		if (Player->Combat)
+		{
+			DevToolsReport(FString::Printf(TEXT("  arm %s"), *Player->Combat->DevDescribeArm(Hand)));
+		}
 	}
 
 	for (const AAedirItemActor* Item : Player->Interaction->GetWaistItemsCopy())

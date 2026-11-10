@@ -175,7 +175,7 @@ public:
 	float FistDamage = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
-	float ImpactDamageScale = 0.16f;
+	float ImpactDamageScale = 0.1f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingStaminaCost = 5.f;
@@ -331,6 +331,8 @@ public:
 
 	// Places an arm at an exact aim, for tests without a mouse.
 	void DevSetArmAim(EAedirHand Hand, FVector2D AimDegrees, float Extension);
+	// Where the arm wants the hand and the blade, and where they are, in the body's frame.
+	FString DevDescribeArm(EAedirHand Hand) const;
 
 	// Direction the blade held by this hand should point in, with how much of the stance is blended in.
 	bool GetWeaponAim(EAedirHand Hand, FVector& OutDirectionWorld, float& OutAlpha) const;

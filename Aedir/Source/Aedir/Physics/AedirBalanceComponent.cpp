@@ -92,7 +92,7 @@ namespace
 	// A blow slackens the whole body for a moment, by how hard it pushed the part it landed on: struck, a body gives to the
 	// blow instead of springing straight back into its stance.
 	constexpr float HitFlinchFullImpulse = 1600.f;
-	constexpr float HitFlinchMaxSlack = 0.55f;
+	constexpr float HitFlinchMaxSlack = 0.35f;
 	constexpr float HitFlinchSeconds = 0.45f;
 	constexpr float HitFlinchMotorInterval = 0.05f;
 	constexpr float HitReactionStaggerRecoveryScale = 0.7f;
@@ -125,16 +125,22 @@ namespace
 	TAutoConsoleVariable<int32> CVarAedirBodyControl(TEXT("aedir.BodyControl"), -1, TEXT("The whole body on the engine's physics control: 1 on, 0 off (older motors), -1 as each body is set. Read when a body is made."));
 	TAutoConsoleVariable<int32> CVarAedirPhysicalHips(TEXT("aedir.PhysicalHips"), -1, TEXT("Hips tied to the capsule by a motorised joint, limbs held by their joints: 1 on, 0 off, -1 as each body is set. Read when a body is made."));
 	TAutoConsoleVariable<int32> CVarAedirHipVelocityTarget(TEXT("aedir.HipVelocityTarget"), 1, TEXT("The hip joint damps towards the capsule's own speed (1) or towards standing still against it (0)."));
-	constexpr float HitReactionBoneImpulseScale = 0.15f;
+	constexpr float HitReactionBoneImpulseScale = 0.1f;
 	constexpr float HitReactionBoneImpulseMax = 2500.f;
 	// Part of a blow goes on into the trunk, which turns away from it; the one who takes it feels it in the eyes as well.
-	constexpr float HitReactionTrunkShare = 0.7f;
+	constexpr float HitReactionTrunkShare = 0.45f;
 	constexpr float HitReactionViewDegreesPerJoule = 0.04f;
 	constexpr float HitReactionViewMaxDegrees = 2.5f;
 	// How much of its usual recovery a stumbling body manages while it tries to get its feet back under it.
 	constexpr float StumbleCatchShare = 0.75f;
 	constexpr float StumbleCatchTiredShare = 0.35f;
 	constexpr float StumbleStaggerSeconds = 0.35f;
+	// Below this balance a body steps to catch itself; every step that lands wins back this much of it, less when tired.
+	constexpr float AedirStepCatchBelowBalance = 0.7f;
+	// How much of its strength a living body keeps while it is down.
+	constexpr float AedirLivingFallMotorShare = 0.22f;
+	constexpr float AedirStepCatchGain = 0.16f;
+	constexpr float AedirStepCatchTiredShare = 0.4f;
 	constexpr float ComBalanceSampleIntervalSeconds = 0.1f;
 	constexpr float ComBalanceGroundToleranceCm = 12.f;
 	constexpr float ComBalanceTraceUpCm = 20.f;
@@ -182,10 +188,10 @@ namespace
 	{
 		switch (Zone)
 		{
-		case EAedirBodyZone::Head: return 60.f;
-		case EAedirBodyZone::Torso: return 140.f;
-		case EAedirBodyZone::Arm: return 230.f;
-		case EAedirBodyZone::Leg: return 90.f;
+		case EAedirBodyZone::Head: return 90.f;
+		case EAedirBodyZone::Torso: return 230.f;
+		case EAedirBodyZone::Arm: return 400.f;
+		case EAedirBodyZone::Leg: return 330.f;
 		default: checkNoEntry(); return 60.f;
 		}
 	}
@@ -824,6 +830,22 @@ void UAedirBalanceComponent::ApplyBalanceImpact(FVector WorldDirection, float Ma
 	SetBalance(Balance - Magnitude);
 }
 
+void UAedirBalanceComponent::OnRecoveryStepTaken()
+{
+	if (!IsAuthoritative() || bIsRagdoll)
+	{
+		return;
+	}
+	// The foot came down under the body: some of the balance is back, and the lean it was driven into eases.
+	const UAedirStatsComponent* StatsComponent = FindStats();
+	const float Stamina = StatsComponent ? StatsComponent->GetStaminaFraction() : 1.f;
+	const float Gain = AedirStepCatchGain * FMath::Lerp(AedirStepCatchTiredShare, 1.f, Stamina);
+	StumbleDebt = FMath::Max(StumbleDebt - Gain, 0.f);
+	SetBalance(Balance + Gain);
+	LeanDirection *= 0.6f;
+	TimeBelowThreshold = FMath::Max(TimeBelowThreshold - 0.35f, 0.f);
+}
+
 void UAedirBalanceComponent::ApplyImpulseImpact(FVector WorldImpulse)
 {
 	ApplyBalanceImpact(WorldImpulse.GetSafeNormal(), static_cast<float>(WorldImpulse.Size()) * ImpactBalanceScale);
@@ -973,10 +995,10 @@ float UAedirBalanceComponent::GetKnockdownEnergy(EAedirBodyZone Zone)
 	{
 	// A blow that lays a man out at once: a club full on the head, a charge into the chest. Lesser blows unbalance him and he
 	// goes down only if he cannot catch himself.
-	case EAedirBodyZone::Head: return 170.f;
-	case EAedirBodyZone::Torso: return 340.f;
-	case EAedirBodyZone::Arm: return 650.f;
-	case EAedirBodyZone::Leg: return 150.f;
+	case EAedirBodyZone::Head: return 320.f;
+	case EAedirBodyZone::Torso: return 650.f;
+	case EAedirBodyZone::Arm: return 1400.f;
+	case EAedirBodyZone::Leg: return 330.f;
 	default: checkNoEntry(); return 220.f;
 	}
 }
@@ -1053,7 +1075,20 @@ bool UAedirBalanceComponent::IsCenterOfMassOutsideSupport() const
 
 bool UAedirBalanceComponent::GetRecoveryStepRequest(FVector& OutDirectionWorld, float& OutUrgency) const
 {
-	if (bIsRagdoll || IsGettingUp() || !bSupportGrounded || SupportMargin >= ComBalanceRecoveryMarginCm || ComOffsetDirection.IsNearlyZero())
+	if (bIsRagdoll || IsGettingUp())
+	{
+		return false;
+	}
+	// Knocked off balance by a blow, the body steps the way it was driven to get its feet back under it, whether or not
+	// its centre of mass has yet left the feet: that is what keeps it standing.
+	if (Balance < AedirStepCatchBelowBalance && !LeanDirection.IsNearlyZero())
+	{
+		const FVector Local(LeanDirection.X, LeanDirection.Y, 0.f);
+		OutDirectionWorld = GetOwner()->GetActorTransform().TransformVectorNoScale(Local).GetSafeNormal2D();
+		OutUrgency = FMath::Clamp((AedirStepCatchBelowBalance - Balance) / AedirStepCatchBelowBalance + 0.3f, 0.3f, 1.f);
+		return !OutDirectionWorld.IsNearlyZero();
+	}
+	if (!bSupportGrounded || SupportMargin >= ComBalanceRecoveryMarginCm || ComOffsetDirection.IsNearlyZero())
 	{
 		return false;
 	}
@@ -2282,9 +2317,15 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	{
 		Common *= FMath::Max(FMath::SmoothStep(0.f, AedirGetUpTenseSeconds, GetUpTotal - GetUpLeft), RagdollMotorShare);
 	}
-	if (bIsRagdoll || (Stats && Stats->IsDead()))
+	// Fallen but alive and awake, the body keeps some tone: it goes down bending at the knees and hips and catching itself
+	// on its arms, not as a log. Dead or senseless it is slack.
+	if (Stats && (Stats->IsDead() || Stats->IsDying() || Stats->IsKnockedOut()))
 	{
 		Common = RagdollMotorShare;
+	}
+	else if (bIsRagdoll)
+	{
+		Common = AedirLivingFallMotorShare;
 	}
 
 	float Strength[5];

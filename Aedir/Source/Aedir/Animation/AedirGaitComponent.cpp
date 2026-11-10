@@ -18,6 +18,8 @@ namespace
 	// Share of its swing left to an arm carrying a weapon.
 	constexpr float AedirArmedArmSwingShare = 0.15f;
 	constexpr float AedirSwingTwistInterpSpeed = 16.f;
+	// A catching step driven at full urgency lands this much further out under the falling body.
+	constexpr float AedirRecoveryStepUrgentCm = 26.f;
 	// A turn of the chest starts from the hips. A fist adds its weight forward.
 	constexpr float AedirSwingPelvisShare = 0.3f;
 	constexpr float AedirPunchLeanInterpSpeed = 14.f;
@@ -324,9 +326,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			// The foot furthest towards the fall direction takes the catching step.
 			const double ReachLeft = FVector::DotProduct(PlantedContact[0] - ActorLocation, RecoveryDirection);
 			const double ReachRight = FVector::DotProduct(PlantedContact[1] - ActorLocation, RecoveryDirection);
-			const FVector CatchWorld = BalanceComponent->GetCenterOfMassWorld() + RecoveryDirection * RecoveryStepLandingCm;
+			// The harder it was driven, the further the catching foot goes out under it.
+			const FVector CatchWorld = BalanceComponent->GetCenterOfMassWorld() + RecoveryDirection * (RecoveryStepLandingCm + RecoveryUrgency * AedirRecoveryStepUrgentCm);
 			BeginRecoverySwing(ReachRight > ReachLeft ? 1 : 0, CatchWorld, StrideLength * 0.5f * RecoveryStepMaxStrideMultiplier, RecoveryUrgency, BottomZ);
 			RecoveryCooldownRemaining = RecoveryStepCooldownSeconds;
+			BalanceComponent->OnRecoveryStepTaken();
 		}
 		else if (bNextMayStep && FootDistance(NextStepFoot) >= Trigger)
 		{
