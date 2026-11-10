@@ -129,6 +129,8 @@ namespace
 	constexpr float HitReactionBoneImpulseMax = 2500.f;
 	// Part of a blow goes on into the trunk, which turns away from it; the one who takes it feels it in the eyes as well.
 	constexpr float HitReactionTrunkShare = 0.45f;
+	constexpr float HitReactionHeadChestShare = 1.2f;
+	constexpr float HitReactionHeadShare = 2.5f;
 	constexpr float HitReactionViewDegreesPerJoule = 0.04f;
 	constexpr float HitReactionViewMaxDegrees = 2.5f;
 	// How much of its usual recovery a stumbling body manages while it tries to get its feet back under it.
@@ -905,7 +907,13 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	if (Impact.Bone != NAME_None && BodyMesh && BodyMesh->IsAnySimulatingPhysics())
 	{
 		const float ImpulseSize = FMath::Min(Impact.MassKg * Impact.RelativeSpeed * HitReactionBoneImpulseScale, HitReactionBoneImpulseMax);
-		MulticastBoneImpulse(Impact.Bone, Impact.Direction * ImpulseSize, Impact.Location);
+		MulticastBoneImpulse(Impact.Bone, Impact.Direction * (ImpulseSize * (Impact.Zone == EAedirBodyZone::Head ? HitReactionHeadShare : 1.f)), Impact.Location);
+		// A blow to the head snaps it aside and takes the neck and the top of the chest along: the head is light and held
+		// by little, so the same blow moves it much further than it would a limb.
+		if (Impact.Zone == EAedirBodyZone::Head && BodyMesh->GetBodyInstance(TEXT("spine_05")))
+		{
+			MulticastBoneImpulse(TEXT("spine_05"), Impact.Direction * (ImpulseSize * HitReactionHeadChestShare), Impact.Location);
+		}
 		if (BodyMesh->GetBodyInstance(TEXT("spine_03")) && Impact.Bone != TEXT("spine_03"))
 		{
 			MulticastBoneImpulse(TEXT("spine_03"), Impact.Direction * (ImpulseSize * HitReactionTrunkShare), Impact.Location);

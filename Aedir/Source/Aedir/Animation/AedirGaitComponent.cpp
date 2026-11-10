@@ -20,6 +20,8 @@ namespace
 	constexpr float AedirSwingTwistInterpSpeed = 16.f;
 	// A catching step driven at full urgency lands this much further out under the falling body.
 	constexpr float AedirRecoveryStepUrgentCm = 26.f;
+	// Of the turn back that keeps the face ahead while the chest turns, the head takes this share and the neck the rest.
+	constexpr float AedirHeadKeepsAheadShare = 0.55f;
 	// A turn of the chest starts from the hips. A fist adds its weight forward.
 	constexpr float AedirSwingPelvisShare = 0.3f;
 	constexpr float AedirPunchLeanInterpSpeed = 14.f;
@@ -613,8 +615,13 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		LookPitch * NeckPitchShare,
 		FMath::Clamp(LookYaw * NeckYawScale, -NeckYawLimitDegrees, NeckYawLimitDegrees),
 		0.f);
-	GaitState.HeadLookRotation = FMath::RInterpTo(GaitState.HeadLookRotation, HeadTarget, DeltaTime, LookInterpSpeed);
-	GaitState.NeckLookRotation = FMath::RInterpTo(GaitState.NeckLookRotation, NeckTarget, DeltaTime, LookInterpSpeed);
+	// The chest turns with a swing, a punch or a reach, and the neck and head turn back against it: the eyes stay on the
+	// enemy ahead, not on the weapon.
+	const float ChestTurn = SmoothedSwingTwist * (1.f + AedirSwingPelvisShare) + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f);
+	const FRotator HeadKept(HeadTarget.Pitch, HeadTarget.Yaw - ChestTurn * AedirHeadKeepsAheadShare, HeadTarget.Roll);
+	const FRotator NeckKept(NeckTarget.Pitch, NeckTarget.Yaw - ChestTurn * (1.f - AedirHeadKeepsAheadShare), NeckTarget.Roll);
+	GaitState.HeadLookRotation = FMath::RInterpTo(GaitState.HeadLookRotation, HeadKept, DeltaTime, LookInterpSpeed);
+	GaitState.NeckLookRotation = FMath::RInterpTo(GaitState.NeckLookRotation, NeckKept, DeltaTime, LookInterpSpeed);
 
 	ArmBlend = FMath::FInterpTo(ArmBlend, bMoving ? 1.f : 0.f, DeltaTime, ArmBlendInterpSpeed);
 	const float DirectionalArmScale = FMath::Lerp(1.f, ArmSideScale, SideAlpha) * FMath::Lerp(1.f, ArmBackScale, BackAlpha);

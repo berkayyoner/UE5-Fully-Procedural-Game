@@ -420,6 +420,35 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		Push(Player, Args);
 	}
+	else if (Command == TEXT("HitMe"))
+	{
+		// HitMe <bone> <joules> <from yaw> [cut 0|1]: a blow on the player's own body as a weapon would land it, coming from
+		// that side (0 the front, 90 the right), for seeing how the body takes it.
+		const TArray<FString> Tokens = DevToolsTokens(Args);
+		const FName Bone = Tokens.IsValidIndex(0) ? FName(*Tokens[0]) : FName(TEXT("spine_03"));
+		const float Joules = Tokens.IsValidIndex(1) ? FCString::Atof(*Tokens[1]) : 200.f;
+		const float FromYaw = Tokens.IsValidIndex(2) ? FCString::Atof(*Tokens[2]) : 0.f;
+		const bool bCut = Tokens.IsValidIndex(3) && FCString::Atoi(*Tokens[3]) != 0;
+		const FVector From = FRotator(0.f, Player->GetActorRotation().Yaw + FromYaw, 0.f).Vector();
+		const FVector At = Player->GetMesh()->GetBoneLocation(Bone);
+		if (Player->Balance)
+		{
+			FAedirImpactInfo Impact;
+			Impact.Bone = Bone;
+			Impact.Zone = UAedirCombatComponent::ClassifyBodyZone(Bone);
+			Impact.EnergyJoules = Joules * 0.45f;
+			Impact.Direction = -From;
+			Impact.Location = At + From * 10.f;
+			Impact.MassKg = 3.f;
+			Impact.RelativeSpeed = FMath::Sqrt(2.f * Joules / 3.f) * 100.f;
+			Player->Balance->ApplyHitReaction(Impact);
+		}
+		if (Player->Wounds)
+		{
+			Player->Wounds->AddWound(Bone, At + From * 10.f, From, bCut ? EAedirDamageType::Slash : EAedirDamageType::Blunt, Joules, 0.f, -From * 200.f);
+		}
+		DevToolsReport(FString::Printf(TEXT("Hit on %s: %.0f J from %.0f deg, balance %.2f"), *Bone.ToString(), Joules, FromYaw, Player->Balance ? Player->Balance->GetBalance() : 1.f));
+	}
 	else if (Command == TEXT("Knockdown"))
 	{
 		Knockdown(Player, Args);
@@ -1352,6 +1381,27 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 		{
 			DevToolsReport(FString::Printf(TEXT("  arm %s"), *Player->Combat->DevDescribeArm(Hand)));
 		}
+		// Where the face and the chest look, against the body's own forward; and which foot is ahead.
+		const float BodyYaw = static_cast<float>(Player->GetActorRotation().Yaw);
+		const auto FacingYaw = [Mesh, BodyYaw](const TCHAR* Bone, const TCHAR* Ahead)
+		{
+			const FVector Look = (Mesh->GetBoneLocation(FName(Ahead)) - Mesh->GetBoneLocation(FName(Bone))).GetSafeNormal2D();
+			return FRotator::NormalizeAxis(static_cast<float>(Look.Rotation().Yaw) - BodyYaw);
+		};
+		const FVector Forward = Player->GetActorForwardVector().GetSafeNormal2D();
+		const double LeftAhead = FVector::DotProduct(Mesh->GetBoneLocation(TEXT("foot_l")) - Player->GetActorLocation(), Forward);
+		const double RightAhead = FVector::DotProduct(Mesh->GetBoneLocation(TEXT("foot_r")) - Player->GetActorLocation(), Forward);
+		const FVector ShoulderLine = Mesh->GetBoneLocation(TEXT("upperarm_r")) - Mesh->GetBoneLocation(TEXT("upperarm_l"));
+		const float ChestYaw = FRotator::NormalizeAxis(static_cast<float>(FVector::CrossProduct(FVector::UpVector, ShoulderLine).GetSafeNormal2D().Rotation().Yaw) - BodyYaw);
+		const FVector EyeLine = Mesh->GetBoneLocation(Mesh->GetBoneIndex(TEXT("FACIAL_R_Eye")) != INDEX_NONE ? FName(TEXT("FACIAL_R_Eye")) : FName(TEXT("head"))) - Mesh->GetBoneLocation(Mesh->GetBoneIndex(TEXT("FACIAL_L_Eye")) != INDEX_NONE ? FName(TEXT("FACIAL_L_Eye")) : FName(TEXT("neck_01")));
+		const FTransform HeadT = Mesh->GetBoneTransform(Mesh->GetBoneIndex(TEXT("head")));
+		const float HeadYawY = FRotator::NormalizeAxis(static_cast<float>(HeadT.GetUnitAxis(EAxis::Y).Rotation().Yaw) - BodyYaw);
+		(void)EyeLine;
+		(void)FacingYaw;
+		const FAedirGaitState& Gait = Player->Gait->GetGaitState();
+		DevToolsReport(FString::Printf(TEXT("  facing: chest %.0f, head axis %.0f; feet ahead L %.0f R %.0f (lead %s); pose spine twist %.0f pelvis yaw %.0f neck %.0f head %.0f"), ChestYaw, HeadYawY, LeftAhead, RightAhead, LeftAhead > RightAhead ? TEXT("left") : TEXT("right"),
+			Gait.SpineTwistYaw, Gait.PelvisRotation.Yaw, Gait.NeckLookRotation.Yaw, Gait.HeadLookRotation.Yaw));
+		DevToolsReport(FString::Printf(TEXT("  view yaw %.0f, body yaw %.0f, view relative to body %.0f"), Player->GetControlRotation().Yaw, BodyYaw, FRotator::NormalizeAxis(Player->GetControlRotation().Yaw - BodyYaw)));
 	}
 
 	for (const AAedirItemActor* Item : Player->Interaction->GetWaistItemsCopy())

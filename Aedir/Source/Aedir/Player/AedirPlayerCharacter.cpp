@@ -1536,6 +1536,11 @@ void AAedirPlayerCharacter::PoseArm(const FString& PoseArgs)
 	RunDevCommand(TEXT("PoseArm"), PoseArgs, true);
 }
 
+void AAedirPlayerCharacter::HitMe(const FString& HitArgs)
+{
+	RunDevCommand(TEXT("HitMe"), HitArgs, false);
+}
+
 void AAedirPlayerCharacter::GripInfo()
 {
 	RunDevCommand(TEXT("GripInfo"), FString(), false);

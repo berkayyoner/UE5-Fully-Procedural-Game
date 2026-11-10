@@ -231,6 +231,10 @@ namespace
 	// A weapon at least this long is held in both hands by a player whose other hand is free; shorter ones (knives, daggers,
 	// tools) in one.
 	constexpr float AedirTwoHandMinLengthCm = 50.f;
+	// The side of the weapon is read this far along the blade from the hands, and the leading foot changes over once that
+	// point is this far across the middle.
+	constexpr float AedirLeadFootBladeReachCm = 30.f;
+	constexpr float AedirLeadFootSwitchCm = 10.f;
 	constexpr float AedirBladeBlockMassKg = 40.f;
 	constexpr float AedirBladePushMaxSpeed = 500.f;
 	// A clash of weapons: the fastest a blade's tip counts, and how much of the push the struck hand takes.
@@ -707,6 +711,7 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	}
 
 	UpdateArms(DeltaTime);
+	UpdateLeadFoot();
 	UpdateObjectCarry();
 	UpdateHeldWeight(DeltaTime);
 	UpdateGripJoint(DeltaTime);
@@ -2037,6 +2042,34 @@ void UAedirCombatComponent::UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& 
 bool UAedirCombatComponent::IsLeadFootRight() const
 {
 	return bLeadFootRight;
+}
+
+void UAedirCombatComponent::UpdateLeadFoot()
+{
+	// The foot opposite the weapon leads: with the blade on the right the left foot is forward, with it on the left the
+	// right one. Which side the blade is on is where the hands carrying it are; it changes over only once the hands are
+	// clearly across, so the feet do not shuffle while the weapon passes the middle.
+	const EAedirHand Carrying = GetGripHand();
+	if (!GetHeldItem(Carrying))
+	{
+		const EAedirHand Other = Carrying == EAedirHand::Left ? EAedirHand::Right : EAedirHand::Left;
+		if (!GetHeldItem(Other))
+		{
+			return;
+		}
+		bLeadFootRight = Other == EAedirHand::Left;
+		return;
+	}
+	const FAedirArmDynamics& Arm = GetArm(Carrying);
+	const FVector Local = Creature->GetActorTransform().InverseTransformPosition(Arm.HandWorld + Arm.WeaponDir * AedirLeadFootBladeReachCm);
+	if (Local.Y > AedirLeadFootSwitchCm)
+	{
+		bLeadFootRight = false;
+	}
+	else if (Local.Y < -AedirLeadFootSwitchCm)
+	{
+		bLeadFootRight = true;
+	}
 }
 
 float UAedirCombatComponent::ComputeImpactEnergy(float MassKg, float SpeedCmPerSec)

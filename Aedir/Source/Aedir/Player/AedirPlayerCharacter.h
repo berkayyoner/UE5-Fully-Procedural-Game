@@ -280,6 +280,9 @@ public:
 	void PoseArm(const FString& PoseArgs);
 
 	UFUNCTION(Exec)
+	void HitMe(const FString& HitArgs);
+
+	UFUNCTION(Exec)
 	void GripInfo();
 
 	// A blow taken shakes the view: the shake starts full and fades, turning further the harder the blow.

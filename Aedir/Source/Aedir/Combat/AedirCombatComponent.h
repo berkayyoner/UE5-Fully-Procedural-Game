@@ -213,6 +213,7 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	bool bLeadFootRight = true;
+	void UpdateLeadFoot();
 
 	// Spring stiffness of an unloaded arm in 1/s^2. Scaled down by weight, low strength, low stamina and injury.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")
