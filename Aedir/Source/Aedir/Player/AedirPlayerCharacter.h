@@ -283,6 +283,9 @@ public:
 	void HitMe(const FString& HitArgs);
 
 	UFUNCTION(Exec)
+	void ElbowCheck(const FString& CheckArgs);
+
+	UFUNCTION(Exec)
 	void GripInfo();
 
 	// A blow taken shakes the view: the shake starts full and fades, turning further the harder the blow.

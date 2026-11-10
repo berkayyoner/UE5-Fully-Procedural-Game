@@ -44,6 +44,14 @@ namespace
 	// A hand above the shoulder bends its elbow out to the side and a little forward.
 	constexpr float AedirElbowRaiseRangeCm = 25.f;
 	constexpr float AedirElbowRaisedOutCm = 60.f;
+	TAutoConsoleVariable<int32> CVarAedirElbowGuard(TEXT("aedir.ElbowGuard"), 1, TEXT("Keep every elbow from bending the wrong way (1)."));
+	// The elbow may rise over the arm's line only with the hand this far above the shoulder, fully from the second height,
+	// and then by at most this share of its way out; it may come in across the chest by at most this share.
+	constexpr float AedirElbowUpAllowedFromCm = 15.f;
+	constexpr float AedirElbowUpAllowedFullCm = 40.f;
+	constexpr double AedirElbowMaxUpShare = 0.5;
+	constexpr double AedirElbowMaxInShare = 0.35;
+	constexpr double AedirElbowGuardMinPoleCm = 20.0;
 	constexpr float AedirElbowRaisedForwardCm = 18.f;
 	// The handle crosses the palm, so it never lies closer to the line of the forearm than this.
 	constexpr float AedirWristMinBladeDegrees = 28.f;
@@ -457,7 +465,37 @@ void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, con
 	const FVector RaisedJointTarget = (RootPosition + Effector) * 0.5 + OutwardMesh * AedirElbowRaisedOutCm + ForwardMesh * AedirElbowRaisedForwardCm;
 	// In a weapon stance the pose says where the elbow goes.
 	const FVector HintJointTarget = (RootPosition + Effector) * 0.5 + ActorToMesh.RotateVector(ElbowHint) * AedirElbowHintDistanceCm;
-	const FVector JointTarget = FMath::Lerp(FMath::Lerp(LowJointTarget, RaisedJointTarget, RaisedShare), HintJointTarget, FMath::Clamp(ElbowHintAlpha, 0.f, 1.f));
+	FVector JointTarget = FMath::Lerp(FMath::Lerp(LowJointTarget, RaisedJointTarget, RaisedShare), HintJointTarget, FMath::Clamp(ElbowHintAlpha, 0.f, 1.f));
+	// An elbow never stands up over the line from shoulder to hand unless the hand itself is up over the head, and never
+	// folds in across the chest with it: that is an arm bent the wrong way. Whatever the hints ask, the side of the line the
+	// elbow goes to is kept down and out.
+	if (CVarAedirElbowGuard.GetValueOnAnyThread() != 0)
+	{
+		const FVector Line = (Effector - RootPosition).GetSafeNormal();
+		const FVector Mid = (RootPosition + Effector) * 0.5;
+		FVector Pole = FVector::VectorPlaneProject(JointTarget - Mid, Line);
+		const FVector UpOff = FVector::VectorPlaneProject(-DownMesh, Line).GetSafeNormal();
+		const FVector OutOff = FVector::VectorPlaneProject(OutwardMesh, Line).GetSafeNormal();
+		const double PoleSize = FMath::Max(Pole.Size(), static_cast<double>(AedirElbowGuardMinPoleCm));
+		// How far above the shoulder the hand is: up there the elbow may rise, out to the side.
+		const float HandHigh = FMath::SmoothStep(AedirElbowUpAllowedFromCm, AedirElbowUpAllowedFullCm, static_cast<float>(-FVector::DotProduct(Effector - RootPosition, DownMesh)));
+		const double Up = FVector::DotProduct(Pole, UpOff);
+		const double AllowedUp = PoleSize * AedirElbowMaxUpShare * HandHigh;
+		if (!UpOff.IsNearlyZero() && Up > AllowedUp)
+		{
+			Pole -= UpOff * (Up - AllowedUp);
+		}
+		if (!OutOff.IsNearlyZero() && FVector::DotProduct(Pole, OutOff) < -PoleSize * AedirElbowMaxInShare)
+		{
+			Pole -= OutOff * (FVector::DotProduct(Pole, OutOff) + PoleSize * AedirElbowMaxInShare);
+		}
+		if (Pole.Size() < AedirElbowGuardMinPoleCm)
+		{
+			// Nothing left to go by: down, a little out.
+			Pole = (-UpOff * 0.8 + OutOff * 0.6).GetSafeNormal() * AedirElbowGuardMinPoleCm;
+		}
+		JointTarget = Mid + Pole.GetSafeNormal() * PoleSize;
+	}
 
 	FVector SolvedJointPosition;
 	FVector SolvedEndPosition;

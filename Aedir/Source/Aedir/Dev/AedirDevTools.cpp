@@ -420,6 +420,41 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		Push(Player, Args);
 	}
+	else if (Command == TEXT("ElbowCheck"))
+	{
+		// ElbowCheck <label>: whether either elbow is bent the wrong way. A real elbow folds so that it points down, out from
+		// the body or back; one pointing up, in across the chest and forward at once is bent backwards. The score is how far
+		// the elbow lies towards that wrong side of the line from shoulder to wrist (1 fully wrong, -1 fully right).
+		const TArray<FString> Tokens = DevToolsTokens(Args);
+		const FString Label = Tokens.IsValidIndex(0) ? Tokens[0] : FString(TEXT("pose"));
+		const USkeletalMeshComponent* Mesh = Player->GetMesh();
+		const FTransform Body = Player->GetActorTransform();
+		FString Line = FString::Printf(TEXT("[Elbow] %s"), *Label);
+		for (const TCHAR* Suffix : { TEXT("_l"), TEXT("_r") })
+		{
+			const float Outward = FString(Suffix) == TEXT("_l") ? -1.f : 1.f;
+			const FVector Shoulder = Body.InverseTransformPosition(Mesh->GetBoneLocation(FName(*FString::Printf(TEXT("upperarm%s"), Suffix))));
+			const FVector Elbow = Body.InverseTransformPosition(Mesh->GetBoneLocation(FName(*FString::Printf(TEXT("lowerarm%s"), Suffix))));
+			const FVector Wrist = Body.InverseTransformPosition(Mesh->GetBoneLocation(FName(*FString::Printf(TEXT("hand%s"), Suffix))));
+			const FVector Along = (Wrist - Shoulder).GetSafeNormal();
+			const FVector Off = FVector::VectorPlaneProject(Elbow - Shoulder, Along);
+			const FVector Wrong = FVector::VectorPlaneProject(FVector(0.5f, -Outward * 0.6f, 0.6f), Along).GetSafeNormal();
+			const float Bend = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct((Shoulder - Elbow).GetSafeNormal(), (Wrist - Elbow).GetSafeNormal())), -1.f, 1.f)));
+			// Wrong is an elbow standing up over the arm's line with the hand not up over the shoulder, or folded in across
+			// the chest: up share scaled down as the hand rises, plus the share pointing inward.
+			const FVector UpSide = FVector::VectorPlaneProject(FVector::UpVector, Along).GetSafeNormal();
+			const FVector InSide = FVector::VectorPlaneProject(FVector(0.f, -Outward, 0.f), Along).GetSafeNormal();
+			const float HandHigh = FMath::SmoothStep(15.f, 40.f, static_cast<float>(Wrist.Z - Shoulder.Z));
+			const FVector OffDir = Off.GetSafeNormal();
+			const float Score = Off.Size() < 2.0 ? 0.f : FMath::Max(static_cast<float>(FVector::DotProduct(OffDir, UpSide)) - 0.5f * HandHigh, static_cast<float>(FVector::DotProduct(OffDir, InSide)) - 0.35f);
+			(void)Wrong;
+			// The forearm as the upper arm sees it: a real elbow only ever folds it one way in that frame.
+			const FTransform Upper = Mesh->GetBoneTransform(Mesh->GetBoneIndex(FName(*FString::Printf(TEXT("upperarm%s"), Suffix))));
+			const FVector ForearmInUpper = Upper.InverseTransformVectorNoScale(Mesh->GetBoneLocation(FName(*FString::Printf(TEXT("hand%s"), Suffix))) - Mesh->GetBoneLocation(FName(*FString::Printf(TEXT("lowerarm%s"), Suffix)))).GetSafeNormal();
+			Line += FString::Printf(TEXT(" %s score=%.2f bend=%.0f off=%.0f fl=%.2f,%.2f,%.2f"), FString(Suffix) == TEXT("_l") ? TEXT("left") : TEXT("right"), Score, 180.f - Bend, Off.Size(), ForearmInUpper.X, ForearmInUpper.Y, ForearmInUpper.Z);
+		}
+		UE_LOG(LogAedir, Display, TEXT("%s"), *Line);
+	}
 	else if (Command == TEXT("HitMe"))
 	{
 		// HitMe <bone> <joules> <from yaw> [cut 0|1]: a blow on the player's own body as a weapon would land it, coming from

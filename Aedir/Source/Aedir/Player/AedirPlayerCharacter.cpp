@@ -1536,6 +1536,11 @@ void AAedirPlayerCharacter::PoseArm(const FString& PoseArgs)
 	RunDevCommand(TEXT("PoseArm"), PoseArgs, true);
 }
 
+void AAedirPlayerCharacter::ElbowCheck(const FString& CheckArgs)
+{
+	RunDevCommand(TEXT("ElbowCheck"), CheckArgs, false);
+}
+
 void AAedirPlayerCharacter::HitMe(const FString& HitArgs)
 {
 	RunDevCommand(TEXT("HitMe"), HitArgs, false);

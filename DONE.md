@@ -178,3 +178,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The face stays on the enemy: as the chest and hips turn with a swing or a reach, the neck and head turn back against it, so the head follows the view and not the weapon.
 - The foot opposite the weapon leads: blade on the right, left foot forward; on the left, right foot forward, changing over only once the blade is clearly across the middle.
 - A blow to the head snaps it aside harder and takes the top of the chest with it. Dev: HitMe <bone> <joules> <from yaw> [cut] lands a blow on the player's own body; GripInfo also prints chest and head facing and which foot leads.
+- No elbow bends the wrong way: whatever pose or hint asks, the arm solver keeps the elbow from standing up over the shoulder-to-hand line (unless the hand is up over the head) and from folding in across the chest (aedir.ElbowGuard). Dev: ElbowCheck <label> logs how far each elbow lies to the wrong side.
