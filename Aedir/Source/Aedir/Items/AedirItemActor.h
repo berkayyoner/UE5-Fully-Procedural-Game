@@ -89,6 +89,8 @@ public:
 
 	// Held, the item passes the body of the one holding it for a while, as while it is drawn up out of the belt.
 	void SetPassesOwnBody(bool bPasses);
+	// Stuck in a body: passes through flesh until it is pulled out.
+	void SetLodged(bool bNewLodged);
 
 	// How the item injures: blunt force, cutting edge or point.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
@@ -240,6 +242,10 @@ public:
 	// reversed, or held by the blade while half-swording. Returns the new way.
 	EGripTurn TurnInHand(AAedirCreature* Creature, bool bHalfSword);
 
+	// Moves the carrying hand this far down the handle (towards the pommel), so a second fist fits above it under the guard.
+	void SlideHandDownHandle(const AAedirCreature* Creature, float SlideCm);
+	float GetHandleSlideCm() const { return HandleSlideCm; }
+
 private:
 	UFUNCTION()
 	void OnRep_Holder();
@@ -273,11 +279,13 @@ private:
 	TEnumAsByte<ECollisionResponse> FreePawnResponse = ECR_Block;
 
 	bool bPassesOwnBody = false;
+	bool bLodged = false;
 	void ApplyItemMass();
 	FTransform ComputeHoldTransform(const FTransform& HoldOffset) const;
 	FTransform ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const;
 
 	EGripTurn GripTurn = EGripTurn::Normal;
+	float HandleSlideCm = 0.f;
 	float MadeGripLocalCm = 0.f;
 	float MadeWeaponLength = 0.f;
 	void ResetGripTurn();

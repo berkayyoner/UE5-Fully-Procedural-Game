@@ -559,6 +559,8 @@ private:
 	TArray<FName> MotorGroupBones[5];
 	float AppliedMotorStrength[5] = { -1.f, -1.f, -1.f, -1.f, -1.f };
 	float MotorUpdateTimer = 0.f;
+	// How slack the body still is from the last blow it took, from 1 just struck down to 0.
+	float Flinch = 0.f;
 
 	// Centre of mass model, refreshed every 0.1 s on every machine.
 	float ComSampleTimer = 0.f;

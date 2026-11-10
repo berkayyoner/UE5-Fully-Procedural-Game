@@ -40,8 +40,8 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAedirHitReactionStaggerThresholdTest, "Aedir.H
 
 bool FAedirHitReactionStaggerThresholdTest::RunTest(const FString& Parameters)
 {
-	TestFalse(TEXT("Loss below 0.25 does not stagger"), UAedirBalanceComponent::ShouldStagger(0.24f));
-	TestTrue(TEXT("Loss at 0.25 staggers"), UAedirBalanceComponent::ShouldStagger(0.25f));
+	TestFalse(TEXT("Loss below 0.15 does not stagger"), UAedirBalanceComponent::ShouldStagger(0.14f));
+	TestTrue(TEXT("Loss at 0.15 staggers"), UAedirBalanceComponent::ShouldStagger(0.15f));
 	TestTrue(TEXT("Full loss staggers"), UAedirBalanceComponent::ShouldStagger(1.f));
 
 	return true;
@@ -87,7 +87,7 @@ bool FAedirHitReactionStaggerSpeedTest::RunTest(const FString& Parameters)
 {
 	TestTrue(TEXT("No energy gives no push"), FMath::IsNearlyZero(UAedirBalanceComponent::ComputeStaggerSpeed(0.f)));
 	TestTrue(TEXT("Push grows with energy"), UAedirBalanceComponent::ComputeStaggerSpeed(100.f) > UAedirBalanceComponent::ComputeStaggerSpeed(50.f));
-	TestTrue(TEXT("Push is capped at 350 cm/s"), FMath::IsNearlyEqual(UAedirBalanceComponent::ComputeStaggerSpeed(10000.f), 350.f, 0.001f));
+	TestTrue(TEXT("Push is capped at 420 cm/s"), FMath::IsNearlyEqual(UAedirBalanceComponent::ComputeStaggerSpeed(10000.f), 420.f, 0.001f));
 
 	return true;
 }

@@ -116,12 +116,14 @@ struct FAedirArmDynamics
 	float ActiveAlpha = 0.f;
 	bool bInitialized = false;
 
-	// A blade that bit in and stuck: the tip stays where it went in, in the frame of that bone, until it works free.
+	// A blade that bit in and stuck: the tip stays where it went in, in the frame of that bone, until it is pulled free.
 	TWeakObjectPtr<USkeletalMeshComponent> LodgedIn;
 	FName LodgedBone = NAME_None;
 	FVector LodgedTipLocal = FVector::ZeroVector;
 	FVector LodgedDirLocal = FVector::ZeroVector;
 	float LodgedSeconds = 0.f;
+	// How deep it went in: the deeper, the harder the pull that tears it out.
+	float LodgedDepthCm = 0.f;
 };
 
 // How a held weapon has been moving, to know what it takes to hold and swing it.
@@ -138,6 +140,8 @@ struct FAedirHeldWeight
 struct FAedirTimedContact
 {
 	TWeakObjectPtr<AActor> Target;
+	// The part of a body struck (a limb, the trunk, the head), so one cut that goes on from an arm into the trunk lands twice.
+	FName Part = NAME_None;
 	double Time = 0.0;
 };
 
@@ -534,6 +538,8 @@ private:
 
 	// Holds a stuck blade where it is lodged until the time is up or the arm tears it out.
 	void UpdateLodged(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
+	// The blade stays in the bone it struck, this deep along the way it went in.
+	void LodgeIn(FAedirArmDynamics& Arm, USkeletalMeshComponent* VictimBody, FName Bone, const FHitResult& Hit, const FVector& Way, float DepthCm);
 
 	// The arm is stopped where it met a body: it goes back to where it was before this frame's move and loses its speed,
 	// a share of it thrown back the other way.
@@ -548,6 +554,7 @@ private:
 
 	// The body each hand's weapon last touched, and when: a blade that stays against it does not strike again.
 	TWeakObjectPtr<AActor> TouchVictim[2];
+	FName TouchPart[2];
 	double TouchTime[2] = { -1.0, -1.0 };
 	void ApplyRemoteArmState(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	void PublishArmState(EAedirHand Hand, const FAedirArmDynamics& Arm);
@@ -560,8 +567,10 @@ private:
 	void ResolveClash(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Other, const FVector& OtherVelocity, const FVector& Normal, float CombinedSpeed, double Now);
 
 	void UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
-	bool IsImpactOnCooldown(EAedirHand Hand, const AActor* Victim, double Now) const;
-	void RegisterImpact(EAedirHand Hand, AActor* Victim, double Now);
+	bool IsImpactOnCooldown(EAedirHand Hand, const AActor* Victim, double Now, FName Part = NAME_None) const;
+	void RegisterImpact(EAedirHand Hand, AActor* Victim, double Now, FName Part = NAME_None);
+	// The part of a body a bone belongs to, for telling blows apart.
+	static FName GetStruckPart(FName Bone);
 	void ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& From, const FVector& To, const FVector& FromVelocity, const FVector& ToVelocity, float RadiusCm, float MassEff, double Now);
 
 	// Where what the hand strikes with really is this frame: the held thing as the body carries it, or the fist. From the
@@ -603,6 +612,8 @@ private:
 	void UpdateGrip(float DeltaTime);
 	void UpdateObjectCarry();
 	float GetSecondaryGripLocalCm(const AAedirItemActor* Item) const;
+	// Where on the item the upper hand of a plain two-handed hold closes: the top of the handle, under the guard.
+	static float GetUpperHandleCm(const AAedirItemActor* Item);
 	FVector ComputeHalfSwordDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	float GetHalfSwordForwardDegrees(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	FVector ComputeCarriedDir(EAedirHand Hand) const;

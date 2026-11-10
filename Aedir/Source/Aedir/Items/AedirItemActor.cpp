@@ -132,6 +132,8 @@ void AAedirItemActor::AttachToCreatureHand(AAedirCreature* Creature, EAedirHand 
 	}
 
 	HeldGripShiftCm = GripShiftCm;
+	HandleSlideCm = 0.f;
+	bLodged = false;
 	// Drawn from the belt, the blade comes out of its scabbard, which stays where it hung.
 	if (bHolstered)
 	{
@@ -235,7 +237,23 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 	const FQuat Turn = GripTurn == EGripTurn::Reversed ? FQuat(FVector::UpVector, UE_PI) : FQuat::Identity;
 	const FQuat RelativeRotation = HandRotation.Inverse() * ItemRotation * Turn;
 	const FVector RelativePalm = HandRotation.Inverse().RotateVector(Palm - HandLocation);
-	return FTransform(RelativeRotation, RelativePalm - RelativeRotation.RotateVector(FVector(GripLocalCm + HeldGripShiftCm, 0.f, 0.f)));
+	return FTransform(RelativeRotation, RelativePalm - RelativeRotation.RotateVector(FVector(GripLocalCm + HeldGripShiftCm - HandleSlideCm, 0.f, 0.f)));
+}
+
+void AAedirItemActor::SlideHandDownHandle(const AAedirCreature* Creature, float SlideCm)
+{
+	if (!Creature || Holder != Creature || !bUseHandGrip || !GetRootComponent() || FMath::IsNearlyEqual(SlideCm, HandleSlideCm, 0.05f))
+	{
+		return;
+	}
+	HandleSlideCm = SlideCm;
+	// Still settling into the hand, it settles to the new place.
+	if (SettleAlpha < 1.f)
+	{
+		SettleTo = ComputeHandGrip(Creature, HeldHand);
+		return;
+	}
+	SetActorRelativeTransform(ComputeHandGrip(Creature, HeldHand));
 }
 
 void AAedirItemActor::LeaveSheathOnBelt()
@@ -497,7 +515,21 @@ void AAedirItemActor::SetPassesOwnBody(bool bPasses)
 	// does not notice.
 	if (Mesh && bHeldCollision)
 	{
-		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPasses ? ECR_Ignore : ECR_Block);
+		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPasses || bLodged ? ECR_Ignore : ECR_Block);
+	}
+}
+
+void AAedirItemActor::SetLodged(bool bNewLodged)
+{
+	if (bLodged == bNewLodged)
+	{
+		return;
+	}
+	bLodged = bNewLodged;
+	// Stuck in a body it lies inside that body's flesh, which it must not shove out of its way.
+	if (Mesh && bHeldCollision)
+	{
+		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged ? ECR_Ignore : ECR_Block);
 	}
 }
 
@@ -820,7 +852,7 @@ void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	Mesh->BodyInstance.SetMaskFilter(Creature->GetHeldMaskBit());
-	Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody ? ECR_Ignore : ECR_Block);
+	Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged ? ECR_Ignore : ECR_Block);
 	if (SettleAlpha >= 1.f)
 	{
 		WeldToHand();

@@ -11,7 +11,8 @@ namespace
 {
 	constexpr float AedirLegInjurySpeedPenalty = 0.45f;
 	constexpr float AedirDazeSpeedPenalty = 0.3f;
-	constexpr float AedirStaggerSpeedMultiplier = 0.8f;
+	// Reeling from a blow, the feet are busy catching the body: it barely makes way where it wanted to go.
+	constexpr float AedirStaggerSpeedMultiplier = 0.25f;
 	constexpr float AedirForwardArcDegrees = 45.f;
 	constexpr float AedirSideArcDegrees = 90.f;
 	constexpr float AedirBackArcDegrees = 135.f;

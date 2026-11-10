@@ -82,11 +82,17 @@ namespace
 	constexpr float HitReactionAthleticsLossScale = 0.5f;
 	constexpr float HitReactionStaminaLossScale = 0.5f;
 	constexpr float HitReactionDefaultAthletism = 10.f;
-	constexpr float HitReactionStaggerThreshold = 0.25f;
-	constexpr float HitReactionStaggerMinSeconds = 0.4f;
-	constexpr float HitReactionStaggerMaxSeconds = 1.f;
-	constexpr float HitReactionStaggerSpeedPerJoule = 2.f;
-	constexpr float HitReactionStaggerSpeedMax = 350.f;
+	constexpr float HitReactionStaggerThreshold = 0.15f;
+	constexpr float HitReactionStaggerMinSeconds = 0.5f;
+	constexpr float HitReactionStaggerMaxSeconds = 1.4f;
+	constexpr float HitReactionStaggerSpeedPerJoule = 3.f;
+	constexpr float HitReactionStaggerSpeedMax = 420.f;
+	// A blow slackens the whole body for a moment, by how hard it pushed the part it landed on: struck, a body gives to the
+	// blow instead of springing straight back into its stance.
+	constexpr float HitFlinchFullImpulse = 1600.f;
+	constexpr float HitFlinchMaxSlack = 0.55f;
+	constexpr float HitFlinchSeconds = 0.45f;
+	constexpr float HitFlinchMotorInterval = 0.05f;
 	constexpr float HitReactionStaggerRecoveryScale = 0.7f;
 	constexpr float HitReactionDazeEnergyRef = 60.f;
 	constexpr float HitReactionDazeMaxSeconds = 2.5f;
@@ -117,10 +123,10 @@ namespace
 	TAutoConsoleVariable<int32> CVarAedirBodyControl(TEXT("aedir.BodyControl"), -1, TEXT("The whole body on the engine's physics control: 1 on, 0 off (older motors), -1 as each body is set. Read when a body is made."));
 	TAutoConsoleVariable<int32> CVarAedirPhysicalHips(TEXT("aedir.PhysicalHips"), -1, TEXT("Hips tied to the capsule by a motorised joint, limbs held by their joints: 1 on, 0 off, -1 as each body is set. Read when a body is made."));
 	TAutoConsoleVariable<int32> CVarAedirHipVelocityTarget(TEXT("aedir.HipVelocityTarget"), 1, TEXT("The hip joint damps towards the capsule's own speed (1) or towards standing still against it (0)."));
-	constexpr float HitReactionBoneImpulseScale = 0.12f;
-	constexpr float HitReactionBoneImpulseMax = 4500.f;
+	constexpr float HitReactionBoneImpulseScale = 0.2f;
+	constexpr float HitReactionBoneImpulseMax = 6000.f;
 	// Part of a blow goes on into the trunk, which turns away from it; the one who takes it feels it in the eyes as well.
-	constexpr float HitReactionTrunkShare = 0.5f;
+	constexpr float HitReactionTrunkShare = 0.7f;
 	constexpr float HitReactionViewDegreesPerJoule = 0.04f;
 	constexpr float HitReactionViewMaxDegrees = 6.f;
 	// How much of its usual recovery a stumbling body manages while it tries to get its feet back under it.
@@ -174,10 +180,10 @@ namespace
 	{
 		switch (Zone)
 		{
-		case EAedirBodyZone::Head: return 135.f;
-		case EAedirBodyZone::Torso: return 400.f;
-		case EAedirBodyZone::Arm: return 600.f;
-		case EAedirBodyZone::Leg: return 240.f;
+		case EAedirBodyZone::Head: return 110.f;
+		case EAedirBodyZone::Torso: return 260.f;
+		case EAedirBodyZone::Arm: return 420.f;
+		case EAedirBodyZone::Leg: return 170.f;
 		default: checkNoEntry(); return 60.f;
 		}
 	}
@@ -961,10 +967,10 @@ float UAedirBalanceComponent::GetKnockdownEnergy(EAedirBodyZone Zone)
 	{
 	// A blow that lays a man out at once: a club full on the head, a charge into the chest. Lesser blows unbalance him and he
 	// goes down only if he cannot catch himself.
-	case EAedirBodyZone::Head: return 440.f;
-	case EAedirBodyZone::Torso: return 1000.f;
-	case EAedirBodyZone::Arm: return 1800.f;
-	case EAedirBodyZone::Leg: return 380.f;
+	case EAedirBodyZone::Head: return 300.f;
+	case EAedirBodyZone::Torso: return 600.f;
+	case EAedirBodyZone::Arm: return 1200.f;
+	case EAedirBodyZone::Leg: return 260.f;
 	default: checkNoEntry(); return 220.f;
 	}
 }
@@ -1588,6 +1594,8 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 		BodyMesh->AddImpulseAtLocation(Impulse, Location, Bone);
 	}
 	PushHips(Impulse);
+	Flinch = FMath::Max(Flinch, FMath::Clamp(static_cast<float>(Impulse.Size()) / HitFlinchFullImpulse, 0.f, 1.f));
+	MotorUpdateTimer = 0.f;
 }
 
 void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
@@ -2240,12 +2248,14 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 		return;
 	}
 
+	const bool bWasFlinching = Flinch > 0.f;
+	Flinch = FMath::Max(Flinch - DeltaTime / HitFlinchSeconds, 0.f);
 	MotorUpdateTimer -= DeltaTime;
 	if (!bForce && MotorUpdateTimer > 0.f)
 	{
 		return;
 	}
-	MotorUpdateTimer = IsGettingUp() ? 0.05f : 0.2f;
+	MotorUpdateTimer = IsGettingUp() || bWasFlinching ? HitFlinchMotorInterval : 0.2f;
 
 	const UAedirStatsComponent* Stats = FindStats();
 	const float StaminaFraction = Stats ? FMath::Clamp(Stats->GetStaminaFraction(), 0.f, 1.f) : 1.f;
@@ -2256,6 +2266,8 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	{
 		Common *= 0.7f;
 	}
+	// Just struck, the body gives to the blow and finds its strength again over a moment.
+	Common *= 1.f - HitFlinchMaxSlack * FMath::SmoothStep(0.f, 1.f, Flinch);
 	// Coming up off the ground the limbs are still heavy and find their strength as the body rises.
 	Common *= FMath::Lerp(1.f, GetUpMuscleShare, GetGetUpShare());
 	// A limp body tenses gradually as it starts to move, instead of being snapped into the first pose of getting up.
