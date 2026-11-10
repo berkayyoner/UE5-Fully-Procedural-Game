@@ -175,7 +175,7 @@ public:
 	float FistDamage = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
-	float ImpactDamageScale = 0.08f;
+	float ImpactDamageScale = 0.16f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingStaminaCost = 5.f;
@@ -538,6 +538,8 @@ private:
 
 	// Holds a stuck blade where it is lodged until the time is up or the arm tears it out.
 	void UpdateLodged(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
+	// A direction for the blade from the hand, turned about the hand until the blade lies clear of the own body.
+	FVector ClearDirOfOwnBody(EAedirHand Hand, const FVector& HandWorld, const FVector& Dir) const;
 	// The blade stays in the bone it struck, this deep along the way it went in.
 	void LodgeIn(FAedirArmDynamics& Arm, USkeletalMeshComponent* VictimBody, FName Bone, const FHitResult& Hit, const FVector& Way, float DepthCm);
 

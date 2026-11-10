@@ -241,11 +241,6 @@ public:
 	// Turns the weapon held in this creature's hand to its next way of holding: a hafted one over on its haft, a blade
 	// reversed, or held by the blade while half-swording. Returns the new way.
 	EGripTurn TurnInHand(AAedirCreature* Creature, bool bHalfSword);
-
-	// Moves the carrying hand this far down the handle (towards the pommel), so a second fist fits above it under the guard.
-	void SlideHandDownHandle(const AAedirCreature* Creature, float SlideCm);
-	float GetHandleSlideCm() const { return HandleSlideCm; }
-
 private:
 	UFUNCTION()
 	void OnRep_Holder();
@@ -285,7 +280,6 @@ private:
 	FTransform ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const;
 
 	EGripTurn GripTurn = EGripTurn::Normal;
-	float HandleSlideCm = 0.f;
 	float MadeGripLocalCm = 0.f;
 	float MadeWeaponLength = 0.f;
 	void ResetGripTurn();

@@ -280,6 +280,12 @@ public:
 	void GripInfo();
 
 	UFUNCTION(Exec)
+	void JitterProbe(const FString& ProbeArgs);
+
+	UFUNCTION(Exec)
+	void MouseDrive(const FString& DriveArgs);
+
+	UFUNCTION(Exec)
 	void Holster(const FString& HandArgs);
 
 	UFUNCTION(Exec)

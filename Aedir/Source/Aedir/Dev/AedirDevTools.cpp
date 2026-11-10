@@ -460,6 +460,14 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		GripInfo(Player, Args);
 	}
+	else if (Command == TEXT("JitterProbe"))
+	{
+		JitterProbe(Player, Args);
+	}
+	else if (Command == TEXT("MouseDrive"))
+	{
+		MouseDrive(Player, Args);
+	}
 	else if (Command == TEXT("ShapeInfo"))
 	{
 		// What each physical shape of the player's hands and of the item they hold is, for collision: its own channel and the
@@ -1047,8 +1055,10 @@ void UAedirDevTools::ShotCam(AAedirPlayerCharacter* Player, const FString& Args)
 	const float LookHeight = Tokens.IsValidIndex(3) ? FCString::Atof(*Tokens[3]) : -30.f;
 
 	const FRotator Yaw(0.f, YawDegrees, 0.f);
-	const FVector RelativeLocation = Yaw.RotateVector(FVector(Distance, 0.f, 0.f)) + FVector(0.f, 0.f, Height);
-	const FVector LookAt(0.f, 0.f, LookHeight);
+	const FVector RelativeLocation = Yaw.RotateVector(FVector(Distance, 0.f, 0.f)) + FVector(Tokens.IsValidIndex(4) ? FCString::Atof(*Tokens[4]) : 0.f, 0.f, Height);
+	// A fifth number moves the point looked at forward, and the camera with it: to look closely at what the hands hold.
+	const float LookForward = Tokens.IsValidIndex(4) ? FCString::Atof(*Tokens[4]) : 0.f;
+	const FVector LookAt(LookForward, 0.f, LookHeight);
 
 	ACameraActor* Camera = Player->GetWorld()->SpawnActor<ACameraActor>();
 	if (!Camera)
@@ -1075,6 +1085,171 @@ void UAedirDevTools::PoseArm(AAedirPlayerCharacter* Player, const FString& Args)
 	Player->Combat->SetGuard(Hand, FCString::Atoi(*Tokens[1]) != 0);
 	Player->Combat->DevSetArmAim(Hand, FVector2D(FCString::Atof(*Tokens[2]), FCString::Atof(*Tokens[3])), FCString::Atof(*Tokens[4]));
 	Player->Combat->SetThrustMode(FCString::Atoi(*Tokens[5]) != 0);
+}
+
+void UAedirDevTools::JitterProbe(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// Every frame, where the hands, the elbows and the held item's two ends are in the body's own frame. Smooth movement
+	// changes speed slowly; shaking turns it round frame after frame. Reports, for each point, how often its way reverses
+	// while moving, its root mean square acceleration and the largest, and how fast the item's axis turns back and forth.
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	const float Seconds = Tokens.IsValidIndex(0) ? FMath::Clamp(FCString::Atof(*Tokens[0]), 0.2f, 60.f) : 3.f;
+	const FString Label = Tokens.IsValidIndex(1) ? FString(Tokens[1]) : FString(TEXT("probe"));
+	constexpr int32 ProbePoints = 6;
+	struct FProbe
+	{
+		FVector Prev[ProbePoints];
+		FVector PrevStep[ProbePoints];
+		bool bHasPrev = false;
+		bool bHasStep = false;
+		double SumAcc[ProbePoints] = {};
+		double MaxAcc[ProbePoints] = {};
+		int32 Reversals[ProbePoints] = {};
+		// Shaking turns the acceleration round frame after frame; a swing turns it round a few times a second.
+		FVector PrevAcc[ProbePoints];
+		int32 AccFlips[ProbePoints] = {};
+		int32 Frames = 0;
+		FVector PrevAxis = FVector::ZeroVector;
+		FVector PrevAxisStep = FVector::ZeroVector;
+		int32 AxisReversals = 0;
+		double SumAxisTurn = 0.0;
+		float Elapsed = 0.f;
+		uint64 LastFrame = 0;
+		FString Label;
+	};
+	TSharedRef<FProbe> Probe = MakeShared<FProbe>();
+	Probe->Label = Label;
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	Player->GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(Player, [Player, Probe, Handle, Seconds, Label]()
+	{
+		// A timer this short fires several times in one frame; only the first one of each counts.
+		if (Probe->LastFrame == GFrameCounter)
+		{
+			return;
+		}
+		Probe->LastFrame = GFrameCounter;
+		const float Dt = Player->GetWorld()->GetDeltaSeconds();
+		Probe->Elapsed += Dt;
+		const USkeletalMeshComponent* Mesh = Player->GetMesh();
+		const FTransform Body = Player->GetActorTransform();
+		const AAedirItemActor* Item = Player->Interaction ? Player->Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
+		if (!Item && Player->Interaction)
+		{
+			Item = Player->Interaction->GetHeldItem(EAedirHand::Left);
+		}
+		const FVector Axis = Item ? Body.InverseTransformVectorNoScale(Item->GetActorRotation().Vector()) : FVector::ForwardVector;
+		const double HalfLength = Item ? Item->BodyScale.X * 50.0 : 0.0;
+		FVector Now[ProbePoints] = {
+			Body.InverseTransformPosition(Mesh->GetBoneLocation(TEXT("hand_r"))),
+			Body.InverseTransformPosition(Mesh->GetBoneLocation(TEXT("hand_l"))),
+			Body.InverseTransformPosition(Mesh->GetBoneLocation(TEXT("lowerarm_r"))),
+			Body.InverseTransformPosition(Mesh->GetBoneLocation(TEXT("lowerarm_l"))),
+			Item ? Body.InverseTransformPosition(Item->GetActorLocation()) + Axis * HalfLength : FVector::ZeroVector,
+			Item ? Body.InverseTransformPosition(Item->GetActorLocation()) - Axis * HalfLength : FVector::ZeroVector };
+		if (Probe->bHasPrev && Dt > KINDA_SMALL_NUMBER)
+		{
+			for (int32 Index = 0; Index < ProbePoints; ++Index)
+			{
+				const FVector Step = Now[Index] - Probe->Prev[Index];
+				if (Probe->bHasStep)
+				{
+					const FVector AccVector = (Step - Probe->PrevStep[Index]) / (Dt * Dt);
+					const double Acc = AccVector.Size();
+					if (Probe->Frames > 1 && FVector::DotProduct(AccVector, Probe->PrevAcc[Index]) < -0.5 * AccVector.Size() * Probe->PrevAcc[Index].Size() && Acc > 300.0)
+					{
+						++Probe->AccFlips[Index];
+					}
+					Probe->PrevAcc[Index] = AccVector;
+					Probe->SumAcc[Index] += Acc * Acc;
+					Probe->MaxAcc[Index] = FMath::Max(Probe->MaxAcc[Index], Acc);
+					if (FVector::DotProduct(Step, Probe->PrevStep[Index]) < 0.0 && Step.Size() > 0.15 && Probe->PrevStep[Index].Size() > 0.15)
+					{
+						++Probe->Reversals[Index];
+					}
+				}
+				Probe->PrevStep[Index] = Step;
+			}
+			const FVector AxisStep = Axis - Probe->PrevAxis;
+			if (Probe->bHasStep)
+			{
+				Probe->SumAxisTurn += FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Axis, Probe->PrevAxis), -1.0, 1.0)));
+				if (FVector::DotProduct(AxisStep, Probe->PrevAxisStep) < 0.0 && AxisStep.Size() > 0.004 && Probe->PrevAxisStep.Size() > 0.004)
+				{
+					++Probe->AxisReversals;
+				}
+			}
+			Probe->PrevAxisStep = AxisStep;
+			Probe->bHasStep = true;
+			++Probe->Frames;
+		}
+		for (int32 Index = 0; Index < ProbePoints; ++Index)
+		{
+			Probe->Prev[Index] = Now[Index];
+		}
+		Probe->PrevAxis = Axis;
+		Probe->bHasPrev = true;
+
+		if (Probe->Elapsed >= Seconds)
+		{
+			Player->GetWorldTimerManager().ClearTimer(*Handle);
+			static const TCHAR* const Names[ProbePoints] = { TEXT("handR"), TEXT("handL"), TEXT("elbowR"), TEXT("elbowL"), TEXT("tip"), TEXT("pommel") };
+			FString Line = FString::Printf(TEXT("[Jitter] %s frames=%d"), *Probe->Label, Probe->Frames);
+			const double Frames = FMath::Max(Probe->Frames - 1, 1);
+			for (int32 Index = 0; Index < ProbePoints; ++Index)
+			{
+				Line += FString::Printf(TEXT(" %s rev/s=%.1f shake/s=%.1f rmsAcc=%.0f maxAcc=%.0f"), Names[Index], Probe->Reversals[Index] / Probe->Elapsed, Probe->AccFlips[Index] / Probe->Elapsed, FMath::Sqrt(Probe->SumAcc[Index] / Frames), Probe->MaxAcc[Index]);
+			}
+			Line += FString::Printf(TEXT(" axis rev/s=%.1f turn deg/s=%.0f"), Probe->AxisReversals / Probe->Elapsed, Probe->SumAxisTurn / Probe->Elapsed);
+			UE_LOG(LogAedir, Display, TEXT("%s"), *Line);
+		}
+	}), 0.0001f, true);
+}
+
+void UAedirDevTools::MouseDrive(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// The mouse goes round an ellipse: a wide swing side to side, rising and falling with it, as a player swinging does.
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	if (Tokens.Num() < 5 || !Player->Combat)
+	{
+		return;
+	}
+	// Hand 2 is the view instead: the mouse turning the camera and the body with it, without a button held.
+	const bool bLook = FCString::Atoi(*Tokens[0]) == 2;
+	const EAedirHand Hand = FCString::Atoi(*Tokens[0]) == 0 ? EAedirHand::Left : EAedirHand::Right;
+	const float Seconds = FMath::Clamp(FCString::Atof(*Tokens[1]), 0.1f, 60.f);
+	const float AmpX = FCString::Atof(*Tokens[2]);
+	const float AmpY = FCString::Atof(*Tokens[3]);
+	const float Hz = FMath::Max(FCString::Atof(*Tokens[4]), 0.01f);
+	TSharedRef<float> Elapsed = MakeShared<float>(0.f);
+	TSharedRef<uint64> LastFrame = MakeShared<uint64>(0);
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	Player->GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(Player, [Player, Elapsed, LastFrame, Handle, Seconds, Hand, bLook, AmpX, AmpY, Hz]()
+	{
+		if (*LastFrame == GFrameCounter)
+		{
+			return;
+		}
+		*LastFrame = GFrameCounter;
+		const float Dt = Player->GetWorld()->GetDeltaSeconds();
+		const float Before = *Elapsed;
+		*Elapsed += Dt;
+		const float W = 2.f * UE_PI * Hz;
+		// The mouse position is AmpX sin, AmpY sin twice as fast: a figure eight. Its change this frame is the input.
+		const FVector2D Delta(AmpX * (FMath::Sin(W * *Elapsed) - FMath::Sin(W * Before)), AmpY * (FMath::Sin(2.f * W * *Elapsed) - FMath::Sin(2.f * W * Before)));
+		if (bLook)
+		{
+			Player->AddControllerYawInput(static_cast<float>(Delta.X) * 0.5f);
+			Player->AddControllerPitchInput(static_cast<float>(-Delta.Y) * 0.25f);
+		}
+		else
+		{
+			Player->Combat->AddSwingInput(Hand, Delta, Dt);
+		}
+		if (*Elapsed >= Seconds)
+		{
+			Player->GetWorldTimerManager().ClearTimer(*Handle);
+		}
+	}), 0.0001f, true);
 }
 
 void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args)
@@ -1152,6 +1327,27 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 		DevToolsReport(FString::Printf(TEXT("%s hand on %s: carrier=%d along=%.1f offAxis=%.1f knuckleAngle=%.0f palm local %.0f %.0f %.0f bladePitch=%.0f bladeYaw=%.0f wrist=%.0f turn=%.0f elbow local %.0f %.0f %.0f"),
 			Hand == EAedirHand::Left ? TEXT("Left") : TEXT("Right"), *Item->ItemName.ToString(), Item->HeldHand == Hand ? 1 : 0, AlongItem, OffAxis, KnucklesToBlade,
 			Local.X, Local.Y, Local.Z, Axis.Rotation().Pitch, FRotator::NormalizeAxis(Axis.Rotation().Yaw - Player->GetActorRotation().Yaw), ForearmToBlade, WristTurn, ElbowLocal.X, ElbowLocal.Y, ElbowLocal.Z));
+		// Where the model itself really ends along the same axis, every part of it: the pommel end and the point.
+		double Low = 1e9;
+		double High = -1e9;
+		TArray<UStaticMeshComponent*> Parts;
+		Item->GetComponents<UStaticMeshComponent>(Parts);
+		for (const UStaticMeshComponent* Part : Parts)
+		{
+			if (!Part || !Part->GetStaticMesh() || !Part->IsVisible())
+			{
+				continue;
+			}
+			const FBox Box = Part->GetStaticMesh()->GetBoundingBox();
+			for (int32 Corner = 0; Corner < 8; ++Corner)
+			{
+				const FVector P((Corner & 1) ? Box.Max.X : Box.Min.X, (Corner & 2) ? Box.Max.Y : Box.Min.Y, (Corner & 4) ? Box.Max.Z : Box.Min.Z);
+				const double A = FVector::DotProduct(Part->GetComponentTransform().TransformPosition(P) - Item->GetActorLocation(), Axis);
+				Low = FMath::Min(Low, A);
+				High = FMath::Max(High, A);
+			}
+		}
+		DevToolsReport(FString::Printf(TEXT("  %s model along the item: %.1f .. %.1f"), *Item->ItemName.ToString(), Low, High));
 	}
 
 	for (const AAedirItemActor* Item : Player->Interaction->GetWaistItemsCopy())

@@ -1135,6 +1135,9 @@ void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatCom
 			{
 				ReadyOffset.Y = -ReadyOffset.Y;
 			}
+			// It is held before the chest, so it turns with the chest when a swing turns it; held still in front of the hips
+			// it would pull the arm out straight across the body.
+			ReadyOffset = FRotator(0.f, SmoothedSwingTwist, 0.f).RotateVector(ReadyOffset);
 			Blend.Apply(ActorTransform.TransformPosition(ReadyOffset), FMath::SmoothStep(0.f, 1.f, OtherGuardAlpha) * ReadyHandShare);
 		}
 	}

@@ -31,6 +31,11 @@ namespace
 	// The second hand on a weapon is pulled onto its grip and held there, and lets go when it is torn off.
 	constexpr float GripJointMinAlpha = 0.3f;
 	constexpr float GripJointPalmShare = 0.7f;
+	// The same reach rule the pose uses for the second hand (see the procedural anim instance): the palm reaches this much
+	// past the wrist, the hands stay at least this far apart, and the hand moves back this far at a time.
+	constexpr double GripJointPalmReachCm = 4.0;
+	constexpr double GripJointMinHandsApartCm = 12.0;
+	constexpr double GripJointSlideStepCm = 2.0;
 	constexpr float GripJointStiffness = 300000.f;
 	constexpr float GripJointDamping = 9000.f;
 	constexpr float GripJointTearCm = 14.f;
@@ -170,7 +175,23 @@ void UAedirCombatComponent::UpdateGripJoint(float DeltaTime)
 	const FTransform OtherWorld = Body->GetBoneTransform(Body->GetBoneIndex(OtherBone));
 	const FVector PalmWorld = FMath::Lerp(OtherWorld.GetLocation(), Body->GetBoneLocation(FName(*FString::Printf(TEXT("middle_01%s"), Suffix))), GripJointPalmShare);
 	const FTransform PrimaryWorld = Body->GetBoneTransform(Body->GetBoneIndex(PrimaryBone));
-	const FVector TargetWorld = PrimaryWorld.TransformPosition(PointInPrimary);
+	FVector TargetWorld = PrimaryWorld.TransformPosition(PointInPrimary);
+
+	// The pose takes hold nearer the carrying hand where the arm cannot reach the place on the weapon; the spring pulls to
+	// that same nearer place, or the two would pull the hand back and forth between them and set both arms shaking.
+	{
+		const FVector Shoulder = Body->GetBoneLocation(FName(*FString::Printf(TEXT("upperarm%s"), Suffix)));
+		const FVector Elbow = Body->GetBoneLocation(FName(*FString::Printf(TEXT("lowerarm%s"), Suffix)));
+		const double ArmCm = FVector::Dist(Shoulder, Elbow) + FVector::Dist(Elbow, OtherWorld.GetLocation()) + GripJointPalmReachCm;
+		const FVector BladeWorld = PrimaryWorld.TransformVectorNoScale(BladeInPrimary).GetSafeNormal();
+		double Slide = FVector::DotProduct(TargetWorld - PrimaryWorld.GetLocation(), BladeWorld) - GripJointMinHandsApartCm;
+		while (Slide > 0.0 && FVector::Dist(TargetWorld, Shoulder) > ArmCm)
+		{
+			TargetWorld -= BladeWorld * GripJointSlideStepCm;
+			PointInPrimary -= BladeInPrimary.GetSafeNormal() * GripJointSlideStepCm;
+			Slide -= GripJointSlideStepCm;
+		}
+	}
 
 	// A spring from the palm to its place on the weapon: the hand is pulled onto the grip and kept there wherever the arms go,
 	// as the place itself moves when the hand slides up the blade.

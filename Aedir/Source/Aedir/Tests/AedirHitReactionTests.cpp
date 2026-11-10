@@ -87,7 +87,7 @@ bool FAedirHitReactionStaggerSpeedTest::RunTest(const FString& Parameters)
 {
 	TestTrue(TEXT("No energy gives no push"), FMath::IsNearlyZero(UAedirBalanceComponent::ComputeStaggerSpeed(0.f)));
 	TestTrue(TEXT("Push grows with energy"), UAedirBalanceComponent::ComputeStaggerSpeed(100.f) > UAedirBalanceComponent::ComputeStaggerSpeed(50.f));
-	TestTrue(TEXT("Push is capped at 420 cm/s"), FMath::IsNearlyEqual(UAedirBalanceComponent::ComputeStaggerSpeed(10000.f), 420.f, 0.001f));
+	TestTrue(TEXT("Push is capped at 300 cm/s"), FMath::IsNearlyEqual(UAedirBalanceComponent::ComputeStaggerSpeed(10000.f), 300.f, 0.001f));
 
 	return true;
 }

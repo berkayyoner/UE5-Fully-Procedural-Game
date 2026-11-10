@@ -1490,6 +1490,16 @@ void AAedirPlayerCharacter::GripInfo()
 	RunDevCommand(TEXT("GripInfo"), FString(), false);
 }
 
+void AAedirPlayerCharacter::JitterProbe(const FString& ProbeArgs)
+{
+	RunDevCommand(TEXT("JitterProbe"), ProbeArgs, false);
+}
+
+void AAedirPlayerCharacter::MouseDrive(const FString& DriveArgs)
+{
+	RunDevCommand(TEXT("MouseDrive"), DriveArgs, true);
+}
+
 void AAedirPlayerCharacter::DropHand(int32 RightHand)
 {
 	if (Interaction)

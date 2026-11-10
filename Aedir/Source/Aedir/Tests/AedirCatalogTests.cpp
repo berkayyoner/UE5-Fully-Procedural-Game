@@ -68,14 +68,17 @@ bool FAedirCatalogWeaponTest::RunTest(const FString& Parameters)
 
 	const FAedirItemDef* Dagger = UAedirItemCatalog::Find(FName(TEXT("Dagger")));
 	const FAedirItemDef* Mace = UAedirItemCatalog::Find(FName(TEXT("Mace")));
-	const FAedirItemDef* Longsword = UAedirItemCatalog::Find(FName(TEXT("Sword")));
+	const FAedirItemDef* Longsword = UAedirItemCatalog::Find(FName(TEXT("Longsword")));
+	const FAedirItemDef* Sword = UAedirItemCatalog::Find(FName(TEXT("Sword")));
 	TestTrue(TEXT("Dagger pierces"), Dagger && Dagger->DamageType == EAedirDamageType::Pierce);
 	TestTrue(TEXT("Spear pierces"), Spear->DamageType == EAedirDamageType::Pierce);
 	TestTrue(TEXT("Mace is blunt"), Mace && Mace->DamageType == EAedirDamageType::Blunt);
-	TestTrue(TEXT("The sword cuts"), Longsword && Longsword->DamageType == EAedirDamageType::Slash);
+	TestTrue(TEXT("The sword cuts"), Sword && Sword->DamageType == EAedirDamageType::Slash);
 
 	TestTrue(TEXT("Spear is two-handed"), Spear->bTwoHanded);
-	TestTrue(TEXT("The sword takes both hands"), Longsword && Longsword->bTwoHanded);
+	TestTrue(TEXT("The longsword takes both hands"), Longsword && Longsword->bTwoHanded);
+	// Its hilt holds one fist: an arming sword, held in one hand.
+	TestFalse(TEXT("The arming sword takes one hand"), Sword && Sword->bTwoHanded);
 	TestFalse(TEXT("The mace is one-handed"), Mace && Mace->bTwoHanded);
 
 	return true;

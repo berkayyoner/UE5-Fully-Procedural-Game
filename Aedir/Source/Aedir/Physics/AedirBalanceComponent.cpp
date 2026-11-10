@@ -85,8 +85,8 @@ namespace
 	constexpr float HitReactionStaggerThreshold = 0.15f;
 	constexpr float HitReactionStaggerMinSeconds = 0.5f;
 	constexpr float HitReactionStaggerMaxSeconds = 1.4f;
-	constexpr float HitReactionStaggerSpeedPerJoule = 3.f;
-	constexpr float HitReactionStaggerSpeedMax = 420.f;
+	constexpr float HitReactionStaggerSpeedPerJoule = 2.f;
+	constexpr float HitReactionStaggerSpeedMax = 300.f;
 	// A blow slackens the whole body for a moment, by how hard it pushed the part it landed on: struck, a body gives to the
 	// blow instead of springing straight back into its stance.
 	constexpr float HitFlinchFullImpulse = 1600.f;
@@ -123,8 +123,8 @@ namespace
 	TAutoConsoleVariable<int32> CVarAedirBodyControl(TEXT("aedir.BodyControl"), -1, TEXT("The whole body on the engine's physics control: 1 on, 0 off (older motors), -1 as each body is set. Read when a body is made."));
 	TAutoConsoleVariable<int32> CVarAedirPhysicalHips(TEXT("aedir.PhysicalHips"), -1, TEXT("Hips tied to the capsule by a motorised joint, limbs held by their joints: 1 on, 0 off, -1 as each body is set. Read when a body is made."));
 	TAutoConsoleVariable<int32> CVarAedirHipVelocityTarget(TEXT("aedir.HipVelocityTarget"), 1, TEXT("The hip joint damps towards the capsule's own speed (1) or towards standing still against it (0)."));
-	constexpr float HitReactionBoneImpulseScale = 0.2f;
-	constexpr float HitReactionBoneImpulseMax = 6000.f;
+	constexpr float HitReactionBoneImpulseScale = 0.15f;
+	constexpr float HitReactionBoneImpulseMax = 2500.f;
 	// Part of a blow goes on into the trunk, which turns away from it; the one who takes it feels it in the eyes as well.
 	constexpr float HitReactionTrunkShare = 0.7f;
 	constexpr float HitReactionViewDegreesPerJoule = 0.04f;
@@ -180,10 +180,10 @@ namespace
 	{
 		switch (Zone)
 		{
-		case EAedirBodyZone::Head: return 110.f;
-		case EAedirBodyZone::Torso: return 260.f;
-		case EAedirBodyZone::Arm: return 420.f;
-		case EAedirBodyZone::Leg: return 170.f;
+		case EAedirBodyZone::Head: return 60.f;
+		case EAedirBodyZone::Torso: return 140.f;
+		case EAedirBodyZone::Arm: return 230.f;
+		case EAedirBodyZone::Leg: return 90.f;
 		default: checkNoEntry(); return 60.f;
 		}
 	}
@@ -967,10 +967,10 @@ float UAedirBalanceComponent::GetKnockdownEnergy(EAedirBodyZone Zone)
 	{
 	// A blow that lays a man out at once: a club full on the head, a charge into the chest. Lesser blows unbalance him and he
 	// goes down only if he cannot catch himself.
-	case EAedirBodyZone::Head: return 300.f;
-	case EAedirBodyZone::Torso: return 600.f;
-	case EAedirBodyZone::Arm: return 1200.f;
-	case EAedirBodyZone::Leg: return 260.f;
+	case EAedirBodyZone::Head: return 170.f;
+	case EAedirBodyZone::Torso: return 340.f;
+	case EAedirBodyZone::Arm: return 650.f;
+	case EAedirBodyZone::Leg: return 150.f;
 	default: checkNoEntry(); return 220.f;
 	}
 }

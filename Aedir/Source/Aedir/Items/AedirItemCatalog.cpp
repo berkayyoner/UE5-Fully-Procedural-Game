@@ -59,7 +59,7 @@ namespace
 		// Weapons, at the weight such weapons really had. Blades run along X with the hilt at -length/2; shafts are centred on the hand.
 		Definitions.Add(CatalogMakeWeapon(TEXT("Dagger"), TEXT("Dagger"), 0.45f, 30.f, EAedirDamageType::Pierce, 4.f, false, CatalogSteel, FVector(0.30, 0.03, 0.006)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("ShortSword"), TEXT("Short Sword"), 0.95f, 70.f, EAedirDamageType::Slash, 8.f, false, CatalogSteel, FVector(0.70, 0.045, 0.008)));
-		Definitions.Add(CatalogMakeWeapon(TEXT("Sword"), TEXT("Sword"), 1.25f, 105.f, EAedirDamageType::Slash, 11.f, true, CatalogSteel, FVector(1.05, 0.05, 0.01)));
+		Definitions.Add(CatalogMakeWeapon(TEXT("Sword"), TEXT("Sword"), 1.25f, 105.f, EAedirDamageType::Slash, 11.f, false, CatalogSteel, FVector(1.05, 0.05, 0.01)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("Longsword"), TEXT("Longsword"), 1.6f, 118.f, EAedirDamageType::Slash, 14.f, true, CatalogSteel, FVector(1.18, 0.052, 0.011)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("BattleAxe"), TEXT("Battle Axe"), 1.8f, 80.f, EAedirDamageType::Slash, 12.f, false, CatalogWood, FVector(0.80, 0.03, 0.03)));
 		Definitions.Add(CatalogMakeWeapon(TEXT("Mace"), TEXT("Mace"), 1.7f, 65.f, EAedirDamageType::Blunt, 9.f, false, CatalogWood, FVector(0.65, 0.03, 0.03)));
@@ -181,8 +181,10 @@ namespace
 
 		SetGrip(TEXT("Dagger"), -21.f, 8.f, true);
 		SetGrip(TEXT("ShortSword"), -42.f, 8.f, true);
+		// The longsword is held as its hilt was measured in the game: the upper fist just under the guard, the lower one just
+		// under it (span = from the lower hand to the upper). The sword's hilt holds one fist: it is an arming sword.
 		SetGrip(TEXT("Sword"), -65.f, 9.f, true);
-		SetGrip(TEXT("Longsword"), -78.f, 11.f, true);
+		SetGrip(TEXT("Longsword"), -77.6f, 10.85f, true);
 		SetGrip(TEXT("BattleAxe"), -28.f);
 		SetGrip(TEXT("Mace"), -22.f);
 		SetGrip(TEXT("Warhammer"), -32.f);
@@ -245,7 +247,7 @@ namespace
 		AddModelWeapon(TEXT("BloodySword"), TEXT("Bloody Sword"), 1.20f, 95.0f, -10.1f, 74.8f, EAedirDamageType::Slash, 11.0f, false, FVector(0.748, 0.048, 0.010), TEXT("/Game/Aedir/Fab/BloodySword/Sword_uitlbiaga_High.Sword_uitlbiaga_High"), true, false, -47.1f, 11.1f, 1.00f);
 		AddModelWeapon(TEXT("RustySword"), TEXT("Rusty Sword"), 1.10f, 88.0f, -9.4f, 69.3f, EAedirDamageType::Slash, 9.0f, false, FVector(0.693, 0.048, 0.010), TEXT("/Game/Aedir/Fab/RustySword/uh2tagpfa_LOD0_TIER1_000.uh2tagpfa_LOD0_TIER1_000"), false, false, -43.6f, 10.3f, 1.00f);
 		AddModelWeapon(TEXT("IronSword"), TEXT("Iron Sword"), 1.15f, 92.0f, -8.6f, 74.8f, EAedirDamageType::Slash, 10.0f, false, FVector(0.748, 0.048, 0.010), TEXT("/Game/Aedir/Fab/IronSword/viking_sword/StaticMeshes/viking_sword.viking_sword"), false, false, -45.7f, 9.5f, 1.00f);
-		AddModelWeapon(TEXT("SteelSword"), TEXT("Steel Sword"), 1.45f, 116.0f, -13.8f, 88.5f, EAedirDamageType::Slash, 13.0f, true, FVector(0.885, 0.050, 0.010), TEXT("/Game/Aedir/Fab/SteelSword/Sword_Long_A.Sword_Long_A"), false, false, -57.4f, 15.2f, 1.00f);
+		AddModelWeapon(TEXT("SteelSword"), TEXT("Steel Sword"), 1.45f, 116.0f, -13.8f, 88.5f, EAedirDamageType::Slash, 13.0f, true, FVector(0.885, 0.050, 0.010), TEXT("/Game/Aedir/Fab/SteelSword/Sword_Long_A.Sword_Long_A"), false, false, -63.1f, 10.35f, 1.00f);
 		AddModelWeapon(TEXT("SilverShortsword"), TEXT("Silver Shortsword"), 0.90f, 72.0f, -9.5f, 53.1f, EAedirDamageType::Slash, 9.0f, false, FVector(0.531, 0.048, 0.010), TEXT("/Game/Aedir/Fab/SilverShortsword/scene/StaticMeshes/scene.scene"), false, true, -35.6f, 10.4f, 1.00f);
 		AddModelWeapon(TEXT("AshwardBlade"), TEXT("Ashward Blade"), 1.30f, 100.0f, -11.9f, 76.2f, EAedirDamageType::Slash, 12.0f, false, FVector(0.762, 0.048, 0.010), TEXT("/Game/Atris_swords/Meshes/SM_Sword1a.SM_Sword1a"), false, false, -49.5f, 13.1f, 1.00f);
 		AddModelWeapon(TEXT("WardenSword"), TEXT("Warden's Sword"), 1.30f, 98.0f, -11.6f, 74.7f, EAedirDamageType::Slash, 12.0f, false, FVector(0.747, 0.048, 0.010), TEXT("/Game/Atris_swords/Meshes/SM_Sword1b.SM_Sword1b"), false, false, -48.5f, 12.8f, 1.00f);
@@ -254,10 +256,10 @@ namespace
 		AddModelWeapon(TEXT("SlenderSword"), TEXT("Slender Sword"), 1.00f, 88.0f, -9.5f, 69.0f, EAedirDamageType::Slash, 10.0f, false, FVector(0.690, 0.048, 0.010), TEXT("/Game/Atris_swords/Meshes/SM_Sword1g.SM_Sword1g"), false, false, -43.6f, 10.5f, 1.00f);
 		AddModelWeapon(TEXT("Cleaver"), TEXT("Cleaver"), 1.30f, 68.0f, -8.0f, 52.0f, EAedirDamageType::Slash, 11.0f, false, FVector(0.520, 0.048, 0.010), TEXT("/Game/Atris_swords/Meshes/SM_Sword1j.SM_Sword1j"), false, false, -33.7f, 8.8f, 1.00f);
 		AddModelWeapon(TEXT("Axe"), TEXT("Axe"), 1.30f, 62.0f, 0.0f, 62.0f, EAedirDamageType::Slash, 11.0f, false, FVector(0.620, 0.030, 0.030), TEXT("/Game/Aedir/Fab/Axe/Axe.Axe"), false, true, -21.1f, 13.0f, 1.00f);
-		AddModelWeapon(TEXT("ElvenBattleaxe"), TEXT("Elven Battleaxe"), 2.40f, 100.0f, 0.0f, 100.0f, EAedirDamageType::Slash, 16.0f, true, FVector(1.000, 0.030, 0.030), TEXT("/Game/Aedir/Fab/ElvenBattleaxe/SF_Golden_double_axe_NakedSingularity.SF_Golden_double_axe_NakedSingularity"), false, false, -34.0f, 35.0f, 0.55f);
+		AddModelWeapon(TEXT("ElvenBattleaxe"), TEXT("Elven Battleaxe"), 2.40f, 100.0f, 0.0f, 100.0f, EAedirDamageType::Slash, 16.0f, true, FVector(1.000, 0.030, 0.030), TEXT("/Game/Aedir/Fab/ElvenBattleaxe/SF_Golden_double_axe_NakedSingularity.SF_Golden_double_axe_NakedSingularity"), false, false, -48.5f, 35.0f, 0.55f);
 		AddModelWeapon(TEXT("RustyIronMace"), TEXT("Rusty Iron Mace"), 1.60f, 60.0f, 0.0f, 60.0f, EAedirDamageType::Blunt, 10.0f, false, FVector(0.600, 0.030, 0.030), TEXT("/Game/Aedir/Fab/RustyIronMace/SM_Mace.SM_Mace"), false, false, -20.4f, 13.0f, 1.00f);
 		AddModelWeapon(TEXT("WoodsmanAxe"), TEXT("Woodsman's Axe"), 1.50f, 75.0f, 0.0f, 75.0f, EAedirDamageType::Slash, 12.0f, false, FVector(0.750, 0.030, 0.030), TEXT("/Game/Atris_axes/Meshes/SM_axe2.SM_axe2"), true, false, -25.5f, 13.0f, 1.00f);
-		AddModelWeapon(TEXT("BeardedGreataxe"), TEXT("Bearded Greataxe"), 2.60f, 100.0f, 0.0f, 100.0f, EAedirDamageType::Slash, 16.0f, true, FVector(1.000, 0.030, 0.030), TEXT("/Game/Atris_axes/Meshes/SM_axe3.SM_axe3"), true, false, -34.0f, 35.0f, 1.00f);
+		AddModelWeapon(TEXT("BeardedGreataxe"), TEXT("Bearded Greataxe"), 2.60f, 100.0f, 0.0f, 100.0f, EAedirDamageType::Slash, 16.0f, true, FVector(1.000, 0.030, 0.030), TEXT("/Game/Atris_axes/Meshes/SM_axe3.SM_axe3"), true, false, -48.5f, 35.0f, 1.00f);
 		AddModelWeapon(TEXT("HandAxe"), TEXT("Hand Axe"), 0.90f, 50.0f, 0.0f, 50.0f, EAedirDamageType::Slash, 8.0f, false, FVector(0.500, 0.030, 0.030), TEXT("/Game/Atris_axes/Meshes/SM_axe4.SM_axe4"), true, false, -17.0f, 13.0f, 1.00f);
 		AddModelWeapon(TEXT("RaiderAxe"), TEXT("Raider's Axe"), 1.40f, 70.0f, 0.0f, 70.0f, EAedirDamageType::Slash, 12.0f, false, FVector(0.700, 0.030, 0.030), TEXT("/Game/Atris_axes/Meshes/SM_axe6.SM_axe6"), true, false, -23.8f, 13.0f, 1.00f);
 		AddModelWeapon(TEXT("CrescentAxe"), TEXT("Crescent Axe"), 1.60f, 76.0f, 0.0f, 76.0f, EAedirDamageType::Slash, 13.0f, false, FVector(0.760, 0.030, 0.030), TEXT("/Game/Atris_axes/Meshes/SM_axe7a.SM_axe7a"), true, false, -25.8f, 13.0f, 1.00f);
@@ -282,11 +284,11 @@ namespace
 		AddWornModel(TEXT("RustyIronShield"), TEXT("Rusty Iron Shield"), 4.5f, EAedirBodyZone::Arm, 0.7f, TEXT("lowerarm_l"), FVector(0.6, 0.6, 0.08),
 			TEXT("/Game/Aedir/Fab/RustyIronShield/Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High.Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High"), 62.f, FRotator::ZeroRotator, FVector(13.f, 0.f, 9.f));
 		AddWornModel(TEXT("RustyShoulders"), TEXT("Rusty Layered Pauldrons"), 3.f, EAedirBodyZone::Arm, 0.35f, TEXT("spine_05"), FVector(0.2, 0.5, 0.2),
-			TEXT("/Game/Aedir/Fab/RustyShoulders/shoulder.shoulder"), 74.f, Axes(FVector(0, 1, 0), FVector(0, 0, 1), FVector(1, 0, 0)), FVector(6.f, -1.f, 0.f));
+			TEXT("/Game/Aedir/Fab/RustyShoulders/shoulder.shoulder"), 68.f, Axes(FVector(0, 1, 0), FVector(0, 0, 1), FVector(1, 0, 0)), FVector(6.f, -1.f, 0.f));
 
 		// The steel longsword came as a blade with its guard and grip in separate parts.
 		AddModelWeapon(TEXT("SteelLongsword"), TEXT("Steel Longsword"), 1.6f, 96.8f, 0.f, 96.8f, EAedirDamageType::Slash, 15.f, true, FVector(0.968, 0.05, 0.01),
-			TEXT("/Game/Aedir/Fab/SteelLongsword/scene/StaticMeshes/defaultMaterial.defaultMaterial"), false, true, -58.4f, 15.f, 1.f);
+			TEXT("/Game/Aedir/Fab/SteelLongsword/scene/StaticMeshes/defaultMaterial.defaultMaterial"), false, true, -70.3f, 10.1f, 1.f);
 		for (FAedirItemDef& Item : Definitions)
 		{
 			if (Item.Id == FName(TEXT("SteelLongsword")))
