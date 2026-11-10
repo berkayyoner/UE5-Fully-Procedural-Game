@@ -1819,7 +1819,105 @@ FVector2D UAedirCombatComponent::ComputeSwingBladeKey(EAedirHand Hand, const AAe
 	return FVector2D(Pitch, SwingYaw);
 }
 
+namespace
+{
+	// The poses of a fighter holding a pole weapon in both hands, read off the reference stills: where the mouse is, where the
+	// middle between the hands is in the body's frame (forward, right, up in cm) and which way the head of the weapon points
+	// (pitch, yaw in degrees from the body's forward). Written for the right hand leading; the left mirrors it.
+	struct FAedirPolearmKey
+	{
+		float AimX;
+		float AimY;
+		FVector Middle;
+		float HeadPitch;
+		float HeadYaw;
+	};
+	const FAedirPolearmKey AedirPolearmKeys[] =
+	{
+		// Before the body the head is up and on the enemy; raised it stands upright.
+		{ 0.f, 0.f, FVector(32.f, 4.f, 8.f), 35.f, 0.f },
+		{ 0.f, 40.f, FVector(26.f, 4.f, 18.f), 75.f, 0.f },
+		{ 20.f, 40.f, FVector(24.f, 10.f, 20.f), 75.f, 20.f },
+		{ 80.f, 0.f, FVector(28.f, 16.f, 10.f), 20.f, 60.f },
+		{ -80.f, 0.f, FVector(28.f, -10.f, 10.f), 20.f, -60.f },
+		// Up over a shoulder the head lies back behind it; up to the left it stands out aslant.
+		{ 50.f, 60.f, FVector(12.f, 14.f, 38.f), 30.f, 160.f },
+		{ -50.f, 60.f, FVector(12.f, -10.f, 38.f), 15.f, -150.f },
+		{ -20.f, 80.f, FVector(18.f, 0.f, 38.f), 45.f, -90.f },
+		// Over the head: upright, or lying back behind it, steeply or flat.
+		{ 0.f, 95.f, FVector(14.f, 2.f, 48.f), 80.f, 180.f },
+		{ 30.f, 90.f, FVector(26.f, 2.f, 32.f), 60.f, 180.f },
+		{ 60.f, 85.f, FVector(16.f, 4.f, 46.f), 25.f, -160.f },
+		{ -70.f, 75.f, FVector(14.f, 0.f, 46.f), 25.f, 180.f },
+		// Low: drawn back by the hip on either side, or brought down on the ground ahead.
+		{ 80.f, -30.f, FVector(20.f, 20.f, 0.f), -15.f, 150.f },
+		{ -80.f, -30.f, FVector(20.f, -16.f, 0.f), -15.f, -150.f },
+		{ 0.f, -60.f, FVector(40.f, 2.f, 0.f), -45.f, 0.f },
+	};
+	// As for the sword: what each pose asks further (pitch, yaw), measured in the game, so the head comes to rest where the pose has it.
+	const FVector2D AedirPolearmKeyFix[] =
+	{
+		FVector2D(0, 13), FVector2D(2, 30), FVector2D(-3, 30), FVector2D(-15, 16), FVector2D(15, 4),
+		FVector2D(-15, 11), FVector2D(-14, -3), FVector2D(-11, 0), FVector2D(-10, -15), FVector2D(10, -19),
+		FVector2D(-8, -9), FVector2D(-15, 29), FVector2D(-15, 28), FVector2D(11, 1), FVector2D(15, -30),
+	};
+	static_assert(UE_ARRAY_COUNT(AedirPolearmKeyFix) == UE_ARRAY_COUNT(AedirPolearmKeys), "One correction for each pole key pose.");
+}
+
 void UAedirCombatComponent::ComputePolearmPose(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item, FVector& OutHandLocal, FVector& OutDirLocal) const
+{
+	const float HandSide = Hand == EAedirHand::Right ? 1.f : -1.f;
+	if (CVarAedirKeyPoses.GetValueOnGameThread() != 0 && GetFightShare() > 0.f)
+	{
+		// The same blend as the sword's poses, by inverse distance in the mouse's travel.
+		const FVector2D Aim(Arm.PoseAimDeg.X * HandSide, Arm.PoseAimDeg.Y);
+		FVector MiddleSum = FVector::ZeroVector;
+		FVector HeadSum = FVector::ZeroVector;
+		double WeightSum = 0.0;
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(AedirPolearmKeys); ++Index)
+		{
+			const FAedirPolearmKey& Key = AedirPolearmKeys[Index];
+			const double Distance = FVector2D::Distance(Aim, FVector2D(Key.AimX, Key.AimY));
+			const FVector Head = FRotator(Key.HeadPitch + AedirPolearmKeyFix[Index].X, Key.HeadYaw + AedirPolearmKeyFix[Index].Y, 0.f).Vector();
+			if (Distance < 0.5)
+			{
+				MiddleSum = Key.Middle;
+				HeadSum = Head;
+				WeightSum = 1.0;
+				break;
+			}
+			const double Weight = 1.0 / FMath::Pow(Distance, static_cast<double>(AedirKeyPosePower));
+			MiddleSum += Key.Middle * Weight;
+			HeadSum += Head * Weight;
+			WeightSum += Weight;
+		}
+		FVector Middle = MiddleSum / WeightSum;
+		FVector Head = HeadSum.GetSafeNormal();
+		if (Head.IsNearlyZero())
+		{
+			Head = FVector::UpVector;
+		}
+		const float Fatigue = Creature->Stats ? Creature->Stats->GetFatigue() : 0.f;
+		Middle.Z -= Fatigue * AedirFatigueDroopCm;
+		Middle += FVector(Head.X, Head.Y, 0.f).GetSafeNormal() * (AedirKeyPoseReachCm * FMath::Max(FMath::Lerp(FMath::Clamp(Arm.Extension, 0.f, 1.f), 1.f, Arm.PunchBlend) - 0.5f, 0.f) * 2.f);
+		if (HandSide < 0.f)
+		{
+			Middle.Y = -Middle.Y;
+			Head.Y = -Head.Y;
+		}
+		// Out of the fight the pole rests as before; in it the key pose takes over as the stance comes up.
+		FVector RestHand;
+		FVector RestDir;
+		ComputePolearmPoseFromAngles(Hand, Arm, Item, RestHand, RestDir);
+		const float Share = CombatSmoothStep01(GetFightShare());
+		OutDirLocal = FMath::Lerp(RestDir, Head, Share).GetSafeNormal();
+		OutHandLocal = FMath::Lerp(RestHand, Middle - OutDirLocal * ((GetSecondaryGripLocalCm(Item) - Item->GripLocalCm) * 0.5f), Share);
+		return;
+	}
+	ComputePolearmPoseFromAngles(Hand, Arm, Item, OutHandLocal, OutDirLocal);
+}
+
+void UAedirCombatComponent::ComputePolearmPoseFromAngles(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item, FVector& OutHandLocal, FVector& OutDirLocal) const
 {
 	const float HandSide = Hand == EAedirHand::Right ? 1.f : -1.f;
 	const float AimY = static_cast<float>(Arm.PoseAimDeg.Y);

@@ -656,6 +656,8 @@ private:
 	FVector ComputeSwingHandKey(EAedirHand Hand, const FVector& Rest, float Travel) const;
 	FVector2D ComputeSwingBladeKey(EAedirHand Hand, const AAedirItemActor* Item, float Travel) const;
 	void ComputePolearmPose(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item, FVector& OutHandLocal, FVector& OutDirLocal) const;
+	// The pole's pose from the swing and raise angles alone, as it is carried out of the fight.
+	void ComputePolearmPoseFromAngles(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item, FVector& OutHandLocal, FVector& OutDirLocal) const;
 	void UpdatePoseAim(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);
 	// Spears, staves and the like: too long to hold in front of the groin.
 	static bool IsPolearm(const AAedirItemActor* Item);
