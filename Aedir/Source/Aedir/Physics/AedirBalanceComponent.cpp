@@ -191,7 +191,7 @@ namespace
 		case EAedirBodyZone::Head: return 90.f;
 		case EAedirBodyZone::Torso: return 230.f;
 		case EAedirBodyZone::Arm: return 400.f;
-		case EAedirBodyZone::Leg: return 330.f;
+		case EAedirBodyZone::Leg: return 300.f;
 		default: checkNoEntry(); return 60.f;
 		}
 	}
@@ -998,7 +998,7 @@ float UAedirBalanceComponent::GetKnockdownEnergy(EAedirBodyZone Zone)
 	case EAedirBodyZone::Head: return 320.f;
 	case EAedirBodyZone::Torso: return 650.f;
 	case EAedirBodyZone::Arm: return 1400.f;
-	case EAedirBodyZone::Leg: return 330.f;
+	case EAedirBodyZone::Leg: return 300.f;
 	default: checkNoEntry(); return 220.f;
 	}
 }
