@@ -183,3 +183,6 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The second hand of a two-handed hold closes into a fist on the grip (it stayed open when the weapon counted as the first hand's alone).
 - A held weapon strikes every other body physically again, limbs and hands too; it passes only its own holder's hands (each body's hands carry its own mask bit, and the item shares it). The body bits no longer collide with the hand and foot bits.
 - Blood is seen to spray: the drops were blocking each other and burst in the air 0.07 s after leaving the wound; now they fly 1-3 m the way the blow went (more, faster and bigger drops) and land on the ground.
+- Two-handed sword swings follow key poses read off the Half Sword stills (hand place and blade way per mouse position, blended smoothly between them); a measured correction per pose brings the real blade to the pose, most within a few degrees.
+- Living wrists and forearms turn further than the limp limits of the physics asset (wrist 140, forearm swing 85, twist 150): the blade no longer stops short of where the pose has it, and the arms shake less on the way between poses.
+- A thrust waits with the hands by the chest, the point forward on the enemy, and goes out with the arms straight from the middle; its height follows the view about level with a man ahead, not down at the ground.

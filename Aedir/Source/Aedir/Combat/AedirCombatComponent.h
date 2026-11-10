@@ -543,6 +543,8 @@ private:
 	void UpdateLodged(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	// A direction for the blade from the hand, turned about the hand until the blade lies clear of the own body.
 	FVector ClearDirOfOwnBody(EAedirHand Hand, const FVector& HandWorld, const FVector& Dir) const;
+	// The hand and blade of the reference key poses blended for where the mouse is, in the body's frame. False when off.
+	bool ComputeKeyPose(EAedirHand Hand, const FAedirArmDynamics& Arm, FVector& OutHandLocal, FVector& OutBladeLocal) const;
 	// The blade stays in the bone it struck, this deep along the way it went in.
 	void LodgeIn(FAedirArmDynamics& Arm, USkeletalMeshComponent* VictimBody, FName Bone, const FHitResult& Hit, const FVector& Way, float DepthCm);
 

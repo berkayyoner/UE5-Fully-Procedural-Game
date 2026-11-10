@@ -513,6 +513,7 @@ private:
 	float PhysicsShapeScale = 0.f;
 	void ApplyJointLimits(bool bRagdoll);
 	TArray<FConstraintProfileProperties> LooseJointLimits;
+	FString AppliedFreeJoint;
 	FTransform MeshRestRelative = FTransform::Identity;
 	const FAedirBoneMotor& GetBoneMotor(FName BoneName) const;
 	void ProcessHit(AActor* OtherActor, UPrimitiveComponent* OtherComponent, const FHitResult& Hit);

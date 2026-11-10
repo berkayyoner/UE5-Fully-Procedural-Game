@@ -75,6 +75,9 @@ namespace
 	constexpr float AedirLivingJointExtraDegrees = 30.f;
 	constexpr float AedirLivingLockedExtraDegrees = 15.f;
 	constexpr float AedirLivingJointMaxDegrees = 150.f;
+	constexpr float AedirLivingWristDegrees = 140.f;
+	constexpr float AedirLivingForearmSwingDegrees = 85.f;
+	constexpr float AedirLivingForearmTwistDegrees = 150.f;
 	// Toppled over, parts of the body below this share of its height are pushed back against the blow.
 	constexpr float AedirToppleFootHoldShare = 0.3f;
 	// Seconds a body that starts to get up takes to tense its limbs.
@@ -303,6 +306,15 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	if (!CharacterOwner || !BodyMesh || !BodyCapsule)
 	{
 		return;
+	}
+	if (IConsoleVariable* FreeJoint = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.DevFreeJoint")))
+	{
+		const FString JointSetting = FreeJoint->GetString() + (IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.WideArmJoints")) ? IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.WideArmJoints"))->GetString() : FString());
+		if (JointSetting != AppliedFreeJoint)
+		{
+			AppliedFreeJoint = JointSetting;
+			ApplyJointLimits(false);
+		}
 	}
 
 	// The engine lets a mesh go from what it is attached to whenever its root part starts simulating, as the hips of a fully
@@ -2053,9 +2065,36 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll)
 		const EAngularConstraintMotion Swing1Motion = Living(Loose.ConeLimit.Swing1Motion, Loose.ConeLimit.Swing1LimitDegrees, Swing1);
 		const EAngularConstraintMotion Swing2Motion = Living(Loose.ConeLimit.Swing2Motion, Loose.ConeLimit.Swing2LimitDegrees, Swing2);
 		const EAngularConstraintMotion TwistMotion = Living(Loose.TwistLimit.TwistMotion, Loose.TwistLimit.TwistLimitDegrees, Twist);
-		Joint->SetAngularSwing1Limit(Swing1Motion, Swing1);
-		Joint->SetAngularSwing2Limit(Swing2Motion, Swing2);
-		Joint->SetAngularTwistLimit(TwistMotion, Twist);
+		// A living wrist and forearm turn a held weapon much further than the limp ones of the asset: the weapon's poses ask it.
+		static IConsoleVariable* WideArmJoints = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.WideArmJoints"), 1, TEXT("Living wrists and forearms turn further than the limp limits (1) or not (0)."));
+		if (!bRagdoll && WideArmJoints->GetInt() != 0)
+		{
+			const FString Name = Joint->JointName.ToString();
+			if (Name.StartsWith(TEXT("hand")))
+			{
+				Swing1 = FMath::Max(Swing1, AedirLivingWristDegrees);
+				Swing2 = FMath::Max(Swing2, AedirLivingWristDegrees);
+				Twist = FMath::Max(Twist, AedirLivingWristDegrees);
+			}
+			else if (Name.StartsWith(TEXT("lowerarm")))
+			{
+				Swing1 = FMath::Max(Swing1, AedirLivingForearmSwingDegrees);
+				Swing2 = FMath::Max(Swing2, AedirLivingForearmSwingDegrees);
+				Twist = FMath::Max(Twist, AedirLivingForearmTwistDegrees);
+			}
+		}
+		static IConsoleVariable* FreeWrist = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.DevFreeJoint"), TEXT(""), TEXT("Dev: joints whose name holds this are left free."));
+		const FString FreeName = FreeWrist->GetString();
+		TArray<FString> FreeNames;
+		FreeName.ParseIntoArray(FreeNames, TEXT(","));
+		const bool bFree = FreeNames.ContainsByPredicate([Joint](const FString& Name) { return Joint->JointName.ToString().Contains(Name); });
+		if (bFree)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[Joint] %s left free"), *Joint->JointName.ToString());
+		}
+		Joint->SetAngularSwing1Limit(bFree ? ACM_Free : Swing1Motion, Swing1);
+		Joint->SetAngularSwing2Limit(bFree ? ACM_Free : Swing2Motion, Swing2);
+		Joint->SetAngularTwistLimit(bFree ? ACM_Free : TwistMotion, Twist);
 	}
 }
 

@@ -20,6 +20,12 @@ struct FAedirProceduralAnimProxy : public FAnimInstanceProxy
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
 	virtual bool Evaluate(FPoseContext& Output) override;
 
+	// For the dev tools: the way each hand's blade was asked to point (0), what the arm brought it to (1) and what the
+	// wrist then let it point (2), in world space, left hand first.
+	mutable FVector DevBladeWorld[3][2];
+	// For the dev tools: each hand's final pose rotation in world space, left hand first.
+	mutable FQuat DevHandWorld[2] = { FQuat::Identity, FQuat::Identity };
+
 private:
 	FQuat ActorRotationToMesh(const FQuat& ActorLocalRotation) const;
 	FQuat WorldRotationToMesh(const FQuat& WorldRotation) const;
@@ -74,6 +80,9 @@ class AEDIR_API UAedirProceduralAnimInstance : public UAnimInstance
 
 public:
 	UAedirGaitComponent* GetGaitComponent() const;
+	// Dev tools: see FAedirProceduralAnimProxy::DevBladeWorld.
+	FVector DevGetPoseBlade(int32 Stage, int32 HandSlot);
+	FQuat DevGetPoseHand(int32 HandSlot);
 
 	// Finger bones per hand, ordered thumb, index, middle, ring, pinky with three joints each from the base.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Fist")

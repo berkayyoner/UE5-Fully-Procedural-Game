@@ -124,6 +124,21 @@ Bu kareler hazırlığın derinliğini gösteriyor:
 - **Mızrak ve teber:** Eller daralıyor (~25 cm), iki el de sapın arka yarısında.
 - **Üstten saplama:** Kollar yukarıdayken (T9) uç aşağı-öne. Kamera eğimiyle yönlendirme bunu sağlıyor; korunmalı.
 
+## 2d. Referans karşılaştırması (10 Kasım 2026, commit cb5ed46)
+
+Half Sword referanslarındaki 41 pozun (#17–#57) her biri bizim oyunda aynı silah türü, aynı fare yönü ve aynı kamera tarafıyla çekildi. Karşılaştırma sayfaları scratchpad'de `refmatch_1..7.png`. #6–#16 bizim hata karelerimiz, referans değil.
+
+| Sonuç | Pozlar |
+|---|---|
+| Benzer | #19, #20, #21, #22, #23, #31, #34, #35, #43 |
+| Kısmen (el yeri doğru, bıçak yönü ya da ayak farklı) | #17, #24, #25, #28, #32, #38, #48, #49, #50, #51, #52, #54, #55, #56 |
+| Uymuyor | #18 (omuza yaslı dinlenme yok), #26, #27, #29 (sol tarafta bıçak yukarı kalkıyor, referansta alçak ya da öne-aşağı), #30 (kollar uzanmıyor), #33 (taşımada sap dik), #36, #37, #39, #40, #41, #42 (uzun silahta baş omzun ya da başın arkasına gitmiyor, sap hep dik kalıyor), #44 (yere vuruş yok), #45, #46, #47 (uzun silahla saplama yok), #53 (üstten saplama yok), #57 (bıçak başın arkasına yatmıyor) |
+
+Nedenler:
+- Uzun silahlar el yönlendirmeli savuruşu değil, eski `ComputePolearmPose`'u kullanıyor; sap neredeyse her fare konumunda dik kalıyor.
+- Saplama modu (`bThrustMode`) kolları uzatmıyor, hamle yapmıyor.
+- Sol taraftaki bıçak yönü bilek kırılması kapatıldığı için hep "kol çizgisinin üstü"; referansta sol alçak ve sol öne pozlarında bıçak aşağı ve öne bakıyor.
+
 ## 3. Aedir hata kareleri
 
 | # | Görülen | Kök neden |

@@ -221,6 +221,10 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	// A weapon in a fight is pointed by the arm: the elbow and shoulder turn the forearm and the blade keeps its angle in the hand.
 	const FVector LeftBladeWorld = ApplyArmLedBlade(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftWeaponDirWorld, GaitData.LeftArmLedShare * GaitData.LeftWeaponAimAlpha, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh);
 	const FVector RightBladeWorld = ApplyArmLedBlade(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightWeaponDirWorld, GaitData.RightArmLedShare * GaitData.RightWeaponAimAlpha, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh);
+	DevBladeWorld[0][0] = GaitData.LeftWeaponDirWorld;
+	DevBladeWorld[0][1] = GaitData.RightWeaponDirWorld;
+	DevBladeWorld[1][0] = LeftBladeWorld;
+	DevBladeWorld[1][1] = RightBladeWorld;
 	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"), LeftBladeWorld, GaitData.LeftWeaponAimAlpha, GaitData.LeftWristFrontShare, GaitData.LeftWristMinDegrees, GaitData.LeftHangDegrees);
 	ApplyHandAim(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"), RightBladeWorld, GaitData.RightWeaponAimAlpha, GaitData.RightWristFrontShare, GaitData.RightWristMinDegrees, GaitData.RightHangDegrees);
 
@@ -236,6 +240,14 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"));
 
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		const FCompactPoseBoneIndex DevHand = ResolveCompactBone(Bones, Slot == 0 ? BoneNameSet.LeftHand : BoneNameSet.RightHand);
+		if (DevHand.IsValid())
+		{
+			DevHandWorld[Slot] = MeshToWorld.GetRotation() * CSPose.GetComponentSpaceTransform(DevHand).GetRotation();
+		}
+	}
 	// Fingers are children of the final hand pose, so they are curled after the arm IK.
 	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
 	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
@@ -610,6 +622,7 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 		Blade = Forearm * BackCos + Across.GetSafeNormal() * FMath::Sin(FMath::DegreesToRadians(AedirWristMaxBladeDegrees));
 	}
 
+	DevBladeWorld[2][HandSlot] = MeshToWorld.TransformVectorNoScale(Blade);
 	// The blade runs across the knuckles and the fingers run on from the forearm, so a change of direction comes from the arm.
 	FQuat HandRotation = FRotationMatrix::MakeFromXY(Blade, FVector::VectorPlaneProject(Forearm, Blade)).ToQuat() * ClosedHandInverse;
 	if (bLastHandValid[HandSlot])
@@ -961,6 +974,16 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<
 UAedirGaitComponent* UAedirProceduralAnimInstance::GetGaitComponent() const
 {
 	return GaitComponent;
+}
+
+FVector UAedirProceduralAnimInstance::DevGetPoseBlade(int32 Stage, int32 HandSlot)
+{
+	return GetProxyOnGameThread<FAedirProceduralAnimProxy>().DevBladeWorld[FMath::Clamp(Stage, 0, 2)][FMath::Clamp(HandSlot, 0, 1)];
+}
+
+FQuat UAedirProceduralAnimInstance::DevGetPoseHand(int32 HandSlot)
+{
+	return GetProxyOnGameThread<FAedirProceduralAnimProxy>().DevHandWorld[FMath::Clamp(HandSlot, 0, 1)];
 }
 
 void UAedirProceduralAnimInstance::NativeInitializeAnimation()

@@ -90,6 +90,7 @@ int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const F
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemCatalog.h"
 #include "Animation/AedirGaitComponent.h"
+#include "Animation/AedirProceduralAnimInstance.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Camera/CameraActor.h"
 #include "Camera/CameraComponent.h"
@@ -519,6 +520,14 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	else if (Command == TEXT("PoseArm"))
 	{
 		PoseArm(Player, Args);
+	}
+	else if (Command == TEXT("OffHandFree"))
+	{
+		// OffHandFree <0|1>: lets go of a two-handed grip with the second hand, as holding the right button does.
+		if (Player->Combat)
+		{
+			Player->Combat->SetOffHandFree(FCString::Atoi(*Args) != 0);
+		}
 	}
 	else if (Command == TEXT("GripInfo"))
 	{
@@ -1437,6 +1446,28 @@ void UAedirDevTools::GripInfo(AAedirPlayerCharacter* Player, const FString& Args
 		DevToolsReport(FString::Printf(TEXT("  facing: chest %.0f, head axis %.0f; feet ahead L %.0f R %.0f (lead %s); pose spine twist %.0f pelvis yaw %.0f neck %.0f head %.0f"), ChestYaw, HeadYawY, LeftAhead, RightAhead, LeftAhead > RightAhead ? TEXT("left") : TEXT("right"),
 			Gait.SpineTwistYaw, Gait.PelvisRotation.Yaw, Gait.NeckLookRotation.Yaw, Gait.HeadLookRotation.Yaw));
 		DevToolsReport(FString::Printf(TEXT("  view yaw %.0f, body yaw %.0f, view relative to body %.0f"), Player->GetControlRotation().Yaw, BodyYaw, FRotator::NormalizeAxis(Player->GetControlRotation().Yaw - BodyYaw)));
+		if (UAedirProceduralAnimInstance* Anim = Cast<UAedirProceduralAnimInstance>(Player->GetMesh()->GetAnimInstance()))
+		{
+			// The right hand's blade through the pose: asked, after the arm, after the wrist, in the body's frame.
+			FString Stages;
+			for (int32 Stage = 0; Stage < 3; ++Stage)
+			{
+				const FRotator StageLocal = Player->GetActorTransform().InverseTransformVectorNoScale(Anim->DevGetPoseBlade(Stage, 1)).Rotation();
+				Stages += FString::Printf(TEXT(" p%.0f y%.0f"), StageLocal.Pitch, StageLocal.Yaw);
+			}
+			DevToolsReport(FString::Printf(TEXT("  pose blade right:%s"), *Stages));
+			// How far each physical hand is turned from its pose, and about which axis of the hand.
+			for (int32 Slot = 0; Slot < 2; ++Slot)
+			{
+				const FQuat Physical = Player->GetMesh()->GetBoneQuaternion(Slot == 0 ? FName(TEXT("hand_l")) : FName(TEXT("hand_r")));
+				const FQuat Delta = Anim->DevGetPoseHand(Slot).Inverse() * Physical;
+				FVector HandTurnAxis;
+				float OffAngle;
+				Delta.ToAxisAndAngle(HandTurnAxis, OffAngle);
+				const float LowerError = FMath::RadiansToDegrees(static_cast<float>(Anim->DevGetPoseHand(Slot).AngularDistance(Physical)));
+				DevToolsReport(FString::Printf(TEXT("  hand %s off its pose by %.0f deg about hand axis %.2f %.2f %.2f"), Slot == 0 ? TEXT("left") : TEXT("right"), LowerError, HandTurnAxis.X, HandTurnAxis.Y, HandTurnAxis.Z));
+			}
+		}
 	}
 
 	for (const AAedirItemActor* Item : Player->Interaction->GetWaistItemsCopy())
