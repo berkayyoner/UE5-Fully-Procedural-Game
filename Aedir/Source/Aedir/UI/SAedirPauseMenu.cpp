@@ -675,6 +675,8 @@ TArray<FAedirMenuRow> SAedirPauseMenu::BuildRows() const
 			{
 				const FAedirSettingOption* Option = Settings->GetOption(OptionIndex);
 				Result.Add(PauseMakeRow(*Option->Name, static_cast<EPauseAction>(static_cast<int32>(EPauseAction::FirstOptionRow) + OptionIndex), Settings->GetValueText(OptionIndex)));
+				// A line that cannot be changed now (its upscaler does it, or this machine lacks it) is shown dimmed.
+				Result.Last().bDimmed = Option->Enabled && !Option->Enabled();
 			}
 		}
 		Result.Add(PauseMakeRow(TEXT("Back"), EPauseAction::Back));
@@ -958,6 +960,19 @@ void SAedirPauseMenu::MoveSelection(int32 Delta)
 	if (RowWidgets.IsValidIndex(SelectedRow))
 	{
 		ListScroll->ScrollDescendantIntoView(RowWidgets[SelectedRow], true);
+	}
+}
+
+void SAedirPauseMenu::ChooseRowNamed(const FString& Name)
+{
+	for (int32 Index = 0; Index < Rows.Num(); ++Index)
+	{
+		if (Rows[Index].Name.StartsWith(Name))
+		{
+			SelectedRow = Index;
+			ActivateSelected();
+			return;
+		}
 	}
 }
 

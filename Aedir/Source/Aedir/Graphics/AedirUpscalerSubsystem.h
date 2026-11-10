@@ -50,7 +50,21 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Graphics")
 	void ApplyOptimizedRenderDefaults();
 
+	// Frame generation of the chosen upscaler (DLSS-G, FSR frame interpolation, XeSS-FG); none for TSR or no upscaler.
+	bool IsFrameGenerationAvailable() const;
+	bool IsFrameGenerationOn() const;
+	void SetFrameGeneration(bool bOn);
+	// NVIDIA Reflex: 0 off, 1 on, 2 on with boost. At least on while DLSS frame generation runs.
+	bool IsReflexAvailable() const;
+	int32 GetReflexMode() const;
+	void SetReflexMode(int32 Mode);
+
 private:
+	const TCHAR* GetFrameGenerationCVar() const;
+	void ApplyFrameGeneration();
+	void ApplyReflex();
+	bool bFrameGenerationWanted = false;
+	int32 ReflexMode = 0;
 	EAedirUpscaler CurrentUpscaler = EAedirUpscaler::TSR;
 	EAedirUpscalerQuality CurrentQuality = EAedirUpscalerQuality::Quality;
 };

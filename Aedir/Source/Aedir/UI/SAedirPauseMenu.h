@@ -70,6 +70,10 @@ private:
 	void RebuildList();
 	void MoveSelection(int32 Delta);
 	void ActivateSelected();
+public:
+	// Test helper: activates the first row whose name starts with this.
+	void ChooseRowNamed(const FString& Name);
+private:
 	void Activate(int32 Action);
 	void ActivateSaveRow(const FAedirSaveInfo& Entry);
 	void Notify(const FString& Message) const;

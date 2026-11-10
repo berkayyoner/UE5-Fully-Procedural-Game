@@ -336,7 +336,12 @@ void UAedirMenuSubsystem::CloseMainMenu()
 
 void UAedirMenuSubsystem::ChooseMainMenuRow(const FString& Name)
 {
-	if (MainMenuWidget.IsValid())
+	// Over the main menu the settings open in the pause menu's pages; a step then picks a row there.
+	if (PauseWidget.IsValid())
+	{
+		PauseWidget->ChooseRowNamed(Name);
+	}
+	else if (MainMenuWidget.IsValid())
 	{
 		MainMenuWidget->ChooseRowNamed(Name);
 	}

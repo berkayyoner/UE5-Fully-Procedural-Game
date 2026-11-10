@@ -54,7 +54,8 @@ namespace
 	{
 		if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(Name))
 		{
-			Variable->Set(Value, ECVF_SetByGameSetting);
+			// The same priority as the settings menu writes with, so the last choice made is the one in force.
+			Variable->Set(Value, ECVF_SetByCode);
 		}
 	}
 
@@ -62,7 +63,8 @@ namespace
 	{
 		if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(Name))
 		{
-			Variable->Set(Value, ECVF_SetByGameSetting);
+			// The same priority as the settings menu writes with, so the last choice made is the one in force.
+			Variable->Set(Value, ECVF_SetByCode);
 		}
 	}
 
@@ -97,8 +99,78 @@ namespace
 	}
 }
 
+bool UAedirUpscalerSubsystem::IsFrameGenerationAvailable() const
+{
+	return GetFrameGenerationCVar() != nullptr;
+}
+
+const TCHAR* UAedirUpscalerSubsystem::GetFrameGenerationCVar() const
+{
+	// Each upscaler has its own frame generation, and only that one can run with it.
+	const TCHAR* Name = CurrentUpscaler == EAedirUpscaler::DLSS ? TEXT("r.Streamline.DLSSG.Enable") : CurrentUpscaler == EAedirUpscaler::FSR ? TEXT("r.FidelityFX.FI.Enabled") : CurrentUpscaler == EAedirUpscaler::XeSS ? TEXT("r.XeFG.Enabled") : nullptr;
+	return Name && IConsoleManager::Get().FindConsoleVariable(Name) ? Name : nullptr;
+}
+
+bool UAedirUpscalerSubsystem::IsFrameGenerationOn() const
+{
+	const TCHAR* Name = GetFrameGenerationCVar();
+	const IConsoleVariable* Variable = Name ? IConsoleManager::Get().FindConsoleVariable(Name) : nullptr;
+	return Variable && Variable->GetInt() != 0;
+}
+
+void UAedirUpscalerSubsystem::SetFrameGeneration(bool bOn)
+{
+	bFrameGenerationWanted = bOn;
+	ApplyFrameGeneration();
+}
+
+void UAedirUpscalerSubsystem::ApplyFrameGeneration()
+{
+	// Never two at once: every other one is off, and the one for this upscaler only if it is wanted.
+	for (const TCHAR* Name : { TEXT("r.Streamline.DLSSG.Enable"), TEXT("r.FidelityFX.FI.Enabled"), TEXT("r.XeFG.Enabled") })
+	{
+		AedirUpscalerSetIntIfPresent(Name, 0);
+	}
+	if (const TCHAR* Name = GetFrameGenerationCVar(); Name && bFrameGenerationWanted)
+	{
+		AedirUpscalerSetIntIfPresent(Name, 1);
+		AedirUpscalerSetIntIfPresent(TEXT("r.Streamline.DLSSG.FramesToGenerate"), 1);
+		AedirUpscalerSetIntIfPresent(TEXT("r.XeFG.MaxInterpolatedFrames"), 1);
+		AedirUpscalerSetIntIfPresent(TEXT("r.XeLL.Enabled"), CurrentUpscaler == EAedirUpscaler::XeSS ? 1 : 0);
+	}
+	GConfig->SetBool(AedirUpscalerConfigSection, TEXT("FrameGeneration"), bFrameGenerationWanted, GGameUserSettingsIni);
+	ApplyReflex();
+}
+
+bool UAedirUpscalerSubsystem::IsReflexAvailable() const
+{
+	return IConsoleManager::Get().FindConsoleVariable(TEXT("t.Streamline.Reflex.Enable")) != nullptr;
+}
+
+int32 UAedirUpscalerSubsystem::GetReflexMode() const
+{
+	// Frame generation cannot run without it: then it is at least on.
+	return IsFrameGenerationOn() && CurrentUpscaler == EAedirUpscaler::DLSS ? FMath::Max(ReflexMode, 1) : ReflexMode;
+}
+
+void UAedirUpscalerSubsystem::SetReflexMode(int32 Mode)
+{
+	ReflexMode = FMath::Clamp(Mode, 0, 2);
+	ApplyReflex();
+}
+
+void UAedirUpscalerSubsystem::ApplyReflex()
+{
+	const int32 Mode = GetReflexMode();
+	AedirUpscalerSetIntIfPresent(TEXT("t.Streamline.Reflex.Enable"), Mode > 0 ? 1 : 0);
+	AedirUpscalerSetIntIfPresent(TEXT("t.Streamline.Reflex.Mode"), Mode);
+	GConfig->SetInt(AedirUpscalerConfigSection, TEXT("Reflex"), ReflexMode, GGameUserSettingsIni);
+}
+
 void UAedirUpscalerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
+	GConfig->GetBool(AedirUpscalerConfigSection, TEXT("FrameGeneration"), bFrameGenerationWanted, GGameUserSettingsIni);
+	GConfig->GetInt(AedirUpscalerConfigSection, TEXT("Reflex"), ReflexMode, GGameUserSettingsIni);
 	Super::Initialize(Collection);
 
 	int32 SavedUpscaler = INDEX_NONE;
@@ -167,16 +239,24 @@ bool UAedirUpscalerSubsystem::SetUpscaler(EAedirUpscaler Upscaler, EAedirUpscale
 		break;
 
 	case EAedirUpscaler::DLSS:
+		// The upscaler takes the place of the temporal anti-aliasing pass; with any other method it would do nothing.
+		AedirUpscalerSetIntIfPresent(TEXT("r.AntiAliasingMethod"), 4);
 		AedirUpscalerSetIntIfPresent(AedirUpscalerDLSSEnableCVar, 1);
 		AedirUpscalerSetFloatIfPresent(TEXT("r.ScreenPercentage"), AedirUpscalerScreenPercentage(Quality));
 		break;
 
 	case EAedirUpscaler::FSR:
+		// The upscaler takes the place of the temporal anti-aliasing pass; with any other method it would do nothing.
+		AedirUpscalerSetIntIfPresent(TEXT("r.AntiAliasingMethod"), 4);
+		AedirUpscalerSetIntIfPresent(TEXT("r.FidelityFX.FSR.QualityMode"), FMath::Clamp(static_cast<int32>(Quality), 0, 4));
 		AedirUpscalerSetIntIfPresent(AedirUpscalerFSREnableCVar, 1);
 		AedirUpscalerSetFloatIfPresent(TEXT("r.ScreenPercentage"), AedirUpscalerScreenPercentage(Quality));
 		break;
 
 	case EAedirUpscaler::XeSS:
+		// The upscaler takes the place of the temporal anti-aliasing pass; with any other method it would do nothing.
+		AedirUpscalerSetIntIfPresent(TEXT("r.AntiAliasingMethod"), 4);
+		AedirUpscalerSetIntIfPresent(TEXT("r.XeSS.Quality"), Quality == EAedirUpscalerQuality::Native ? 6 : FMath::Clamp(4 - static_cast<int32>(Quality), 0, 4));
 		AedirUpscalerSetIntIfPresent(AedirUpscalerXeSSEnableCVar, 1);
 		AedirUpscalerSetFloatIfPresent(TEXT("r.ScreenPercentage"), AedirUpscalerScreenPercentage(Quality));
 		break;
@@ -184,6 +264,7 @@ bool UAedirUpscalerSubsystem::SetUpscaler(EAedirUpscaler Upscaler, EAedirUpscale
 
 	CurrentUpscaler = AppliedUpscaler;
 	CurrentQuality = Quality;
+	ApplyFrameGeneration();
 
 	GConfig->SetInt(AedirUpscalerConfigSection, AedirUpscalerConfigUpscalerKey, static_cast<int32>(AppliedUpscaler), GGameUserSettingsIni);
 	GConfig->SetInt(AedirUpscalerConfigSection, AedirUpscalerConfigQualityKey, static_cast<int32>(Quality), GGameUserSettingsIni);

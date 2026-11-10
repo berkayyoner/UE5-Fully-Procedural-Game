@@ -285,6 +285,10 @@ public:
 	UFUNCTION(Exec)
 	void ElbowCheck(const FString& CheckArgs);
 
+	// MenuRow <name>: opens the pause menu if it is closed and picks the row starting with that name, for screenshots.
+	UFUNCTION(Exec)
+	void MenuRow(const FString& RowName);
+
 	UFUNCTION(Exec)
 	void GripInfo();
 

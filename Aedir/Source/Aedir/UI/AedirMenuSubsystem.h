@@ -89,7 +89,9 @@ private:
 	TSharedPtr<SAedirMap> MapWidget;
 	TSharedPtr<SAedirDialogue> DialogueWidget;
 	TSharedPtr<SAedirMainMenu> MainMenuWidget;
+public:
 	void OpenMainMenuSettings();
+private:
 	TSharedPtr<SAedirCharacterCreation> CreationWidget;
 	bool bPausedByMenu = false;
 

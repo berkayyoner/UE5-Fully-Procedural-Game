@@ -1536,6 +1536,35 @@ void AAedirPlayerCharacter::PoseArm(const FString& PoseArgs)
 	RunDevCommand(TEXT("PoseArm"), PoseArgs, true);
 }
 
+void AAedirPlayerCharacter::MenuRow(const FString& RowName)
+{
+	const APlayerController* PC = Cast<APlayerController>(GetController());
+	UAedirMenuSubsystem* Menus = PC && PC->GetLocalPlayer() ? PC->GetLocalPlayer()->GetSubsystem<UAedirMenuSubsystem>() : nullptr;
+	if (!Menus)
+	{
+		return;
+	}
+	if (RowName == TEXT("dump"))
+	{
+		// Every graphics line, its value and whether it can be changed now.
+		if (const UAedirSettingsSubsystem* Settings = GetGameInstance() ? GetGameInstance()->GetSubsystem<UAedirSettingsSubsystem>() : nullptr)
+		{
+			for (const int32 Index : Settings->GetPageOptions(EAedirSettingsPage::Graphics))
+			{
+				const FAedirSettingOption* Option = Settings->GetOption(Index);
+				UE_LOG(LogAedir, Display, TEXT("[Settings] %s = %s%s"), *Option->Name, *Settings->GetValueText(Index), Option->Enabled && !Option->Enabled() ? TEXT(" (locked)") : TEXT(""));
+			}
+		}
+		return;
+	}
+	if (RowName.IsEmpty())
+	{
+		Menus->OpenMainMenuSettings();
+		return;
+	}
+	Menus->ChooseMainMenuRow(RowName);
+}
+
 void AAedirPlayerCharacter::ElbowCheck(const FString& CheckArgs)
 {
 	RunDevCommand(TEXT("ElbowCheck"), CheckArgs, false);

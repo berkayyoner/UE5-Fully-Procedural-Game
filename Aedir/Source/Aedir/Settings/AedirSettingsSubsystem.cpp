@@ -411,10 +411,27 @@ void UAedirSettingsSubsystem::BuildDisplayOptions()
 			AddChoice(EAedirSettingsPage::Graphics, TEXT(""), TEXT("Upscaler quality"), TEXT("How much of the picture the upscaler rebuilds."), { TEXT("Native"), TEXT("Quality"), TEXT("Balanced"), TEXT("Performance"), TEXT("Ultra Performance") },
 				[Upscaler]() { return static_cast<int32>(Upscaler->GetCurrentQuality()); },
 				[Upscaler](int32 Index) { Upscaler->SetUpscaler(Upscaler->GetCurrentUpscaler(), static_cast<EAedirUpscalerQuality>(Index)); });
+			Options.Last().Enabled = [Upscaler]() { return Upscaler->GetCurrentUpscaler() != EAedirUpscaler::None; };
 		}
+		AddChoice(EAedirSettingsPage::Graphics, TEXT(""), TEXT("Frame generation"), TEXT("Draws an extra frame between rendered ones (with DLSS, FSR or XeSS only)."), { TEXT("Off"), TEXT("On") },
+			[Upscaler]() { return Upscaler->IsFrameGenerationOn() ? 1 : 0; },
+			[Upscaler](int32 Index) { Upscaler->SetFrameGeneration(Index != 0); });
+		Options.Last().Enabled = [Upscaler]() { return Upscaler->IsFrameGenerationAvailable(); };
+		AddChoice(EAedirSettingsPage::Graphics, TEXT(""), TEXT("NVIDIA Reflex"), TEXT("Lowers the delay between input and picture. Always on with DLSS frame generation."), { TEXT("Off"), TEXT("On"), TEXT("On + Boost") },
+			[Upscaler]() { return Upscaler->GetReflexMode(); },
+			[Upscaler](int32 Index) { Upscaler->SetReflexMode(Index); });
+		Options.Last().Enabled = [Upscaler]() { return Upscaler->IsReflexAvailable(); };
 	}
 
-	AddCVar(TEXT("AntiAliasingMethod"), TEXT("Anti-aliasing method"), TEXT("How edges are smoothed. An upscaler can take this over."), TEXT("r.AntiAliasingMethod"), { TEXT("None"), TEXT("FXAA"), TEXT("TAA"), TEXT("MSAA"), TEXT("TSR") }, { 0.f, 1.f, 2.f, 3.f, 4.f });
+	// An upscaler replaces the anti-aliasing pass: while one is on, this line is locked to it.
+	if (IConsoleVariable* AA = IConsoleManager::Get().FindConsoleVariable(TEXT("r.AntiAliasingMethod")))
+	{
+		const TArray<float> AAValues = { 0.f, 1.f, 2.f, 4.f };
+		AddChoice(EAedirSettingsPage::Graphics, TEXT("AntiAliasingMethod"), TEXT("Anti-aliasing method"), TEXT("How edges are smoothed. Locked while an upscaler does it."), { TEXT("None"), TEXT("FXAA"), TEXT("TAA"), TEXT("Upscaler") },
+			[AA, AAValues]() { return SettingsNearestIndex(AAValues, AA->GetFloat()); },
+			[AA, AAValues, Upscaler](int32 Index) { if (Index < 3 && (!Upscaler || Upscaler->GetCurrentUpscaler() == EAedirUpscaler::None)) { AA->Set(AAValues[Index], ECVF_SetByCode); } });
+		Options.Last().Enabled = [Upscaler]() { return !Upscaler || Upscaler->GetCurrentUpscaler() == EAedirUpscaler::None; };
+	}
 }
 
 void UAedirSettingsSubsystem::BuildQualityOptions()
@@ -597,7 +614,7 @@ FString UAedirSettingsSubsystem::GetValueText(int32 Index) const
 void UAedirSettingsSubsystem::SetOptionValue(int32 Index, int32 ValueIndex)
 {
 	const FAedirSettingOption* Option = GetOption(Index);
-	if (Option && Option->Values.IsValidIndex(ValueIndex))
+	if (Option && Option->Values.IsValidIndex(ValueIndex) && (!Option->Enabled || Option->Enabled()))
 	{
 		Option->Apply(ValueIndex);
 		Store(*Option, ValueIndex);
@@ -608,7 +625,7 @@ void UAedirSettingsSubsystem::SetOptionValue(int32 Index, int32 ValueIndex)
 void UAedirSettingsSubsystem::StepOption(int32 Index, int32 Delta)
 {
 	const FAedirSettingOption* Option = GetOption(Index);
-	if (!Option || Option->Values.IsEmpty())
+	if (!Option || Option->Values.IsEmpty() || (Option->Enabled && !Option->Enabled()))
 	{
 		return;
 	}

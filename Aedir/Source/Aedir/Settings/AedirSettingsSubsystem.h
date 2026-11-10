@@ -23,6 +23,8 @@ struct FAedirSettingOption
 	// Index of the value in force now, INDEX_NONE when it is none of the listed ones.
 	TFunction<int32()> Read;
 	TFunction<void(int32)> Apply;
+	// Whether the line can be changed now; a locked line is shown dimmed with the value in force. Unset means always.
+	TFunction<bool()> Enabled;
 };
 
 // Values that the game code reads directly.
