@@ -202,6 +202,9 @@ namespace
 	constexpr float AedirRestOneHandOutYaw = 20.f;
 	constexpr float AedirRestTwoHandPitch = -38.f;
 	constexpr float AedirRestTwoHandOutYaw = 50.f;
+	// Measured in the game: asked this much further, the blade comes to rest at the angles above.
+	constexpr float AedirRestTwoHandFixPitch = -14.f;
+	constexpr float AedirRestTwoHandFixYaw = 78.f;
 	constexpr float AedirRestPolePitch = 72.f;
 	constexpr float AedirRestPoleOutYaw = 10.f;
 	// The hand at rest is about this high over the ground, which keeps a long blade's point off it.
@@ -391,17 +394,17 @@ namespace
 	constexpr float AedirThrustMouseExtension = 0.012f;
 	constexpr float AedirThrustSteerShare = 0.25f;
 	constexpr float AedirThrustHandMaxCm = 56.f;
-	// A drawn-back thrust waits with the hands by the chest on the weapon's side, the point forward on the enemy.
-	constexpr float AedirThrustWaistForwardCm = 8.f;
-	constexpr float AedirThrustWaistSideCm = 26.f;
-	constexpr float AedirThrustWaistSideTwoHandCm = 16.f;
-	constexpr float AedirThrustWaistUpCm = 22.f;
+	// A drawn-back thrust waits with the hands up by the shoulder on the weapon's side, the point forward on the enemy.
+	constexpr float AedirThrustWaistForwardCm = 24.f;
+	constexpr float AedirThrustWaistSideCm = 20.f;
+	constexpr float AedirThrustWaistSideTwoHandCm = 14.f;
+	constexpr float AedirThrustWaistUpCm = 26.f;
 	// It goes out a shoulder's width from the middle with the point converging on the middle ahead, the elbow pointing back;
 	// held in both hands, nearly from the middle with the arms straight out.
 	constexpr float AedirThrustSideCm = 24.f;
 	constexpr float AedirThrustSideTwoHandCm = 8.f;
-	// The view looks down on the body; level with the eyes of a man ahead is this much above where it looks.
-	constexpr float AedirThrustViewPitchOffset = 25.f;
+	// The view looks down on the body, and the weight of the blade takes its point lower still: the thrust is asked this much above where the view looks, so it goes level at a man ahead.
+	constexpr float AedirThrustViewPitchOffset = 40.f;
 	constexpr float AedirThrustPitchMin = -45.f;
 	constexpr float AedirThrustPitchMax = 35.f;
 	constexpr float AedirThrustChestHeightCm = 30.f;
@@ -1506,7 +1509,7 @@ FVector UAedirCombatComponent::ComputeWeaponTargetDir(EAedirHand Hand, const FAe
 	const double ActorYaw = Creature->GetActorRotation().Yaw;
 	const FVector2D Aim = Arm.PoseAimDeg;
 	const float HandSide = Hand == EAedirHand::Right ? 1.f : -1.f;
-	if (bThrustMode)
+	if (bThrustMode && !UsesHandLedSwing(Hand))
 	{
 		const double CameraPitch = FMath::Clamp(FRotator::NormalizeAxis(Creature->GetControlRotation().Pitch) + AedirThrustViewPitchOffset, AedirThrustPitchMin, AedirThrustPitchMax);
 		return FRotator(CameraPitch,ActorYaw - HandSide * AedirThrustInwardYaw + Aim.X * AedirThrustSteerShare, 0.0).Vector();
@@ -1552,7 +1555,7 @@ FVector UAedirCombatComponent::ComputeWeaponTargetDir(EAedirHand Hand, const FAe
 bool UAedirCombatComponent::UsesHandLedSwing(EAedirHand Hand) const
 {
 	const AAedirItemActor* Item = GetHeldItem(Hand);
-	return CVarAedirHandLedSwing.GetValueOnGameThread() != 0 && !bThrustMode && !(bTwoHandGrip && IsPolearm(Item)) && !GetArm(Hand).bScriptedControl;
+	return CVarAedirHandLedSwing.GetValueOnGameThread() != 0 && !(bTwoHandGrip && IsPolearm(Item)) && !GetArm(Hand).bScriptedControl;
 }
 
 FVector UAedirCombatComponent::ComputeHandLedPivotLocal(EAedirHand Hand) const
@@ -1622,6 +1625,17 @@ namespace
 		const FAedirKeyPose& Key = AedirKeyPoses[Index];
 		return FRotator(Key.BladePitch + AedirKeyPoseFix[Index].X, Key.BladeYaw + AedirKeyPoseFix[Index].Y, 0.f).Vector();
 	}
+	// A thrust: drawn back the hands wait up by the head before the shoulder on the weapon's side, the point raised towards the enemy; out, the arms
+	// are straight ahead from the middle and the blade goes on level from them.
+	const FAedirKeyPose AedirThrustKeyBack = { 0.f, 0.f, FVector(22.f, 16.f, 38.f), 40.f, -8.f };
+	const FAedirKeyPose AedirThrustKeyOut = { 0.f, 0.f, FVector(52.f, 4.f, 30.f), 0.f, -2.f };
+	// Measured in the game as for the other poses: drawn back (0) and out (1).
+	const FVector2D AedirThrustFix[] = { FVector2D(2, -6), FVector2D(6, -6) };
+	// The view at this pitch looks level at a man ahead; looking higher or lower takes the thrust along by this share.
+	constexpr float AedirThrustLevelViewPitch = -15.f;
+	constexpr float AedirThrustViewShare = 0.5f;
+	constexpr float AedirThrustViewRangeDegrees = 40.f;
+	constexpr float AedirThrustSteerHandCmPerDegree = 0.1f;
 	// The poses blend by inverse distance in the mouse's travel, this sharply.
 	constexpr float AedirKeyPosePower = 2.5f;
 	// Pushed out with the wheel or a quick throw, the hands go this much further forward along the blade's way.
@@ -1663,6 +1677,27 @@ bool UAedirCombatComponent::ComputeKeyPose(EAedirHand Hand, const FAedirArmDynam
 	if (OutBladeLocal.IsNearlyZero())
 	{
 		OutBladeLocal = FVector::UpVector;
+	}
+	// A thrust has its own two poses, drawn back and out, and goes between them as far as it is pushed; the mouse to the side
+	// steers it, and the view up or down raises or lowers it.
+	if (bThrustMode)
+	{
+		const float Out = FMath::Clamp(Arm.Extension, 0.f, 1.f);
+		const FVector2D Pitches(AedirThrustKeyBack.BladePitch + AedirThrustFix[0].X, AedirThrustKeyOut.BladePitch + AedirThrustFix[1].X);
+		const FVector2D Yaws(AedirThrustKeyBack.BladeYaw + AedirThrustFix[0].Y, AedirThrustKeyOut.BladeYaw + AedirThrustFix[1].Y);
+		const double ViewPitch = FMath::Clamp(FRotator::NormalizeAxis(Creature->GetControlRotation().Pitch) - AedirThrustLevelViewPitch, -AedirThrustViewRangeDegrees, AedirThrustViewRangeDegrees);
+		OutHandLocal = FMath::Lerp(AedirThrustKeyBack.Hand, AedirThrustKeyOut.Hand, Out) + FVector(0.f, Aim.X * AedirThrustSteerHandCmPerDegree, 0.f);
+		OutBladeLocal = FRotator(FMath::Lerp(Pitches.X, Pitches.Y, Out) + ViewPitch * AedirThrustViewShare, FMath::Lerp(Yaws.X, Yaws.Y, Out) + Aim.X * AedirThrustSteerShare, 0.f).Vector();
+		if (!bTwoHandGrip)
+		{
+			OutHandLocal.Y += AedirHandLedTwoHandSideCm;
+		}
+		if (Side < 0.f)
+		{
+			OutHandLocal.Y = -OutHandLocal.Y;
+			OutBladeLocal.Y = -OutBladeLocal.Y;
+		}
+		return true;
 	}
 	// A blade can only be held at a good angle across the forearm: pointing along the arm the wrist cannot bend that far. Where
 	// a pose asks for that, the hands move round about the shoulder until the arm lies at least this far off the blade.
@@ -1957,6 +1992,11 @@ FVector UAedirCombatComponent::ComputeCarriedDir(EAedirHand Hand) const
 	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
 	float RestPitch = bTwoHandGrip ? AedirRestTwoHandPitch : AedirRestOneHandPitch;
 	float RestYaw = Side * (bTwoHandGrip ? AedirRestTwoHandOutYaw : AedirRestOneHandOutYaw);
+	if (bTwoHandGrip)
+	{
+		// The arms and the second hand turn the blade back towards the front: the pose asks this much further round.
+		RestYaw += Side * AedirRestTwoHandFixYaw;
+	}
 	if (IsPolearm(Item))
 	{
 		RestPitch = AedirRestPolePitch;
@@ -1966,6 +2006,8 @@ FVector UAedirCombatComponent::ComputeCarriedDir(EAedirHand Hand) const
 	{
 		const float GroundPitch = -FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(AedirRestHandHeightCm / Length, 0.f, 1.f)));
 		RestPitch = FMath::Max(RestPitch, GroundPitch);
+		// The ground is kept from where the blade comes to rest, not from how far round the pose asks.
+		RestPitch += bTwoHandGrip ? AedirRestTwoHandFixPitch : 0.f;
 	}
 	const FVector Carried = FRotator(RestPitch, Creature->GetActorRotation().Yaw + RestYaw, 0.0).Vector();
 	// Walking and running the carrying arm swings, and a blade held at one angle to the world would bend the wrist over at
@@ -2165,7 +2207,7 @@ float UAedirCombatComponent::GetArmLedShare(EAedirHand Hand) const
 	// A blade swung in one hand, or by the carrying hand of two, is pointed by the arm. A thrust lays it along the forearm
 	// and a long shaft is steered by both hands, so those keep their own wrists.
 	const AAedirItemActor* Item = GetHeldItem(Hand);
-	if (!Item || !IsWeaponStance(Hand) || IsSecondaryGripHand(Hand) || bThrustMode || (bTwoHandGrip && IsPolearm(Item)) || GetArm(Hand).bScriptedControl)
+	if (!Item || !IsWeaponStance(Hand) || IsSecondaryGripHand(Hand) || (bThrustMode && !UsesHandLedSwing(Hand)) || (bTwoHandGrip && IsPolearm(Item)) || GetArm(Hand).bScriptedControl)
 	{
 		return 0.f;
 	}
@@ -2825,7 +2867,7 @@ FVector UAedirCombatComponent::ComputeArmTarget(EAedirHand Hand, const FAedirArm
 		const float HalfSwordShare = CombatSmoothStep01(HalfSwordAlpha);
 		const FTransform& Body = Creature->GetActorTransform();
 		FVector HandTarget;
-		if (bThrustMode)
+		if (bThrustMode && !UsesHandLedSwing(Hand))
 		{
 			const float HandSide = Hand == EAedirHand::Right ? 1.f : -1.f;
 			const FVector Waist = Body.TransformPositionNoScale(FVector(AedirThrustWaistForwardCm, HandSide * (bTwoHandGrip ? AedirThrustWaistSideTwoHandCm : AedirThrustWaistSideCm), AedirThrustWaistUpCm) * WeaponScale);

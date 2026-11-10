@@ -1536,6 +1536,11 @@ void AAedirPlayerCharacter::PoseArm(const FString& PoseArgs)
 	RunDevCommand(TEXT("PoseArm"), PoseArgs, true);
 }
 
+void AAedirPlayerCharacter::OffHandFree(const FString& FreeArgs)
+{
+	RunDevCommand(TEXT("OffHandFree"), FreeArgs, true);
+}
+
 void AAedirPlayerCharacter::MenuRow(const FString& RowName)
 {
 	const APlayerController* PC = Cast<APlayerController>(GetController());

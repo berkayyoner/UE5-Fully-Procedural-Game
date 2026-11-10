@@ -280,6 +280,9 @@ public:
 	void PoseArm(const FString& PoseArgs);
 
 	UFUNCTION(Exec)
+	void OffHandFree(const FString& FreeArgs);
+
+	UFUNCTION(Exec)
 	void HitMe(const FString& HitArgs);
 
 	UFUNCTION(Exec)
