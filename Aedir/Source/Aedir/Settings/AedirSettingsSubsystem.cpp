@@ -413,9 +413,16 @@ void UAedirSettingsSubsystem::BuildDisplayOptions()
 				[Upscaler](int32 Index) { Upscaler->SetUpscaler(Upscaler->GetCurrentUpscaler(), static_cast<EAedirUpscalerQuality>(Index)); });
 			Options.Last().Enabled = [Upscaler]() { return Upscaler->GetCurrentUpscaler() != EAedirUpscaler::None; };
 		}
-		AddChoice(EAedirSettingsPage::Graphics, TEXT(""), TEXT("Frame generation"), TEXT("Draws an extra frame between rendered ones (with DLSS, FSR or XeSS only)."), { TEXT("Off"), TEXT("On") },
-			[Upscaler]() { return Upscaler->IsFrameGenerationOn() ? 1 : 0; },
-			[Upscaler](int32 Index) { Upscaler->SetFrameGeneration(Index != 0); });
+		// Off, then 2x for one drawn frame between two rendered ones, up to the most any upscaler here can do; one asked for more
+		// than the chosen upscaler can draw gets as many as it can.
+		TArray<FString> FrameNames = { TEXT("Off") };
+		for (int32 Multiplier = 2; Multiplier <= Upscaler->GetFrameGenerationMultiplierLimit(); ++Multiplier)
+		{
+			FrameNames.Add(FString::Printf(TEXT("%dx"), Multiplier));
+		}
+		AddChoice(EAedirSettingsPage::Graphics, TEXT(""), TEXT("Frame generation"), TEXT("Draws extra frames between rendered ones (with DLSS, FSR or XeSS only, and in the game window, not the editor's viewport)."), FrameNames,
+			[Upscaler]() { return Upscaler->GetFrameGenerationMultiplier() - 1; },
+			[Upscaler](int32 Index) { Upscaler->SetFrameGenerationMultiplier(Index + 1); });
 		Options.Last().Enabled = [Upscaler]() { return Upscaler->IsFrameGenerationAvailable(); };
 		AddChoice(EAedirSettingsPage::Graphics, TEXT(""), TEXT("NVIDIA Reflex"), TEXT("Lowers the delay between input and picture. Always on with DLSS frame generation."), { TEXT("Off"), TEXT("On"), TEXT("On + Boost") },
 			[Upscaler]() { return Upscaler->GetReflexMode(); },

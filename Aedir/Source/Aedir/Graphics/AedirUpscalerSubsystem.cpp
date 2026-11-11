@@ -2,7 +2,11 @@
 
 #include "Aedir.h"
 #include "HAL/IConsoleManager.h"
+#include "Containers/Ticker.h"
 #include "Misc/ConfigCacheIni.h"
+#if AEDIR_WITH_DLSSG
+#include "StreamlineLibraryDLSSG.h"
+#endif
 
 namespace
 {
@@ -99,6 +103,18 @@ namespace
 	}
 }
 
+namespace
+{
+	// Each upscaler has its own frame generation, and only that one can run with it.
+	const TCHAR* AedirFrameGenerationCVar(EAedirUpscaler Upscaler)
+	{
+		const TCHAR* Name = Upscaler == EAedirUpscaler::DLSS ? TEXT("r.Streamline.DLSSG.Enable") : Upscaler == EAedirUpscaler::FSR ? TEXT("r.FidelityFX.FI.Enabled") : Upscaler == EAedirUpscaler::XeSS ? TEXT("r.XeFG.Enabled") : nullptr;
+		return Name && IConsoleManager::Get().FindConsoleVariable(Name) ? Name : nullptr;
+	}
+	const TCHAR* const AedirFrameMultiplierKey = TEXT("FrameGenerationMultiplier");
+	constexpr float AedirFrameGenerationRecheckSeconds = 1.f;
+}
+
 bool UAedirUpscalerSubsystem::IsFrameGenerationAvailable() const
 {
 	return GetFrameGenerationCVar() != nullptr;
@@ -106,9 +122,7 @@ bool UAedirUpscalerSubsystem::IsFrameGenerationAvailable() const
 
 const TCHAR* UAedirUpscalerSubsystem::GetFrameGenerationCVar() const
 {
-	// Each upscaler has its own frame generation, and only that one can run with it.
-	const TCHAR* Name = CurrentUpscaler == EAedirUpscaler::DLSS ? TEXT("r.Streamline.DLSSG.Enable") : CurrentUpscaler == EAedirUpscaler::FSR ? TEXT("r.FidelityFX.FI.Enabled") : CurrentUpscaler == EAedirUpscaler::XeSS ? TEXT("r.XeFG.Enabled") : nullptr;
-	return Name && IConsoleManager::Get().FindConsoleVariable(Name) ? Name : nullptr;
+	return AedirFrameGenerationCVar(CurrentUpscaler);
 }
 
 bool UAedirUpscalerSubsystem::IsFrameGenerationOn() const
@@ -118,9 +132,70 @@ bool UAedirUpscalerSubsystem::IsFrameGenerationOn() const
 	return Variable && Variable->GetInt() != 0;
 }
 
-void UAedirUpscalerSubsystem::SetFrameGeneration(bool bOn)
+TArray<int32> UAedirUpscalerSubsystem::GetFrameGenerationMultipliersFor(EAedirUpscaler Upscaler) const
 {
-	bFrameGenerationWanted = bOn;
+	TArray<int32> Multipliers = { 1 };
+	if (!AedirFrameGenerationCVar(Upscaler))
+	{
+		return Multipliers;
+	}
+	Multipliers.Add(2);
+	if (Upscaler == EAedirUpscaler::DLSS)
+	{
+#if AEDIR_WITH_DLSSG
+		// Several frames between two rendered ones need a newer card: the plugin knows which this one can draw.
+		const EStreamlineDLSSGMode MoreFrames[] = { EStreamlineDLSSGMode::On3X, EStreamlineDLSSGMode::On4X, EStreamlineDLSSGMode::On5X, EStreamlineDLSSGMode::On6X };
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(MoreFrames) && UStreamlineLibraryDLSSG::IsDLSSGModeSupported(MoreFrames[Index]); ++Index)
+		{
+			Multipliers.Add(Index + 3);
+		}
+#endif
+	}
+	else if (Upscaler == EAedirUpscaler::XeSS)
+	{
+		for (int32 Frames = 2; Frames <= AedirUpscalerReadIntOrDefault(TEXT("r.XeFG.MaxInterpolatedFramesSupported"), 1); ++Frames)
+		{
+			Multipliers.Add(Frames + 1);
+		}
+	}
+	return Multipliers;
+}
+
+TArray<int32> UAedirUpscalerSubsystem::GetFrameGenerationMultipliers() const
+{
+	return GetFrameGenerationMultipliersFor(CurrentUpscaler);
+}
+
+int32 UAedirUpscalerSubsystem::GetFrameGenerationMultiplierLimit() const
+{
+	int32 Limit = 1;
+	for (const EAedirUpscaler Upscaler : GetAvailableUpscalers())
+	{
+		Limit = FMath::Max(Limit, GetFrameGenerationMultipliersFor(Upscaler).Last());
+	}
+	return Limit;
+}
+
+int32 UAedirUpscalerSubsystem::GetFrameGenerationMultiplier() const
+{
+	if (!IsFrameGenerationOn())
+	{
+		return 1;
+	}
+	if (CurrentUpscaler == EAedirUpscaler::DLSS)
+	{
+		return AedirUpscalerReadIntOrDefault(TEXT("r.Streamline.DLSSG.FramesToGenerate"), 1) + 1;
+	}
+	if (CurrentUpscaler == EAedirUpscaler::XeSS)
+	{
+		return FMath::Max(AedirUpscalerReadIntOrDefault(TEXT("r.XeFG.MaxInterpolatedFrames"), 1), 1) + 1;
+	}
+	return 2;
+}
+
+void UAedirUpscalerSubsystem::SetFrameGenerationMultiplier(int32 Multiplier)
+{
+	FrameMultiplierWanted = FMath::Max(Multiplier, 1);
 	ApplyFrameGeneration();
 }
 
@@ -131,14 +206,25 @@ void UAedirUpscalerSubsystem::ApplyFrameGeneration()
 	{
 		AedirUpscalerSetIntIfPresent(Name, 0);
 	}
-	if (const TCHAR* Name = GetFrameGenerationCVar(); Name && bFrameGenerationWanted)
+	// As many as wanted, or the most this upscaler and card can draw; the wish is kept for a later upscaler that can do more.
+	int32 Applied = 1;
+	for (const int32 Multiplier : GetFrameGenerationMultipliers())
 	{
-		AedirUpscalerSetIntIfPresent(Name, 1);
-		AedirUpscalerSetIntIfPresent(TEXT("r.Streamline.DLSSG.FramesToGenerate"), 1);
-		AedirUpscalerSetIntIfPresent(TEXT("r.XeFG.MaxInterpolatedFrames"), 1);
-		AedirUpscalerSetIntIfPresent(TEXT("r.XeLL.Enabled"), CurrentUpscaler == EAedirUpscaler::XeSS ? 1 : 0);
+		if (Multiplier <= FrameMultiplierWanted)
+		{
+			Applied = FMath::Max(Applied, Multiplier);
+		}
 	}
-	GConfig->SetBool(AedirUpscalerConfigSection, TEXT("FrameGeneration"), bFrameGenerationWanted, GGameUserSettingsIni);
+	if (const TCHAR* Name = GetFrameGenerationCVar(); Name && Applied > 1)
+	{
+		AedirUpscalerSetIntIfPresent(TEXT("r.Streamline.DLSSG.FramesToGenerate"), Applied - 1);
+		AedirUpscalerSetIntIfPresent(TEXT("r.XeFG.MaxInterpolatedFrames"), Applied - 1);
+		AedirUpscalerSetIntIfPresent(TEXT("r.XeLL.Enabled"), CurrentUpscaler == EAedirUpscaler::XeSS ? 1 : 0);
+		AedirUpscalerSetIntIfPresent(Name, 1);
+	}
+	UE_LOG(LogAedir, Log, TEXT("Frame generation %s: %dx wanted, %dx applied%s."), *GetUpscalerDisplayName(CurrentUpscaler).ToString(), FrameMultiplierWanted, Applied,
+		GIsEditor && Applied > 1 ? TEXT(" (it runs in a game window only, not in the editor's viewport)") : TEXT(""));
+	GConfig->SetInt(AedirUpscalerConfigSection, AedirFrameMultiplierKey, FrameMultiplierWanted, GGameUserSettingsIni);
 	ApplyReflex();
 }
 
@@ -169,9 +255,23 @@ void UAedirUpscalerSubsystem::ApplyReflex()
 
 void UAedirUpscalerSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
-	GConfig->GetBool(AedirUpscalerConfigSection, TEXT("FrameGeneration"), bFrameGenerationWanted, GGameUserSettingsIni);
+	// Saved before the multiple could be chosen it was only on or off: on was two frames for one.
+	bool bFrameGenerationWasOn = false;
+	if (!GConfig->GetInt(AedirUpscalerConfigSection, AedirFrameMultiplierKey, FrameMultiplierWanted, GGameUserSettingsIni)
+		&& GConfig->GetBool(AedirUpscalerConfigSection, TEXT("FrameGeneration"), bFrameGenerationWasOn, GGameUserSettingsIni))
+	{
+		FrameMultiplierWanted = bFrameGenerationWasOn ? 2 : 1;
+	}
 	GConfig->GetInt(AedirUpscalerConfigSection, TEXT("Reflex"), ReflexMode, GGameUserSettingsIni);
 	Super::Initialize(Collection);
+
+	// While the game starts NVIDIA's plugin cannot yet tell how many frames the card draws: the choice is put in again a moment
+	// later, when it can.
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateWeakLambda(this, [this](float)
+	{
+		ApplyFrameGeneration();
+		return false;
+	}), AedirFrameGenerationRecheckSeconds);
 
 	int32 SavedUpscaler = INDEX_NONE;
 	int32 SavedQuality = INDEX_NONE;

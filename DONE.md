@@ -200,3 +200,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Half Sword pole thrust recorded: drawn back at the hip, then a lunge with the point rising to head height.
 - The mouse turns a sword's blade round smoothly, as in Half Sword, instead of blending between poses that can point opposite ways: it no longer flips over, and arms caught in their joints fell from 66 to 9 over the pose grid (aedir.SteerBlade; pole weapons keep their key poses for now).
 - Thrusts are drawn back beside the hip with the blade level at the waist, sword and pole alike, as in Half Sword, and go out straight ahead at the shoulders.
+- Frame generation is chosen as Off, 2x and up to the most the card and upscaler can draw (DLSS asks NVIDIA's plugin, XeSS its own limit), the choice is put in again once the plugin is ready, and the menu says it only runs in a game window, not the editor's viewport.

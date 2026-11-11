@@ -38,5 +38,16 @@ public class Aedir : ModuleRules
 			"RenderCore",
 			"RHI"
 		});
+
+		// NVIDIA frame generation tells which multiples the card can draw; its plugin is only there on Windows.
+		if (Target.Platform == UnrealTargetPlatform.Win64)
+		{
+			PrivateDependencyModuleNames.Add("StreamlineDLSSGBlueprint");
+			PublicDefinitions.Add("AEDIR_WITH_DLSSG=1");
+		}
+		else
+		{
+			PublicDefinitions.Add("AEDIR_WITH_DLSSG=0");
+		}
 	}
 }
