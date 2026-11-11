@@ -1898,6 +1898,68 @@ namespace
 	}
 }
 
+namespace
+{
+	// The sword stance read off Half Sword, the mouse taken to each point of a 5 x 5 grid with the same raw mouse counts in
+	// both games and each point filmed from behind and from the side (Saved/Measure). For each point: where the carrying
+	// hand is in the body's frame (forward, right, up, cm from the middle of the hips) and which way the blade points
+	// (pitch up +, yaw right +). The mouse runs 1875 counts from the middle to either side (100 degrees here) and 1750 up or
+	// down; the grid points are 750 and 1500 counts from the middle, which here is a little below level.
+	TAutoConsoleVariable<int32> CVarAedirStanceTable(TEXT("aedir.StanceTable"), 1, TEXT("The sword stance comes from the table measured in Half Sword (1), or from the older key poses (0)."));
+	constexpr float AedirStanceGridX[5] = { -80.f, -40.f, 0.f, 40.f, 80.f };
+	constexpr float AedirStanceGridY[5] = { -77.f, -42.f, -7.f, 28.f, 64.f };
+	struct FAedirStanceCell
+	{
+		FVector Hand;
+		float BladePitch;
+		float BladeYaw;
+	};
+	// Rows from the bottom of the mouse field to the top, columns from left to right.
+	const FAedirStanceCell AedirStanceTable[5][5] =
+	{
+		// Down: the hands low, at the left hip, before the belly, by the right hip; the point low to the left, hanging before
+		// the feet, and from the right hip forward and up across.
+		{ { FVector(15.f, -20.f, -2.f), -20.f, -110.f }, { FVector(25.f, 0.f, 4.f), -10.f, -90.f }, { FVector(25.f, 12.f, 0.f), -40.f, 20.f }, { FVector(20.f, 20.f, -4.f), 30.f, -25.f }, { FVector(20.f, 25.f, -4.f), 30.f, -15.f } },
+		{ { FVector(18.f, -19.f, 14.f), -5.f, -115.f }, { FVector(25.f, -2.f, 16.f), 0.f, -88.f }, { FVector(27.f, 10.f, 12.f), -10.f, -20.f }, { FVector(24.f, 19.f, 8.f), 20.f, -28.f }, { FVector(22.f, 23.f, 6.f), 30.f, -18.f } },
+		// The middle: the hands before the chest, the blade forward and out to the left; to the left up by the left shoulder,
+		// the blade back over it; to the right down by the right side, the point forward and up.
+		{ { FVector(15.f, -18.f, 32.f), 15.f, -130.f }, { FVector(22.f, -5.f, 32.f), 10.f, -110.f }, { FVector(28.f, 8.f, 25.f), 15.f, -60.f }, { FVector(28.f, 18.f, 20.f), 10.f, -30.f }, { FVector(25.f, 22.f, 15.f), 30.f, -20.f } },
+		{ { FVector(14.f, -18.f, 46.f), 10.f, -115.f }, { FVector(18.f, -5.f, 50.f), 7.f, -100.f }, { FVector(22.f, 7.f, 46.f), 8.f, -80.f }, { FVector(23.f, 17.f, 40.f), 13.f, -50.f }, { FVector(22.f, 22.f, 34.f), 25.f, -35.f } },
+		// Up: the hands over the head, the blade lying level across it to the left; to the right over the right shoulder,
+		// the point forward and to the left.
+		{ { FVector(12.f, -18.f, 58.f), 5.f, -105.f }, { FVector(15.f, -5.f, 66.f), 5.f, -95.f }, { FVector(15.f, 5.f, 68.f), 5.f, -95.f }, { FVector(18.f, 15.f, 58.f), 15.f, -70.f }, { FVector(18.f, 22.f, 52.f), 20.f, -50.f } },
+	};
+	void AedirGridSpan(const float (&Nodes)[5], float Value, int32& OutIndex, float& OutShare)
+	{
+		const float Clamped = FMath::Clamp(Value, Nodes[0], Nodes[4]);
+		OutIndex = 0;
+		while (OutIndex < 3 && Clamped > Nodes[OutIndex + 1])
+		{
+			++OutIndex;
+		}
+		OutShare = (Clamped - Nodes[OutIndex]) / (Nodes[OutIndex + 1] - Nodes[OutIndex]);
+	}
+	// Bilinear between the four grid points around the mouse.
+	void AedirStanceAt(const FVector2D& Aim, FVector& OutHand, FVector& OutBlade)
+	{
+		int32 Col, Row;
+		float U, V;
+		AedirGridSpan(AedirStanceGridX, static_cast<float>(Aim.X), Col, U);
+		AedirGridSpan(AedirStanceGridY, static_cast<float>(Aim.Y), Row, V);
+		const auto Blade = [](const FAedirStanceCell& Cell) { return FRotator(Cell.BladePitch, Cell.BladeYaw, 0.f).Vector(); };
+		const FAedirStanceCell& A = AedirStanceTable[Row][Col];
+		const FAedirStanceCell& B = AedirStanceTable[Row][Col + 1];
+		const FAedirStanceCell& C = AedirStanceTable[Row + 1][Col];
+		const FAedirStanceCell& D = AedirStanceTable[Row + 1][Col + 1];
+		OutHand = FMath::Lerp(FMath::Lerp(A.Hand, B.Hand, U), FMath::Lerp(C.Hand, D.Hand, U), V);
+		OutBlade = FMath::Lerp(FMath::Lerp(Blade(A), Blade(B), U), FMath::Lerp(Blade(C), Blade(D), U), V).GetSafeNormal();
+		if (OutBlade.IsNearlyZero())
+		{
+			OutBlade = FVector::UpVector;
+		}
+	}
+}
+
 bool UAedirCombatComponent::ComputeKeyPose(EAedirHand Hand, const FAedirArmDynamics& Arm, FVector& OutHandLocal, FVector& OutBladeLocal) const
 {
 	if (CVarAedirKeyPoses.GetValueOnGameThread() == 0)
@@ -1934,6 +1996,11 @@ bool UAedirCombatComponent::ComputeKeyPose(EAedirHand Hand, const FAedirArmDynam
 	{
 		OutBladeLocal = FVector::UpVector;
 	}
+	const bool bTable = CVarAedirStanceTable.GetValueOnGameThread() != 0;
+	if (bTable)
+	{
+		AedirStanceAt(Aim, OutHandLocal, OutBladeLocal);
+	}
 	// A thrust has its own two poses, drawn back and out, and goes between them as far as it is pushed; the mouse to the side
 	// steers it, and the view up or down raises or lowers it.
 	if (bThrustMode)
@@ -1957,6 +2024,7 @@ bool UAedirCombatComponent::ComputeKeyPose(EAedirHand Hand, const FAedirArmDynam
 	}
 	// A blade can only be held at a good angle across the forearm: pointing along the arm the wrist cannot bend that far. Where
 	// a pose asks for that, the hands move round about the shoulder until the arm lies at least this far off the blade.
+	if (!bTable)
 	{
 		const FVector Pivot = ComputeHandLedPivotLocal(EAedirHand::Right);
 		const FVector Reach = OutHandLocal - Pivot;

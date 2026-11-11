@@ -246,3 +246,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - A pole carried at a walk is brought down level (still 33); overhead it reaches forward from the raised hands (stills 37, 39, 41).
 - The weapon arm takes as much mouse as in Half Sword, measured with raw mouse counts in both games (about 1875 counts from the middle to the far side, 1750 up or down); it had been five times too quick, so every small hand movement threw the arms round.
 - RecordFrames dev command: every rendered frame is written out, for a video of what the body does.
+- The sword stance comes from a 5 x 5 table read off Half Sword (the mouse taken to the same raw-count grid points in both games, each filmed from behind and from the side), blended between the four points around the mouse; the older key poses stay behind aedir.StanceTable 0.
