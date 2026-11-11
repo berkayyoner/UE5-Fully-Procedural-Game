@@ -244,3 +244,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The carrying hand of a two-handed hold keeps its place while the other hand lets go for a moment.
 - Two-handed rest: the blade lies low out to the right before the hips, the hands a little left of the middle, within both arms' reach (still 17).
 - A pole carried at a walk is brought down level (still 33); overhead it reaches forward from the raised hands (stills 37, 39, 41).
+- The weapon arm takes as much mouse as in Half Sword, measured with raw mouse counts in both games (about 1875 counts from the middle to the far side, 1750 up or down); it had been five times too quick, so every small hand movement threw the arms round.
+- RecordFrames dev command: every rendered frame is written out, for a video of what the body does.

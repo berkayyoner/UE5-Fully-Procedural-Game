@@ -1582,6 +1582,13 @@ void AAedirPlayerCharacter::ShotCam(const FString& CameraArgs)
 	RunDevCommand(TEXT("ShotCam"), CameraArgs, false);
 }
 
+void AAedirPlayerCharacter::RecordFrames(int32 On)
+{
+	// Below zero it goes on until set back; above zero it counts down a frame at a time.
+	GIsDumpingMovie = On != 0 ? -1 : 0;
+	UE_LOG(LogAedir, Display, TEXT("[Dev] RecordFrames %d at frame %llu"), GIsDumpingMovie, GFrameCounter);
+}
+
 void AAedirPlayerCharacter::LightningNow()
 {
 	for (TActorIterator<AAedirWeatherManager> It(GetWorld()); It; ++It)

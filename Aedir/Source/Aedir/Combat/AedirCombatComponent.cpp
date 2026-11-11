@@ -146,13 +146,12 @@ namespace
 	// The trunk bends into a downward blow and arches back under a raised one.
 	constexpr float AedirSwingBendDownDegrees = 34.f;
 	constexpr float AedirSwingBendUpDegrees = 9.f;
-	// As in Half Sword, the mouse moved about 450 pixels from the middle takes a weapon to the far end of its travel (100
-	// degrees): at the project's 0.07 a pixel and the aim's 0.3 a unit, this share. It was 1.8, which asked for eight times
-	// as much mouse, so every swing stayed small.
-	constexpr float AedirWeaponMouseShare = 13.f;
-	// Up and down the mouse goes further for the same turn, as in Half Sword, where 300 pixels up still holds the point on the
-	// enemy with the hands raised to the face: about 30 degrees for that.
-	constexpr float AedirWeaponMouseUpShare = 5.f;
+	// Measured in Half Sword with raw mouse counts, the same input both games read: from one end of a weapon's travel to the
+	// other is about 3750 counts across and 3500 up and down, so from the middle about 1875 to the far side (100 degrees here)
+	// and 1750 to the top or the bottom. At the project's 0.07 a count and the aim's 0.3 a unit, these shares. They had been
+	// set five times higher from cursor moves that were not raw counts, and every small hand movement threw the arms round.
+	constexpr float AedirWeaponMouseShare = 2.5f;
+	constexpr float AedirWeaponMouseUpShare = 2.4f;
 	// Bare fists move round their guard by this share of the same.
 	constexpr float AedirFistMouseShare = 4.f;
 	// With no button held the point hangs down and across the body.

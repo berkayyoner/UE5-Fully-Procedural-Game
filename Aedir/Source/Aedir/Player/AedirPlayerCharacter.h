@@ -278,6 +278,10 @@ public:
 	UFUNCTION(Exec)
 	void ShotCam(const FString& CameraArgs);
 
+	// Every rendered frame is written to the screenshots folder while on (1), for a video of what the body does.
+	UFUNCTION(Exec)
+	void RecordFrames(int32 On);
+
 	// A lightning bolt strikes nearby now.
 	UFUNCTION(Exec)
 	void LightningNow();
