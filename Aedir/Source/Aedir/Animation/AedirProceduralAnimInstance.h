@@ -42,6 +42,10 @@ private:
 	void ApplyFingers(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const TArray<FName>& FingerBoneNames, float FistAlpha, float CurlSign) const;
 	// Turns the forearm, by the elbow and shoulder, so a blade held at one fixed angle in the hand points where it should,
 	// and gives back the way the blade then points.
+	// The weapon arm placed straight from where the hand and blade are wanted: the forearm runs across the blade as a fist
+	// holds a handle, the elbow goes where the upper arm then reaches, and the same aim always gives the same arm.
+	FVector ApplyWeaponArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, const FVector& DirectionWorld, float Share, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
+	mutable FVector LastWeaponForearm[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector ApplyArmLedBlade(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& DirectionWorld, float Share, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
 	void ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix, const FVector& DirectionWorld, float Alpha, float FrontShare, float MinBladeDegrees, float HangDegrees) const;
 

@@ -1906,6 +1906,7 @@ namespace
 	// hand is in the body's frame (forward, right, up, cm from the middle of the hips) and which way the blade points
 	// (pitch up +, yaw right +). The mouse runs 1875 counts from the middle to either side (100 degrees here) and 1750 up or
 	// down; the grid points are 750 and 1500 counts from the middle, which here is a little below level.
+	TAutoConsoleVariable<int32> CVarAedirClearOwnBody(TEXT("aedir.ClearOwnBody"), 0, TEXT("A blade wanted through its own holder's body in the stance is turned off it (1), or held where it is wanted (0)."));
 	TAutoConsoleVariable<int32> CVarAedirStanceTable(TEXT("aedir.StanceTable"), 1, TEXT("The sword stance comes from the table measured in Half Sword (1), or from the older key poses (0)."));
 	constexpr float AedirStanceGridX[5] = { -80.f, -40.f, 0.f, 40.f, 80.f };
 	constexpr float AedirStanceGridY[5] = { -77.f, -42.f, -7.f, 28.f, 64.f };
@@ -1920,12 +1921,12 @@ namespace
 	{
 		// Down: the hands low, at the left hip, before the belly, by the right hip; the point low to the left, hanging before
 		// the feet, and from the right hip forward and up across.
-		{ { FVector(15.f, -20.f, -2.f), -20.f, -110.f }, { FVector(25.f, 0.f, 4.f), -10.f, -90.f }, { FVector(25.f, 12.f, 0.f), -40.f, 20.f }, { FVector(20.f, 20.f, -4.f), 30.f, -25.f }, { FVector(20.f, 25.f, -4.f), 30.f, -15.f } },
-		{ { FVector(18.f, -19.f, 14.f), -5.f, -115.f }, { FVector(25.f, -2.f, 16.f), 0.f, -88.f }, { FVector(27.f, 10.f, 12.f), -10.f, -20.f }, { FVector(24.f, 19.f, 8.f), 20.f, -28.f }, { FVector(22.f, 23.f, 6.f), 30.f, -18.f } },
-		// The middle: the hands up before the right shoulder, the blade lying back over the left shoulder; to the left up by the
-		// left shoulder, the blade back over it; to the right down by the right side, the point forward and up.
-		{ { FVector(15.f, -15.f, 36.f), 15.f, -140.f }, { FVector(20.f, -3.f, 35.f), 12.f, -135.f }, { FVector(25.f, 12.f, 32.f), 10.f, -150.f }, { FVector(28.f, 18.f, 20.f), 10.f, -30.f }, { FVector(25.f, 22.f, 15.f), 30.f, -20.f } },
-		{ { FVector(14.f, -17.f, 46.f), 10.f, -125.f }, { FVector(18.f, -4.f, 50.f), 8.f, -115.f }, { FVector(20.f, 9.f, 48.f), 8.f, -120.f }, { FVector(22.f, 16.f, 44.f), 10.f, -95.f }, { FVector(22.f, 22.f, 38.f), 12.f, -100.f } },
+		{ { FVector(15.f, -20.f, -2.f), -20.f, -110.f }, { FVector(25.f, 0.f, 4.f), -10.f, -90.f }, { FVector(25.f, 12.f, 0.f), -40.f, 20.f }, { FVector(20.f, 20.f, -4.f), 30.f, -60.f }, { FVector(20.f, 25.f, -4.f), 30.f, -50.f } },
+		{ { FVector(18.f, -19.f, 14.f), -5.f, -115.f }, { FVector(25.f, -2.f, 16.f), 0.f, -88.f }, { FVector(27.f, 10.f, 12.f), -10.f, -20.f }, { FVector(24.f, 19.f, 8.f), 28.f, -70.f }, { FVector(22.f, 23.f, 6.f), 32.f, -55.f } },
+		// The middle: the hands up before the right shoulder, the blade lying out to the left over the left shoulder; to the left
+		// up by the left shoulder, the blade back over it; to the right down by the right side, the blade rising across to the left.
+		{ { FVector(15.f, -15.f, 36.f), 15.f, -140.f }, { FVector(20.f, -3.f, 35.f), 12.f, -135.f }, { FVector(25.f, 12.f, 32.f), 10.f, -120.f }, { FVector(28.f, 18.f, 20.f), 25.f, -90.f }, { FVector(25.f, 22.f, 15.f), 40.f, -70.f } },
+		{ { FVector(14.f, -17.f, 46.f), 10.f, -125.f }, { FVector(18.f, -4.f, 50.f), 8.f, -115.f }, { FVector(20.f, 9.f, 48.f), 8.f, -105.f }, { FVector(22.f, 16.f, 44.f), 10.f, -95.f }, { FVector(22.f, 22.f, 38.f), 12.f, -100.f } },
 		// Up: the hands over the head, the blade lying level across it to the left; to the right over the right shoulder, the
 		// blade lying back over the head.
 		{ { FVector(12.f, -18.f, 58.f), 5.f, -105.f }, { FVector(15.f, -5.f, 66.f), 5.f, -95.f }, { FVector(15.f, 5.f, 68.f), 5.f, -95.f }, { FVector(18.f, 15.f, 58.f), 8.f, -100.f }, { FVector(18.f, 22.f, 54.f), 5.f, -120.f } },
@@ -2579,10 +2580,11 @@ bool UAedirCombatComponent::GetElbowHint(EAedirHand Hand, FVector& OutLocal, flo
 	// Wound up to the far side across the body, the elbow comes forward and down in front of the chest: pointing it out to its
 	// own side there would wring the arm round at the shoulder.
 	const bool bAcrossBody = !bTwoHandGrip && static_cast<float>(Arm.PoseAimDeg.X) * Side < 0.f;
-	// Held before the body the elbows hang down by the ribs (stills 17, 20, 24, 29); they go out and up only as the hands are
-	// raised over the shoulders (stills 54-57).
+	// As filmed in Half Sword: in the guard the carrying arm's elbow stands out to its side about as high as the shoulder,
+	// the forearm up before it, so the blade can lie back over the other shoulder; it drops only with the hands low.
 	const FVector WoundUp = bAcrossBody ? FVector(0.6f, Side * 0.15f, -0.6f) : FVector(0.1f, Side * 0.6f, -0.75f);
-	FVector Hint = FMath::Lerp(FVector(-0.3f, Side * 0.45f, -0.85f), WoundUp, WindShare);
+	const FVector Guard = FMath::Lerp(FVector(-0.3f, Side * 0.45f, -0.85f), FVector(-0.1f, Side * 0.95f, -0.15f), FMath::SmoothStep(-60.f, -10.f, static_cast<float>(Arm.PoseAimDeg.Y)));
+	FVector Hint = FMath::Lerp(Guard, WoundUp, WindShare);
 	Hint = FMath::Lerp(Hint, FVector(0.35f, Side * 0.8f, 0.f), CombatRaiseShare(static_cast<float>(Arm.PoseAimDeg.Y) - AedirElbowRaiseFromDegrees, AedirWeaponRaiseFullDegrees - AedirElbowRaiseFromDegrees));
 	Hint = FMath::Lerp(Hint, FVector(-0.25f, Side * 0.6f, -0.75f), CombatSmoothStep01(HalfSwordAlpha));
 	if (bThrustMode)
@@ -3564,7 +3566,9 @@ FVector UAedirCombatComponent::ClearDirOfOwnBody(EAedirHand Hand, const FVector&
 {
 	const AAedirItemActor* Item = GetHeldItem(Hand);
 	const USkeletalMeshComponent* Body = Creature ? Creature->GetMesh() : nullptr;
-	if (!Item || !Body || Item->ItemClass != EAedirItemClass::Weapon || IsSecondaryGripHand(Hand) || Dir.IsNearlyZero())
+	// A weapon held in the stance passes through its own holder's body, and Half Sword lays the blade close over the head and
+	// the shoulders: the stance is taken as it is wanted there.
+	if (!Item || !Body || Item->ItemClass != EAedirItemClass::Weapon || IsSecondaryGripHand(Hand) || Dir.IsNearlyZero() || (IsWeaponStance(Hand) && CVarAedirClearOwnBody.GetValueOnGameThread() == 0))
 	{
 		return Dir;
 	}

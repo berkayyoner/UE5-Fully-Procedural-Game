@@ -72,6 +72,17 @@ namespace
 	constexpr double AedirArmLedWristGiveCost = 0.12;
 	// However the blade and the forearm come to lie, a hand turns no faster than this.
 	constexpr float AedirHandMaxTurnDegrees = 1000.f;
+	TAutoConsoleVariable<int32> CVarAedirDirectArm(TEXT("aedir.DirectArm"), 1, TEXT("The weapon arm is placed straight from the hand and blade wanted (1), or led by the older blade-led arm (0)."));
+	// The weapon arm's search: how far the blade may lean along the forearm, in how many steps each way, and how finely the
+	// circle of forearms about the blade is tried; then what each choice costs.
+	constexpr float AedirWeaponArmTiltDegrees = 35.f;
+	constexpr int32 AedirWeaponArmTiltSteps = 7;
+	constexpr int32 AedirWeaponArmCircleSteps = 120;
+	constexpr double AedirWeaponArmMissWeight = 1.0;
+	constexpr double AedirWeaponArmTiltWeight = 4.0;
+	constexpr double AedirWeaponArmOutWeight = 3.0;
+	constexpr double AedirWeaponArmDownWeight = 1.5;
+	constexpr double AedirWeaponArmKeepWeight = 6.0;
 	// Each joint of the arm turns no faster than this, in degrees a second against its parent (collarbone, shoulder, elbow,
 	// wrist): a strong swing reaches about this, and a pose that jumps further in one frame is followed round over a few.
 	constexpr float AedirArmJointMaxDegrees[4] = { 300.f, 700.f, 800.f, 900.f };
@@ -227,8 +238,13 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh, GaitData.RightElbowHint, GaitData.RightElbowHintAlpha);
 
 	// A weapon in a fight is pointed by the arm: the elbow and shoulder turn the forearm and the blade keeps its angle in the hand.
-	const FVector LeftBladeWorld = ApplyArmLedBlade(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftWeaponDirWorld, GaitData.LeftArmLedShare * GaitData.LeftWeaponAimAlpha, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh);
-	const FVector RightBladeWorld = ApplyArmLedBlade(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightWeaponDirWorld, GaitData.RightArmLedShare * GaitData.RightWeaponAimAlpha, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh);
+	const bool bDirect = CVarAedirDirectArm.GetValueOnAnyThread() != 0;
+	const FVector LeftBladeWorld = bDirect && GaitData.LeftArmReachAlpha > AedirReachAlphaThreshold
+		? ApplyWeaponArm(CSPose, Bones, 0, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftWeaponDirWorld, GaitData.LeftArmLedShare * GaitData.LeftWeaponAimAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh)
+		: ApplyArmLedBlade(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftWeaponDirWorld, GaitData.LeftArmLedShare * GaitData.LeftWeaponAimAlpha, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh);
+	const FVector RightBladeWorld = bDirect && GaitData.RightArmReachAlpha > AedirReachAlphaThreshold
+		? ApplyWeaponArm(CSPose, Bones, 1, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightWeaponDirWorld, GaitData.RightArmLedShare * GaitData.RightWeaponAimAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh)
+		: ApplyArmLedBlade(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightWeaponDirWorld, GaitData.RightArmLedShare * GaitData.RightWeaponAimAlpha, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh);
 	DevBladeWorld[0][0] = GaitData.LeftWeaponDirWorld;
 	DevBladeWorld[0][1] = GaitData.RightWeaponDirWorld;
 	DevBladeWorld[1][0] = LeftBladeWorld;
@@ -694,6 +710,84 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 	bLastHandValid[HandSlot] = true;
 	HandTransform.SetRotation(FQuat::Slerp(HandTransform.GetRotation(), HandRotation, FMath::Clamp(Alpha, 0.f, 1.f)).GetNormalized());
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
+}
+
+FVector FAedirProceduralAnimProxy::ApplyWeaponArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, const FVector& DirectionWorld, float Share, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const
+{
+	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
+	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
+	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);
+	if (Share <= AedirReachAlphaThreshold || !Humerus.IsValid() || !Radius.IsValid() || !Hand.IsValid() || DirectionWorld.IsNearlyZero())
+	{
+		LastWeaponForearm[Slot] = FVector::ZeroVector;
+		return DirectionWorld;
+	}
+	const FTransform HumerusTransform = CSPose.GetComponentSpaceTransform(Humerus);
+	const FTransform RadiusTransform = CSPose.GetComponentSpaceTransform(Radius);
+	const FTransform HandTransform = CSPose.GetComponentSpaceTransform(Hand);
+	const FVector Shoulder = HumerusTransform.GetLocation();
+	const FVector Elbow = RadiusTransform.GetLocation();
+	const FVector Wrist = HandTransform.GetLocation();
+	const double UpperCm = (Elbow - Shoulder).Size();
+	const double ForeCm = (Wrist - Elbow).Size();
+	const FVector Target = MeshToWorld.InverseTransformPosition(HandWorld);
+	const FVector Blade = MeshToWorld.InverseTransformVectorNoScale(DirectionWorld).GetSafeNormal();
+
+	// The forearms that hold the blade across the fist make a circle about it; the wrist lets the blade lean along the
+	// forearm a little either way, which widens the circle to a band. Of these, the one whose elbow the upper arm reaches,
+	// the elbow out to its side and not across the chest, and close to the last one so it does not jump between two.
+	FVector Across = FVector::CrossProduct(Blade, DownMesh);
+	if (!Across.Normalize())
+	{
+		Across = FVector::CrossProduct(Blade, ForwardMesh).GetSafeNormal();
+	}
+	const FVector Around = FVector::CrossProduct(Blade, Across);
+	FVector Best = FVector::ZeroVector;
+	double BestScore = TNumericLimits<double>::Max();
+	for (int32 TiltStep = -AedirWeaponArmTiltSteps; TiltStep <= AedirWeaponArmTiltSteps; ++TiltStep)
+	{
+		const double Tilt = FMath::DegreesToRadians(AedirWeaponArmTiltDegrees * TiltStep / AedirWeaponArmTiltSteps);
+		for (int32 Step = 0; Step < AedirWeaponArmCircleSteps; ++Step)
+		{
+			const double Turn = UE_TWO_PI * Step / AedirWeaponArmCircleSteps;
+			const FVector Forearm = (Across * FMath::Cos(Turn) + Around * FMath::Sin(Turn)) * FMath::Cos(Tilt) + Blade * FMath::Sin(Tilt);
+			const FVector UpperDir = (Target - Forearm * ForeCm - Shoulder).GetSafeNormal();
+			const double Miss = FMath::Abs((Target - Forearm * ForeCm - Shoulder).Size() - UpperCm);
+			double Score = Miss * AedirWeaponArmMissWeight + FMath::Abs(Tilt) * AedirWeaponArmTiltWeight
+				- FVector::DotProduct(UpperDir, OutwardMesh) * AedirWeaponArmOutWeight - FVector::DotProduct(UpperDir, DownMesh) * AedirWeaponArmDownWeight;
+			if (!LastWeaponForearm[Slot].IsNearlyZero())
+			{
+				Score += (1.0 - FVector::DotProduct(Forearm, LastWeaponForearm[Slot])) * AedirWeaponArmKeepWeight;
+			}
+			if (Score < BestScore)
+			{
+				BestScore = Score;
+				Best = Forearm;
+			}
+		}
+	}
+	LastWeaponForearm[Slot] = Best;
+
+	// The elbow goes on the shoulder's reach towards where that forearm puts it; the two-bone solve then lays the arm through it.
+	const FVector ElbowWanted = Shoulder + (Target - Best * ForeCm - Shoulder).GetSafeNormal() * UpperCm;
+	FVector SolvedElbow;
+	FVector SolvedWrist;
+	AnimationCore::SolveTwoBoneIK(Shoulder, Elbow, Wrist, ElbowWanted, Target, SolvedElbow, SolvedWrist, false, 1.0, 1.0);
+	const FQuat HumerusDelta = SafeDeltaRotation(Elbow - Shoulder, SolvedElbow - Shoulder);
+	const FQuat RadiusDelta = SafeDeltaRotation(HumerusDelta.RotateVector(Wrist - Elbow), SolvedWrist - SolvedElbow);
+	FTransform SolvedHumerus = HumerusTransform;
+	SolvedHumerus.SetRotation(HumerusDelta * HumerusTransform.GetRotation());
+	FTransform SolvedRadius = RadiusTransform;
+	SolvedRadius.SetTranslation(SolvedElbow);
+	SolvedRadius.SetRotation(RadiusDelta * HumerusDelta * RadiusTransform.GetRotation());
+	FTransform SolvedHand = HandTransform;
+	SolvedHand.SetTranslation(SolvedWrist);
+	SolvedHand.SetRotation(RadiusDelta * HumerusDelta * HandTransform.GetRotation());
+	const float Alpha = FMath::Clamp(Share, 0.f, 1.f);
+	CSPose.SetComponentSpaceTransform(Humerus, BlendBoneTransform(HumerusTransform, SolvedHumerus, Alpha));
+	CSPose.SetComponentSpaceTransform(Radius, BlendBoneTransform(RadiusTransform, SolvedRadius, Alpha));
+	CSPose.SetComponentSpaceTransform(Hand, BlendBoneTransform(HandTransform, SolvedHand, Alpha));
+	return DirectionWorld;
 }
 
 FVector FAedirProceduralAnimProxy::ApplyArmLedBlade(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& DirectionWorld, float Share, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const
