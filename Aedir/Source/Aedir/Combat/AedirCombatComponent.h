@@ -370,6 +370,10 @@ public:
 	float GetWristFirmShare(EAedirHand Hand) const;
 	// How far a weapon is held out before the body (0 drawn in, 1 the arms straight): the wrist then lets the blade run on from the forearm.
 	float GetHeldOutShare(EAedirHand Hand) const;
+	// A weapon steered by the mouse is at the end of its travel that way (sign of the mouse across): the view turns from
+	// there, as in Half Sword; short of it the view stays where it is.
+	bool IsWeaponAimAtEdge(float MouseAcross) const;
+	bool IsSteeringWeapon() const;
 
 	// How far the arm alone aims the weapon, the wrist held at one angle: all of it in a fight with a blade in hand.
 	float GetArmLedShare(EAedirHand Hand) const;

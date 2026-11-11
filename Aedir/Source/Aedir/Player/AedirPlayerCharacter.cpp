@@ -486,7 +486,10 @@ void AAedirPlayerCharacter::HandleMouseX(float Value)
 		bOrbitMoved |= !FMath::IsNearlyZero(Value);
 		return;
 	}
-	AddControllerYawInput(bFighting ? CameraValue * FightCameraMouseScale : CameraValue);
+	// Steering a weapon the view is locked as in Half Sword: the mouse moves the weapon alone, and turns the view only once
+	// the weapon is at the end of its travel that way.
+	const bool bSteering = Combat && Combat->IsSteeringWeapon();
+	AddControllerYawInput(bSteering ? (Combat->IsWeaponAimAtEdge(Value) ? CameraValue : 0.f) : (bFighting ? CameraValue * FightCameraMouseScale : CameraValue));
 	if (!FMath::IsNearlyZero(Value))
 	{
 		LastLookInputSeconds = 0.f;
@@ -506,7 +509,7 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 		bOrbitMoved |= !FMath::IsNearlyZero(Value);
 		return;
 	}
-	AddControllerPitchInput(bFighting ? CameraValue * FightCameraMouseScale : CameraValue);
+	AddControllerPitchInput(Combat && Combat->IsSteeringWeapon() ? 0.f : (bFighting ? CameraValue * FightCameraMouseScale : CameraValue));
 	if (!FMath::IsNearlyZero(Value))
 	{
 		LastLookInputSeconds = 0.f;

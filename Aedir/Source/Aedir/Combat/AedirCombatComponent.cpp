@@ -140,6 +140,8 @@ namespace
 	constexpr float AedirFistAimPitchMax = 85.f;
 	// Weapon stance. The hand stays in front of the chest and moves little; the blade sweeps much further around it.
 	constexpr float AedirWeaponYawLimit = 100.f;
+	// Within this much of the end of its travel a weapon counts as at the end, and the mouse turns the view.
+	constexpr float AedirWeaponEdgeDegrees = 1.f;
 	constexpr float AedirWeaponPitchMin = -95.f;
 	// All the way down the point goes to the ground in front of the feet, for a blow at someone lying there.
 	constexpr float AedirWeaponDownPitch = -82.f;
@@ -2600,6 +2602,27 @@ float UAedirCombatComponent::GetWristFirmShare(EAedirHand Hand) const
 {
 	// In the half-sword the blade lies further along the forearm of the carrying hand as it comes round to the front.
 	return IsWeaponStance(Hand) && !bThrustMode && !(bTwoHandGrip && IsPolearm(GetHeldItem(Hand))) ? GetFightShare() * (1.f - AedirHalfSwordWristLoose * GetHalfSwordShare()) : 0.f;
+}
+
+bool UAedirCombatComponent::IsSteeringWeapon() const
+{
+	return (IsGuardActive(EAedirHand::Left) && IsWeaponStance(EAedirHand::Left)) || (IsGuardActive(EAedirHand::Right) && IsWeaponStance(EAedirHand::Right)) || (IsGripHeld() && IsWeaponStance(GetGripHand()));
+}
+
+bool UAedirCombatComponent::IsWeaponAimAtEdge(float MouseAcross) const
+{
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		if (IsWeaponStance(Hand) && !IsSecondaryGripHand(Hand))
+		{
+			const double X = GetArm(Hand).AimOffsetDeg.X;
+			if ((MouseAcross > 0.f && X >= AedirWeaponYawLimit - AedirWeaponEdgeDegrees) || (MouseAcross < 0.f && X <= -AedirWeaponYawLimit + AedirWeaponEdgeDegrees))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
 }
 
 float UAedirCombatComponent::GetHeldOutShare(EAedirHand Hand) const
