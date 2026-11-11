@@ -2606,7 +2606,8 @@ float UAedirCombatComponent::GetWristFirmShare(EAedirHand Hand) const
 
 bool UAedirCombatComponent::IsSteeringWeapon() const
 {
-	return (IsGuardActive(EAedirHand::Left) && IsWeaponStance(EAedirHand::Left)) || (IsGuardActive(EAedirHand::Right) && IsWeaponStance(EAedirHand::Right)) || (IsGripHeld() && IsWeaponStance(GetGripHand()));
+	// Only a held button steers the weapon; carried in both hands with no button down, the mouse turns the view as ever.
+	return (IsGuardActive(EAedirHand::Left) && GetHeldItem(EAedirHand::Left)) || (IsGuardActive(EAedirHand::Right) && GetHeldItem(EAedirHand::Right));
 }
 
 bool UAedirCombatComponent::IsWeaponAimAtEdge(float MouseAcross) const

@@ -253,3 +253,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - In the stance a blade is no longer turned off its holder's own body (aedir.ClearOwnBody 0): it turned the blade laid over the head and shoulders as much as 60 degrees away from the stance.
 - In the guard the carrying arm's elbow stands out to its side at shoulder height, as filmed in Half Sword, dropping only with the hands low; the right-hand side of the stance table has the blade rising across to the left.
 - Steering a weapon the view is locked as in Half Sword: the mouse moves the weapon alone and turns the view only once the weapon is at the end of its travel that way (it followed a few percent of every mouse move, so the view drifted round during a fight).
+- The view locks only while a button steers the weapon; carried in both hands with no button down the mouse turns the view again (the lock had taken the view away whenever a sword was held in both hands).
