@@ -1,4 +1,4 @@
-﻿#include "Combat/AedirCombatComponent.h"
+#include "Combat/AedirCombatComponent.h"
 
 #include "Aedir.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -41,6 +41,10 @@ namespace
 	constexpr float GripJointTearCm = 14.f;
 	constexpr float GripJointBreakSeconds = 0.3f;
 	constexpr float GripLostSecondsAfterTear = 0.6f;
+	// The second hand lets go when its place on the grip is this far past what its arm reaches, for this long; it tries again after.
+	constexpr float GripReleaseBeyondReachCm = 8.f;
+	constexpr float GripReleaseAfterSeconds = 0.12f;
+	constexpr float GripLostSecondsOutOfReach = 0.4f;
 }
 
 void UAedirCombatComponent::UpdateHeldWeight(float DeltaTime)
@@ -190,6 +194,16 @@ void UAedirCombatComponent::UpdateGripJoint(float DeltaTime)
 			TargetWorld -= BladeWorld * GripJointSlideStepCm;
 			PointInPrimary -= BladeInPrimary.GetSafeNormal() * GripJointSlideStepCm;
 			Slide -= GripJointSlideStepCm;
+		}
+		// Out at the far side the weapon goes beyond where the second arm reaches even at the near end of the grip: the hand
+		// lets go, as a fighter's does when the swing carries the sword out on one arm, and takes hold again after.
+		const double Short = FVector::Dist(TargetWorld, Shoulder) - ArmCm;
+		GripOutOfReachSeconds = Short > GripReleaseBeyondReachCm ? GripOutOfReachSeconds + DeltaTime : 0.f;
+		if (GripOutOfReachSeconds >= GripReleaseAfterSeconds)
+		{
+			GripOutOfReachSeconds = 0.f;
+			LoseGrip(GripLostSecondsOutOfReach);
+			return;
 		}
 	}
 

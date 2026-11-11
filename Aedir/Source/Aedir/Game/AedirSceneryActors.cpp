@@ -20,7 +20,7 @@ namespace
 	const TCHAR* const SceneryGlowMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirPrecip.M_AedirPrecip");
 	const TCHAR* const SceneryWaterMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirStream.M_AedirStream");
 	const TCHAR* const ScenerySmokePath = TEXT("/Game/Effects/NS_WellSmoke.NS_WellSmoke");
-	const TCHAR* const SceneryFireSoundPath = TEXT("/Game/Aedir/Sounds/Combat/SFX_CampfireLoop.SFX_CampfireLoop");
+	const TCHAR* const SceneryFireSoundPath = TEXT("/Game/Free_Sounds_Pack/wav/Fire_Burning_Loop_2.Fire_Burning_Loop_2");
 	const TCHAR* const SceneryWaterSoundPath = TEXT("/Game/Aedir/Sounds/S_Rain_Loop.S_Rain_Loop");
 	const TCHAR* const ScenerySprayPath = TEXT("/Game/A_Surface_Footstep/Niagara_FX/ParticleSystems/PSN_WaterHeavy_Surface.PSN_WaterHeavy_Surface");
 	// The glow of a flame's tongue, hot white-yellow at full and orange as it dies down; a few tongues crossed around the fire.

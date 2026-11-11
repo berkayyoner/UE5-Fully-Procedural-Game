@@ -2,6 +2,7 @@
 
 #include "AnimationRuntime.h"
 #include "Animation/AedirGaitComponent.h"
+#include "Animation/AedirProceduralAnimInstance.h"
 #include "Engine/SkeletalMesh.h"
 
 #include "GameFramework/PlayerController.h"
@@ -116,6 +117,13 @@ namespace
 	constexpr float HitReactionKnockdownExtraSeconds = 0.8f;
 	// The blow moves the part it lands on, not the whole body through the air.
 	TAutoConsoleVariable<float> CVarAedirGrippedArmShare(TEXT("aedir.GrippedArmShare"), 0.3f, TEXT("How much of its own will the arm of a hand held onto a weapon's grip keeps."));
+	TAutoConsoleVariable<int32> CVarAedirArmTrapRelease(TEXT("aedir.ArmTrapRelease"), 1, TEXT("An arm caught far off its pose against its joint limits is put back on it (1) or left (0)."));
+	// Held this far off its pose for this long, an arm is caught; after being put back it is left alone this long.
+	constexpr float AedirArmTrapDegrees = 45.f;
+	constexpr float AedirArmTrapSeconds = 0.35f;
+	// Only a hand that has come to rest off its pose is caught; one still swinging round to it is left to get there.
+	constexpr float AedirArmTrapStillRadPerSecond = 1.5f;
+	constexpr float AedirArmTrapCooldownSeconds = 0.5f;
 	TAutoConsoleVariable<float> CVarAedirArmHold(TEXT("aedir.ArmHold"), 0.5f, TEXT("How firmly the arms hold their pose, against the trunk's 1."));
 	constexpr float BalanceTrunkMuscleShare = 1.f;
 	// A standing body is never quite still: it drifts about its balance, more when tired or hurt.
@@ -367,6 +375,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
 	UpdateMotors(DeltaTime, false);
+	UpdateArmTraps(DeltaTime);
 	UpdateLegBlend(DeltaTime);
 
 	if (!bIsRagdoll && BodyControl)
@@ -2328,6 +2337,76 @@ void UAedirBalanceComponent::SetupMotors()
 	MotorComponent->RegisterComponent();
 	MotorComponent->SetSkeletalMeshComponent(BodyMesh);
 	UpdateMotors(0.f, true);
+}
+
+void UAedirBalanceComponent::UpdateArmTraps(float DeltaTime)
+{
+	// A hand turned far round against its joint limits can come to rest there, the wrong way over, and the muscles that
+	// should bring it back only press it harder into the limit. A living arm does not stay caught like that: an arm held
+	// that far off its pose for a moment is put back where the pose has it, upper arm, forearm and hand together.
+	UAedirProceduralAnimInstance* Pose = BodyMesh ? Cast<UAedirProceduralAnimInstance>(BodyMesh->GetAnimInstance()) : nullptr;
+	if (!Pose || bIsRagdoll || CVarAedirArmTrapRelease.GetValueOnGameThread() == 0)
+	{
+		ArmTrapSeconds[0] = ArmTrapSeconds[1] = 0.f;
+		return;
+	}
+	const UAedirStatsComponent* Stats = FindStats();
+	if (Stats && (Stats->IsDead() || Stats->IsDying() || Stats->IsKnockedOut()))
+	{
+		return;
+	}
+	const UAedirCombatComponent* Combat = CharacterOwner ? CharacterOwner->FindComponentByClass<UAedirCombatComponent>() : nullptr;
+	const bool bBothHands = Combat && Combat->GetGripJointForce() >= 0.f;
+	bool bRelease[2] = { false, false };
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		const FName HandName = Side == 0 ? FName(TEXT("hand_l")) : FName(TEXT("hand_r"));
+		const FBodyInstance* Hand = BodyMesh->GetBodyInstance(HandName);
+		if (!Hand)
+		{
+			continue;
+		}
+		const FQuat Target = Pose->GetPoseArmWorld(Side, 2).GetRotation();
+		const float OffDegrees = FMath::RadiansToDegrees(static_cast<float>(Hand->GetUnrealWorldTransform().GetRotation().AngularDistance(Target)));
+		const bool bStill = Hand->GetUnrealWorldAngularVelocityInRadians().Size() < AedirArmTrapStillRadPerSecond;
+		if (CVarAedirArmTrapRelease.GetValueOnGameThread() == 2 && GFrameCounter % 30 == 0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[ArmTrapDbg] side %d off %.0f spin %.2f"), Side, OffDegrees, Hand->GetUnrealWorldAngularVelocityInRadians().Size());
+		}
+		ArmTrapSeconds[Side] = OffDegrees > AedirArmTrapDegrees && bStill ? ArmTrapSeconds[Side] + DeltaTime : 0.f;
+		ArmTrapCooldown[Side] = FMath::Max(ArmTrapCooldown[Side] - DeltaTime, 0.f);
+		if (ArmTrapSeconds[Side] >= AedirArmTrapSeconds && ArmTrapCooldown[Side] <= 0.f)
+		{
+			bRelease[Side] = true;
+		}
+	}
+	// Both hands on one grip go back together, or the one left caught pulls the other in again.
+	if (bBothHands && (bRelease[0] || bRelease[1]))
+	{
+		bRelease[0] = bRelease[1] = true;
+	}
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		if (!bRelease[Side])
+		{
+			continue;
+		}
+		ArmTrapSeconds[Side] = 0.f;
+		ArmTrapCooldown[Side] = AedirArmTrapCooldownSeconds;
+		const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
+		const TCHAR* const ArmBones[] = { TEXT("upperarm"), TEXT("lowerarm"), TEXT("hand") };
+		for (int32 Part = 0; Part < 3; ++Part)
+		{
+			const FName BoneName(*FString::Printf(TEXT("%s%s"), ArmBones[Part], Suffix));
+			if (FBodyInstance* Body = BodyMesh->GetBodyInstance(BoneName))
+			{
+				Body->SetBodyTransform(Pose->GetPoseArmWorld(Side, Part), ETeleportType::TeleportPhysics);
+				Body->SetLinearVelocity(FVector::ZeroVector, false);
+				Body->SetAngularVelocityInRadians(FVector::ZeroVector, false);
+			}
+		}
+		UE_LOG(LogTemp, Log, TEXT("[ArmTrap] %s arm of %s put back on its pose"), Side == 0 ? TEXT("left") : TEXT("right"), *GetNameSafe(CharacterOwner));
+	}
 }
 
 void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)

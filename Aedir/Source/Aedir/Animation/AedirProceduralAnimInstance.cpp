@@ -259,6 +259,19 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, GaitData.LeftFootWorld, GaitData.LeftFootRot, ForwardMesh, GaitData.LeftFootLift, GaitData.KickLeftLeg ? GaitData.KickSoleAlpha : 0.f);
 	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.RightFemur, BoneNameSet.RightTibia, BoneNameSet.RightFoot, GaitData.RightFootWorld, GaitData.RightFootRot, ForwardMesh, GaitData.RightFootLift, GaitData.KickLeftLeg ? 0.f : GaitData.KickSoleAlpha);
 
+	// Where the pose has each arm, for the body to put an arm back on it that got caught off it.
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		const FName* ArmBones[3] = { Slot == 0 ? &BoneNameSet.LeftHumerus : &BoneNameSet.RightHumerus, Slot == 0 ? &BoneNameSet.LeftRadius : &BoneNameSet.RightRadius, Slot == 0 ? &BoneNameSet.LeftHand : &BoneNameSet.RightHand };
+		for (int32 Part = 0; Part < 3; ++Part)
+		{
+			const FCompactPoseBoneIndex Bone = ResolveCompactBone(Bones, *ArmBones[Part]);
+			if (Bone.IsValid())
+			{
+				PoseArmWorld[Slot][Part] = CSPose.GetComponentSpaceTransform(Bone) * MeshToWorld;
+			}
+		}
+	}
 	FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(CSPose, Output.Pose);
 	Output.Pose.NormalizeRotations();
 	ApplyBulk(Output.Pose, Bones);
@@ -1013,6 +1026,11 @@ UAedirGaitComponent* UAedirProceduralAnimInstance::GetGaitComponent() const
 FVector UAedirProceduralAnimInstance::DevGetPoseBlade(int32 Stage, int32 HandSlot)
 {
 	return GetProxyOnGameThread<FAedirProceduralAnimProxy>().DevBladeWorld[FMath::Clamp(Stage, 0, 2)][FMath::Clamp(HandSlot, 0, 1)];
+}
+
+FTransform UAedirProceduralAnimInstance::GetPoseArmWorld(int32 HandSlot, int32 Part)
+{
+	return GetProxyOnGameThread<FAedirProceduralAnimProxy>().PoseArmWorld[FMath::Clamp(HandSlot, 0, 1)][FMath::Clamp(Part, 0, 2)];
 }
 
 FQuat UAedirProceduralAnimInstance::DevGetPoseHand(int32 HandSlot)

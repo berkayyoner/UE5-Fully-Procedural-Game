@@ -1580,7 +1580,7 @@ namespace
 	const FAedirKeyPose AedirKeyPoses[] =
 	{
 		// Near the middle the point is on the enemy.
-		{ 0.f, 0.f, FVector(34.f, 2.f, 18.f), 40.f, 0.f },
+		{ 0.f, 0.f, FVector(38.f, 4.f, 20.f), 40.f, 0.f },
 		{ 0.f, 25.f, FVector(32.f, 2.f, 32.f), 35.f, 0.f },
 		{ 0.f, -28.f, FVector(36.f, 2.f, 4.f), 12.f, 0.f },
 		{ 22.f, 0.f, FVector(32.f, 10.f, 20.f), 45.f, 12.f },
@@ -1588,9 +1588,9 @@ namespace
 		// Out to the right: up beside the shoulder, the blade upright and leaning back over it; held out it leans forward.
 		{ 40.f, 40.f, FVector(22.f, 20.f, 42.f), 78.f, 160.f },
 		{ 60.f, 30.f, FVector(16.f, 24.f, 42.f), 68.f, 130.f },
-		{ 85.f, 15.f, FVector(18.f, 34.f, 28.f), 80.f, 20.f },
-		{ 60.f, 0.f, FVector(30.f, 26.f, 24.f), 70.f, 15.f },
-		{ 100.f, 0.f, FVector(26.f, 40.f, 30.f), 50.f, 45.f },
+		{ 85.f, 15.f, FVector(22.f, 50.f, 34.f), 80.f, 20.f },
+		{ 60.f, 0.f, FVector(34.f, 36.f, 24.f), 70.f, 15.f },
+		{ 100.f, 0.f, FVector(30.f, 58.f, 32.f), 50.f, 45.f },
 		// High on the right and over the head.
 		{ 55.f, 60.f, FVector(12.f, 24.f, 62.f), 60.f, -20.f },
 		{ 70.f, 75.f, FVector(10.f, 18.f, 74.f), 12.f, -150.f },
@@ -1598,16 +1598,16 @@ namespace
 		{ -5.f, 80.f, FVector(14.f, 2.f, 78.f), 25.f, 180.f },
 		// Low on the right: by the hip, the point low forward.
 		{ 60.f, -40.f, FVector(28.f, 26.f, -2.f), 30.f, -25.f },
-		{ 100.f, -40.f, FVector(34.f, 28.f, -4.f), -30.f, 40.f },
+		{ 100.f, -40.f, FVector(36.f, 44.f, 0.f), -30.f, 40.f },
 		{ 0.f, -60.f, FVector(36.f, 0.f, -10.f), -34.f, 0.f },
 		// The left: low, the point hanging down before the hands; level, the blade rising out to the left; up by the left
 		// shoulder, the point up and forward; further round, upright, and high, lying back over the head.
-		{ -60.f, -35.f, FVector(30.f, -18.f, 4.f), -55.f, -20.f },
-		{ -45.f, 0.f, FVector(34.f, -16.f, 22.f), 45.f, -75.f },
+		{ -60.f, -35.f, FVector(34.f, -28.f, 2.f), -55.f, -20.f },
+		{ -45.f, 0.f, FVector(38.f, -24.f, 24.f), 45.f, -75.f },
 		{ -55.f, 45.f, FVector(14.f, -20.f, 52.f), 45.f, 30.f },
-		{ -85.f, 30.f, FVector(18.f, -30.f, 32.f), 80.f, -20.f },
+		{ -85.f, 30.f, FVector(20.f, -42.f, 38.f), 80.f, -20.f },
 		{ -90.f, 75.f, FVector(10.f, -20.f, 70.f), 15.f, 150.f },
-		{ -100.f, -40.f, FVector(28.f, -28.f, -2.f), -35.f, -60.f },
+		{ -100.f, -40.f, FVector(30.f, -40.f, 0.f), -35.f, -60.f },
 	};
 	// The arms, the wrists and the second hand on the grip do not bring the blade quite to where a pose asks: each pose asks
 	// this much further (pitch, yaw in degrees), measured in the game, so the blade comes to rest where the pose has it.

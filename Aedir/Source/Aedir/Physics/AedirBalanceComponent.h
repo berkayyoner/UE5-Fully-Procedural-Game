@@ -520,6 +520,9 @@ private:
 	void ProcessHit(AActor* OtherActor, UPrimitiveComponent* OtherComponent, const FHitResult& Hit);
 	void SetupMotors();
 	void UpdateMotors(float DeltaTime, bool bForce);
+	void UpdateArmTraps(float DeltaTime);
+	float ArmTrapSeconds[2] = { 0.f, 0.f };
+	float ArmTrapCooldown[2] = { 0.f, 0.f };
 	void UpdateLegBlend(float DeltaTime);
 	float ArmPhysicsBlend = 1.f;
 	float LegPhysicsBlend = 0.f;

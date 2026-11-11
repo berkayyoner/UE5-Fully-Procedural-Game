@@ -25,6 +25,8 @@ struct FAedirProceduralAnimProxy : public FAnimInstanceProxy
 	mutable FVector DevBladeWorld[3][2];
 	// For the dev tools: each hand's final pose rotation in world space, left hand first.
 	mutable FQuat DevHandWorld[2] = { FQuat::Identity, FQuat::Identity };
+	// The last pose's upper arm, forearm and hand in world space, left arm first.
+	mutable FTransform PoseArmWorld[2][3];
 
 private:
 	FQuat ActorRotationToMesh(const FQuat& ActorLocalRotation) const;
@@ -85,6 +87,8 @@ public:
 	// Dev tools: see FAedirProceduralAnimProxy::DevBladeWorld.
 	FVector DevGetPoseBlade(int32 Stage, int32 HandSlot);
 	FQuat DevGetPoseHand(int32 HandSlot);
+	// Where the last pose has an arm's part (0 upper arm, 1 forearm, 2 hand), in world space; slot 0 is the left arm.
+	FTransform GetPoseArmWorld(int32 HandSlot, int32 Part);
 
 	// Finger bones per hand, ordered thumb, index, middle, ring, pinky with three joints each from the base.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Fist")

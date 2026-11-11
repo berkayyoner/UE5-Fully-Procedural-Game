@@ -187,3 +187,28 @@ Uyarlama:
   - [GameRant: oyunun öğretmediği mekanikler](https://gamerant.com/half-sword-mechanics-game-doesnt-teach-how-kick-block/) [T]
   - [BlogAndGuide: başlangıç rehberi 2026](https://www.blogandguide.com/half-sword-beginner-guide-2026/) [T]
   - [Erken Erişim yeni mekanikleri](https://half-sword.pages.dev/blog/new-mechanics-early-access) [T]
+
+## Observed while playing Half Sword (2026-11-11)
+
+Controls, tried in the game itself:
+- Mouse with no button held turns the view and the body with it; the weapon stays in its carried pose (two-handed sword: hands before the hips, point low forward to the right).
+- Left button held: the mouse drives the hands, the view stays still. The hands keep where the mouse left them; letting go returns the weapon to the carried pose within about half a second.
+- The mouse moves the hands over a very wide field: about 220 px of mouse travel takes the hands from the hips to above the head; sideways the arm straightens fully out at shoulder height (to the right the sword stands upright in the outstretched hand; to the left the arm crosses the body and straightens out, blade aslant up-left). There is no narrow box: the hands go as far as the arms reach.
+- The blade's attitude follows from where the hands are: in the middle the point is on the enemy; out at the sides and up it stands upright or leans back over the shoulder; low it hangs.
+- Up and then right: the hands at the right shoulder, the blade across over the head up to the left. From there left again: the blade upright behind the head.
+- Big sudden mouse jumps pin the hands at the edge of their field; motion is continuous with the mouse.
+- Alt held: the sword is drawn back upright before the right shoulder, point forward-up (thrust ready).
+- Ctrl: the fighter lies down. Shift+W from the ground: gets up through physics, pushing off with a hand.
+- Q: the weapon is brought up upright before the body. E: lets go of / takes the weapon.
+- The AI with a two-handed sword thrusts from range with one arm straight out and the blade level, the other hand off the grip.
+
+### Pose grid with the left button held (split screen, an idle second player watching from the front)
+
+Mouse moved smoothly from the middle to 25 points (x -450..+450 px, y -300..+300 px), two-handed sword:
+- Middle (button just pressed): hands before the chest, a little right; the point forward on the enemy.
+- Middle row, right: the hands go to the right of the chest and on to the arm's full length out right at shoulder height; the point stays on the enemy as long as it can, so the blade crosses in front of the body to the left; at the far right the arm is straight and the blade stands upright in the hand.
+- Middle row, left: the hands cross to the left side; half way the blade points forward-left; at the far left the hands are by the left shoulder and the blade lies back over it (wind-up).
+- Upper rows: the hands rise only to the shoulders and face; with the hands up on the left the blade hangs point down before the body (hanging guard); up in the middle it points level across to the left; up on the right it stands upright by the right shoulder, arm straight.
+- Lower rows: the hands drop to the belly and hips; low in the middle the point is low forward / across to the left; low right the hands are at the right hip with the blade rising aslant across; low left the blade hangs down by the left leg.
+- With the button held the whole body turns with the weapon: chest, hips and feet go round with the hands, so a far sweep turns the fighter a quarter turn or more.
+- Big jumps of the mouse pin the hands at the edge; the field is wide but bounded by the arm's reach.

@@ -699,6 +699,7 @@ private:
 
 	// Torn loose: the second hand stays off the weapon until this runs out.
 	float GripLostSeconds = 0.f;
+	float GripOutOfReachSeconds = 0.f;
 
 	void UpdateHeldWeight(float DeltaTime);
 	void UpdateGripJoint(float DeltaTime);

@@ -192,3 +192,7 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Dev command OffHandFree 0|1 lets go of a one-handed weapon's second hand, as holding the right button does.
 - A thrust with a pole weapon waits with it upright by the hip on the leading side, as in the reference, and goes out level ahead from the chest.
 - Arm firmness, the gripped arm's share and arm damping are console settings (aedir.ArmHold, aedir.GrippedArmShare, aedir.ArmDamping); firmer arms and more solver iterations were measured and left at the old values, since they made the hands shake more for little gain in pose accuracy. A second hand may take its grip the other way round when the forearm would otherwise have to turn too far (aedir.Regrip, off for now).
+- Combat sounds come from recorded library takes (Free Sounds Pack, Small Sound Kit): metal knocks, wood hits and chops, punches, body hits, flesh cuts, stabs, breaking bones; the made-up takes that rang like bells are gone, except the swings. The campfire burns with a recorded fire loop.
+- An arm caught still and far off its pose (a hand pressed the wrong way round into its joint limit) is put back on the pose after a third of a second, both arms together on a two-handed grip.
+- The hands go further out, as in Half Sword: at the far sides the arm reaches out nearly straight, and the second hand lets go of the grip where its arm no longer reaches it and takes hold again on the way back.
+- Half Sword play notes: controls and a 25-point pose grid with the left button held (HALF_SWORD_COMBAT.md).
