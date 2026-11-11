@@ -669,6 +669,8 @@ void UAedirDevTools::SpawnEnemy(AAedirPlayerCharacter* Player, const FString& Ar
 	const TArray<FString> Tokens = DevToolsTokens(Args);
 	const int32 Count = FMath::Clamp(Tokens.IsValidIndex(0) ? FCString::Atoi(*Tokens[0]) : 1, 1, 6);
 	const bool bArmed = Tokens.IsValidIndex(1) && FCString::Atoi(*Tokens[1]) != 0;
+	// SpawnEnemy [count] [armed] [distance cm]: how far ahead, for a fight at arm's length.
+	const float Distance = Tokens.IsValidIndex(2) ? FMath::Max(FCString::Atof(*Tokens[2]), 40.f) : DevToolsEnemyDistanceCm;
 
 	UWorld* World = Player->GetWorld();
 	if (!World)
@@ -678,7 +680,7 @@ void UAedirDevTools::SpawnEnemy(AAedirPlayerCharacter* Player, const FString& Ar
 
 	const FRotator Yaw = DevToolsFlatYaw(Player);
 	const FVector PlayerLocation = Player->GetActorLocation();
-	const int32 Spawned = SpawnBandits(World, PlayerLocation + Yaw.Vector() * DevToolsEnemyDistanceCm, PlayerLocation, Count, bArmed);
+	const int32 Spawned = SpawnBandits(World, PlayerLocation + Yaw.Vector() * Distance, PlayerLocation, Count, bArmed);
 
 	DevToolsReport(FString::Printf(TEXT("Spawned %d enemies (%s)"), Spawned, bArmed ? TEXT("armed") : TEXT("unarmed")));
 }

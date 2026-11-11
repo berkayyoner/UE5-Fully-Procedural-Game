@@ -1380,9 +1380,9 @@ void AAedirPlayerCharacter::ListItems()
 	RunDevCommand(TEXT("ListItems"), FString(), false);
 }
 
-void AAedirPlayerCharacter::SpawnEnemy(int32 Count, int32 Armed)
+void AAedirPlayerCharacter::SpawnEnemy(int32 Count, int32 Armed, float DistanceCm)
 {
-	RunDevCommand(TEXT("SpawnEnemy"), FString::Printf(TEXT("%d %d"), Count, Armed), true);
+	RunDevCommand(TEXT("SpawnEnemy"), DistanceCm > 0.f ? FString::Printf(TEXT("%d %d %f"), Count, Armed, DistanceCm) : FString::Printf(TEXT("%d %d"), Count, Armed), true);
 }
 
 void AAedirPlayerCharacter::KillAll()

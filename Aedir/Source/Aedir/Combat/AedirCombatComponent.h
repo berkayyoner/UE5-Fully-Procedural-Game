@@ -567,6 +567,7 @@ private:
 	TWeakObjectPtr<AActor> TouchVictim[2];
 	FName TouchPart[2];
 	double TouchTime[2] = { -1.0, -1.0 };
+	float TouchSpeed[2] = { 0.f, 0.f };
 	void ApplyRemoteArmState(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	void PublishArmState(EAedirHand Hand, const FAedirArmDynamics& Arm);
 	void SendArmAimToServer(float DeltaTime);

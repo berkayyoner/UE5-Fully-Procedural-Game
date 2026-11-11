@@ -207,7 +207,7 @@ public:
 	void ListItems();
 
 	UFUNCTION(Exec)
-	void SpawnEnemy(int32 Count, int32 Armed);
+	void SpawnEnemy(int32 Count, int32 Armed, float DistanceCm = 0.f);
 
 	UFUNCTION(Exec)
 	void KillAll();

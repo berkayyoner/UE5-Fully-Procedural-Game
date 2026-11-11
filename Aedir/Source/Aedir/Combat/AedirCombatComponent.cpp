@@ -32,6 +32,11 @@ namespace
 	constexpr float AedirGuardBlendSpeed = 6.f;
 	// How long a weapon must be off a body before touching it again counts as a new blow.
 	constexpr float AedirFreshContactSeconds = 0.12f;
+	// A bare fist lands a blow from this speed into the body, slower than a weapon: it weighs little but is meant to hit.
+	constexpr float AedirFistMinImpactSpeed = 180.f;
+	// Against the body below this share of the blow speed, a fist or blade is resting there; driven in again from that, it lands anew.
+	constexpr float AedirRestingIntoShare = 0.4f;
+	TAutoConsoleVariable<int32> CVarAedirHitLog(TEXT("aedir.HitLog"), 0, TEXT("Log every quick touch on a body that did not count as a blow, and why (1)."));
 	constexpr float AedirArmRampInSeconds = 0.1f;
 	constexpr float AedirArmRampOutSeconds = 0.2f;
 	constexpr float AedirMinSwingDuration = 0.05f;
@@ -186,6 +191,8 @@ namespace
 	constexpr float AedirPunchLeanDegrees = 11.f;
 	// Fists aimed further down than this (the view and the arm together) bend the trunk over, all of this much once aimed this
 	// much further down.
+	// Thrown hard, this share of the mouse's movement no longer moves the fist's aim.
+	constexpr float AedirPunchAimHold = 0.85f;
 	constexpr float AedirPunchBendFromPitch = 25.f;
 	constexpr float AedirPunchBendSpanPitch = 40.f;
 	constexpr float AedirPunchBendDownDegrees = 45.f;
@@ -867,10 +874,13 @@ void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaT
 
 	// Mouse Y input is positive when the mouse moves up, so moving the mouse up raises the arm.
 	// Outwards the arm sweeps a 90 degree arc, across the body it only reaches a little past the centre line.
+	// A quick throw drives the fist out along where it was aimed: the throw itself moves the aim only a little, or every punch
+	// would rise from low to high as the mouse goes up and pass over the guard instead of into it.
+	const float AimShare = 1.f - AedirPunchAimHold * PunchTarget;
 	const float OutwardSign = Hand == EAedirHand::Right ? 1.f : -1.f;
-	const float OutwardYaw = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign + MouseDeltaThisFrame.X * OutwardSign * AimSensitivity, -AedirArmAcrossYawLimit, AedirArmOutwardYawLimit);
+	const float OutwardYaw = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign + MouseDeltaThisFrame.X * OutwardSign * AimSensitivity * AimShare, -AedirArmAcrossYawLimit, AedirArmOutwardYawLimit);
 	Arm.AimOffsetDeg.X = OutwardYaw * OutwardSign;
-	Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y + MouseDeltaThisFrame.Y * AimSensitivity, AedirArmAimPitchMin, AedirFistAimPitchMax);
+	Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y + MouseDeltaThisFrame.Y * AimSensitivity * AimShare, AedirArmAimPitchMin, AedirFistAimPitchMax);
 }
 
 void UAedirCombatComponent::AddExtensionInput(EAedirHand Hand, float WheelDelta)
@@ -3814,12 +3824,20 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 			// A cut that goes on from one part of the body into another lands on each: only the same part waits out the
 			// cooldown, and only it counts as the blade still resting where it was.
 			const FName Part = GetStruckPart(Hit.BoneName);
-			const bool bFreshContact = TouchVictim[Index].Get() != Victim || TouchPart[Index] != Part || Now - TouchTime[Index] > AedirFreshContactSeconds;
+			// A fist or blade resting against the body that is driven in again from rest (it had all but stopped against it and
+			// now comes in fast) lands a new blow too: a punch thrown from against a guard arm still hits.
+			const float MinSpeed = HeldItem ? MinImpactSpeed : FMath::Min(MinImpactSpeed, AedirFistMinImpactSpeed);
+			const bool bDrivenAgain = TouchSpeed[Index] < MinSpeed * AedirRestingIntoShare && RelativeSpeed >= MinSpeed;
+			const bool bFreshContact = TouchVictim[Index].Get() != Victim || TouchPart[Index] != Part || Now - TouchTime[Index] > AedirFreshContactSeconds || bDrivenAgain;
 			TouchVictim[Index] = Victim;
 			TouchPart[Index] = Part;
 			TouchTime[Index] = Now;
-			if (IsImpactOnCooldown(Hand, HitActor, Now, Part) || RelativeSpeed < MinImpactSpeed || !bFreshContact)
+			TouchSpeed[Index] = RelativeSpeed;
+			if (IsImpactOnCooldown(Hand, HitActor, Now, Part) || RelativeSpeed < MinSpeed || !bFreshContact)
 			{
+				UE_CLOG(CVarAedirHitLog.GetValueOnGameThread() != 0 && TipVelocity.Size() > MinImpactSpeed, LogAedir, Log, TEXT("[Hit] %s's %s touched %s on %s at %.0f cm/s (%.0f into it) and did not count: %s"),
+					*Creature->GetName(), Hand == EAedirHand::Right ? TEXT("right") : TEXT("left"), *Victim->GetName(), *Part.ToString(), TipVelocity.Size(), RelativeSpeed,
+					IsImpactOnCooldown(Hand, HitActor, Now, Part) ? TEXT("struck there just before") : !bFreshContact ? TEXT("still resting against it") : TEXT("too slow into it"));
 				if (!bPassing && !Arm.LodgedIn.IsValid())
 				{
 					BlockAgainstBody(Arm, 0.f);
