@@ -514,6 +514,7 @@ private:
 	void ApplyJointLimits(bool bRagdoll);
 	TArray<FConstraintProfileProperties> LooseJointLimits;
 	FString AppliedFreeJoint;
+	FVector AppliedArmTuning = FVector::ZeroVector;
 	FTransform MeshRestRelative = FTransform::Identity;
 	const FAedirBoneMotor& GetBoneMotor(FName BoneName) const;
 	void ProcessHit(AActor* OtherActor, UPrimitiveComponent* OtherComponent, const FHitResult& Hit);

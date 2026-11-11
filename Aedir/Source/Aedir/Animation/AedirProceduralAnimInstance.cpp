@@ -72,6 +72,9 @@ namespace
 	constexpr double AedirArmLedWristGiveCost = 0.12;
 	// However the blade and the forearm come to lie, a hand turns no faster than this.
 	constexpr float AedirHandMaxTurnDegrees = 1000.f;
+	// A second hand on a grip takes it the other way round past this much turn of the forearm, if that saves this much.
+	constexpr float AedirGripRegripTwistDegrees = 110.f;
+	constexpr float AedirGripRegripMarginDegrees = 40.f;
 	constexpr float AedirElbowHintDistanceCm = 50.f;
 	// How far a hand on a long shaft may stay from the handle's line, and how close it may come to the other hand when it has to slide nearer.
 	constexpr float AedirGripPalmReachCm = 4.f;
@@ -879,6 +882,37 @@ void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCS
 			const FVector FingerAxis = Fingers.GetSafeNormal();
 			const float ThumbUpSign = FVector::DotProduct(FVector::CrossProduct(FingerAxis, BladeMesh), -DownMesh) >= 0.0 ? 1.f : -1.f;
 			Knuckles = FQuat(FingerAxis, ThumbUpSign * UE_PI * GaitData.GripOverhand).RotateVector(BladeMesh);
+		}
+		// The hand may close on the handle either way round. It keeps the way it holds, unless the forearm would have to turn
+		// much further for it than for the other way: then it takes the handle the other way round, as a hand on a long shaft
+		// does when the weapon comes round.
+		static IConsoleVariable* RegripVar = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.Regrip"), 0, TEXT("The second hand may take its grip the other way round (1) or never (0)."));
+		if (RegripVar->GetInt() == 0)
+		{
+			bGripReversed[bLeft ? 0 : 1] = false;
+		}
+		if (RegripVar->GetInt() != 0 && GaitData.GripOverhand <= 0.f && !Fingers.IsNearlyZero(1.f))
+		{
+			const FTransform RadiusNow = CSPose.GetComponentSpaceTransform(Radius);
+			const FVector ForearmAxis = (CSPose.GetComponentSpaceTransform(Hand).GetLocation() - RadiusNow.GetLocation()).GetSafeNormal();
+			const FQuat RestHandInForearm = RefCSPose.GetComponentSpaceTransform(Radius).GetRotation().Inverse() * RefHand.GetRotation();
+			const auto TwistDegrees = [&](const FQuat& Rotation)
+			{
+				FQuat Swing;
+				FQuat Twist;
+				(Rotation * (RadiusNow.GetRotation() * RestHandInForearm).Inverse()).ToSwingTwist(ForearmAxis, Swing, Twist);
+				return FMath::RadiansToDegrees(static_cast<float>(Twist.GetAngle()));
+			};
+			const float Kept = TwistDegrees(FRotationMatrix::MakeFromXY(bGripReversed[bLeft ? 0 : 1] ? -Knuckles : Knuckles, Fingers).ToQuat() * ClosedHandInverse);
+			const float Other = TwistDegrees(FRotationMatrix::MakeFromXY(bGripReversed[bLeft ? 0 : 1] ? Knuckles : -Knuckles, Fingers).ToQuat() * ClosedHandInverse);
+			if (Kept > AedirGripRegripTwistDegrees && Other < Kept - AedirGripRegripMarginDegrees)
+			{
+				bGripReversed[bLeft ? 0 : 1] = !bGripReversed[bLeft ? 0 : 1];
+			}
+			if (bGripReversed[bLeft ? 0 : 1])
+			{
+				Knuckles = -Knuckles;
+			}
 		}
 		HandRotation = FRotationMatrix::MakeFromXY(Knuckles, Fingers).ToQuat() * ClosedHandInverse;
 		const FVector Wrist = HandleMesh - HandRotation.RotateVector(PalmInHand);

@@ -115,8 +115,8 @@ namespace
 	constexpr float AedirGroggyMaxDaze = 0.85f;
 	constexpr float HitReactionKnockdownExtraSeconds = 0.8f;
 	// The blow moves the part it lands on, not the whole body through the air.
-	constexpr float GrippedArmMotorShare = 0.3f;
-	constexpr float BalanceArmMuscleShare = 0.5f;
+	TAutoConsoleVariable<float> CVarAedirGrippedArmShare(TEXT("aedir.GrippedArmShare"), 0.3f, TEXT("How much of its own will the arm of a hand held onto a weapon's grip keeps."));
+	TAutoConsoleVariable<float> CVarAedirArmHold(TEXT("aedir.ArmHold"), 0.5f, TEXT("How firmly the arms hold their pose, against the trunk's 1."));
 	constexpr float BalanceTrunkMuscleShare = 1.f;
 	// A standing body is never quite still: it drifts about its balance, more when tired or hurt.
 	constexpr float BalanceSwayDegrees = 1.1f;
@@ -2340,6 +2340,13 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	const bool bWasFlinching = Flinch > 0.f;
 	Flinch = FMath::Max(Flinch - DeltaTime / HitFlinchSeconds, 0.f);
 	MotorUpdateTimer -= DeltaTime;
+	// The arm tuning changed from the console: everything is applied again.
+	const FVector ArmTuning(CVarAedirArmHold.GetValueOnGameThread(), CVarAedirGrippedArmShare.GetValueOnGameThread(), CVarAedirArmDamping.GetValueOnGameThread());
+	if (ArmTuning != AppliedArmTuning)
+	{
+		AppliedArmTuning = ArmTuning;
+		bForce = true;
+	}
 	if (!bForce && MotorUpdateTimer > 0.f)
 	{
 		return;
@@ -2384,7 +2391,7 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	// A hand held onto a weapon by the grip follows the weapon; its arm only keeps a little of its own will.
 	if (Combat && Combat->GetGripJointForce() >= 0.f && !bIsRagdoll)
 	{
-		Strength[Combat->GetGripHand() == EAedirHand::Left ? 2 : 1] *= GrippedArmMotorShare;
+		Strength[Combat->GetGripHand() == EAedirHand::Left ? 2 : 1] *= CVarAedirGrippedArmShare.GetValueOnGameThread();
 	}
 
 	for (int32 GroupIndex = 0; GroupIndex < 5; ++GroupIndex)
@@ -2435,7 +2442,7 @@ void UAedirBalanceComponent::ApplyMotorGroup(int32 GroupIndex, float Strength)
 	// and the head give, the arms most of all.
 	const bool bArm = GroupIndex == 1 || GroupIndex == 2;
 	const bool bLeg = GroupIndex == 3 || GroupIndex == 4;
-	const float Hold = bLoose ? 1.f : bArm ? BalanceArmMuscleShare : bLeg ? 1.f : BalanceTrunkMuscleShare;
+	const float Hold = bLoose ? 1.f : bArm ? CVarAedirArmHold.GetValueOnGameThread() : bLeg ? 1.f : BalanceTrunkMuscleShare;
 	for (const FName& BoneName : MotorGroupBones[GroupIndex])
 	{
 		const FAedirBoneMotor& Motor = GetBoneMotor(BoneName);

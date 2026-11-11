@@ -46,6 +46,8 @@ private:
 	// Where each hand was turned to in the last pose, so it can only turn so fast from there.
 	mutable FQuat LastHandRotation[2] = { FQuat::Identity, FQuat::Identity };
 	mutable bool bLastHandValid[2] = { false, false };
+	// Whether the second hand holds its grip the other way round, left hand first.
+	mutable bool bGripReversed[2] = { false, false };
 	void ApplyForearmTwist(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix) const;
 	void ApplyObjectHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, bool bLeft, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
 	void ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
