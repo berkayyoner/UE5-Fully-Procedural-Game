@@ -1105,6 +1105,7 @@ void UAedirCombatComponent::DevHoldKick(float Share)
 void UAedirCombatComponent::SetThrustMode(bool bActive)
 {
 	bThrustMode = bActive;
+	UE_LOG(LogAedir, Log, TEXT("[Thrust] %s %s"), *GetNameSafe(Creature), bActive ? TEXT("on") : TEXT("off"));
 	if (Creature && !IsAuthoritative() && Creature->IsLocallyControlled())
 	{
 		ServerSetThrustMode(bActive);
@@ -1921,13 +1922,13 @@ namespace
 		// the feet, and from the right hip forward and up across.
 		{ { FVector(15.f, -20.f, -2.f), -20.f, -110.f }, { FVector(25.f, 0.f, 4.f), -10.f, -90.f }, { FVector(25.f, 12.f, 0.f), -40.f, 20.f }, { FVector(20.f, 20.f, -4.f), 30.f, -25.f }, { FVector(20.f, 25.f, -4.f), 30.f, -15.f } },
 		{ { FVector(18.f, -19.f, 14.f), -5.f, -115.f }, { FVector(25.f, -2.f, 16.f), 0.f, -88.f }, { FVector(27.f, 10.f, 12.f), -10.f, -20.f }, { FVector(24.f, 19.f, 8.f), 20.f, -28.f }, { FVector(22.f, 23.f, 6.f), 30.f, -18.f } },
-		// The middle: the hands before the chest, the blade forward and out to the left; to the left up by the left shoulder,
-		// the blade back over it; to the right down by the right side, the point forward and up.
-		{ { FVector(15.f, -18.f, 32.f), 15.f, -130.f }, { FVector(22.f, -5.f, 32.f), 10.f, -110.f }, { FVector(28.f, 8.f, 25.f), 15.f, -60.f }, { FVector(28.f, 18.f, 20.f), 10.f, -30.f }, { FVector(25.f, 22.f, 15.f), 30.f, -20.f } },
-		{ { FVector(14.f, -18.f, 46.f), 10.f, -115.f }, { FVector(18.f, -5.f, 50.f), 7.f, -100.f }, { FVector(22.f, 7.f, 46.f), 8.f, -80.f }, { FVector(23.f, 17.f, 40.f), 13.f, -50.f }, { FVector(22.f, 22.f, 34.f), 25.f, -35.f } },
-		// Up: the hands over the head, the blade lying level across it to the left; to the right over the right shoulder,
-		// the point forward and to the left.
-		{ { FVector(12.f, -18.f, 58.f), 5.f, -105.f }, { FVector(15.f, -5.f, 66.f), 5.f, -95.f }, { FVector(15.f, 5.f, 68.f), 5.f, -95.f }, { FVector(18.f, 15.f, 58.f), 15.f, -70.f }, { FVector(18.f, 22.f, 52.f), 20.f, -50.f } },
+		// The middle: the hands up before the right shoulder, the blade lying back over the left shoulder; to the left up by the
+		// left shoulder, the blade back over it; to the right down by the right side, the point forward and up.
+		{ { FVector(15.f, -15.f, 36.f), 15.f, -140.f }, { FVector(20.f, -3.f, 35.f), 12.f, -135.f }, { FVector(25.f, 12.f, 32.f), 10.f, -150.f }, { FVector(28.f, 18.f, 20.f), 10.f, -30.f }, { FVector(25.f, 22.f, 15.f), 30.f, -20.f } },
+		{ { FVector(14.f, -17.f, 46.f), 10.f, -125.f }, { FVector(18.f, -4.f, 50.f), 8.f, -115.f }, { FVector(20.f, 9.f, 48.f), 8.f, -120.f }, { FVector(22.f, 16.f, 44.f), 10.f, -95.f }, { FVector(22.f, 22.f, 38.f), 12.f, -100.f } },
+		// Up: the hands over the head, the blade lying level across it to the left; to the right over the right shoulder, the
+		// blade lying back over the head.
+		{ { FVector(12.f, -18.f, 58.f), 5.f, -105.f }, { FVector(15.f, -5.f, 66.f), 5.f, -95.f }, { FVector(15.f, 5.f, 68.f), 5.f, -95.f }, { FVector(18.f, 15.f, 58.f), 8.f, -100.f }, { FVector(18.f, 22.f, 54.f), 5.f, -120.f } },
 	};
 	void AedirGridSpan(const float (&Nodes)[5], float Value, int32& OutIndex, float& OutShare)
 	{

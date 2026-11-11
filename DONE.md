@@ -247,3 +247,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The weapon arm takes as much mouse as in Half Sword, measured with raw mouse counts in both games (about 1875 counts from the middle to the far side, 1750 up or down); it had been five times too quick, so every small hand movement threw the arms round.
 - RecordFrames dev command: every rendered frame is written out, for a video of what the body does.
 - The sword stance comes from a 5 x 5 table read off Half Sword (the mouse taken to the same raw-count grid points in both games, each filmed from behind and from the side), blended between the four points around the mouse; the older key poses stay behind aedir.StanceTable 0.
+- Sword stance table read again from the Half Sword grid: in the middle the hands are up before the right shoulder and the blade lies back over the left shoulder; up and to the right the blade lies back over the head.
+- PoseLog dev command (the pose measured every given seconds, with the raw aim, extension, throw and mouse speed) and a log line when the thrust mode changes.

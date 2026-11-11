@@ -1791,6 +1791,19 @@ void AAedirPlayerCharacter::PoseMeasure(const FString& Label)
 	}
 }
 
+void AAedirPlayerCharacter::PoseLog(float Seconds)
+{
+	GetWorldTimerManager().ClearTimer(PoseLogTimer);
+	if (Seconds > 0.f)
+	{
+		GetWorldTimerManager().SetTimer(PoseLogTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			const FAedirArmDynamics* Arm = Combat ? &Combat->DevGetArm(EAedirHand::Right) : nullptr;
+			PoseMeasure(Arm ? FString::Printf(TEXT("live raw %.0f %.0f ext %.2f punch %.2f mspeed %.0f"), Arm->AimOffsetDeg.X, Arm->AimOffsetDeg.Y, Arm->Extension, Arm->PunchBlend, Arm->MouseSpeed) : FString(TEXT("live")));
+		}), Seconds, true);
+	}
+}
+
 void AAedirPlayerCharacter::ArmInfo()
 {
 	if (Combat)

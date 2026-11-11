@@ -387,6 +387,11 @@ public:
 	UFUNCTION(Exec)
 	void PoseMeasure(const FString& Label);
 
+	// PoseMeasure logged every given seconds (0 stops), for a run driven by the real mouse.
+	UFUNCTION(Exec)
+	void PoseLog(float Seconds);
+	FTimerHandle PoseLogTimer;
+
 	UFUNCTION(Exec)
 	void OrbitCamera(float YawDegrees, float PitchDegrees);
 
