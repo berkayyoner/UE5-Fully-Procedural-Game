@@ -110,6 +110,13 @@ struct FAedirArmDynamics
 	// It has weight: the wrist gives and the blade carries on a little after the arm has stopped.
 	FVector WeaponDirSpeed = FVector::ZeroVector;
 
+	// The closed loop between the pose and what is shown: how much further the hand (in the body's frame) and the blade are
+	// asked than the pose has them, learned from where they really came to, so a pose held settles exactly where it is meant
+	// to be whichever way it was come to.
+	FVector ServoHandLocal = FVector::ZeroVector;
+	FQuat ServoBladeLocal = FQuat::Identity;
+	FVector2D ServoAimDeg = FVector2D::ZeroVector;
+
 	bool bScriptedControl = false;
 	FVector ScriptedTargetWorld = FVector::ZeroVector;
 
@@ -361,6 +368,8 @@ public:
 
 	// How firmly the wrist keeps its angle: in a fight the arm does the moving, in a thrust the blade lies along the forearm.
 	float GetWristFirmShare(EAedirHand Hand) const;
+	// How far a weapon is held out before the body (0 drawn in, 1 the arms straight): the wrist then lets the blade run on from the forearm.
+	float GetHeldOutShare(EAedirHand Hand) const;
 
 	// How far the arm alone aims the weapon, the wrist held at one angle: all of it in a fight with a blade in hand.
 	float GetArmLedShare(EAedirHand Hand) const;
@@ -530,6 +539,7 @@ private:
 	void UpdateKick(float DeltaTime);
 	void ResolveKickSweep(const FVector& From, const FVector& To, float DeltaTime);
 	void ApplyKickImpact(AAedirCreature* Victim, const FHitResult& Hit, const FVector& FootMotion, float FootSpeed);
+	void UpdatePoseServo(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	void PushFriend(AAedirCreature* Victim, FName Bone, EAedirBodyZone Zone, const FVector& Location, const FVector& Motion, float Energy, float MassKg, float Speed) const;
 	FVector GetFootBoneWorld(bool bLeftLeg) const;
 	FVector GetPelvisWorld() const;
@@ -625,6 +635,11 @@ public:
 	bool IsHalfSwordToggled() const { return bHalfSwordToggled; }
 	// For the dev tools: the state of one arm as the combat sees it.
 	const FAedirArmDynamics& DevGetArm(EAedirHand Hand) const { return GetArm(Hand); }
+	FString DevMeasurePose(EAedirHand Hand) const;
+	// While a weapon is up in the stance its arms are moved by the pose itself, not left to their muscles: what is shown is then
+	// exactly the pose the model asks, whichever way it came (the arm's own physics stopped short by an amount that hung on the
+	// way it came). True for a hand holding the weapon so, or on its grip.
+	bool WantsPosedArm(EAedirHand Hand) const;
 private:
 	UPROPERTY(Replicated)
 	bool bOffHandFree = false;
@@ -667,6 +682,7 @@ private:
 	static bool IsPolearm(const AAedirItemActor* Item);
 	FVector ComputeObjectCenter(const FAedirArmDynamics& Arm, const AAedirItemActor* Item) const;
 	FVector ComputeWeaponTargetDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
+	FVector ComputeWeaponModelDir(EAedirHand Hand, const FAedirArmDynamics& Arm) const;
 	void UpdateWeaponDir(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime, float StrengthFactor, float WeaponWeight);
 
 	EAedirHand GetAIWeaponHand() const;

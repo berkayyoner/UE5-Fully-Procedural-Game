@@ -379,6 +379,10 @@ public:
 	UFUNCTION(Exec)
 	void ArmInfo();
 
+	// What the pose asks of the right hand and its weapon, where they really are, and how far off.
+	UFUNCTION(Exec)
+	void PoseMeasure(const FString& Label);
+
 	UFUNCTION(Exec)
 	void OrbitCamera(float YawDegrees, float PitchDegrees);
 

@@ -124,6 +124,9 @@ namespace
 	TAutoConsoleVariable<int32> CVarAedirArmSpinLimit(TEXT("aedir.ArmSpinLimit"), 1, TEXT("The forearms and hands turn no faster than a strong swing (1), or as fast as the physics flings them (0)."));
 	// Held this far off its pose for this long, an arm is caught; after being put back it is left alone this long.
 	constexpr float AedirArmTrapDegrees = 45.f;
+	constexpr float AedirArmTrapCm = 25.f;
+	constexpr float AedirArmTrapFarCm = 35.f;
+	constexpr float AedirArmTrapStillCmPerSecond = 30.f;
 	constexpr float AedirArmTrapSeconds = 0.35f;
 	// Only a hand that has come to rest off its pose is caught; one still swinging round to it is left to get there.
 	constexpr float AedirArmTrapStillRadPerSecond = 1.5f;
@@ -379,6 +382,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
 	UpdateMotors(DeltaTime, false);
+	UpdatePosedArms();
 	UpdateArmTraps(DeltaTime);
 	LimitArmSpin();
 	UpdateLegBlend(DeltaTime);
@@ -2344,6 +2348,20 @@ void UAedirBalanceComponent::SetupMotors()
 	UpdateMotors(0.f, true);
 }
 
+void UAedirBalanceComponent::UpdatePosedArms()
+{
+	// An arm holding a weapon up in the stance is moved by the pose (its bodies follow the animation as it is), and goes back to
+	// its muscles when the stance is let go or the body falls.
+	const UAedirCombatComponent* Combat = CharacterOwner ? CharacterOwner->FindComponentByClass<UAedirCombatComponent>() : nullptr;
+	if (!BodyControl)
+	{
+		return;
+	}
+	const bool bLeft = Combat && !bIsRagdoll && Combat->WantsPosedArm(EAedirHand::Left);
+	const bool bRight = Combat && !bIsRagdoll && Combat->WantsPosedArm(EAedirHand::Right);
+	BodyControl->SetArmsPosed(bLeft, bRight);
+}
+
 void UAedirBalanceComponent::LimitArmSpin()
 {
 	// A living arm never whips round faster than its muscles can turn it: a hard tug at the hand (a sudden throw of the mouse,
@@ -2394,18 +2412,25 @@ void UAedirBalanceComponent::UpdateArmTraps(float DeltaTime)
 	{
 		const FName HandName = Side == 0 ? FName(TEXT("hand_l")) : FName(TEXT("hand_r"));
 		const FBodyInstance* Hand = BodyMesh->GetBodyInstance(HandName);
-		if (!Hand)
+		// An arm moved by the pose itself cannot be caught against its joints: it is where the pose puts it.
+		if (!Hand || (BodyControl && BodyControl->IsArmPosed(Side == 1)))
 		{
+			ArmTrapSeconds[Side] = 0.f;
 			continue;
 		}
 		const FQuat Target = Pose->GetPoseArmWorld(Side, 2).GetRotation();
 		const float OffDegrees = FMath::RadiansToDegrees(static_cast<float>(Hand->GetUnrealWorldTransform().GetRotation().AngularDistance(Target)));
-		const bool bStill = Hand->GetUnrealWorldAngularVelocityInRadians().Size() < AedirArmTrapStillRadPerSecond;
+		const bool bStill = Hand->GetUnrealWorldAngularVelocityInRadians().Size() < AedirArmTrapStillRadPerSecond && Hand->GetUnrealWorldVelocity().Size() < AedirArmTrapStillCmPerSecond;
+		// Caught also where the hand stands well away from where the pose has it: an arm stopped against the limits of its
+		// joints on the way, which the muscles only press harder into.
+		const float OffCm = static_cast<float>(FVector::Dist(Hand->GetUnrealWorldTransform().GetLocation(), Pose->GetPoseArmWorld(Side, 2).GetLocation()));
 		if (CVarAedirArmTrapRelease.GetValueOnGameThread() == 2 && GFrameCounter % 30 == 0)
 		{
 			UE_LOG(LogTemp, Log, TEXT("[ArmTrapDbg] side %d off %.0f spin %.2f"), Side, OffDegrees, Hand->GetUnrealWorldAngularVelocityInRadians().Size());
 		}
-		ArmTrapSeconds[Side] = OffDegrees > AedirArmTrapDegrees && bStill ? ArmTrapSeconds[Side] + DeltaTime : 0.f;
+		// Far enough off, it is caught even while it shakes there.
+		const bool bCaught = ((OffDegrees > AedirArmTrapDegrees || OffCm > AedirArmTrapCm) && bStill) || OffCm > AedirArmTrapFarCm;
+		ArmTrapSeconds[Side] = bCaught ? ArmTrapSeconds[Side] + DeltaTime : 0.f;
 		ArmTrapCooldown[Side] = FMath::Max(ArmTrapCooldown[Side] - DeltaTime, 0.f);
 		if (ArmTrapSeconds[Side] >= AedirArmTrapSeconds && ArmTrapCooldown[Side] <= 0.f)
 		{
@@ -2419,7 +2444,7 @@ void UAedirBalanceComponent::UpdateArmTraps(float DeltaTime)
 	}
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
-		if (!bRelease[Side])
+		if (!bRelease[Side] || (BodyControl && BodyControl->IsArmPosed(Side == 1)))
 		{
 			continue;
 		}

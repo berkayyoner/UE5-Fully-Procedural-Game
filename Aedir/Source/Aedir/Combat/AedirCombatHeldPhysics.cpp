@@ -176,9 +176,12 @@ void UAedirCombatComponent::UpdateGripJoint(float DeltaTime)
 
 	// The palm, not the wrist, is what closes on the weapon.
 	const TCHAR* Suffix = OtherHand == EAedirHand::Left ? TEXT("_l") : TEXT("_r");
-	const FTransform OtherWorld = Body->GetBoneTransform(Body->GetBoneIndex(OtherBone));
-	const FVector PalmWorld = FMath::Lerp(OtherWorld.GetLocation(), Body->GetBoneLocation(FName(*FString::Printf(TEXT("middle_01%s"), Suffix))), GripJointPalmShare);
-	const FTransform PrimaryWorld = Body->GetBoneTransform(Body->GetBoneIndex(PrimaryBone));
+	// Where the hands' bodies are, which the spring holds together: an arm shown as its pose has it is not where its body is.
+	const FTransform OtherBoneWorld = Body->GetBoneTransform(Body->GetBoneIndex(OtherBone));
+	const FVector MiddleInHand = OtherBoneWorld.InverseTransformPosition(Body->GetBoneLocation(FName(*FString::Printf(TEXT("middle_01%s"), Suffix))));
+	const FTransform OtherWorld = OtherBody->GetUnrealWorldTransform();
+	const FVector PalmWorld = FMath::Lerp(OtherWorld.GetLocation(), OtherWorld.TransformPosition(MiddleInHand), GripJointPalmShare);
+	const FTransform PrimaryWorld = PrimaryBody->GetUnrealWorldTransform();
 	FVector TargetWorld = PrimaryWorld.TransformPosition(PointInPrimary);
 
 	// The pose takes hold nearer the carrying hand where the arm cannot reach the place on the weapon; the spring pulls to
@@ -186,22 +189,28 @@ void UAedirCombatComponent::UpdateGripJoint(float DeltaTime)
 	{
 		const FVector Shoulder = Body->GetBoneLocation(FName(*FString::Printf(TEXT("upperarm%s"), Suffix)));
 		const FVector Elbow = Body->GetBoneLocation(FName(*FString::Printf(TEXT("lowerarm%s"), Suffix)));
-		const double ArmCm = FVector::Dist(Shoulder, Elbow) + FVector::Dist(Elbow, OtherWorld.GetLocation()) + GripJointPalmReachCm;
+		// The reach is judged on the pose, the shoulder, elbow and both hands where it has them, all from the same frame.
+		const FTransform PrimaryBoneWorld = Body->GetBoneTransform(Body->GetBoneIndex(PrimaryBone));
+		FVector TargetPose = PrimaryBoneWorld.TransformPosition(PointInPrimary);
+		const double ArmCm = FVector::Dist(Shoulder, Elbow) + FVector::Dist(Elbow, OtherBoneWorld.GetLocation()) + GripJointPalmReachCm;
 		const FVector BladeWorld = PrimaryWorld.TransformVectorNoScale(BladeInPrimary).GetSafeNormal();
-		double Slide = FVector::DotProduct(TargetWorld - PrimaryWorld.GetLocation(), BladeWorld) - GripJointMinHandsApartCm;
-		while (Slide > 0.0 && FVector::Dist(TargetWorld, Shoulder) > ArmCm)
+		const FVector BladePose = PrimaryBoneWorld.TransformVectorNoScale(BladeInPrimary).GetSafeNormal();
+		double Slide = FVector::DotProduct(TargetPose - PrimaryBoneWorld.GetLocation(), BladePose) - GripJointMinHandsApartCm;
+		while (Slide > 0.0 && FVector::Dist(TargetPose, Shoulder) > ArmCm)
 		{
+			TargetPose -= BladePose * GripJointSlideStepCm;
 			TargetWorld -= BladeWorld * GripJointSlideStepCm;
 			PointInPrimary -= BladeInPrimary.GetSafeNormal() * GripJointSlideStepCm;
 			Slide -= GripJointSlideStepCm;
 		}
 		// Out at the far side the weapon goes beyond where the second arm reaches even at the near end of the grip: the hand
 		// lets go, as a fighter's does when the swing carries the sword out on one arm, and takes hold again after.
-		const double Short = FVector::Dist(TargetWorld, Shoulder) - ArmCm;
+		const double Short = FVector::Dist(TargetPose, Shoulder) - ArmCm;
 		GripOutOfReachSeconds = Short > GripReleaseBeyondReachCm ? GripOutOfReachSeconds + DeltaTime : 0.f;
 		if (GripOutOfReachSeconds >= GripReleaseAfterSeconds)
 		{
 			GripOutOfReachSeconds = 0.f;
+			UE_LOG(LogAedir, Log, TEXT("%s let go with the second hand on %s, %.0f cm beyond reach"), *Creature->GetName(), *Item->GetName(), Short);
 			LoseGrip(GripLostSecondsOutOfReach);
 			return;
 		}

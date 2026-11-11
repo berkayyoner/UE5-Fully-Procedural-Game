@@ -17,8 +17,10 @@ namespace
 	// from its middle towards the point, and the pommel lies this share of the grip beyond the hand's place on it.
 	constexpr double ItemHaftedBoxY = 0.035;
 	constexpr float ItemMurderHoldShare = 0.12f;
+	TAutoConsoleVariable<int32> CVarAedirEdgeOn(TEXT("aedir.EdgeOn"), 1, TEXT("A blade is held with its edge to the enemy (1) or as its model lies (0)."));
 	// Across a blade, thinner one way than this share of the other: it has a flat that can strike.
 	constexpr double AedirItemFlatRatio = 0.5;
+	TAutoConsoleVariable<int32> CVarAedirHeldPassesOwnBody(TEXT("aedir.HeldPassesOwnBody"), 1, TEXT("A held weapon passes through its holder's own body (1) or stops against it (0): stopping, a blade caught on the own head or hip turned over the wrong way round and stuck there."));
 	// A piece worn on the arm that is this thin for its width is a shield.
 	constexpr float ItemShieldThinShare = 0.3f;
 	constexpr float ItemPommelBeyondGripShare = 0.6f;
@@ -234,8 +236,13 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 	// A shield is gripped by the bar behind its boss: the fist goes into the boss and the face stands across the way the
 	// knuckles point, its round side out.
 	const FQuat ItemRotation = IsShield() ? FRotationMatrix::MakeFromXZ(KnuckleAxis, FingerAxis).ToQuat() : FRotationMatrix::MakeFromXY(KnuckleAxis, FingerAxis).ToQuat();
+	// A blade is held edge on: its edge goes the way the fingers point, out to the enemy, and its flat faces the palm. A model
+	// whose thin side lies the other way round is turned a quarter about its length.
+	(void)GetFlatNormalWorld();
+	const bool bEdgeOn = !IsShield() && ItemClass == EAedirItemClass::Weapon && bHasFlat && CVarAedirEdgeOn.GetValueOnGameThread() != 0;
+	const FQuat EdgeRoll = bEdgeOn && FMath::Abs(FlatAxisLocal.Y) > 0.5 ? FQuat(FVector::ForwardVector, UE_HALF_PI) : FQuat::Identity;
 	// A reversed blade lies end for end in the hand, turned about the palm.
-	const FQuat Turn = GripTurn == EGripTurn::Reversed ? FQuat(FVector::UpVector, UE_PI) : FQuat::Identity;
+	const FQuat Turn = (GripTurn == EGripTurn::Reversed ? FQuat(FVector::UpVector, UE_PI) : FQuat::Identity) * EdgeRoll;
 	const FQuat RelativeRotation = HandRotation.Inverse() * ItemRotation * Turn;
 	const FVector RelativePalm = HandRotation.Inverse().RotateVector(Palm - HandLocation);
 	return FTransform(RelativeRotation, RelativePalm - RelativeRotation.RotateVector(FVector(GripLocalCm + HeldGripShiftCm, 0.f, 0.f)));
@@ -500,7 +507,7 @@ void AAedirItemActor::SetPassesOwnBody(bool bPasses)
 	// does not notice.
 	if (Mesh && bHeldCollision)
 	{
-		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged ? ECR_Ignore : ECR_Block);
+		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged || CVarAedirHeldPassesOwnBody.GetValueOnGameThread() != 0 ? ECR_Ignore : ECR_Block);
 	}
 }
 
@@ -514,7 +521,7 @@ void AAedirItemActor::SetLodged(bool bNewLodged)
 	// Stuck in a body it lies inside that body's flesh, which it must not shove out of its way.
 	if (Mesh && bHeldCollision)
 	{
-		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged ? ECR_Ignore : ECR_Block);
+		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged || CVarAedirHeldPassesOwnBody.GetValueOnGameThread() != 0 ? ECR_Ignore : ECR_Block);
 	}
 }
 
@@ -656,7 +663,8 @@ FVector AAedirItemActor::GetFlatNormalWorld() const
 	{
 		bFlatAxisKnown = true;
 		FBox Local(ForceInit);
-		const FTransform ToItem = GetActorTransform().Inverse();
+		// In the actor's own frame without its scale: the root's scale is the size of its collision box, not of the model.
+		const FTransform ToItem = FTransform(GetActorQuat(), GetActorLocation()).Inverse();
 		TInlineComponentArray<UStaticMeshComponent*> Parts(this);
 		for (const UStaticMeshComponent* Part : Parts)
 		{
@@ -680,13 +688,18 @@ FVector AAedirItemActor::GetFlatNormalWorld() const
 		// A round or square haft has no flat: it strikes the same whichever way it meets.
 		bHasFlat = FMath::Min(Size[A], Size[B]) < FMath::Max(Size[A], Size[B]) * AedirItemFlatRatio;
 	}
-	return bHasFlat ? GetActorTransform().TransformVectorNoScale(FlatAxisLocal) : FVector::ZeroVector;
+	return bHasFlat ? GetActorQuat().RotateVector(FlatAxisLocal) : FVector::ZeroVector;
 }
 
 EAedirDamageType AAedirItemActor::GetDamageType() const
 {
 	// The back of an axe and the hilt of a sword held by its blade strike blunt.
 	return GripTurn == EGripTurn::Back || GripTurn == EGripTurn::Murder ? EAedirDamageType::Blunt : DamageType;
+}
+
+bool AAedirItemActor::IsHafted() const
+{
+	return ItemClass == EAedirItemClass::Weapon && BodyScale.Y <= ItemHaftedBoxY;
 }
 
 AAedirItemActor::EGripTurn AAedirItemActor::TurnInHand(AAedirCreature* Creature, bool bHalfSword)
@@ -699,7 +712,7 @@ AAedirItemActor::EGripTurn AAedirItemActor::TurnInHand(AAedirCreature* Creature,
 	ResetGripTurn();
 	if (Was == EGripTurn::Normal)
 	{
-		if (BodyScale.Y <= ItemHaftedBoxY)
+		if (IsHafted())
 		{
 			// A hafted weapon (its body a thin round box) turns over: its head has a back to strike with and its haft is the
 			// same all round, so the hand holds it as before.
@@ -872,7 +885,7 @@ void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
 	Mesh->BodyInstance.SetMaskFilter(Creature->GetHeldMaskBit());
-	Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged ? ECR_Ignore : ECR_Block);
+	Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged || CVarAedirHeldPassesOwnBody.GetValueOnGameThread() != 0 ? ECR_Ignore : ECR_Block);
 	if (SettleAlpha >= 1.f)
 	{
 		WeldToHand();

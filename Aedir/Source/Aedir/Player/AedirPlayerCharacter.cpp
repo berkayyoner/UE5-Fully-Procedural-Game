@@ -1774,6 +1774,16 @@ void AAedirPlayerCharacter::MouseInput(float ValueX, float ValueY, float Seconds
 	}), 1.f / 240.f, Params);
 }
 
+void AAedirPlayerCharacter::PoseMeasure(const FString& Label)
+{
+	if (Combat)
+	{
+		UAedirProceduralAnimInstance* Pose = GetMesh() ? Cast<UAedirProceduralAnimInstance>(GetMesh()->GetAnimInstance()) : nullptr;
+		const FVector PoseHand = Pose ? GetActorTransform().InverseTransformPosition(Pose->GetPoseArmWorld(1, 2).GetLocation()) : FVector::ZeroVector;
+		UE_LOG(LogAedir, Display, TEXT("[PoseMeasure] %s right %s | anim hand %.0f %.0f %.0f"), *Label, *Combat->DevMeasurePose(EAedirHand::Right), PoseHand.X, PoseHand.Y, PoseHand.Z);
+	}
+}
+
 void AAedirPlayerCharacter::ArmInfo()
 {
 	if (Combat)
@@ -1853,7 +1863,8 @@ void AAedirPlayerCharacter::BladeWatch(int32 RightHand, float Seconds)
 			Watch->LastInHand = InHandNow;
 			if (Watch->bStarted && Watch->Body.Get() == Body)
 			{
-				const float Step = FMath::RadiansToDegrees(static_cast<float>(Now.AngularDistance(Watch->Last)));
+				// A weapon welded to a hand moved by the pose keeps a stale transform on its own body: the hand turns it too.
+				const float Step = FMath::Max(FMath::RadiansToDegrees(static_cast<float>(Now.AngularDistance(Watch->Last))), HandStep);
 				Watch->Total += Step;
 				Watch->Frames++;
 				if (Step > Watch->Peak)

@@ -17,6 +17,7 @@ static TAutoConsoleVariable<float> CVarAedirBodyFoot(TEXT("aedir.BodyFoot"), -1.
 
 static TAutoConsoleVariable<float> CVarAedirBodyHips(TEXT("aedir.BodyHips"), -1.f, TEXT("Hz of the hips' hold on the capsule; below 0 uses the component's own."));
 
+static TAutoConsoleVariable<float> CVarAedirBodyArm(TEXT("aedir.BodyArm"), -1.f, TEXT("Hz of the arms' joints; below 0 uses the component's own."));
 static TAutoConsoleVariable<float> CVarAedirBodySpine(TEXT("aedir.BodySpine"), -1.f, TEXT("Hz of the spine's joints; below 0 uses the component's own."));
 
 static TAutoConsoleVariable<float> CVarAedirBodyRise(TEXT("aedir.BodyRise"), -1.f, TEXT("How hard the hips are lifted getting up, against standing; below 0 uses the component's own."));
@@ -76,6 +77,10 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	PostureControls.Reset();
 	FootControls.Reset();
 	LegModifiers.Reset();
+	ArmModifiers[0].Reset();
+	ArmModifiers[1].Reset();
+	bArmPosed[0] = bArmPosed[1] = false;
+	bArmPosed[0] = bArmPosed[1] = false;
 	LegBones.Reset();
 	HeadControls.Reset();
 	LeftArmControls.Reset();
@@ -119,6 +124,10 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		{
 			LegModifiers.Add(Modifier);
 			LegBones.Add(Bone);
+		}
+		if ((Part == EAedirBodyPart::LeftArm || Part == EAedirBodyPart::RightArm) && !Bone.ToString().StartsWith(TEXT("clavicle")))
+		{
+			ArmModifiers[Part == EAedirBodyPart::LeftArm ? 0 : 1].Add(Modifier);
 		}
 		const FString BoneText = Bone.ToString();
 		if (Part == EAedirBodyPart::Hips)
@@ -385,8 +394,9 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	Apply(SpineControls, SpineHz * Body, 0.f);
 	Apply(HeadControls, HeadStrength * Body, 0.f);
 	Apply(LegControls, LegStrength * Body, 0.f);
-	Apply(LeftArmControls, ArmStrength * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare), 0.f);
-	Apply(RightArmControls, ArmStrength * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare), 0.f);
+	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
+	Apply(LeftArmControls, ArmHz * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare), 0.f);
+	Apply(RightArmControls, ArmHz * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare), 0.f);
 	// Down, the hips are free; carried, the pose places them and the control rests.
 	const bool bHold = !bLimp && !bHipsCarried;
 	const float Hips = CVarAedirBodyHips.GetValueOnGameThread() >= 0.f ? CVarAedirBodyHips.GetValueOnGameThread() : HipLinearStrength;
@@ -418,3 +428,23 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// The feet carry part of the weight only while they stand on something; in the air it all falls alike.
 	Control->SetBodyModifiersInSetGravityMultiplier(TEXT("Body"), bLimp || bAirborne ? 1.f : FMath::Lerp(1.f, Weight, Upright));
 }
+
+void UAedirBodyControlComponent::SetArmsPosed(bool bLeft, bool bRight)
+{
+	const bool Wanted[2] = { bLeft, bRight };
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		if (!Control || bArmPosed[Side] == Wanted[Side])
+		{
+			continue;
+		}
+		bArmPosed[Side] = Wanted[Side];
+		// The arm is shown as the pose has it; its bodies still simulate under it, held to the pose by their muscles, for
+		// what they strike and are struck by. Made kinematic instead they were moved by two systems at once and ran off.
+		for (const FName& Modifier : ArmModifiers[Side])
+		{
+			Control->SetBodyModifierPhysicsBlendWeight(Modifier, Wanted[Side] ? 0.f : 1.f);
+		}
+	}
+}
+

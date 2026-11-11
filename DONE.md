@@ -230,3 +230,17 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - ArmInfo and MouseInput dev commands: where each arm aims, is and is wanted, and the mouse fed through the player's own handlers.
 - The mouse takes a weapon as far as in Half Sword: about 450 pixels from the middle to the far side (it asked for eight times as much, so every swing stayed small), 300 pixels up still holding the point near the enemy; a thrust goes all the way out for about 400 pixels pushed forward.
 - Key poses 20 (blade straight up before the belly), 26 (point hanging down before the chest) and 27 (blade down and out to the left from the left hip) set again from the reference stills.
+- HALF_SWORD_MATH.md: the analysis of how Half Sword moves a held weapon (hand target, field clamp, blade to the enemy within the wrist cone, closed loop) and what has to match before delivery.
+- A closed loop on each weapon arm: held still at a pose, the hand and blade are nudged until what is shown is what the pose asks; the fixed per-pose correction tables are left aside while it is on.
+- A weapon arm in the stance is shown as its pose has it (its bodies still simulate under it for hits), so the same mouse place always gives the same hold whichever way it was reached, and walking no longer leaves the arms behind the body; the arm trap release leaves such an arm alone (it was teleporting it every half second).
+- A held weapon passes through its own holder's body, so a blade caught on the own head or hip no longer flips over.
+- PoseMeasure dev command: what the pose asks of the hand and blade against where they are, with the loop's correction.
+- A blade is held edge on: its edge goes the way the fingers point, out to the enemy, its flat to the palm (the model's thin side was read with the collision box's scale and came out wrong).
+- In the sword stance the elbows hang down by the ribs and go out and up only with the hands raised over the shoulders.
+- Sword key poses set again from the stills: the hands stay before the belly and by the right hip while the wrists stand the blade up (19, 21-25, 29), the low left pose holds the arms out to the right with the point hanging (26), the rest lies level out to the right from low hands (17), a thrust waits with the blade forward over the right side (48-50), held out the blade runs on from the arms (30).
+- A pole stood up before the body keeps its rear hand by the hip and the hands about a forearm apart (34, 35); a pole thrust waits with its head raised (45).
+- An axe or a mace rests level by the hip, its head across before the body (32).
+- The second hand on a two-handed grip judges its reach from the pose and holds on the hand bodies: at rest it no longer let go every half second, which had dropped the carrying hand to the side and set the arms swinging.
+- The carrying hand of a two-handed hold keeps its place while the other hand lets go for a moment.
+- Two-handed rest: the blade lies low out to the right before the hips, the hands a little left of the middle, within both arms' reach (still 17).
+- A pole carried at a walk is brought down level (still 33); overhead it reaches forward from the raised hands (stills 37, 39, 41).

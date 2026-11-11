@@ -224,6 +224,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Item")
 	float GetWeaponLength() const;
 
+	// A weapon on a haft (an axe, a mace, a pole): its body a thin round box, its weight in a head.
+	bool IsHafted() const;
+
 	// Which way the flat of a blade or an axe head faces, in the world; zero for a round haft that has no flat.
 	FVector GetFlatNormalWorld() const;
 

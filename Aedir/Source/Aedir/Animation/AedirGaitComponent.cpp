@@ -45,6 +45,7 @@ namespace
 	constexpr float AedirWeaponAimFadeSeconds = 0.2f;
 	constexpr float AedirWristLooseDegrees = 28.f;
 	constexpr float AedirWristFirmDegrees = 40.f;
+	constexpr float AedirWristHeldOutDegrees = 12.f;
 	constexpr float AedirRestPhaseMin = 0.4f;
 	constexpr float AedirRestPhaseMax = 0.5f;
 	constexpr float AedirRestCatchUpCyclesPerSecond = 2.f;
@@ -673,8 +674,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	}
 	const auto ReadArmShape = [Combat, DeltaTime](EAedirHand Hand, float& OutWristDegrees, FVector& OutHint, float& OutHintAlpha)
 	{
-		const float WristTarget = FMath::Lerp(AedirWristLooseDegrees, AedirWristFirmDegrees, Combat ? Combat->GetWristFirmShare(Hand) : 0.f);
-		OutWristDegrees = FMath::FInterpConstantTo(OutWristDegrees, WristTarget, DeltaTime, (AedirWristFirmDegrees - AedirWristLooseDegrees) / AedirWeaponAimFadeSeconds);
+		// Held out with the arms straight, the blade runs on from the forearm almost in line (still 30).
+		const float WristTarget = FMath::Lerp(FMath::Lerp(AedirWristLooseDegrees, AedirWristFirmDegrees, Combat ? Combat->GetWristFirmShare(Hand) : 0.f), AedirWristHeldOutDegrees, Combat ? Combat->GetHeldOutShare(Hand) : 0.f);
+		OutWristDegrees = FMath::FInterpConstantTo(OutWristDegrees, WristTarget, DeltaTime, (AedirWristFirmDegrees - AedirWristHeldOutDegrees) / AedirWeaponAimFadeSeconds);
 		FVector Hint = FVector::ZeroVector;
 		float HintAlpha = 0.f;
 		if (Combat && Combat->GetElbowHint(Hand, Hint, HintAlpha))

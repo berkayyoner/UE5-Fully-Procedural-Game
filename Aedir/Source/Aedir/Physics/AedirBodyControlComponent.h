@@ -31,7 +31,7 @@ public:
 	float HeadStrength = 15.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float ArmStrength = 22.f;
+	float ArmStrength = 36.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float LegStrength = 19.f;
@@ -94,6 +94,11 @@ public:
 	// A body down on the ground: limp, every part loose. Back up, it is tied to the capsule again.
 	void SetLimp(bool bInLimp);
 
+	// An arm (from the upper arm down) shown as the pose has it, its bodies simulating under it, or shown where its bodies are.
+	void SetArmsPosed(bool bLeft, bool bRight);
+	bool IsArmPosed(bool bRight) const { return bArmPosed[bRight ? 1 : 0]; }
+
+
 	// While getting up the hips are carried through the moves by the pose; otherwise the control holds them.
 	void SetHipsCarried(bool bCarried);
 
@@ -137,6 +142,8 @@ private:
 	FName HipModifier;
 	FName LeftFootModifiers[2];
 	FName RightFootModifiers[2];
+	TArray<FName> ArmModifiers[2];
+	bool bArmPosed[2] = { false, false };
 
 	bool bReady = false;
 	bool bLimp = false;
