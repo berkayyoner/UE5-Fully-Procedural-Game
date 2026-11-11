@@ -75,6 +75,8 @@ namespace
 	constexpr float PlayerTutorialTurnDegrees = 15.f;
 	// The engine turns the view 2.5 degrees for each unit of mouse input; going round the body turns the camera the same.
 	constexpr float PlayerOrbitDegreesPerInput = 2.5f;
+	// Locking on, anyone not an enemy counts as this much further off the view (in radians) as an enemy.
+	constexpr float PlayerLockOnNonEnemyPenalty = 10.f;
 	// One frame turning a held item further than this is a tumble, not a swing.
 	constexpr float BladeWatchFlipDegrees = 20.f;
 
@@ -382,7 +384,8 @@ AAedirCreature* AAedirPlayerCharacter::FindLockOnTarget() const
 	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
 	{
 		AAedirCreature* Other = *It;
-		if (!Other || Other == this || (Other->Stats && Other->Stats->IsDead()))
+		// Never a friend; an enemy always before anyone else in view.
+		if (!Other || Other == this || (Other->Stats && Other->Stats->IsDead()) || IsFriendOf(Other))
 		{
 			continue;
 		}
@@ -394,7 +397,7 @@ AAedirCreature* AAedirPlayerCharacter::FindLockOnTarget() const
 		{
 			continue;
 		}
-		const float Score = FMath::Acos(FMath::Clamp(Cos, -1.f, 1.f)) + Distance / LockOnRangeCm * 0.25f;
+		const float Score = FMath::Acos(FMath::Clamp(Cos, -1.f, 1.f)) + Distance / LockOnRangeCm * 0.25f + (IsEnemyOf(Other) ? 0.f : PlayerLockOnNonEnemyPenalty);
 		if (Score < BestScore)
 		{
 			BestScore = Score;
@@ -417,7 +420,9 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 
 	AAedirCreature* Target = LockOnTarget.Get();
 	const bool bLost = !Target || (Target->Stats && Target->Stats->IsDead()) || FVector::Dist(Target->GetActorLocation(), GetActorLocation()) > LockOnRangeCm * 1.4f;
-	if (bLost)
+	// Held on someone who is no enemy, the view goes over to an enemy as soon as one comes into it.
+	const AAedirCreature* Better = !bLost && !IsEnemyOf(Target) ? FindLockOnTarget() : nullptr;
+	if (bLost || (Better && Better != Target && IsEnemyOf(Better)))
 	{
 		Target = FindLockOnTarget();
 		LockOnTarget = Target;
@@ -1734,6 +1739,27 @@ void AAedirPlayerCharacter::HandWatch(int32 RightHand, float Seconds)
 			GetWorldTimerManager().ClearTimer(Watch->Timer);
 		}
 	}), Step, true);
+}
+
+void AAedirPlayerCharacter::HeadCamera()
+{
+	HandleHeadCameraPressed();
+}
+
+void AAedirPlayerCharacter::CamInfo()
+{
+	const FVector Head = GetMesh() ? GetMesh()->GetBoneLocation(TEXT("head")) : GetActorLocation();
+	const FVector Camera = FollowCamera ? FollowCamera->GetComponentLocation() : FVector::ZeroVector;
+	UE_LOG(LogAedir, Display, TEXT("[CamInfo] view pitch %.1f, camera %.0f cm above the head and %.0f cm from it, lock on %d, fight %d"),
+		FRotator::NormalizeAxis(GetControlRotation().Pitch), Camera.Z - Head.Z, FVector::Dist2D(Camera, Head), bLockOnEnabled ? 1 : 0, Combat && Combat->IsInFightStance() ? 1 : 0);
+}
+
+void AAedirPlayerCharacter::OrbitCamera(float YawDegrees, float PitchDegrees)
+{
+	// Held round there as if V were held: let go with OrbitCamera 0 0.
+	OrbitOffset = FRotator(PitchDegrees, YawDegrees, 0.f);
+	bOrbitHeld = YawDegrees != 0.f || PitchDegrees != 0.f;
+	bOrbitMoved = bOrbitHeld;
 }
 
 void AAedirPlayerCharacter::BladeWatch(int32 RightHand, float Seconds)

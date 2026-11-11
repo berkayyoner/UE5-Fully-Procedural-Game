@@ -25,7 +25,10 @@ UAedirGroupSettings::UAedirGroupSettings()
 			GroupSettingsMakeRelation(TEXT("Heroes"), TEXT("Bandits"), EAedirRelation::Enemy),
 			GroupSettingsMakeRelation(TEXT("Heroes"), TEXT("Guards"), EAedirRelation::Ally),
 			GroupSettingsMakeRelation(TEXT("Guards"), TEXT("Bandits"), EAedirRelation::Enemy),
-			GroupSettingsMakeRelation(TEXT("Heroes"), TEXT("Wildlife"), EAedirRelation::Neutral)
+			GroupSettingsMakeRelation(TEXT("Heroes"), TEXT("Wildlife"), EAedirRelation::Neutral),
+			// The village folk are on the side of the player and the guards: a blow among them pushes but does no harm.
+			GroupSettingsMakeRelation(TEXT("Heroes"), TEXT("Villagers"), EAedirRelation::Ally),
+			GroupSettingsMakeRelation(TEXT("Guards"), TEXT("Villagers"), EAedirRelation::Ally)
 		};
 	}
 }

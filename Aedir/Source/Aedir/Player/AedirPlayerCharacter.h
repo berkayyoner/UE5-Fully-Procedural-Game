@@ -363,6 +363,17 @@ public:
 	UFUNCTION(Exec)
 	void MouseFlick(int32 RightHand, float DeltaX, float DeltaY, float Seconds);
 
+	// The camera behind the head (as Z does), and the camera turned round the body (as moving the mouse with V held does).
+	UFUNCTION(Exec)
+	void HeadCamera();
+
+	// Where the view looks and where the camera stands against the head.
+	UFUNCTION(Exec)
+	void CamInfo();
+
+	UFUNCTION(Exec)
+	void OrbitCamera(float YawDegrees, float PitchDegrees);
+
 	// Logs every frame the held item turns further than a tumble, and a summary at the end.
 	UFUNCTION(Exec)
 	void BladeWatch(int32 RightHand, float Seconds);
