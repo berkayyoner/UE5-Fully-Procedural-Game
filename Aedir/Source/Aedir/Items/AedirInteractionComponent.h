@@ -61,6 +61,9 @@ class AEDIR_API UAedirInteractionComponent : public UActorComponent
 	GENERATED_BODY()
 
 public:
+	// For the dev tools: where the hand is being taken by a reach, a draw or a stow, and how far that has taken over.
+	FVector DevGetReachTarget(EAedirHand Hand) const { return ReachTargetCache[Hand == EAedirHand::Left ? 0 : 1]; }
+	float DevGetReachBlend(EAedirHand Hand) const { return ReachBlend[Hand == EAedirHand::Left ? 0 : 1]; }
 	UAedirInteractionComponent();
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;

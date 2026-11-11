@@ -41,6 +41,7 @@
 #include "Graphics/AedirFoliageSubsystem.h"
 #include "UI/SAedirConsole.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Animation/AedirProceduralAnimInstance.h"
 #include "Player/AedirCameraBoom.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Physics/AedirBalanceComponent.h"
@@ -1744,6 +1745,50 @@ void AAedirPlayerCharacter::HandWatch(int32 RightHand, float Seconds)
 void AAedirPlayerCharacter::HeadCamera()
 {
 	HandleHeadCameraPressed();
+}
+
+void AAedirPlayerCharacter::MouseInput(float ValueX, float ValueY, float Seconds)
+{
+	TSharedRef<FTimerHandle> Timer = MakeShared<FTimerHandle>();
+	TSharedRef<float> Left = MakeShared<float>(Seconds);
+	TSharedRef<uint64> LastFrame = MakeShared<uint64>(0);
+	FTimerManagerTimerParameters Params;
+	Params.bLoop = true;
+	Params.bMaxOncePerFrame = true;
+	GetWorldTimerManager().SetTimer(*Timer, FTimerDelegate::CreateWeakLambda(this, [this, Timer, Left, LastFrame, ValueX, ValueY]()
+	{
+		if (*LastFrame == GFrameCounter)
+		{
+			return;
+		}
+		*LastFrame = GFrameCounter;
+		// The values are a second's worth, as the mouse axes give them spread over the frames.
+		const float Dt = GetWorld()->GetDeltaSeconds();
+		HandleMouseX(ValueX * Dt);
+		HandleMouseY(ValueY * Dt);
+		*Left -= Dt;
+		if (*Left <= 0.f)
+		{
+			GetWorldTimerManager().ClearTimer(*Timer);
+		}
+	}), 1.f / 240.f, Params);
+}
+
+void AAedirPlayerCharacter::ArmInfo()
+{
+	if (Combat)
+	{
+		const FVector Right = GetMesh() ? GetActorTransform().InverseTransformPosition(GetMesh()->GetBoneLocation(TEXT("hand_r"))) : FVector::ZeroVector;
+		const FVector Left = GetMesh() ? GetActorTransform().InverseTransformPosition(GetMesh()->GetBoneLocation(TEXT("hand_l"))) : FVector::ZeroVector;
+		const FVector Head = GetMesh() ? GetActorTransform().InverseTransformPosition(GetMesh()->GetBoneLocation(TEXT("head"))) : FVector::ZeroVector;
+		const FVector RightReach = Interaction ? GetActorTransform().InverseTransformPosition(Interaction->DevGetReachTarget(EAedirHand::Right)) : FVector::ZeroVector;
+		UAedirProceduralAnimInstance* Pose = GetMesh() ? Cast<UAedirProceduralAnimInstance>(GetMesh()->GetAnimInstance()) : nullptr;
+		const FVector RightPose = Pose ? GetActorTransform().InverseTransformPosition(Pose->GetPoseArmWorld(1, 2).GetLocation()) : FVector::ZeroVector;
+		const FBodyInstance* RightBody = GetMesh() ? GetMesh()->GetBodyInstance(TEXT("hand_r")) : nullptr;
+		UE_LOG(LogAedir, Display, TEXT("[ArmInfo] right hand body %s simulating %d"), RightBody ? *GetActorTransform().InverseTransformPosition(RightBody->GetUnrealWorldTransform().GetLocation()).ToCompactString() : TEXT("-"), RightBody && RightBody->IsInstanceSimulatingPhysics() ? 1 : 0);
+		UE_LOG(LogAedir, Display, TEXT("[ArmInfo] right %s, bone %s, reach %s at %.2f, pose %s"), *Combat->DevDescribeArm(EAedirHand::Right), *Right.ToCompactString(), *RightReach.ToCompactString(), Interaction ? Interaction->DevGetReachBlend(EAedirHand::Right) : 0.f, *RightPose.ToCompactString());
+		UE_LOG(LogAedir, Display, TEXT("[ArmInfo] left %s, bone %s, head %s"), *Combat->DevDescribeArm(EAedirHand::Left), *Left.ToCompactString(), *Head.ToCompactString());
+	}
 }
 
 void AAedirPlayerCharacter::CamInfo()

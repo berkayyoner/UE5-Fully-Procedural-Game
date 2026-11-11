@@ -21,11 +21,10 @@ namespace
 	const TCHAR* const BloodBurstLight = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Once.NS_Blood_Splat_Directional_01_Floor_Once");
 	const TCHAR* const BloodBurstHeavy = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Bunch_Once.NS_Blood_Splat_Directional_01_Floor_Bunch_Once");
 	constexpr float BloodBurstHeavyAbove = 0.85f;
-	// Drops of blood are the size of a pea, not of an apple: the burst is drawn small and each flying drop is a centimetre and a
-	// half across.
-	constexpr float BloodBurstMinScale = 0.12f;
-	constexpr float BloodBurstMaxScale = 0.3f;
-	constexpr float BloodDropScale = 0.015f;
+	// Drops of blood are a few millimetres across: the burst is drawn small and each flying drop is under a centimetre.
+	constexpr float BloodBurstMinScale = 0.05f;
+	constexpr float BloodBurstMaxScale = 0.14f;
+	constexpr float BloodDropScale = 0.007f;
 	constexpr float BloodDropLifeSpan = 4.f;
 	constexpr float BloodDropStartOutCm = 6.f;
 	constexpr float BloodDropLinearDamping = 0.05f;
@@ -44,7 +43,8 @@ namespace
 	constexpr float BloodSplatMinScale = 0.05f;
 	constexpr float BloodSplatFadeStartFraction = 0.9f;
 	constexpr float BloodSplatFadeDurationFraction = 0.1f;
-	constexpr float BloodDropHitSplatScale = 1.f;
+	// A drop that lands leaves a spot a few centimetres across, not a hand-sized splash.
+	constexpr float BloodDropHitSplatScale = 0.3f;
 
 	struct FBloodMaterialSlot
 	{

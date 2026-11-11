@@ -17,6 +17,8 @@ namespace
 	// from its middle towards the point, and the pommel lies this share of the grip beyond the hand's place on it.
 	constexpr double ItemHaftedBoxY = 0.035;
 	constexpr float ItemMurderHoldShare = 0.12f;
+	// Across a blade, thinner one way than this share of the other: it has a flat that can strike.
+	constexpr double AedirItemFlatRatio = 0.5;
 	// A piece worn on the arm that is this thin for its width is a shield.
 	constexpr float ItemShieldThinShare = 0.3f;
 	constexpr float ItemPommelBeyondGripShare = 0.6f;
@@ -644,6 +646,41 @@ float AAedirItemActor::GetDamage() const
 float AAedirItemActor::GetWeaponLength() const
 {
 	return WeaponLength;
+}
+
+FVector AAedirItemActor::GetFlatNormalWorld() const
+{
+	// Across the blade the item is thin one way (the flat) and wide the other (from edge to edge, or from the edge of an axe
+	// to its back): the thin way is read off the model's own shape, once.
+	if (!bFlatAxisKnown)
+	{
+		bFlatAxisKnown = true;
+		FBox Local(ForceInit);
+		const FTransform ToItem = GetActorTransform().Inverse();
+		TInlineComponentArray<UStaticMeshComponent*> Parts(this);
+		for (const UStaticMeshComponent* Part : Parts)
+		{
+			if (!Part || !Part->GetStaticMesh() || Part == Sheath || Part == BeltSheath)
+			{
+				continue;
+			}
+			const FBox Box = Part->GetStaticMesh()->GetBoundingBox();
+			for (int32 Corner = 0; Corner < 8; ++Corner)
+			{
+				const FVector P((Corner & 1) ? Box.Max.X : Box.Min.X, (Corner & 2) ? Box.Max.Y : Box.Min.Y, (Corner & 4) ? Box.Max.Z : Box.Min.Z);
+				Local += ToItem.TransformPosition(Part->GetComponentTransform().TransformPosition(P));
+			}
+		}
+		const FVector Size = Local.IsValid ? Local.GetSize() : FVector(1.0, 1.0, 0.1);
+		const int32 Long = Size.X >= Size.Y && Size.X >= Size.Z ? 0 : Size.Y >= Size.Z ? 1 : 2;
+		const int32 A = (Long + 1) % 3;
+		const int32 B = (Long + 2) % 3;
+		FlatAxisLocal = FVector::ZeroVector;
+		FlatAxisLocal[Size[A] <= Size[B] ? A : B] = 1.0;
+		// A round or square haft has no flat: it strikes the same whichever way it meets.
+		bHasFlat = FMath::Min(Size[A], Size[B]) < FMath::Max(Size[A], Size[B]) * AedirItemFlatRatio;
+	}
+	return bHasFlat ? GetActorTransform().TransformVectorNoScale(FlatAxisLocal) : FVector::ZeroVector;
 }
 
 EAedirDamageType AAedirItemActor::GetDamageType() const

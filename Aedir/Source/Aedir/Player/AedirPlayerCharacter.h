@@ -367,9 +367,17 @@ public:
 	UFUNCTION(Exec)
 	void HeadCamera();
 
+	// The mouse as the player moves it, through the same handlers: this much axis value a second, for this long.
+	UFUNCTION(Exec)
+	void MouseInput(float ValueX, float ValueY, float Seconds);
+
 	// Where the view looks and where the camera stands against the head.
 	UFUNCTION(Exec)
 	void CamInfo();
+
+	// Where each arm aims, where its hand is and where it is wanted, against the body.
+	UFUNCTION(Exec)
+	void ArmInfo();
 
 	UFUNCTION(Exec)
 	void OrbitCamera(float YawDegrees, float PitchDegrees);

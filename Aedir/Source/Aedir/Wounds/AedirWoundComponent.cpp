@@ -680,8 +680,8 @@ void UAedirWoundComponent::EnsureWoundVisuals()
 		}
 
 		const float Radius = WoundDecalRadius(Wound.Type, Wound.GetSeverity());
-		// Open wounds are drawn on the skin itself; only bruises are still laid on.
-		if (Wound.Type != EAedirWoundType::Bruise && UsesSkinBlood())
+		// Wounds and bruises are drawn on the skin itself.
+		if (UsesSkinBlood())
 		{
 			continue;
 		}
@@ -827,14 +827,11 @@ void UAedirWoundComponent::UpdateSkinBlood()
 		return Pose;
 	};
 
-	// The worst open wounds, as many as the material holds.
+	// The worst wounds and bruises, as many as the material holds.
 	TArray<const FAedirWound*, TInlineAllocator<16>> Open;
 	for (const FAedirWound& Wound : ActiveWounds)
 	{
-		if (Wound.Type != EAedirWoundType::Bruise)
-		{
-			Open.Add(&Wound);
-		}
+		Open.Add(&Wound);
 	}
 	Open.Sort([](const FAedirWound& A, const FAedirWound& B) { return A.GetSeverity() > B.GetSeverity(); });
 	const double Now = GetWoundServerTime();
@@ -853,7 +850,9 @@ void UAedirWoundComponent::UpdateSkinBlood()
 			const float RunCm = (Visual ? Visual->RunLength : 0.f) * 2.f * (WoundRunHalfLengthMinCm + WoundRunHalfLengthPerSeverityCm * FMath::Clamp(Severity, 0.f, 1.f));
 			Where = FLinearColor(Point.X, Point.Y, Point.Z, WoundDecalRadius(Wound.Type, Severity));
 			UE_CLOG(CVarAedirSkinBloodLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Wounds] skin blood %d on %s at %s, radius %.1f, run %.1f cm"), Slot, *Wound.Bone.ToString(), *Point.ToCompactString(), Where.A, RunCm);
-			How = FLinearColor(FMath::Max(Severity, 0.2f), ComputeAge01(Wound.Type, Severity, Age), RunCm, static_cast<float>(Wound.Id % 17));
+			// A bruise has no run: the material knows it by a run length below zero.
+			const bool bBruise = Wound.Type == EAedirWoundType::Bruise;
+			How = FLinearColor(FMath::Max(Severity, 0.2f), ComputeAge01(Wound.Type, Severity, Age), bBruise ? -1.f : RunCm, static_cast<float>(Wound.Id % 17));
 		}
 		SkinBlood->SetVectorParameterValue(FName(*FString::Printf(TEXT("W%d"), Slot)), Where);
 		SkinBlood->SetVectorParameterValue(FName(*FString::Printf(TEXT("D%d"), Slot)), How);

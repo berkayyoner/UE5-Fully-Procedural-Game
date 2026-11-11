@@ -1158,12 +1158,20 @@ void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatCom
 	QueryReachPose(Interaction, Hand, ReachTarget, ReachAlpha);
 	Blend.Apply(ReachTarget, ReachAlpha);
 
-	// The swing is the highest priority and overrides both the guard and the interaction reach.
+	// The swing is the highest priority and overrides both the guard and the interaction reach, except while the hand puts a
+	// weapon on the belt or draws it: then the way to the belt leads, or the hand that holds the weapon stays where it is
+	// carried and never gets round to the far hip.
 	FVector SwingTarget = FVector::ZeroVector;
 	float SwingAlpha = 0.f;
 	if (Combat && Combat->GetSwingPose(Hand, SwingTarget, SwingAlpha))
 	{
 		Blend.Apply(SwingTarget, SwingAlpha);
+	}
+	FVector HolsterDir;
+	float HolsterShare = 0.f;
+	if (Interaction && Interaction->GetHolsterAim(Hand, HolsterDir, HolsterShare))
+	{
+		Blend.Apply(ReachTarget, ReachAlpha);
 	}
 
 	// The protective reflex is the highest priority while falling and overrides the swing.

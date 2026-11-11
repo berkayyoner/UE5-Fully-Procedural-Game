@@ -220,3 +220,11 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The village folk are allies of the player and the guards, so a blow among them pushes but does no harm.
 - The view locks on an enemy before anyone else and never on a friend; held on someone else, it goes over to an enemy as soon as one comes into view.
 - HeadCamera, OrbitCamera and CamInfo dev commands, for the camera behind the head, the camera turned round the body and where the view looks.
+- Blood drops are under a centimetre, the burst is drawn smaller still, and a drop that lands leaves a spot a few centimetres across.
+- Bare fists, as in Half Sword: a slow mouse moves the guard, a quick one throws the punch, now from real mouse speeds (about 700 to 2600 pixels a second); before, a punch needed around 20,000 pixels a second, so it never came out.
+- The guard fists sit before the chin wherever the head is: the crouch of the fight stance had left them over the head.
+- A blade or an axe that strikes with its flat lands like a club, bruising and breaking bones but cutting nothing; the flat is read off the model's own shape.
+- Maces and hammers carry their weight in the head: they come round slower than a blade of their weight and swing on further past the end of the arm's movement.
+- Bruises are drawn on the skin too, a soft dark patch darker and wider the harder the blow, purple-blue turning yellow-brown as it heals.
+- A hand putting a weapon on the far hip goes round before the belly on an arc and comes in to the slot from outside; the stow leads over the weapon's carried pose, and the blade passes the own hip on the way.
+- ArmInfo and MouseInput dev commands: where each arm aims, is and is wanted, and the mouse fed through the player's own handlers.

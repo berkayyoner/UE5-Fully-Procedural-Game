@@ -224,6 +224,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Item")
 	float GetWeaponLength() const;
 
+	// Which way the flat of a blade or an axe head faces, in the world; zero for a round haft that has no flat.
+	FVector GetFlatNormalWorld() const;
+
 	UFUNCTION(BlueprintPure, Category="Aedir|Item")
 	EAedirDamageType GetDamageType() const;
 
@@ -278,6 +281,9 @@ private:
 	void ApplyItemMass();
 	FTransform ComputeHoldTransform(const FTransform& HoldOffset) const;
 	FTransform ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const;
+	mutable bool bFlatAxisKnown = false;
+	mutable bool bHasFlat = false;
+	mutable FVector FlatAxisLocal = FVector::ZeroVector;
 
 	EGripTurn GripTurn = EGripTurn::Normal;
 	float MadeGripLocalCm = 0.f;

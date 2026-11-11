@@ -49,10 +49,13 @@ namespace
 	constexpr float ReachLeanStepDegrees = 5.f;
 	constexpr float HolsterHandSeconds = 0.85f;
 	constexpr float HolsterBlendInSeconds = 0.3f;
-	// The arm goes down in front of the belly, not straight through the body.
-	constexpr float HolsterFrontForwardCm = 34.f;
-	constexpr float HolsterFrontSideCm = 8.f;
+	// Halfway round the body the hand rises this much over the straight way between its start and the slot.
 	constexpr float HolsterFrontUpCm = 6.f;
+	// On the way round the body the hand keeps at least this far from the middle of the hips (the belly is about 15 cm out
+	// from it), bulges this much further out in the middle of the way, and comes in to the slot over the last of the way.
+	constexpr float HolsterArcClearCm = 30.f;
+	constexpr float HolsterArcBulgeCm = 8.f;
+	constexpr float HolsterArcInFrom = 0.8f;
 	constexpr float HolsterAimStart = 0.2f;
 	constexpr float HolsterAimEnd = 0.85f;
 	// The blade goes over the top on its way to and from the belt, with the thumb up: below, the wrist would have to turn all the way round.
@@ -510,6 +513,12 @@ void UAedirInteractionComponent::BeginHolsterMotion(EAedirHand Hand)
 		HolsterWaistIndex[Index] = bWeapon ? FindFreeWaistIndex(Hand) : GetWaistSideBegin(Hand);
 		HolsterMotion[Index] = HolsterWaistIndex[Index] != INDEX_NONE ? EAedirHolsterMotion::Store : EAedirHolsterMotion::None;
 		MouthHands &= ~(1 << Index);
+		// On its way to the belt the blade passes the holder's own hip and thigh: it slides past them into its place rather
+		// than catching on them and holding the hand out before the body.
+		if (HolsterMotion[Index] == EAedirHolsterMotion::Store)
+		{
+			const_cast<AAedirItemActor*>(Held)->SetPassesOwnBody(true);
+		}
 	}
 	else if (GetHandState(Hand) == EAedirHandState::Idle)
 	{
@@ -1244,11 +1253,25 @@ void UAedirInteractionComponent::UpdateReachBlend(float DeltaTime)
 			const bool bDrawingHung = HolsterMotion[Index] == EAedirHolsterMotion::Draw && HolsterItem && !BackpackDrawItem[Index];
 			const FVector SlotWorld = bDrawingHung ? HolsterItem->GetGripWorld() : GetWaistSlotWorld(HolsterWaistIndex[Index], HolsterItem);
 			const FTransform ActorTransform = Creature ? Creature->GetActorTransform() : FTransform::Identity;
-			const float SlotSide = HolsterWaistIndex[Index] < WaistSlotsPerSide ? -1.f : 1.f;
-			const FVector Front = ActorTransform.TransformPositionNoScale(FVector(HolsterFrontForwardCm, SlotSide * HolsterFrontSideCm, HolsterFrontUpCm));
 			const float T = HolsterSmoothStep(HolsterElapsed[Index] / HolsterHandSeconds);
-			const FVector Start = ActorTransform.TransformPositionNoScale(HolsterStartLocal[Index]);
-			ReachTargetCache[Index] = FMath::Lerp(FMath::Lerp(Start, Front, T), FMath::Lerp(Front, SlotWorld, T), T);
+			// The hand goes round the front of the body on an arc about the middle of the hips, never nearer it than the belly
+			// is wide, so a hand crossing to the far hip passes before the belly instead of into it; at the end it comes in to
+			// the slot from straight out.
+			const FVector StartLocal = HolsterStartLocal[Index];
+			const FVector EndLocal = ActorTransform.InverseTransformPositionNoScale(SlotWorld);
+			const float StartAngle = FMath::Atan2(static_cast<float>(StartLocal.Y), static_cast<float>(StartLocal.X));
+			const float EndAngle = FMath::Atan2(static_cast<float>(EndLocal.Y), static_cast<float>(EndLocal.X));
+			const float StartRadius = static_cast<float>(FVector2D(StartLocal.X, StartLocal.Y).Size());
+			const float EndRadius = static_cast<float>(FVector2D(EndLocal.X, EndLocal.Y).Size());
+			// Round the front only: the angles run through straight ahead (zero), not round the back.
+			const float Angle = FMath::Lerp(StartAngle, EndAngle, T);
+			const float Outward = FMath::Sin(T * UE_PI) * HolsterArcBulgeCm;
+			const float Radius = FMath::Max(FMath::Lerp(StartRadius, EndRadius, T) + Outward, HolsterArcClearCm * FMath::Clamp((1.f - T) / (1.f - HolsterArcInFrom), 0.f, 1.f));
+			const float Height = FMath::Lerp(static_cast<float>(StartLocal.Z), static_cast<float>(EndLocal.Z), T) + FMath::Sin(T * UE_PI) * HolsterFrontUpCm;
+			const FVector OnArc(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, Height);
+			// The last stretch comes in to the slot itself.
+			const float InShare = FMath::SmoothStep(HolsterArcInFrom, 1.f, T);
+			ReachTargetCache[Index] = ActorTransform.TransformPositionNoScale(FMath::Lerp(OnArc, EndLocal, InShare));
 		}
 		else if (bConsumable)
 		{
