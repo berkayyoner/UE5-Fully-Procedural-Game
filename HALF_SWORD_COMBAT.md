@@ -212,3 +212,89 @@ Mouse moved smoothly from the middle to 25 points (x -450..+450 px, y -300..+300
 - Lower rows: the hands drop to the belly and hips; low in the middle the point is low forward / across to the left; low right the hands are at the right hip with the blade rising aslant across; low left the blade hangs down by the left leg.
 - With the button held the whole body turns with the weapon: chest, hips and feet go round with the hands, so a far sweep turns the fighter a quarter turn or more.
 - Big jumps of the mouse pin the hands at the edge; the field is wide but bounded by the arm's reach.
+
+### How the control really works (found while trying to map it, 2026-11-11)
+
+- There is no fixed mouse-position-to-pose map. The weapon target is moved by mouse deltas while the left button is held and is
+  kept when the button is let go (the weapon only goes to rest); the next press goes on from where it was. The same mouse
+  movement therefore gives different poses depending on what came before. It is not clamped hard either: repeated moves in one
+  direction build up.
+- With the hands up by the right shoulder, drawing a circle with the mouse turns the blade smoothly round a full circle while the
+  hands move only a little: the mouse mostly steers the blade's direction about the hands, and the hands move far only when the
+  mouse keeps going one way (out to the arm's length at the sides, over the head, down to the hips).
+- Nothing in the arms ever jumps or turns over: the blade's way changes continuously, the wrists and forearms turn with it, and
+  the body turns round with the weapon (feet and hips too), so the hands stay where the arms reach them comfortably.
+- Photo mode (C) freezes the pose; F switches orbit/free camera (the photo mode starts in orbit each time, and its first drag is
+  ignored); in free camera W/S/A/D fly and dragging turns it.
+
+### Swing sequences and the edges of the field (frame by frame, two-handed sword)
+
+Front views of the extremes (photo mode, free camera; images sent to the user as hs_front_keys.png and hs_swings.png):
+- Far right: the right arm reaches straight out at shoulder height, the second hand has let go of the grip, the blade points
+  aslant forward-up from the outstretched hand.
+- Far left: the right arm crosses the body, both hands at the left waist, the blade upright at the left side.
+- Lowest: arms hanging straight, both hands before the groin, the blade straight down between the legs.
+- Highest: hands above the right shoulder and the head, the blade lying level behind the head, out to the left.
+- Left at middle height: hands at the left waist, the blade forward and up about 30 degrees, on the enemy.
+
+Paths (back view, smooth all along):
+- Upper right to lower left: right shoulder (blade back over it) -> over the head -> before the chest (point on the enemy) ->
+  left shoulder (blade back over it) -> left hip (point forward and down).
+- Lower left to upper right: left hip -> before the chest -> right shoulder with the blade aslant up to the left -> the blade
+  lying back over the right shoulder.
+- Low to high in the middle: hands rise before the chest, the face, then over the head; at the top they go to the right shoulder.
+- Level left to right: the body turns right with the weapon and the blade stands upright at the right side.
+- A circle of the mouse with the hands at the right shoulder: the blade turns a full smooth circle about the hands.
+
+### Half Sword key bindings (Options > Controls > Key Binds, Early Access 0.7)
+
+| Action | Key |
+|---|---|
+| Move | W A S D |
+| Run | Left Shift |
+| Crouch | Left Ctrl |
+| Right hand swing | LMB (hold) |
+| Right hand grab / take | E |
+| Left hand swing | RMB (hold) |
+| Left hand grab / take | Q |
+| Thrust | RMB double click |
+| Thrust mode | Left Alt (hold) |
+| Sheathe right / left | Hold E / hold Q |
+| Swap hands | X |
+| Inventory | R |
+| Arrow time | F |
+| Give up | G |
+| Photo mode | C |
+| Switch view | V |
+| Chain attacks | Thumb mouse button |
+
+Options: "Classic Alt Thrust" and "Classic Halfswording" are off by default; mouse sensitivity, invert mouse, centre crosshair.
+
+### Thrust (two-handed sword; thrust mode with Left Alt, frozen in photo mode by the user, filmed from the side and front)
+
+- Drawn back (Alt held): the hands are pulled back beside the right hip, elbows bent behind, the blade level at waist height
+  with the point straight on the enemy (a chambered thrust, not up at the shoulder).
+- Out, low: arms straight forward and a little down, the hands about half a metre ahead at hip height, the blade level or a
+  touch up; a lunge: feet wide, knees bent, the trunk leaning forward.
+- Out, high: arms straight forward at shoulder height, the hands nearly an arm's length ahead, the blade level; knees bent and
+  the hips sitting back.
+
+### Pole weapons (spear, two hands, LMB held, filmed from behind and from the front)
+
+- Rest: the pole lies across the body from the right hip (butt) up to the left, both hands close together on the shaft.
+- Vertical sweep: the pole only tilts; the point rises toward vertical in front of the right shoulder and drops low to the
+  right. The hands stay close together and move little, the rear (right) hand stays at the hip or chest.
+- Up-left: the rear hand comes to the left chest, the pole goes up over the left shoulder, the butt low at the groin.
+- High: the right hand goes above the head and the pole leans back over the left shoulder, almost upright; the trunk turns
+  left with it.
+- Left: the pole is level out to the left, the hands at the chest, the trunk turned left.
+- The weapon target keeps adding up across presses (it does not reset), so the same mouse stroke lands in a different pose
+  depending on where the last one ended. The pole never flips and the hands never cross through the shaft.
+
+### Pole thrust (thrust mode with Left Alt)
+
+- Drawn back: the rear (right) hand behind the right hip with the butt trailing behind, the front (left) hand forward at
+  chest height, the pole level at waist height and a little down, pointing ahead; the trunk turned right, knees bent.
+- Out (side view): a long lunge, the front knee bent and the rear leg straight back. The rear hand comes forward to the front
+  of the right hip, the front hand reaches out at waist height with the elbow nearly straight, and the pole points up at head
+  height of the enemy. The trunk stays upright and the hands move along the shaft's line, so the point travels straight.

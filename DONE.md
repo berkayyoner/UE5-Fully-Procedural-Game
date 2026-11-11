@@ -196,3 +196,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - An arm caught still and far off its pose (a hand pressed the wrong way round into its joint limit) is put back on the pose after a third of a second, both arms together on a two-handed grip.
 - The hands go further out, as in Half Sword: at the far sides the arm reaches out nearly straight, and the second hand lets go of the grip where its arm no longer reaches it and takes hold again on the way back.
 - Half Sword play notes: controls and a 25-point pose grid with the left button held (HALF_SWORD_COMBAT.md).
+- Half Sword pole weapon poses recorded from behind and the front, findings in HALF_SWORD_COMBAT.md.
+- Half Sword pole thrust recorded: drawn back at the hip, then a lunge with the point rising to head height.
