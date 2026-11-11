@@ -521,6 +521,7 @@ private:
 	void SetupMotors();
 	void UpdateMotors(float DeltaTime, bool bForce);
 	void UpdateArmTraps(float DeltaTime);
+	void LimitArmSpin();
 	float ArmTrapSeconds[2] = { 0.f, 0.f };
 	float ArmTrapCooldown[2] = { 0.f, 0.f };
 	void UpdateLegBlend(float DeltaTime);

@@ -73,6 +73,10 @@ namespace
 	constexpr float AedirTalkRangeCm = 300.f;
 	constexpr float PlayerCharacterCreationDelaySeconds = 0.8f;
 	constexpr float PlayerTutorialTurnDegrees = 15.f;
+	// The engine turns the view 2.5 degrees for each unit of mouse input; going round the body turns the camera the same.
+	constexpr float PlayerOrbitDegreesPerInput = 2.5f;
+	// One frame turning a held item further than this is a tumble, not a swing.
+	constexpr float BladeWatchFlipDegrees = 20.f;
 
 	FName PlayerTutorialQuestId()
 	{
@@ -303,6 +307,8 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::LeftControl, IE_Released, this, &AAedirPlayerCharacter::HandleCrouchReleased);
 
 	PlayerInputComponent->BindKey(EKeys::V, IE_Pressed, this, &AAedirPlayerCharacter::HandleViewTogglePressed);
+	PlayerInputComponent->BindKey(EKeys::V, IE_Released, this, &AAedirPlayerCharacter::HandleViewToggleReleased);
+	PlayerInputComponent->BindKey(EKeys::Z, IE_Pressed, this, &AAedirPlayerCharacter::HandleHeadCameraPressed);
 
 	PlayerInputComponent->BindKey(EKeys::Tab, IE_Pressed, this, &AAedirPlayerCharacter::HandleMenuTogglePressed);
 	PlayerInputComponent->BindKey(EKeys::J, IE_Pressed, this, &AAedirPlayerCharacter::HandleJournalPressed);
@@ -426,19 +432,20 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 		return;
 	}
 
-	// The view turns to the target's chest, or where its body lies, and keeps it there while the guard is held.
+	// The view turns to a little under the target's head, or where its body lies, and keeps it there while the guard is held:
+	// standing, that is straight across at him, not down at his belly.
 	FVector Aim = Target->GetActorLocation() + FVector(0.f, 0.f, 30.f);
-	if (const USkeletalMeshComponent* TargetMesh = Target->GetMesh(); TargetMesh && TargetMesh->GetBoneIndex(TEXT("spine_03")) != INDEX_NONE)
+	if (const USkeletalMeshComponent* TargetMesh = Target->GetMesh(); TargetMesh && TargetMesh->GetBoneIndex(TEXT("head")) != INDEX_NONE)
 	{
-		Aim = TargetMesh->GetBoneLocation(TEXT("spine_03"));
+		Aim = TargetMesh->GetBoneLocation(TEXT("head")) - FVector(0.f, 0.f, LockOnAimBelowHeadCm);
 	}
 	FVector ViewLocation;
 	FRotator ViewRotation;
 	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
 	const FRotator Want = (Aim - ViewLocation).Rotation();
 	FRotator Control = PlayerController->GetControlRotation();
-	// Never looking up at the fight from below its own shoulder: at least as steeply down as the fight view.
-	const float WantPitch = FMath::Min(static_cast<float>(FRotator::NormalizeAxis(Want.Pitch)), FightViewPitch);
+	// Down at one lying on the ground, but never steeper than this.
+	const float WantPitch = FMath::Max(static_cast<float>(FRotator::NormalizeAxis(Want.Pitch)), LockOnSteepestPitch);
 	const FRotator Turned = FMath::RInterpTo(Control, FRotator(FMath::Clamp(WantPitch, MinViewPitch, MaxViewPitch), Want.Yaw, Control.Roll), DeltaSeconds, LockOnTurnSpeed);
 	PlayerController->SetControlRotation(FRotator(Turned.Pitch, Turned.Yaw, Control.Roll));
 }
@@ -466,6 +473,13 @@ void AAedirPlayerCharacter::HandleMouseX(float Value)
 	const bool bFighting = Combat && Combat->IsInFightStance();
 	const FAedirGameplaySettings& Settings = UAedirSettingsSubsystem::GetValues();
 	const float CameraValue = Value * Settings.MouseSensitivity;
+	if (bOrbitHeld && CameraBoom)
+	{
+		// The camera alone goes round; the body, its view and the arms are left as they are.
+		OrbitOffset.Yaw += CameraValue * PlayerOrbitDegreesPerInput;
+		bOrbitMoved |= !FMath::IsNearlyZero(Value);
+		return;
+	}
 	AddControllerYawInput(bFighting ? CameraValue * FightCameraMouseScale : CameraValue);
 	if (!FMath::IsNearlyZero(Value))
 	{
@@ -480,6 +494,12 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 	const bool bFighting = Combat && Combat->IsInFightStance();
 	const FAedirGameplaySettings& Settings = UAedirSettingsSubsystem::GetValues();
 	const float CameraValue = (Settings.bInvertMouseY ? Value : -Value) * Settings.MouseSensitivity;
+	if (bOrbitHeld && CameraBoom)
+	{
+		OrbitOffset.Pitch = FMath::Clamp(OrbitOffset.Pitch - CameraValue * PlayerOrbitDegreesPerInput, -70.0, 70.0);
+		bOrbitMoved |= !FMath::IsNearlyZero(Value);
+		return;
+	}
 	AddControllerPitchInput(bFighting ? CameraValue * FightCameraMouseScale : CameraValue);
 	if (!FMath::IsNearlyZero(Value))
 	{
@@ -613,9 +633,27 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 	{
 		// The fight stance draws the view in close and up over the shoulder; out of it the view goes back to where it was set.
 		const float FightAlpha = FMath::SmoothStep(0.f, 1.f, FightCameraAlpha);
-		const float WantedLength = FMath::Lerp(CameraZoomTargetCm, FightArmLengthCm, FightAlpha);
+		const float WantedLength = bHeadCamera ? HeadCameraArmLengthCm : FMath::Lerp(CameraZoomTargetCm, FightArmLengthCm, FightAlpha);
 		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, WantedLength, DeltaSeconds, 10.f);
-		CameraBoom->SocketOffset = FMath::Lerp(ThirdPersonShoulderOffset, FightShoulderOffset, FightAlpha);
+		CameraBoom->SocketOffset = bHeadCamera ? HeadCameraOffset : FMath::Lerp(ThirdPersonShoulderOffset, FightShoulderOffset, FightAlpha);
+
+		// Let go of V, the camera comes back round behind the body.
+		if (bOrbitHeld)
+		{
+			OrbitHeldSeconds += DeltaSeconds;
+		}
+		else
+		{
+			OrbitOffset = FMath::RInterpTo(OrbitOffset, FRotator::ZeroRotator, DeltaSeconds, OrbitReturnSpeed);
+		}
+		// Turned round, the arm is set by hand where the view plus the turn has it; back behind, it follows the view again.
+		const bool bOrbiting = bOrbitHeld || !OrbitOffset.IsNearlyZero(0.5);
+		CameraBoom->bUsePawnControlRotation = !bOrbiting;
+		if (bOrbiting)
+		{
+			const FRotator View = GetControlRotation();
+			CameraBoom->SetWorldRotation(FRotator(FMath::Clamp(FRotator::NormalizeAxis(View.Pitch + OrbitOffset.Pitch), -80.0, 80.0), View.Yaw + OrbitOffset.Yaw, 0.0));
+		}
 	}
 
 	LastLookInputSeconds += DeltaSeconds;
@@ -646,6 +684,12 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 					const FRotator Wanted(CameraRagdollPitch, Along.Rotation().Yaw, 0.f);
 					GetController()->SetControlRotation(FMath::RInterpTo(Current, Wanted, DeltaSeconds, CameraRagdollTurnSpeed));
 				}
+			}
+			else if (bHeadCamera && BodyMesh->GetBoneIndex(TEXT("head")) != INDEX_NONE)
+			{
+				// As in Half Sword the camera rides with the head: every lean, duck and stagger of the body moves the view.
+				TargetRelative = GetActorTransform().InverseTransformPositionNoScale(BodyMesh->GetBoneLocation(TEXT("head"), EBoneSpaces::WorldSpace));
+				FollowSpeed = HeadCameraFollowSpeed;
 			}
 			else
 			{
@@ -1167,7 +1211,29 @@ void AAedirPlayerCharacter::ToggleView()
 
 void AAedirPlayerCharacter::HandleViewTogglePressed()
 {
-	ToggleView();
+	bOrbitHeld = true;
+	bOrbitMoved = false;
+	OrbitHeldSeconds = 0.f;
+}
+
+void AAedirPlayerCharacter::HandleViewToggleReleased()
+{
+	// A short tap with the camera left where it was changes the view; a hold went round the body and now comes back.
+	if (bOrbitHeld && !bOrbitMoved && OrbitHeldSeconds < ViewTapSeconds)
+	{
+		ToggleView();
+	}
+	bOrbitHeld = false;
+}
+
+void AAedirPlayerCharacter::HandleHeadCameraPressed()
+{
+	bHeadCamera = !bHeadCamera;
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	if (UAedirTravelSubsystem* Travel = PlayerController && PlayerController->GetLocalPlayer() ? PlayerController->GetLocalPlayer()->GetSubsystem<UAedirTravelSubsystem>() : nullptr)
+	{
+		Travel->ShowNotification(bHeadCamera ? NSLOCTEXT("Aedir", "HeadCameraOn", "Camera behind the head") : NSLOCTEXT("Aedir", "HeadCameraOff", "Camera over the shoulder"), 2.f);
+	}
 }
 
 void AAedirPlayerCharacter::HandleMenuTogglePressed()
@@ -1668,6 +1734,87 @@ void AAedirPlayerCharacter::HandWatch(int32 RightHand, float Seconds)
 			GetWorldTimerManager().ClearTimer(Watch->Timer);
 		}
 	}), Step, true);
+}
+
+void AAedirPlayerCharacter::BladeWatch(int32 RightHand, float Seconds)
+{
+	// How the item held in a hand turns, frame by frame: every step of more than a set angle is logged with what the arm was
+	// doing then, so a blade that tumbles over in the hand shows when and why.
+	const EAedirHand Hand = RightHand != 0 ? EAedirHand::Right : EAedirHand::Left;
+	struct FWatch
+	{
+		FTimerHandle Timer;
+		FQuat Last = FQuat::Identity;
+		FQuat LastHand = FQuat::Identity;
+		FQuat LastInHand = FQuat::Identity;
+		TWeakObjectPtr<UPrimitiveComponent> Body;
+		bool bStarted = false;
+		float Elapsed = 0.f;
+		float Total = 0.f;
+		float Peak = 0.f;
+		int32 Flips = 0;
+		int32 Frames = 0;
+		uint64 LastFrame = 0;
+	};
+	TSharedRef<FWatch> Watch = MakeShared<FWatch>();
+	FTimerManagerTimerParameters Params;
+	Params.bLoop = true;
+	Params.bMaxOncePerFrame = true;
+	GetWorldTimerManager().SetTimer(Watch->Timer, FTimerDelegate::CreateWeakLambda(this, [this, Watch, Hand, Seconds]()
+	{
+		if (Watch->LastFrame == GFrameCounter)
+		{
+			return;
+		}
+		Watch->LastFrame = GFrameCounter;
+		const float Dt = GetWorld()->GetDeltaSeconds();
+		Watch->Elapsed += Dt;
+		AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(Hand) : nullptr;
+		UPrimitiveComponent* Body = Item ? Cast<UPrimitiveComponent>(Item->GetRootComponent()) : nullptr;
+		if (Body)
+		{
+			const FQuat Now = Body->GetComponentQuat();
+			const FQuat HandNow = GetMesh() ? GetMesh()->GetBoneQuaternion(Hand == EAedirHand::Right ? TEXT("hand_r") : TEXT("hand_l"), EBoneSpaces::WorldSpace) : FQuat::Identity;
+			const FQuat InHandNow = HandNow.Inverse() * Now;
+			const float HandStep = Watch->bStarted ? FMath::RadiansToDegrees(static_cast<float>(HandNow.AngularDistance(Watch->LastHand))) : 0.f;
+			const float InHandStep = Watch->bStarted ? FMath::RadiansToDegrees(static_cast<float>(InHandNow.AngularDistance(Watch->LastInHand))) : 0.f;
+			Watch->LastHand = HandNow;
+			Watch->LastInHand = InHandNow;
+			if (Watch->bStarted && Watch->Body.Get() == Body)
+			{
+				const float Step = FMath::RadiansToDegrees(static_cast<float>(Now.AngularDistance(Watch->Last)));
+				Watch->Total += Step;
+				Watch->Frames++;
+				if (Step > Watch->Peak)
+				{
+					Watch->Peak = Step;
+				}
+				if (Step > BladeWatchFlipDegrees)
+				{
+					Watch->Flips++;
+					const FVector Axis = Now.GetForwardVector();
+					const FAedirArmDynamics* Arm = Combat ? &Combat->DevGetArm(Hand) : nullptr;
+					UE_LOG(LogAedir, Display, TEXT("[BladeWatch] %.2f s turned %.0f deg in one frame (%.3f s), the hand %.0f, in the hand %.0f; guard %d, two hands %d, aim %s, blade %s, wanted %s, held %s"),
+						Watch->Elapsed, Step, Dt, HandStep, InHandStep, Combat && Combat->IsGuardActive(Hand) ? 1 : 0, Combat && Combat->IsTwoHandGrip() ? 1 : 0,
+						Arm ? *Arm->PoseAimDeg.ToString() : TEXT("-"), *GetActorTransform().InverseTransformVectorNoScale(Axis).ToCompactString(),
+						Arm ? *GetActorTransform().InverseTransformVectorNoScale(Arm->WeaponDir).ToCompactString() : TEXT("-"), *Item->GetName());
+				}
+			}
+			Watch->Last = Now;
+			Watch->Body = Body;
+			Watch->bStarted = true;
+		}
+		else
+		{
+			Watch->bStarted = false;
+		}
+		if (Watch->Elapsed >= Seconds)
+		{
+			UE_LOG(LogAedir, Display, TEXT("[BladeWatch] done: %d frames, %d tumbles over %.0f deg, worst step %.0f deg, mean %.1f deg/frame"),
+				Watch->Frames, Watch->Flips, BladeWatchFlipDegrees, Watch->Peak, Watch->Frames > 0 ? Watch->Total / Watch->Frames : 0.f);
+			GetWorldTimerManager().ClearTimer(Watch->Timer);
+		}
+	}), 1.f / 120.f, Params);
 }
 
 void AAedirPlayerCharacter::MouseFlick(int32 RightHand, float DeltaX, float DeltaY, float Seconds)

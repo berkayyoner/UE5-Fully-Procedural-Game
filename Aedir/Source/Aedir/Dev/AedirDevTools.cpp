@@ -1496,14 +1496,15 @@ void UAedirDevTools::PlaceItem(AAedirPlayerCharacter* Player, const FString& Arg
 	UWorld* World = Player->GetWorld();
 	if (Tokens.Num() < 3 || !World || !UAedirItemCatalog::Find(FName(*Tokens[0])))
 	{
-		DevToolsReport(TEXT("Usage: PlaceItem <Id> <forward cm> <right cm>"));
+		DevToolsReport(TEXT("Usage: PlaceItem <Id> <forward cm> <right cm> [up cm from the feet, 20]"));
 		return;
 	}
 
+	const float Up = Tokens.IsValidIndex(3) ? FCString::Atof(*Tokens[3]) : 20.f;
 	const FVector Location = Player->GetActorLocation()
 		+ Player->GetActorForwardVector() * FCString::Atof(*Tokens[1])
 		+ Player->GetActorRightVector() * FCString::Atof(*Tokens[2])
-		- FVector(0.f, 0.f, Player->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - 20.f);
+		- FVector(0.f, 0.f, Player->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - Up);
 	if (AAedirCatalogItem::SpawnCatalogItem(World, FName(*Tokens[0]), FTransform(DevToolsFlatYaw(Player), Location)))
 	{
 		DevToolsReport(FString::Printf(TEXT("Placed %s"), *Tokens[0]));

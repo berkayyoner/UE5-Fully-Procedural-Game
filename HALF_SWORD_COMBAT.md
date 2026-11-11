@@ -302,3 +302,11 @@ Options: "Classic Alt Thrust" and "Classic Halfswording" are off by default; mou
   chest, the rear hand right behind the front one; the pole level at shoulder height and pointing straight ahead. The feet
   stay wide and the knees bent, the trunk upright, a little turned. The rear hand travels the furthest: from behind the hip
   to arm's length in front, while the front hand slides up from the waist to the shoulder. The point travels straight.
+
+### From the install (static look at the game files, see HalfSword_REA_Physics_Combat_Injury.md beside the game)
+
+- Chaos physics with the PhysicsControl plugin and PhysicalAnimation: an active ragdoll whose joints are pulled to an
+  animated target pose, as ours is.
+- Blood is painted on the body at run time (a render target and vertex paint), not laid on with decals: it stays on the
+  skin where the blow landed and runs from there. Ours now draws it on the skin in its bind pose, to the same end.
+- Stamina is kept per arm and for the legs; wounds are shown per limb.

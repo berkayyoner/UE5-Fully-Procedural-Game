@@ -72,6 +72,11 @@ namespace
 	constexpr double AedirArmLedWristGiveCost = 0.12;
 	// However the blade and the forearm come to lie, a hand turns no faster than this.
 	constexpr float AedirHandMaxTurnDegrees = 1000.f;
+	// Each joint of the arm turns no faster than this, in degrees a second against its parent (collarbone, shoulder, elbow,
+	// wrist): a strong swing reaches about this, and a pose that jumps further in one frame is followed round over a few.
+	constexpr float AedirArmJointMaxDegrees[4] = { 300.f, 700.f, 800.f, 900.f };
+	constexpr float AedirArmJointGapSeconds = 0.1f;
+	TAutoConsoleVariable<int32> CVarAedirArmJointSpeed(TEXT("aedir.ArmJointSpeed"), 1, TEXT("The arm's joints in the pose turn no faster than a living arm's (1), or jump as the pose does (0)."));
 	// A second hand on a grip takes it the other way round past this much turn of the forearm, if that saves this much.
 	constexpr float AedirGripRegripTwistDegrees = 110.f;
 	constexpr float AedirGripRegripMarginDegrees = 40.f;
@@ -274,9 +279,44 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	}
 	FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(CSPose, Output.Pose);
 	Output.Pose.NormalizeRotations();
+	LimitArmJointSpeed(Output.Pose, Bones);
 	ApplyBulk(Output.Pose, Bones);
 
 	return true;
+}
+
+void FAedirProceduralAnimProxy::LimitArmJointSpeed(FCompactPose& Pose, const FBoneContainer& Bones) const
+{
+	const float DeltaSeconds = GetDeltaSeconds();
+	const bool bOn = CVarAedirArmJointSpeed.GetValueOnAnyThread() != 0;
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		const FName Joints[4] = { Slot == 0 ? FName(TEXT("clavicle_l")) : FName(TEXT("clavicle_r")), Slot == 0 ? BoneNameSet.LeftHumerus : BoneNameSet.RightHumerus,
+			Slot == 0 ? BoneNameSet.LeftRadius : BoneNameSet.RightRadius, Slot == 0 ? BoneNameSet.LeftHand : BoneNameSet.RightHand };
+		for (int32 Part = 0; Part < 4; ++Part)
+		{
+			const FCompactPoseBoneIndex Bone = ResolveCompactBone(Bones, Joints[Part]);
+			if (!Bone.IsValid())
+			{
+				continue;
+			}
+			FTransform& Local = Pose[Bone];
+			FQuat Turn = Local.GetRotation();
+			// After a pause (loading, a teleport, the pose switched off) the pose is taken as it is.
+			if (bOn && bLastArmJointValid[Slot][Part] && DeltaSeconds > 0.f && DeltaSeconds < AedirArmJointGapSeconds)
+			{
+				const float Step = static_cast<float>(LastArmJoint[Slot][Part].AngularDistance(Turn));
+				const float MaxStep = FMath::DegreesToRadians(AedirArmJointMaxDegrees[Part]) * DeltaSeconds;
+				if (Step > MaxStep)
+				{
+					Turn = FQuat::Slerp(LastArmJoint[Slot][Part], Turn, MaxStep / Step).GetNormalized();
+					Local.SetRotation(Turn);
+				}
+			}
+			LastArmJoint[Slot][Part] = Turn;
+			bLastArmJointValid[Slot][Part] = true;
+		}
+	}
 }
 
 FQuat FAedirProceduralAnimProxy::ActorRotationToMesh(const FQuat& ActorLocalRotation) const

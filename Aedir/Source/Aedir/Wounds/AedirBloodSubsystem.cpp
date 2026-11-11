@@ -21,9 +21,11 @@ namespace
 	const TCHAR* const BloodBurstLight = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Once.NS_Blood_Splat_Directional_01_Floor_Once");
 	const TCHAR* const BloodBurstHeavy = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Bunch_Once.NS_Blood_Splat_Directional_01_Floor_Bunch_Once");
 	constexpr float BloodBurstHeavyAbove = 0.85f;
-	constexpr float BloodBurstMinScale = 0.35f;
-	constexpr float BloodBurstMaxScale = 0.9f;
-	constexpr float BloodDropScale = 0.032f;
+	// Drops of blood are the size of a pea, not of an apple: the burst is drawn small and each flying drop is a centimetre and a
+	// half across.
+	constexpr float BloodBurstMinScale = 0.12f;
+	constexpr float BloodBurstMaxScale = 0.3f;
+	constexpr float BloodDropScale = 0.015f;
 	constexpr float BloodDropLifeSpan = 4.f;
 	constexpr float BloodDropStartOutCm = 6.f;
 	constexpr float BloodDropLinearDamping = 0.05f;

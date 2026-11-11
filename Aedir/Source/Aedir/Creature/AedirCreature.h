@@ -93,6 +93,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Creature")
 	bool IsEnemyOf(const AAedirCreature* Other) const;
+	// One of the same side: a blow from a friend pushes but does not hurt, and starts no fight.
+	bool IsFriendOf(const AAedirCreature* Other) const;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Creature")
 	float ReceiveCreatureDamage(float Amount);

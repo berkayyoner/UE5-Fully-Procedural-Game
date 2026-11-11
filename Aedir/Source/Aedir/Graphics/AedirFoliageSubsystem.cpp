@@ -45,7 +45,7 @@ namespace
 	constexpr float FoliageHoldSeconds = 7.f;
 	constexpr float FoliageRisePerSecond = 0.1f;
 	constexpr int32 FoliageMaxBend = 3;
-	constexpr float FoliageBendDistance = 70.f;
+	constexpr float FoliageBendDistance = 28.f;
 	constexpr float FoliageWindFollow = 0.4f;
 	const TCHAR* const FoliageNaniteGrassRoot = TEXT("/Game/OWD_Nanite_Base_Grass/Meshes/");
 	const TCHAR* const FoliageScannedGrassRoot = TEXT("/Game/Aedir/Megascans/Grass/");
@@ -502,11 +502,29 @@ void UAedirFoliageSubsystem::UpdateBending()
 		Bodies.Add(*It);
 	}
 	Bodies.Sort([&Center](const AAedirCreature& A, const AAedirCreature& B) { return FVector::DistSquared(A.GetActorLocation(), Center) < FVector::DistSquared(B.GetActorLocation(), Center); });
+	// The grass leans away from each foot of the nearest body, not from the middle under it: leaning round the middle left a
+	// bare ring in thin grass. The third place is the next body.
+	TArray<FVector, TInlineAllocator<FoliageMaxBend>> Places;
+	for (int32 Index = 0; Index < Bodies.Num() && Places.Num() < FoliageMaxBend; ++Index)
+	{
+		const AAedirCreature* Body = Bodies[Index];
+		const FVector Feet = Body->GetActorLocation() - FVector(0.f, 0.f, Body->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+		const USkeletalMeshComponent* Mesh = Body->GetMesh();
+		if (Index == 0 && Mesh && Mesh->GetBoneIndex(TEXT("foot_l")) != INDEX_NONE && Mesh->GetBoneIndex(TEXT("foot_r")) != INDEX_NONE)
+		{
+			for (const TCHAR* Bone : { TEXT("foot_l"), TEXT("foot_r") })
+			{
+				const FVector Foot = Mesh->GetBoneLocation(FName(Bone));
+				Places.Add(FVector(Foot.X, Foot.Y, Feet.Z));
+			}
+			continue;
+		}
+		Places.Add(Feet);
+	}
 	for (int32 Index = 0; Index < FoliageMaxBend; ++Index)
 	{
 		const FName Name(*FString::Printf(TEXT("PlayerPos%d"), Index));
-		const FVector Where = Bodies.IsValidIndex(Index) ? Bodies[Index]->GetActorLocation() - FVector(0.f, 0.f, Bodies[Index]->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()) : FVector(0.f, 0.f, -100000.f);
-		UKismetMaterialLibrary::SetVectorParameterValue(World, Collection, Name, FLinearColor(Where));
+		UKismetMaterialLibrary::SetVectorParameterValue(World, Collection, Name, FLinearColor(Places.IsValidIndex(Index) ? Places[Index] : FVector(0.f, 0.f, -100000.f)));
 	}
 	if (Bodies.IsValidIndex(0))
 	{

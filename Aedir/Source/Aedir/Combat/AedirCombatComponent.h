@@ -530,6 +530,7 @@ private:
 	void UpdateKick(float DeltaTime);
 	void ResolveKickSweep(const FVector& From, const FVector& To, float DeltaTime);
 	void ApplyKickImpact(AAedirCreature* Victim, const FHitResult& Hit, const FVector& FootMotion, float FootSpeed);
+	void PushFriend(AAedirCreature* Victim, FName Bone, EAedirBodyZone Zone, const FVector& Location, const FVector& Motion, float Energy, float MassKg, float Speed) const;
 	FVector GetFootBoneWorld(bool bLeftLeg) const;
 	FVector GetPelvisWorld() const;
 
@@ -621,6 +622,8 @@ public:
 	void SetOffHandFree(bool bFree);
 	void ToggleHalfSword();
 	bool IsHalfSwordToggled() const { return bHalfSwordToggled; }
+	// For the dev tools: the state of one arm as the combat sees it.
+	const FAedirArmDynamics& DevGetArm(EAedirHand Hand) const { return GetArm(Hand); }
 private:
 	UPROPERTY(Replicated)
 	bool bOffHandFree = false;

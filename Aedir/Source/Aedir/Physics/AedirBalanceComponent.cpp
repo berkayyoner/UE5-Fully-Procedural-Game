@@ -118,6 +118,10 @@ namespace
 	// The blow moves the part it lands on, not the whole body through the air.
 	TAutoConsoleVariable<float> CVarAedirGrippedArmShare(TEXT("aedir.GrippedArmShare"), 0.3f, TEXT("How much of its own will the arm of a hand held onto a weapon's grip keeps."));
 	TAutoConsoleVariable<int32> CVarAedirArmTrapRelease(TEXT("aedir.ArmTrapRelease"), 1, TEXT("An arm caught far off its pose against its joint limits is put back on it (1) or left (0)."));
+	// How fast a forearm and a hand can turn, in degrees a second: a hard swing turns the hand at about this much.
+	constexpr float AedirForearmMaxSpinDegrees = 1100.f;
+	constexpr float AedirHandMaxSpinDegrees = 1400.f;
+	TAutoConsoleVariable<int32> CVarAedirArmSpinLimit(TEXT("aedir.ArmSpinLimit"), 1, TEXT("The forearms and hands turn no faster than a strong swing (1), or as fast as the physics flings them (0)."));
 	// Held this far off its pose for this long, an arm is caught; after being put back it is left alone this long.
 	constexpr float AedirArmTrapDegrees = 45.f;
 	constexpr float AedirArmTrapSeconds = 0.35f;
@@ -376,6 +380,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	UpdatePelvisLean(DeltaTime);
 	UpdateMotors(DeltaTime, false);
 	UpdateArmTraps(DeltaTime);
+	LimitArmSpin();
 	UpdateLegBlend(DeltaTime);
 
 	if (!bIsRagdoll && BodyControl)
@@ -2337,6 +2342,33 @@ void UAedirBalanceComponent::SetupMotors()
 	MotorComponent->RegisterComponent();
 	MotorComponent->SetSkeletalMeshComponent(BodyMesh);
 	UpdateMotors(0.f, true);
+}
+
+void UAedirBalanceComponent::LimitArmSpin()
+{
+	// A living arm never whips round faster than its muscles can turn it: a hard tug at the hand (a sudden throw of the mouse,
+	// a blade striking something) flung the hand and the weapon welded to it round a whole turn within a few frames, the
+	// weapon tumbling in the fist. The forearm and hand are held to what a strong swing can reach.
+	if (!BodyMesh || bIsRagdoll || CVarAedirArmSpinLimit.GetValueOnGameThread() == 0)
+	{
+		return;
+	}
+	const TCHAR* const Parts[] = { TEXT("lowerarm_l"), TEXT("hand_l"), TEXT("lowerarm_r"), TEXT("hand_r") };
+	const float Limits[] = { AedirForearmMaxSpinDegrees, AedirHandMaxSpinDegrees, AedirForearmMaxSpinDegrees, AedirHandMaxSpinDegrees };
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Parts); ++Index)
+	{
+		FBodyInstance* Body = BodyMesh->GetBodyInstance(FName(Parts[Index]));
+		if (!Body || !Body->IsInstanceSimulatingPhysics())
+		{
+			continue;
+		}
+		const FVector Spin = Body->GetUnrealWorldAngularVelocityInRadians();
+		const float Limit = FMath::DegreesToRadians(Limits[Index]);
+		if (Spin.SizeSquared() > Limit * Limit)
+		{
+			Body->SetAngularVelocityInRadians(Spin.GetSafeNormal() * Limit, false);
+		}
+	}
 }
 
 void UAedirBalanceComponent::UpdateArmTraps(float DeltaTime)

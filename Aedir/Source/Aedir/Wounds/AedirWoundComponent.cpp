@@ -10,8 +10,10 @@
 #include "Components/DecalComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirStatsComponent.h"
+#include "Engine/SkinnedAsset.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
+#include "ReferenceSkeleton.h"
 #include "GameFramework/GameStateBase.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -115,6 +117,10 @@ namespace
 	constexpr float WoundRunDepthCm = 10.f;
 	constexpr float WoundRunOpenShare = 0.15f;
 	constexpr float WoundRunOpenPerSeverity = 0.35f;
+	// The material that draws blood on the skin, and how many wounds it holds at once.
+	const TCHAR* const WoundSkinBloodPath = TEXT("/Game/Aedir/Materials/M_AedirBloodSkin.M_AedirBloodSkin");
+	constexpr int32 WoundSkinBloodSlots = 8;
+	TAutoConsoleVariable<int32> CVarAedirSkinBloodLog(TEXT("aedir.SkinBloodLog"), 0, TEXT("Log where each wound's blood is drawn on the skin (1)."));
 
 	FWoundMaterialSlot& WoundCutSlot()
 	{
@@ -193,6 +199,10 @@ void UAedirWoundComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	{
 		EnsureWoundVisuals();
 		UpdateWoundVisuals(DeltaTime);
+		if (!ActiveWounds.IsEmpty() || SkinBlood)
+		{
+			UpdateSkinBlood();
+		}
 	}
 }
 
@@ -670,6 +680,11 @@ void UAedirWoundComponent::EnsureWoundVisuals()
 		}
 
 		const float Radius = WoundDecalRadius(Wound.Type, Wound.GetSeverity());
+		// Open wounds are drawn on the skin itself; only bruises are still laid on.
+		if (Wound.Type != EAedirWoundType::Bruise && UsesSkinBlood())
+		{
+			continue;
+		}
 		if (!Visual->Decal)
 		{
 			UMaterialInterface* Parent = Mesh ? WoundResolveMaterial(WoundSlotForType(Wound.Type)) : nullptr;
@@ -736,8 +751,10 @@ void UAedirWoundComponent::UpdateWoundVisuals(float DeltaTime)
 
 		const float Rate = ComputeBleedRate(Wound.Type, Severity, Age);
 		// The run creeps further down while the wound bleeds, quicker the more it bleeds, and dries once it has stopped.
-		if (Visual->RunMaterial)
+		if (Wound.Type != EAedirWoundType::Bruise)
 		{
+			// The cut itself lets out a little at once, more the worse it is; bleeding carries it on from there.
+			Visual->RunLength = FMath::Max(Visual->RunLength, WoundRunOpenShare + WoundRunOpenPerSeverity * FMath::Clamp(Severity, 0.f, 1.f));
 			if (Rate > 0.f)
 			{
 				Visual->RunLength = FMath::Min(Visual->RunLength + DeltaTime * (WoundRunShareBase + Rate * WoundRunSharePerBleed), 1.f);
@@ -747,6 +764,9 @@ void UAedirWoundComponent::UpdateWoundVisuals(float DeltaTime)
 			{
 				Visual->RunWet = FMath::Max(Visual->RunWet - DeltaTime / WoundRunDrySeconds, 0.f);
 			}
+		}
+		if (Visual->RunMaterial)
+		{
 			Visual->RunMaterial->SetScalarParameterValue(TEXT("Length01"), Visual->RunLength);
 			Visual->RunMaterial->SetScalarParameterValue(TEXT("Wet"), Visual->RunWet);
 		}
@@ -768,6 +788,75 @@ void UAedirWoundComponent::UpdateWoundVisuals(float DeltaTime)
 		const FVector Location = Reference.TransformPosition(Wound.Offset);
 		const FVector Velocity = FVector(0.f, 0.f, WoundDripGravityVelocity) + Owner->GetVelocity() * WoundDripCarryScale;
 		Blood->SpawnDrop(Location, Velocity);
+	}
+}
+
+bool UAedirWoundComponent::UsesSkinBlood()
+{
+	if (!bSkinBloodTried)
+	{
+		bSkinBloodTried = true;
+		USkeletalMeshComponent* Mesh = GetBodyMesh();
+		UMaterialInterface* Parent = Mesh ? LoadObject<UMaterialInterface>(nullptr, WoundSkinBloodPath, nullptr, LOAD_NoWarn | LOAD_Quiet) : nullptr;
+		UE_CLOG(Mesh && !Parent, LogAedir, Warning, TEXT("[Wounds] %s is missing: open wounds are laid on as before"), WoundSkinBloodPath);
+		if (Parent)
+		{
+			SkinBlood = UMaterialInstanceDynamic::Create(Parent, this);
+			Mesh->SetOverlayMaterial(SkinBlood);
+		}
+	}
+	return SkinBlood != nullptr;
+}
+
+void UAedirWoundComponent::UpdateSkinBlood()
+{
+	USkeletalMeshComponent* Mesh = GetBodyMesh();
+	if (!Mesh || !UsesSkinBlood() || !Mesh->GetSkinnedAsset())
+	{
+		return;
+	}
+	// Where each bone stands in the bind pose, the body's own frame in which the skin is drawn before it moves.
+	const FReferenceSkeleton& Skeleton = Mesh->GetSkinnedAsset()->GetRefSkeleton();
+	auto BindPose = [&Skeleton](FName Bone)
+	{
+		FTransform Pose = FTransform::Identity;
+		for (int32 Index = Skeleton.FindBoneIndex(Bone); Index != INDEX_NONE; Index = Skeleton.GetParentIndex(Index))
+		{
+			Pose = Pose * Skeleton.GetRefBonePose()[Index];
+		}
+		return Pose;
+	};
+
+	// The worst open wounds, as many as the material holds.
+	TArray<const FAedirWound*, TInlineAllocator<16>> Open;
+	for (const FAedirWound& Wound : ActiveWounds)
+	{
+		if (Wound.Type != EAedirWoundType::Bruise)
+		{
+			Open.Add(&Wound);
+		}
+	}
+	Open.Sort([](const FAedirWound& A, const FAedirWound& B) { return A.GetSeverity() > B.GetSeverity(); });
+	const double Now = GetWoundServerTime();
+	for (int32 Slot = 0; Slot < WoundSkinBloodSlots; ++Slot)
+	{
+		FLinearColor Where(0.f, 0.f, 0.f, 0.f);
+		FLinearColor How(0.f, 0.f, 0.f, 0.f);
+		if (Open.IsValidIndex(Slot))
+		{
+			const FAedirWound& Wound = *Open[Slot];
+			const float Severity = Wound.GetSeverity();
+			const float Age = static_cast<float>(FMath::Max(0.0, Now - Wound.StartServerTime));
+			const FVector Point = BindPose(WoundResolveBone(Mesh, Wound.Bone)).TransformPosition(Wound.Offset);
+			const FAedirWoundVisual* Visual = FindVisual(Wound.Id);
+			// The run creeps down as the wound bleeds, as far as the old laid-on run went.
+			const float RunCm = (Visual ? Visual->RunLength : 0.f) * 2.f * (WoundRunHalfLengthMinCm + WoundRunHalfLengthPerSeverityCm * FMath::Clamp(Severity, 0.f, 1.f));
+			Where = FLinearColor(Point.X, Point.Y, Point.Z, WoundDecalRadius(Wound.Type, Severity));
+			UE_CLOG(CVarAedirSkinBloodLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Wounds] skin blood %d on %s at %s, radius %.1f, run %.1f cm"), Slot, *Wound.Bone.ToString(), *Point.ToCompactString(), Where.A, RunCm);
+			How = FLinearColor(FMath::Max(Severity, 0.2f), ComputeAge01(Wound.Type, Severity, Age), RunCm, static_cast<float>(Wound.Id % 17));
+		}
+		SkinBlood->SetVectorParameterValue(FName(*FString::Printf(TEXT("W%d"), Slot)), Where);
+		SkinBlood->SetVectorParameterValue(FName(*FString::Printf(TEXT("D%d"), Slot)), How);
 	}
 }
 

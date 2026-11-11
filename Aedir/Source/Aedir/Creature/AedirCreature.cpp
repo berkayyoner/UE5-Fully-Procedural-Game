@@ -224,6 +224,11 @@ bool AAedirCreature::IsEnemyOf(const AAedirCreature* Other) const
 	return GetRelationTo(Other) == EAedirRelation::Enemy;
 }
 
+bool AAedirCreature::IsFriendOf(const AAedirCreature* Other) const
+{
+	return Other && Other != this && (Other->GroupId == GroupId || GetRelationTo(Other) == EAedirRelation::Ally);
+}
+
 float AAedirCreature::ReceiveCreatureDamage(float Amount)
 {
 	if (!HasAuthority() || !Stats)

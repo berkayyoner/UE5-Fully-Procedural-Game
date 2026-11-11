@@ -48,6 +48,11 @@ private:
 	// Where each hand was turned to in the last pose, so it can only turn so fast from there.
 	mutable FQuat LastHandRotation[2] = { FQuat::Identity, FQuat::Identity };
 	mutable bool bLastHandValid[2] = { false, false };
+	// Each arm joint's turn in the last pose given (collarbone, upper arm, forearm, hand of each side): no joint turns faster
+	// than a living one can, so a target that jumps from one frame to the next is followed round smoothly instead.
+	mutable FQuat LastArmJoint[2][4];
+	mutable bool bLastArmJointValid[2][4] = { { false, false, false, false }, { false, false, false, false } };
+	void LimitArmJointSpeed(FCompactPose& Pose, const FBoneContainer& Bones) const;
 	// Whether the second hand holds its grip the other way round, left hand first.
 	mutable bool bGripReversed[2] = { false, false };
 	void ApplyForearmTwist(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix) const;

@@ -201,3 +201,16 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The mouse turns a sword's blade round smoothly, as in Half Sword, instead of blending between poses that can point opposite ways: it no longer flips over, and arms caught in their joints fell from 66 to 9 over the pose grid (aedir.SteerBlade; pole weapons keep their key poses for now).
 - Thrusts are drawn back beside the hip with the blade level at the waist, sword and pole alike, as in Half Sword, and go out straight ahead at the shoulders.
 - Frame generation is chosen as Off, 2x and up to the most the card and upscaler can draw (DLSS asks NVIDIA's plugin, XeSS its own limit), the choice is put in again once the plugin is ready, and the menu says it only runs in a game window, not the editor's viewport.
+- Pole weapons turn smoothly about the rear hand held by the body (by the hip, up to the chest, over the head, across to the other side), so the hands always lie along the pole (aedir.PoleRearHand).
+- Swords and pole weapons lie exactly as each reference still has it: the key poses' pitch and yaw are blended, each written the way nearest a smooth turn, so the blade never flips over between two poses (aedir.SteerBend 2).
+- No arm joint in the pose turns faster than a living one (collarbone 300, shoulder 700, elbow 800, wrist 900 degrees a second), and the forearms and hands are held to a strong swing's speed: the held sword no longer tumbles in the fist on a quick throw of the mouse (aedir.ArmJointSpeed, aedir.ArmSpinLimit).
+- A sword carried in both hands rests as in Half Sword, the hands by the hip and the blade across before the body, point low to the other side: lying back along the forearm it turned over in the fist.
+- BladeWatch dev command: logs every frame a held item turns further than a tumble, with how much of it was the hand.
+- The fight view looks across at the enemy (-10 degrees, not -28), lower over the shoulder; locked on, it looks at a little under the enemy's head, down at one lying on the ground but never steeper than 35 degrees.
+- V held turns the camera alone round the body, the body, its view and the arms left as they are; a tap still changes first and third person. Z puts the camera close behind the head, moving with it, as in Half Sword.
+- A friend struck (the same group or an ally) is pushed but not hurt and starts no fight, from the player as from anyone.
+- Fists aimed down at one on the ground bend the trunk over, up to 45 degrees.
+- Grass leans away from each foot, a short way, instead of round the middle of the body, which left a bare ring in thin grass.
+- Blood bursts and drops are pea-sized, no longer as big as an apple.
+- Open wounds are drawn on the skin itself by a material that knows where each wound is on the body in its bind pose: the blood moves with the skin and runs down from the wound, no longer sliding like a picture laid on.
+- Reach logs why a hand gave up on an item, and PlaceItem takes a height.

@@ -236,6 +236,7 @@ void UAedirInteractionComponent::StartReach(EAedirHand Hand)
 
 	// With nothing else in reach, the free hand joins the other one on a weapon made for two hands.
 	AAedirItemActor* Target = FindBestItem();
+	UE_CLOG(!Target, LogAedir, Log, TEXT("[Reach] %s finds nothing to take"), *GetNameSafe(GetOwner()));
 	// With no item to take, the hand takes hold of a body or a piece of one.
 	if (!Target && !(OtherHeld && OtherHeld->bTwoHanded) && TryGrabBody(Hand))
 	{
@@ -1169,6 +1170,7 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 	const bool bClose = FVector::Dist(GetHandWorld(Hand), ItemCenter) < GrabDistance;
 	if (bPassing ? (Slot.ReachElapsed >= PassGiveUpSeconds || (bClose && Slot.ReachElapsed >= PassHandSeconds)) : bClose)
 	{
+		UE_LOG(LogAedir, Log, TEXT("[Reach] %s took %s after %.2f s"), *GetNameSafe(Creature), *Item->GetName(), Slot.ReachElapsed);
 		GrabItem(Hand, Item);
 		return;
 	}
@@ -1191,6 +1193,9 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 	const bool bOutOfRange = FVector::Dist(Creature->GetActorLocation(), ItemCenter) > PickupRange * ReachRangeMultiplier;
 	if (bTimedOut || bOutOfRange || bStalled)
 	{
+		UE_LOG(LogAedir, Log, TEXT("[Reach] %s gave up on %s after %.2f s (%s), the hand %.0f cm short, the item %.0f cm above the feet"), *GetNameSafe(Creature), *Item->GetName(), Slot.ReachElapsed,
+			bStalled ? TEXT("stopped getting closer") : bOutOfRange ? TEXT("out of range") : TEXT("too long"), HandGap,
+			ItemCenter.Z - (Creature->GetActorLocation().Z - Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
 		ResetSlot(Slot);
 	}
 }

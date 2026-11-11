@@ -110,18 +110,43 @@ public:
 	float HitShakeStrength = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	FVector ThirdPersonShoulderOffset = FVector(0.f, 26.f, 22.f);
+	FVector ThirdPersonShoulderOffset = FVector(0.f, 26.f, 10.f);
 
-	// In the fight stance the view comes in close over the right shoulder and looks down on the fight from above it, so the
-	// body and both weapons fill the frame and the mouse is free for the arms.
+	// In the fight stance the view comes in close over the right shoulder at about head height and looks at the enemy across,
+	// not down on him: a view looking down makes the hand pull the mouse up to see.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float FightArmLengthCm = 155.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	FVector FightShoulderOffset = FVector(0.f, 42.f, 12.f);
+	FVector FightShoulderOffset = FVector(0.f, 42.f, 2.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	float FightViewPitch = -28.f;
+	float FightViewPitch = -10.f;
+
+	// Locked on, the view looks at this much below the enemy's head, and never steeper down than this.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnAimBelowHeadCm = 15.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnSteepestPitch = -35.f;
+
+	// Z: the camera as in Half Sword, close behind the head and moving with it, looking level.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float HeadCameraArmLengthCm = 95.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	FVector HeadCameraOffset = FVector(0.f, 18.f, 12.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float HeadCameraFollowSpeed = 14.f;
+
+	// V held: the camera goes round the body as the mouse moves it, the body, its view and the arms left as they are; let go,
+	// it comes back. A short tap still changes between first and third person.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float ViewTapSeconds = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float OrbitReturnSpeed = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float FightViewPitchSpeed = 3.f;
@@ -338,6 +363,10 @@ public:
 	UFUNCTION(Exec)
 	void MouseFlick(int32 RightHand, float DeltaX, float DeltaY, float Seconds);
 
+	// Logs every frame the held item turns further than a tumble, and a summary at the end.
+	UFUNCTION(Exec)
+	void BladeWatch(int32 RightHand, float Seconds);
+
 	UFUNCTION(Exec)
 	void SwingTrace(int32 RightHand, float Seconds);
 
@@ -495,6 +524,13 @@ public:
 private:
 	void ApplyViewPitchLimits();
 	void HandleViewTogglePressed();
+	void HandleViewToggleReleased();
+	void HandleHeadCameraPressed();
+	bool bOrbitHeld = false;
+	FRotator OrbitOffset = FRotator::ZeroRotator;
+	bool bOrbitMoved = false;
+	float OrbitHeldSeconds = 0.f;
+	bool bHeadCamera = false;
 
 	void HandleMenuTogglePressed();
 	void HandleJournalPressed();

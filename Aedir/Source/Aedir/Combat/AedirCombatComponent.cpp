@@ -184,6 +184,11 @@ namespace
 	constexpr float AedirPunchSpineAimShare = 0.3f;
 	constexpr float AedirPunchSpineMaxDegrees = 62.f;
 	constexpr float AedirPunchLeanDegrees = 11.f;
+	// Fists aimed further down than this (the view and the arm together) bend the trunk over, all of this much once aimed this
+	// much further down.
+	constexpr float AedirPunchBendFromPitch = 25.f;
+	constexpr float AedirPunchBendSpanPitch = 40.f;
+	constexpr float AedirPunchBendDownDegrees = 45.f;
 	// Raising the mouse takes the hands just over the head with the elbows bent, the blade straight back behind them along the middle of the body.
 	constexpr float AedirWeaponRaiseFullDegrees = 80.f;
 	constexpr float AedirWeaponRaisedForwardCm = 20.f;
@@ -200,11 +205,14 @@ namespace
 	// Rest poses out of the fight stance: how far below level and how far out to the carrying hand's side the point lies.
 	constexpr float AedirRestOneHandPitch = -62.f;
 	constexpr float AedirRestOneHandOutYaw = 20.f;
-	constexpr float AedirRestTwoHandPitch = -38.f;
-	constexpr float AedirRestTwoHandOutYaw = 50.f;
+	// In both hands, as in Half Sword, the hands rest by the hip of the carrying side and the blade lies across before the
+	// body, the point low and out towards the other side: a negative yaw is towards the other hand's side. Held so the blade
+	// never lies back along the forearm, where the wrist would have to choose a side and the blade turned over in the fist.
+	constexpr float AedirRestTwoHandPitch = -30.f;
+	constexpr float AedirRestTwoHandOutYaw = -40.f;
 	// Measured in the game: asked this much further, the blade comes to rest at the angles above.
-	constexpr float AedirRestTwoHandFixPitch = -14.f;
-	constexpr float AedirRestTwoHandFixYaw = 78.f;
+	constexpr float AedirRestTwoHandFixPitch = 0.f;
+	constexpr float AedirRestTwoHandFixYaw = 0.f;
 	constexpr float AedirRestPolePitch = 72.f;
 	constexpr float AedirRestPoleOutYaw = 10.f;
 	// The hand at rest is about this high over the ground, which keeps a long blade's point off it.
@@ -1265,6 +1273,14 @@ float UAedirCombatComponent::GetSwingBendDegrees() const
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
 		const EAedirHand Hand = static_cast<EAedirHand>(Index);
+		if (!GetHeldItem(Hand) && IsGuardActive(Hand))
+		{
+			// A fist thrown down at one on the ground bends the trunk over it: standing straight the arm stops well above him.
+			const float WorldPitch = static_cast<float>(FRotator::NormalizeAxis(Creature->GetControlRotation().Pitch) + GetArm(Hand).AimOffsetDeg.Y);
+			const float FistDown = FMath::Clamp((-WorldPitch - AedirPunchBendFromPitch) / AedirPunchBendSpanPitch, 0.f, 1.f);
+			Bend = FMath::Max(Bend, FistDown * AedirPunchBendDownDegrees);
+			continue;
+		}
 		if (!IsWeaponStance(Hand) || IsSecondaryGripHand(Hand))
 		{
 			continue;
@@ -1278,7 +1294,8 @@ float UAedirCombatComponent::GetSwingBendDegrees() const
 			Bend = FMath::Min(Bend, Down * AedirSwingBendDownDegrees - Up * AedirSwingBendUpDegrees);
 		}
 	}
-	return Bend * GetFightShare();
+	const bool bFists = !GetHeldItem(EAedirHand::Left) && !GetHeldItem(EAedirHand::Right);
+	return bFists ? Bend : Bend * GetFightShare();
 }
 
 float UAedirCombatComponent::GetSwingTwistDegrees() const
@@ -1643,7 +1660,7 @@ namespace
 	constexpr float AedirKeyPoseReachCm = 18.f;
 	constexpr float AedirKeyPoseMinArmBladeDegrees = 28.f;
 	static TAutoConsoleVariable<int32> CVarAedirKeyPoses(TEXT("aedir.KeyPoses"), 1, TEXT("Blade poses come from the reference key poses (1), or from the hand's angle round the shoulder (0)."));
-	static TAutoConsoleVariable<int32> CVarAedirSteerBlade(TEXT("aedir.SteerBlade"), 1, TEXT("The mouse turns the blade round smoothly, as in Half Sword, for swords (1), pole weapons (2) or both (3); otherwise the blade blends between the key poses."));
+	static TAutoConsoleVariable<int32> CVarAedirSteerBlade(TEXT("aedir.SteerBlade"), 3, TEXT("The mouse turns the blade round smoothly, as in Half Sword, for swords (1), pole weapons (2) or both (3); otherwise the blade blends between the key poses."));
 
 	// As in Half Sword the mouse turns the blade round smoothly: to the side it swings round the body, up it stands and then
 	// lies back over the head, down the point drops. The way never passes between two poses pointing opposite ways, so the
@@ -1658,16 +1675,106 @@ namespace
 		float HighYawKeep;
 		float LowYawKeep;
 	};
-	const FAedirBladeSteer AedirSwordSteer = { 40.f, 1.1f, 1.4f, 1.f, 0.2f, 0.6f };
-	const FAedirBladeSteer AedirPoleSteer = { 35.f, 0.8f, 0.8f, 0.9f, 0.25f, 0.7f };
+	// Set by hand from the reference stills (0), or fitted so the key poses lie as near the smooth turn as they can (1): the
+	// furthest is then 98 degrees off it for a sword, 58 for a pole weapon.
+	const FAedirBladeSteer AedirSwordSteers[] = { { 40.f, 1.1f, 1.4f, 1.f, 0.2f, 0.6f }, { 56.7f, 0.61f, 0.87f, 2.06f, -0.62f, 0.45f } };
+	const FAedirBladeSteer AedirPoleSteers[] = { { 35.f, 0.8f, 0.8f, 0.9f, 0.25f, 0.7f }, { 55.f, 1.35f, 1.1f, 1.71f, -0.63f, 1.72f } };
+	static TAutoConsoleVariable<int32> CVarAedirSteerFit(TEXT("aedir.SteerFit"), 0, TEXT("The smooth turn of the blade as set by hand (0) or fitted to the key poses (1)."));
+	static TAutoConsoleVariable<int32> CVarAedirSteerBend(TEXT("aedir.SteerBend"), 2, TEXT("The blade lies exactly as each key pose has it: its angles blended between them (2), bent off the smooth turn between them (1), or the smooth turn alone (0)."));
+	// The angles of the key poses blend by distance this sharply: measured over the whole mouse travel, the blade then turns at
+	// most 7 degrees for each degree the mouse moves, where the softer and sharper blends turn it faster.
+	constexpr float AedirKeyAnglePower = 2.f;
+	const FAedirBladeSteer& AedirSwordSteer() { return AedirSwordSteers[FMath::Clamp(CVarAedirSteerFit.GetValueOnGameThread(), 0, 1)]; }
+	const FAedirBladeSteer& AedirPoleSteer() { return AedirPoleSteers[FMath::Clamp(CVarAedirSteerFit.GetValueOnGameThread(), 0, 1)]; }
 	constexpr float AedirSteerHighAim = 80.f;
 	constexpr float AedirSteerLowAim = -60.f;
-	FVector AedirSteerBladeDir(const FAedirBladeSteer& Steer, const FVector2D& Aim)
+	// The smooth turn as pitch and yaw: the pitch goes on past upright, so a blade lying back over the head has a pitch over 90.
+	FVector2D AedirSteerBladeAngles(const FAedirBladeSteer& Steer, const FVector2D& Aim)
 	{
 		const float AimY = static_cast<float>(Aim.Y);
 		const float Keep = FMath::Lerp(FMath::Lerp(1.f, Steer.HighYawKeep, FMath::SmoothStep(0.f, AedirSteerHighAim, AimY)), Steer.LowYawKeep, FMath::SmoothStep(0.f, -AedirSteerLowAim, -AimY));
 		const float Pitch = Steer.RestPitch + AimY * (AimY > 0.f ? Steer.UpPerDegree : Steer.DownPerDegree);
-		return FRotator(Pitch, static_cast<float>(Aim.X) * Steer.YawPerDegree * Keep, 0.f).Vector();
+		return FVector2D(Pitch, static_cast<float>(Aim.X) * Steer.YawPerDegree * Keep);
+	}
+	FVector AedirSteerBladeDir(const FAedirBladeSteer& Steer, const FVector2D& Aim)
+	{
+		const FVector2D Angles = AedirSteerBladeAngles(Steer, Aim);
+		return FRotator(Angles.X, Angles.Y, 0.0).Vector();
+	}
+	// A way of pointing written as the pitch and yaw nearest to the given ones: the same way can be written as (p, y) or as
+	// (180 - p, y + 180), each with any whole turn added to the yaw.
+	FVector2D AedirNearestAngles(const FVector& Dir, const FVector2D& Near)
+	{
+		const FRotator Plain = Dir.Rotation();
+		FVector2D Best(Plain.Pitch, Plain.Yaw);
+		double BestCost = TNumericLimits<double>::Max();
+		for (const FVector2D& Form : { FVector2D(Plain.Pitch, Plain.Yaw), FVector2D(180.0 - Plain.Pitch, Plain.Yaw + 180.0), FVector2D(-180.0 - Plain.Pitch, Plain.Yaw + 180.0) })
+		{
+			FVector2D Turned = Form;
+			Turned.Y += 360.0 * FMath::RoundToDouble((Near.Y - Turned.Y) / 360.0);
+			const double Cost = FMath::Square(Turned.X - Near.X) + FMath::Square(Turned.Y - Near.Y);
+			if (Cost < BestCost)
+			{
+				BestCost = Cost;
+				Best = Turned;
+			}
+		}
+		return Best;
+	}
+
+	// Each key pose is a reference still: there the blade lies exactly as the pose has it. Between them the blade follows the
+	// smooth turn, bent by a blend of how far each key pose lies off it. Each bend is under half a turn, so the blend of them
+	// never cancels out to nothing and the blade cannot flip over between two poses pointing opposite ways.
+	FVector AedirBendBlade(const FAedirBladeSteer& Steer, const FVector2D& Aim, int32 KeyCount, TFunctionRef<FVector2D(int32)> KeyAim, TFunctionRef<FVector(int32)> KeyDir)
+	{
+		const int32 Mode = CVarAedirSteerBend.GetValueOnGameThread();
+		if (Mode == 0)
+		{
+			return AedirSteerBladeDir(Steer, Aim);
+		}
+		if (Mode == 2)
+		{
+			// Each key pose's pitch and yaw, written the way nearest the smooth turn there, blended by distance: the blade lies
+			// exactly as the pose has it at each, and the angles change smoothly between them, so it cannot flip over.
+			FVector2D AngleSum = FVector2D::ZeroVector;
+			double AngleWeight = 0.0;
+			for (int32 Index = 0; Index < KeyCount; ++Index)
+			{
+				const FVector2D At = KeyAim(Index);
+				const FVector2D Angles = AedirNearestAngles(KeyDir(Index), AedirSteerBladeAngles(Steer, At));
+				const double Distance = FVector2D::Distance(Aim, At);
+				if (Distance < 0.5)
+				{
+					AngleSum = Angles;
+					AngleWeight = 1.0;
+					break;
+				}
+				const double Weight = 1.0 / FMath::Pow(Distance, static_cast<double>(AedirKeyAnglePower));
+				AngleSum += Angles * Weight;
+				AngleWeight += Weight;
+			}
+			const FVector2D Angles = AngleSum / AngleWeight;
+			return FRotator(Angles.X, Angles.Y, 0.0).Vector();
+		}
+		FQuat Sum(0.0, 0.0, 0.0, 0.0);
+		for (int32 Index = 0; Index < KeyCount; ++Index)
+		{
+			const FVector2D At = KeyAim(Index);
+			const FQuat Bend = FQuat::FindBetweenNormals(AedirSteerBladeDir(Steer, At), KeyDir(Index));
+			const double Distance = FVector2D::Distance(Aim, At);
+			if (Distance < 0.5)
+			{
+				Sum = Bend;
+				break;
+			}
+			const double Weight = 1.0 / FMath::Pow(Distance, static_cast<double>(AedirKeyPosePower));
+			Sum.X += Bend.X * Weight;
+			Sum.Y += Bend.Y * Weight;
+			Sum.Z += Bend.Z * Weight;
+			Sum.W += Bend.W * Weight;
+		}
+		Sum.Normalize();
+		return Sum.RotateVector(AedirSteerBladeDir(Steer, Aim));
 	}
 }
 
@@ -1700,7 +1807,9 @@ bool UAedirCombatComponent::ComputeKeyPose(EAedirHand Hand, const FAedirArmDynam
 		WeightSum += Weight;
 	}
 	OutHandLocal = HandSum / WeightSum;
-	OutBladeLocal = (CVarAedirSteerBlade.GetValueOnGameThread() & 1) != 0 ? AedirSteerBladeDir(AedirSwordSteer, Aim) : BladeSum.GetSafeNormal();
+	OutBladeLocal = (CVarAedirSteerBlade.GetValueOnGameThread() & 1) != 0
+		? AedirBendBlade(AedirSwordSteer(), Aim, UE_ARRAY_COUNT(AedirKeyPoses), [](int32 Index) { return FVector2D(AedirKeyPoses[Index].AimX, AedirKeyPoses[Index].AimY); }, [](int32 Index) { return AedirKeyPoseBlade(Index); })
+		: BladeSum.GetSafeNormal();
 	if (OutBladeLocal.IsNearlyZero())
 	{
 		OutBladeLocal = FVector::UpVector;
@@ -1927,6 +2036,15 @@ namespace
 	// A pole thrust, as in Half Sword: drawn back the rear hand is behind the hip and the front one at the chest, the pole level
 	// at the waist pointing ahead; out, both arms are straight ahead at shoulder height and the pole level from them (asked a
 	// little higher than level: the weight of the head takes it down that far).
+	// Where the rear hand of a pole weapon is (forward, right, up from the middle of the hips), and how far it moves raised,
+	// right up, low, across to the left and out to the right.
+	const FVector AedirPoleRearHandRest(12.f, 10.f, -2.f);
+	const FVector AedirPoleRearHandUp(2.f, -2.f, 24.f);
+	const FVector AedirPoleRearHandHigh(-6.f, -4.f, 36.f);
+	const FVector AedirPoleRearHandLow(4.f, 0.f, -4.f);
+	const FVector AedirPoleRearHandAcross(8.f, -10.f, 12.f);
+	const FVector AedirPoleRearHandOut(-10.f, 6.f, 0.f);
+	static TAutoConsoleVariable<int32> CVarAedirPoleRearHand(TEXT("aedir.PoleRearHand"), 1, TEXT("A pole weapon turns about its rear hand held by the body (1), or both hands go where the key poses have them (0)."));
 	const FAedirPolearmKey AedirPolearmThrustBack = { 0.f, 0.f, FVector(14.f, 16.f, 8.f), 10.f, -4.f };
 	const FAedirPolearmKey AedirPolearmThrustOut = { 0.f, 0.f, FVector(50.f, 4.f, 34.f), 14.f, 4.f };
 }
@@ -1974,10 +2092,28 @@ void UAedirCombatComponent::ComputePolearmPose(EAedirHand Hand, const FAedirArmD
 			WeightSum += Weight;
 		}
 		FVector Middle = MiddleSum / WeightSum;
-		FVector Head = (CVarAedirSteerBlade.GetValueOnGameThread() & 2) != 0 ? AedirSteerBladeDir(AedirPoleSteer, Aim) : HeadSum.GetSafeNormal();
+		FVector Head = (CVarAedirSteerBlade.GetValueOnGameThread() & 2) != 0
+			? AedirBendBlade(AedirPoleSteer(), Aim, UE_ARRAY_COUNT(AedirPolearmKeys), [](int32 Index) { return FVector2D(AedirPolearmKeys[Index].AimX, AedirPolearmKeys[Index].AimY); },
+				[](int32 Index) { return FRotator(AedirPolearmKeys[Index].HeadPitch + AedirPolearmKeyFix[Index].X, AedirPolearmKeys[Index].HeadYaw + AedirPolearmKeyFix[Index].Y, 0.f).Vector(); })
+			: HeadSum.GetSafeNormal();
 		if (Head.IsNearlyZero())
 		{
 			Head = FVector::UpVector;
+		}
+		if (CVarAedirPoleRearHand.GetValueOnGameThread() != 0)
+		{
+			// As in Half Sword the rear hand stays by the body and the pole turns about it: by the hip at rest and low, up to the
+			// chest raised and over the head at the top, across to the other side of the chest when the head goes over there.
+			// The hands then always lie along the pole wherever it points, so neither arm is asked for a place it cannot reach.
+			const float AimX = static_cast<float>(Aim.X);
+			const float AimY = static_cast<float>(Aim.Y);
+			const float Up = FMath::SmoothStep(0.f, 40.f, AimY);
+			const float High = FMath::SmoothStep(40.f, 90.f, AimY);
+			const float Low = FMath::SmoothStep(0.f, 60.f, -AimY);
+			const float Across = FMath::SmoothStep(0.f, 80.f, -AimX);
+			const float Out = FMath::SmoothStep(0.f, 80.f, AimX);
+			const FVector Rear = AedirPoleRearHandRest + AedirPoleRearHandUp * Up + AedirPoleRearHandHigh * High + AedirPoleRearHandAcross * Across + AedirPoleRearHandOut * Out + AedirPoleRearHandLow * Low;
+			Middle = Rear + Head * ((GetSecondaryGripLocalCm(Item) - Item->GripLocalCm) * 0.5f);
 		}
 		const float Fatigue = Creature->Stats ? Creature->Stats->GetFatigue() : 0.f;
 		Middle.Z -= Fatigue * AedirFatigueDroopCm;
@@ -2034,7 +2170,7 @@ FVector UAedirCombatComponent::ComputeCarriedDir(EAedirHand Hand) const
 	const AAedirItemActor* Item = GetHeldItem(Hand);
 	const float Length = Item ? Item->GetWeaponLength() : 0.f;
 	// Out of the fight stance a weapon is not pointed at anyone. A pole stands upright beside the body, head up; a blade in
-	// both hands lies aslant before the hips, point low and out to the side of the carrying hand; one in a single hand hangs
+	// both hands lies aslant before the hips, point low and out to the other side; one in a single hand hangs
 	// point down and a little out. A long one is kept just off the ground.
 	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
 	float RestPitch = bTwoHandGrip ? AedirRestTwoHandPitch : AedirRestOneHandPitch;
@@ -3742,12 +3878,35 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 	}
 }
 
+void UAedirCombatComponent::PushFriend(AAedirCreature* Victim, FName Bone, EAedirBodyZone Zone, const FVector& Location, const FVector& Motion, float Energy, float MassKg, float Speed) const
+{
+	if (Victim->Balance)
+	{
+		FAedirImpactInfo Impact;
+		Impact.Bone = Bone;
+		Impact.Zone = Zone;
+		Impact.EnergyJoules = Energy * AedirImpactBodyEnergyShare;
+		Impact.Direction = Motion.GetSafeNormal();
+		Impact.Location = Location;
+		Impact.MassKg = MassKg;
+		Impact.RelativeSpeed = Speed;
+		Victim->Balance->ApplyHitReaction(Impact);
+	}
+	UE_LOG(LogAedir, Log, TEXT("Impact: %s pushed %s, a friend, on %s: no harm"), *Creature->GetName(), *Victim->GetName(), *Bone.ToString());
+}
+
 void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, const FVector& TipVelocity, float RelativeSpeed, float MassEff, float AxialAlignment)
 {
 	AAedirItemActor* HeldItem = GetHeldItem(Hand);
 	// A blow that met the body's capsule still lands on whatever part of the body is closest to where it struck.
 	const FName Bone = !Hit.BoneName.IsNone() || !Victim->GetMesh() ? Hit.BoneName : Victim->GetMesh()->FindClosestBone(Hit.ImpactPoint);
 	const EAedirBodyZone Zone = ClassifyBodyZone(Bone);
+	// A friend struck is only pushed: no harm, no wound, and no quarrel.
+	if (Creature->IsFriendOf(Victim))
+	{
+		PushFriend(Victim, Bone, Zone, Hit.ImpactPoint, TipVelocity, ComputeImpactEnergy(MassEff, RelativeSpeed), MassEff, RelativeSpeed);
+		return;
+	}
 	const EAedirDamageType DamageType = HeldItem ? HeldItem->GetDamageType() : EAedirDamageType::Blunt;
 	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
 	// The armour where it landed, for the way it landed: an edge, a point driven in along the blade, or a blunt blow. Bare
@@ -5001,6 +5160,11 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 	}
 
 	const float Energy = ComputeImpactEnergy(AedirKickMassKg, FootSpeed) * AedirKickEnergyScale;
+	if (Creature->IsFriendOf(Victim))
+	{
+		PushFriend(Victim, Bone, Zone, Hit.ImpactPoint, FootMotion, Energy, AedirKickMassKg, FootSpeed);
+		return;
+	}
 	const float VictimZoneProtection = Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f;
 	const float Damage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(EAedirDamageType::Blunt, 0.f) * GetZoneDamageMultiplier(Zone) * (1.f - VictimZoneProtection);
 	Victim->ReceiveCreatureDamage(Damage);

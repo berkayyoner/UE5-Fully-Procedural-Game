@@ -153,5 +153,13 @@ private:
 	UPROPERTY(Transient)
 	TArray<FAedirWoundVisual> Visuals;
 
+	// Blood on the skin: drawn over the body by one material that knows where each open wound is on the body as it stands in
+	// its bind pose, so the blood moves with the skin instead of sliding over it like a picture laid on.
+	UPROPERTY(Transient)
+	TObjectPtr<UMaterialInstanceDynamic> SkinBlood;
+	bool bSkinBloodTried = false;
+	bool UsesSkinBlood();
+	void UpdateSkinBlood();
+
 	uint8 NextWoundId = 0;
 };
