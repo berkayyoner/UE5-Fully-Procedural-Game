@@ -131,7 +131,15 @@ namespace
 	// The trunk bends into a downward blow and arches back under a raised one.
 	constexpr float AedirSwingBendDownDegrees = 34.f;
 	constexpr float AedirSwingBendUpDegrees = 9.f;
-	constexpr float AedirWeaponMouseShare = 1.8f;
+	// As in Half Sword, the mouse moved about 450 pixels from the middle takes a weapon to the far end of its travel (100
+	// degrees): at the project's 0.07 a pixel and the aim's 0.3 a unit, this share. It was 1.8, which asked for eight times
+	// as much mouse, so every swing stayed small.
+	constexpr float AedirWeaponMouseShare = 13.f;
+	// Up and down the mouse goes further for the same turn, as in Half Sword, where 300 pixels up still holds the point on the
+	// enemy with the hands raised to the face: about 30 degrees for that.
+	constexpr float AedirWeaponMouseUpShare = 5.f;
+	// Bare fists move round their guard by this share of the same.
+	constexpr float AedirFistMouseShare = 4.f;
 	// With no button held the point hangs down and across the body.
 	constexpr float AedirWeaponGuardPitch = -14.f;
 	constexpr float AedirWeaponGuardInwardYaw = 34.f;
@@ -419,7 +427,8 @@ namespace
 	constexpr float AedirSecondaryGripBlendSeconds = 0.3f;
 	constexpr float AedirGripRestInterpSpeed = 3.f;
 	// Thrust mode.
-	constexpr float AedirThrustMouseExtension = 0.012f;
+	// A thrust goes all the way out for about 400 pixels of the mouse pushed forward.
+	constexpr float AedirThrustMouseExtension = 0.035f;
 	constexpr float AedirThrustSteerShare = 0.25f;
 	constexpr float AedirThrustHandMaxCm = 56.f;
 	// A drawn-back thrust waits with the hands up by the shoulder on the weapon's side, the point forward on the enemy.
@@ -869,12 +878,12 @@ void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaT
 		{
 			// Forward and back on the mouse drive the blade along its own line; sideways only steers the point.
 			Arm.Extension = FMath::Clamp(Arm.Extension + static_cast<float>(MouseDeltaThisFrame.Y) * AedirThrustMouseExtension, 0.f, 1.f);
-			Arm.AimOffsetDeg.X = FMath::Clamp(Arm.AimOffsetDeg.X + MouseDeltaThisFrame.X * AimSensitivity, -AedirWeaponYawLimit, AedirWeaponYawLimit);
+			Arm.AimOffsetDeg.X = FMath::Clamp(Arm.AimOffsetDeg.X + MouseDeltaThisFrame.X * AimSensitivity * AedirFistMouseShare, -AedirWeaponYawLimit, AedirWeaponYawLimit);
 			return;
 		}
 
 		Arm.AimOffsetDeg.X = FMath::Clamp(Arm.AimOffsetDeg.X + MouseDeltaThisFrame.X * AimSensitivity * AedirWeaponMouseShare, -AedirWeaponYawLimit, AedirWeaponYawLimit);
-		Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y + MouseDeltaThisFrame.Y * AimSensitivity * AedirWeaponMouseShare, AedirWeaponPitchMin, AedirWeaponRaiseFullDegrees);
+		Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y + MouseDeltaThisFrame.Y * AimSensitivity * AedirWeaponMouseUpShare, AedirWeaponPitchMin, AedirWeaponRaiseFullDegrees);
 		return;
 	}
 
@@ -891,9 +900,9 @@ void UAedirCombatComponent::AddSwingInput(EAedirHand Hand, FVector2D MouseDeltaT
 	// would rise from low to high as the mouse goes up and pass over the guard instead of into it.
 	const float AimShare = 1.f - AedirPunchAimHold * PunchTarget;
 	const float OutwardSign = Hand == EAedirHand::Right ? 1.f : -1.f;
-	const float OutwardYaw = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign + MouseDeltaThisFrame.X * OutwardSign * AimSensitivity * AimShare, -AedirArmAcrossYawLimit, AedirArmOutwardYawLimit);
+	const float OutwardYaw = FMath::Clamp(Arm.AimOffsetDeg.X * OutwardSign + MouseDeltaThisFrame.X * OutwardSign * AimSensitivity * AedirFistMouseShare * AimShare, -AedirArmAcrossYawLimit, AedirArmOutwardYawLimit);
 	Arm.AimOffsetDeg.X = OutwardYaw * OutwardSign;
-	Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y + MouseDeltaThisFrame.Y * AimSensitivity * AimShare, AedirArmAimPitchMin, AedirFistAimPitchMax);
+	Arm.AimOffsetDeg.Y = FMath::Clamp(Arm.AimOffsetDeg.Y + MouseDeltaThisFrame.Y * AimSensitivity * AedirFistMouseShare * AimShare, AedirArmAimPitchMin, AedirFistAimPitchMax);
 }
 
 void UAedirCombatComponent::AddExtensionInput(EAedirHand Hand, float WheelDelta)
@@ -1621,7 +1630,7 @@ namespace
 	{
 		// Near the middle the point is on the enemy.
 		{ 0.f, 0.f, FVector(38.f, 4.f, 20.f), 40.f, 0.f },
-		{ 0.f, 25.f, FVector(32.f, 2.f, 32.f), 35.f, 0.f },
+		{ 0.f, 20.f, FVector(32.f, 2.f, 8.f), 85.f, 0.f },
 		{ 0.f, -28.f, FVector(36.f, 2.f, 4.f), 12.f, 0.f },
 		{ 22.f, 0.f, FVector(32.f, 10.f, 20.f), 45.f, 12.f },
 		{ -22.f, 0.f, FVector(34.f, -6.f, 20.f), 42.f, -12.f },
@@ -1642,7 +1651,7 @@ namespace
 		{ 0.f, -60.f, FVector(36.f, 0.f, -10.f), -34.f, 0.f },
 		// The left: low, the point hanging down before the hands; level, the blade rising out to the left; up by the left
 		// shoulder, the point up and forward; further round, upright, and high, lying back over the head.
-		{ -60.f, -35.f, FVector(34.f, -28.f, 2.f), -55.f, -20.f },
+		{ -60.f, -35.f, FVector(36.f, 10.f, 16.f), -80.f, -10.f },
 		{ -45.f, 0.f, FVector(38.f, -24.f, 24.f), 45.f, -75.f },
 		{ -55.f, 45.f, FVector(14.f, -20.f, 52.f), 45.f, 30.f },
 		{ -85.f, 30.f, FVector(20.f, -42.f, 38.f), 80.f, -20.f },
@@ -1653,11 +1662,11 @@ namespace
 	// this much further (pitch, yaw in degrees), measured in the game, so the blade comes to rest where the pose has it.
 	const FVector2D AedirKeyPoseFix[] =
 	{
-		FVector2D(3, -1), FVector2D(2, -5), FVector2D(5, -3), FVector2D(8, -3), FVector2D(4, 0),
+		FVector2D(3, -1), FVector2D(0, 0), FVector2D(5, -3), FVector2D(8, -3), FVector2D(4, 0),
 		FVector2D(-1, 12), FVector2D(-2, 20), FVector2D(2, -8), FVector2D(4, -4), FVector2D(1, -7),
 		FVector2D(22, -90), FVector2D(-45, -13), FVector2D(-2, -27), FVector2D(1, -1), FVector2D(-5, 0),
-		FVector2D(-11, -7), FVector2D(-27, 0), FVector2D(-27, -3), FVector2D(3, -6), FVector2D(-5, 29),
-		FVector2D(5, 2), FVector2D(-30, -17), FVector2D(9, -26),
+		FVector2D(-11, -7), FVector2D(-27, 0), FVector2D(0, 0), FVector2D(3, -6), FVector2D(-5, 29),
+		FVector2D(5, 2), FVector2D(-30, -17), FVector2D(10, -26),
 	};
 	static_assert(UE_ARRAY_COUNT(AedirKeyPoseFix) == UE_ARRAY_COUNT(AedirKeyPoses), "One correction for each key pose.");
 	FVector AedirKeyPoseBlade(int32 Index)

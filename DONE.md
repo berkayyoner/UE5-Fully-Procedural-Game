@@ -228,3 +228,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Bruises are drawn on the skin too, a soft dark patch darker and wider the harder the blow, purple-blue turning yellow-brown as it heals.
 - A hand putting a weapon on the far hip goes round before the belly on an arc and comes in to the slot from outside; the stow leads over the weapon's carried pose, and the blade passes the own hip on the way.
 - ArmInfo and MouseInput dev commands: where each arm aims, is and is wanted, and the mouse fed through the player's own handlers.
+- The mouse takes a weapon as far as in Half Sword: about 450 pixels from the middle to the far side (it asked for eight times as much, so every swing stayed small), 300 pixels up still holding the point near the enemy; a thrust goes all the way out for about 400 pixels pushed forward.
+- Key poses 20 (blade straight up before the belly), 26 (point hanging down before the chest) and 27 (blade down and out to the left from the left hip) set again from the reference stills.
