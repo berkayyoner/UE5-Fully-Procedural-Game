@@ -28,7 +28,14 @@ namespace
 	// Standing proportions of the body in unscaled cm, used to work out how far it has to bend for a low item.
 	constexpr float ReachPelvisHeightCm = 95.f;
 	constexpr float ReachTorsoLengthCm = 48.f;
-	constexpr float ReachArmLengthCm = 44.f;
+	// From the shoulder to the middle of the closed hand.
+	constexpr float ReachArmLengthCm = 58.f;
+	// An item from this high up (above the knee) to this high (a table) is reached bending over from the hips: the knees give
+	// at most this much and the hips stay this far back.
+	constexpr float ReachTableFromCm = 40.f;
+	constexpr float ReachTableFullCm = 60.f;
+	constexpr float ReachTableLowerCm = 8.f;
+	constexpr float ReachTableHipForwardCm = 0.f;
 	constexpr float ReachShoulderSideCm = 18.f;
 	constexpr float ReachMaxLowerCm = 54.f;
 	constexpr float ReachMaxHipBackCm = 30.f;
@@ -1271,14 +1278,18 @@ FAedirReachPosture UAedirInteractionComponent::ComputeReachPosture(float Forward
 	}
 
 	// The gentlest bend of the spine that lets the pelvis stay within its squat wins. The pelvis sits back to keep the shoulder
-	// over an item next to the feet, and moves forward for one further away.
+	// over an item next to the feet, and moves forward for one further away. Something up on a table is reached by bending
+	// over from the hips, not by squatting with the hips pushed forward into the table's edge.
+	const float Raised = FMath::SmoothStep(ReachTableFromCm, ReachTableFullCm, ItemHeightCm);
+	const float AllowedLower = FMath::Lerp(ReachMaxLowerCm, ReachTableLowerCm, Raised);
+	const float HipForwardLimit = FMath::Lerp(ReachMaxHipForwardCm, ReachTableHipForwardCm, Raised);
 	for (float Lean = ReachMinLeanDegrees; Lean <= ReachMaxLeanDegrees; Lean += ReachLeanStepDegrees)
 	{
 		// The spine curves, so the shoulder ends up on a chord flatter than the bend itself.
 		const float ChordRadians = FMath::DegreesToRadians(Lean * ReachSpineChordShare);
 		const float LeanSin = FMath::Sin(ChordRadians);
 		const float LeanCos = FMath::Cos(ChordRadians);
-		const float HipForward = FMath::Clamp(ForwardCm - ReachTorsoLengthCm * LeanSin, -ReachMaxHipBackCm, ReachMaxHipForwardCm);
+		const float HipForward = FMath::Clamp(ForwardCm - ReachTorsoLengthCm * LeanSin, -ReachMaxHipBackCm, HipForwardLimit);
 		// Off to the side the pelvis shifts over and the bent torso twists around towards the item.
 		const float HipSide = FMath::Clamp(LateralCm * ReachHipSideShare, -ReachMaxHipSideCm, ReachMaxHipSideCm);
 		const float SideLeft = LateralCm - HipSide;
@@ -1295,7 +1306,7 @@ FAedirReachPosture UAedirInteractionComponent::ComputeReachPosture(float Forward
 		Posture.HipForwardCm = HipForward;
 		Posture.HipSideCm = HipSide;
 		Posture.TwistDegrees = FMath::RadiansToDegrees(TwistRadians);
-		if (Lower <= ReachMaxLowerCm)
+		if (Lower <= AllowedLower)
 		{
 			break;
 		}

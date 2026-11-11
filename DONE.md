@@ -216,3 +216,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Reach logs why a hand gave up on an item, and PlaceItem takes a height.
 - A quick throw drives the fist out along where it was aimed: the throw moves the aim only a little, so punches no longer rise from low to high over the guard. In the test 5 of 16 punches landed, up from 2.
 - A fist or blade resting against a body that is driven in again lands a new blow, and a bare fist counts from 180 cm/s into the body; aedir.HitLog 1 logs every quick touch that did not count, and why. SpawnEnemy takes a distance.
+- Things up on a table are reached bending over from the hips, the knees nearly straight and the hips kept back from the edge (they squatted into the table and stopped 25-31 cm short); the arm counts its real 58 cm. In the test all five small items on the ground were taken standing and all three on a table.
