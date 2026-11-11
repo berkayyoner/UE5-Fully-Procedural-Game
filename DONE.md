@@ -198,3 +198,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Half Sword play notes: controls and a 25-point pose grid with the left button held (HALF_SWORD_COMBAT.md).
 - Half Sword pole weapon poses recorded from behind and the front, findings in HALF_SWORD_COMBAT.md.
 - Half Sword pole thrust recorded: drawn back at the hip, then a lunge with the point rising to head height.
+- The mouse turns a sword's blade round smoothly, as in Half Sword, instead of blending between poses that can point opposite ways: it no longer flips over, and arms caught in their joints fell from 66 to 9 over the pose grid (aedir.SteerBlade; pole weapons keep their key poses for now).
+- Thrusts are drawn back beside the hip with the blade level at the waist, sword and pole alike, as in Half Sword, and go out straight ahead at the shoulders.

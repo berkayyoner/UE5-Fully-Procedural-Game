@@ -295,6 +295,10 @@ Options: "Classic Alt Thrust" and "Classic Halfswording" are off by default; mou
 
 - Drawn back: the rear (right) hand behind the right hip with the butt trailing behind, the front (left) hand forward at
   chest height, the pole level at waist height and a little down, pointing ahead; the trunk turned right, knees bent.
-- Out (side view): a long lunge, the front knee bent and the rear leg straight back. The rear hand comes forward to the front
-  of the right hip, the front hand reaches out at waist height with the elbow nearly straight, and the pole points up at head
-  height of the enemy. The trunk stays upright and the hands move along the shaft's line, so the point travels straight.
+- Halfway out (side view): a long lunge, the front knee bent and the rear leg straight back. The rear hand comes forward to
+  the front of the right hip, the front hand reaches out at waist height with the elbow nearly straight, and the pole points
+  up at the enemy's head.
+- Full out (side view): both arms straight forward at shoulder height, the hands together about an arm's length ahead of the
+  chest, the rear hand right behind the front one; the pole level at shoulder height and pointing straight ahead. The feet
+  stay wide and the knees bent, the trunk upright, a little turned. The rear hand travels the furthest: from behind the hip
+  to arm's length in front, while the front hand slides up from the waist to the shoulder. The point travels straight.

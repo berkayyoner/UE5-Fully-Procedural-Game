@@ -1625,9 +1625,10 @@ namespace
 		const FAedirKeyPose& Key = AedirKeyPoses[Index];
 		return FRotator(Key.BladePitch + AedirKeyPoseFix[Index].X, Key.BladeYaw + AedirKeyPoseFix[Index].Y, 0.f).Vector();
 	}
-	// A thrust: drawn back the hands wait up by the head before the shoulder on the weapon's side, the point raised towards the enemy; out, the arms
-	// are straight ahead from the middle and the blade goes on level from them.
-	const FAedirKeyPose AedirThrustKeyBack = { 0.f, 0.f, FVector(22.f, 16.f, 38.f), 40.f, -8.f };
+	// A thrust, as in Half Sword: drawn back the hands wait beside the hip on the weapon's side, the elbows bent behind and the
+	// blade level at the waist with the point on the enemy; out, the arms are straight ahead from the middle and the blade
+	// goes on level from them.
+	const FAedirKeyPose AedirThrustKeyBack = { 0.f, 0.f, FVector(8.f, 18.f, 6.f), 8.f, -8.f };
 	const FAedirKeyPose AedirThrustKeyOut = { 0.f, 0.f, FVector(52.f, 4.f, 30.f), 0.f, -2.f };
 	// Measured in the game as for the other poses: drawn back (0) and out (1).
 	const FVector2D AedirThrustFix[] = { FVector2D(2, -6), FVector2D(6, -6) };
@@ -1642,6 +1643,32 @@ namespace
 	constexpr float AedirKeyPoseReachCm = 18.f;
 	constexpr float AedirKeyPoseMinArmBladeDegrees = 28.f;
 	static TAutoConsoleVariable<int32> CVarAedirKeyPoses(TEXT("aedir.KeyPoses"), 1, TEXT("Blade poses come from the reference key poses (1), or from the hand's angle round the shoulder (0)."));
+	static TAutoConsoleVariable<int32> CVarAedirSteerBlade(TEXT("aedir.SteerBlade"), 1, TEXT("The mouse turns the blade round smoothly, as in Half Sword, for swords (1), pole weapons (2) or both (3); otherwise the blade blends between the key poses."));
+
+	// As in Half Sword the mouse turns the blade round smoothly: to the side it swings round the body, up it stands and then
+	// lies back over the head, down the point drops. The way never passes between two poses pointing opposite ways, so the
+	// blade cannot flip over from one frame to the next. Raised high or held low it turns less to the side, so over the head
+	// it lies back behind it rather than out over a shoulder.
+	struct FAedirBladeSteer
+	{
+		float RestPitch;
+		float YawPerDegree;
+		float UpPerDegree;
+		float DownPerDegree;
+		float HighYawKeep;
+		float LowYawKeep;
+	};
+	const FAedirBladeSteer AedirSwordSteer = { 40.f, 1.1f, 1.4f, 1.f, 0.2f, 0.6f };
+	const FAedirBladeSteer AedirPoleSteer = { 35.f, 0.8f, 0.8f, 0.9f, 0.25f, 0.7f };
+	constexpr float AedirSteerHighAim = 80.f;
+	constexpr float AedirSteerLowAim = -60.f;
+	FVector AedirSteerBladeDir(const FAedirBladeSteer& Steer, const FVector2D& Aim)
+	{
+		const float AimY = static_cast<float>(Aim.Y);
+		const float Keep = FMath::Lerp(FMath::Lerp(1.f, Steer.HighYawKeep, FMath::SmoothStep(0.f, AedirSteerHighAim, AimY)), Steer.LowYawKeep, FMath::SmoothStep(0.f, -AedirSteerLowAim, -AimY));
+		const float Pitch = Steer.RestPitch + AimY * (AimY > 0.f ? Steer.UpPerDegree : Steer.DownPerDegree);
+		return FRotator(Pitch, static_cast<float>(Aim.X) * Steer.YawPerDegree * Keep, 0.f).Vector();
+	}
 }
 
 bool UAedirCombatComponent::ComputeKeyPose(EAedirHand Hand, const FAedirArmDynamics& Arm, FVector& OutHandLocal, FVector& OutBladeLocal) const
@@ -1673,7 +1700,7 @@ bool UAedirCombatComponent::ComputeKeyPose(EAedirHand Hand, const FAedirArmDynam
 		WeightSum += Weight;
 	}
 	OutHandLocal = HandSum / WeightSum;
-	OutBladeLocal = BladeSum.GetSafeNormal();
+	OutBladeLocal = (CVarAedirSteerBlade.GetValueOnGameThread() & 1) != 0 ? AedirSteerBladeDir(AedirSwordSteer, Aim) : BladeSum.GetSafeNormal();
 	if (OutBladeLocal.IsNearlyZero())
 	{
 		OutBladeLocal = FVector::UpVector;
@@ -1897,8 +1924,11 @@ namespace
 		FVector2D(-8, -9), FVector2D(-15, 29), FVector2D(-15, 28), FVector2D(11, 1), FVector2D(15, -30),
 	};
 	static_assert(UE_ARRAY_COUNT(AedirPolearmKeyFix) == UE_ARRAY_COUNT(AedirPolearmKeys), "One correction for each pole key pose.");
-	const FAedirPolearmKey AedirPolearmThrustBack = { 0.f, 0.f, FVector(14.f, 18.f, 6.f), 78.f, 0.f };
-	const FAedirPolearmKey AedirPolearmThrustOut = { 0.f, 0.f, FVector(48.f, 6.f, 34.f), 22.f, 6.f };
+	// A pole thrust, as in Half Sword: drawn back the rear hand is behind the hip and the front one at the chest, the pole level
+	// at the waist pointing ahead; out, both arms are straight ahead at shoulder height and the pole level from them (asked a
+	// little higher than level: the weight of the head takes it down that far).
+	const FAedirPolearmKey AedirPolearmThrustBack = { 0.f, 0.f, FVector(14.f, 16.f, 8.f), 10.f, -4.f };
+	const FAedirPolearmKey AedirPolearmThrustOut = { 0.f, 0.f, FVector(50.f, 4.f, 34.f), 14.f, 4.f };
 }
 
 void UAedirCombatComponent::ComputePolearmPose(EAedirHand Hand, const FAedirArmDynamics& Arm, const AAedirItemActor* Item, FVector& OutHandLocal, FVector& OutDirLocal) const
@@ -1906,8 +1936,7 @@ void UAedirCombatComponent::ComputePolearmPose(EAedirHand Hand, const FAedirArmD
 	const float HandSide = Hand == EAedirHand::Right ? 1.f : -1.f;
 	if (CVarAedirKeyPoses.GetValueOnGameThread() != 0 && bThrustMode)
 	{
-		// A thrust with a pole: drawn back it stands upright by the hip on the leading side, out it goes level ahead from the
-		// chest with the arms straight (asked higher than level: the weight of the head takes it down that far).
+		// A thrust with a pole: from level by the hip straight out ahead at the shoulders.
 		const float Out = FMath::Clamp(Arm.Extension, 0.f, 1.f);
 		FVector Middle = FMath::Lerp(AedirPolearmThrustBack.Middle, AedirPolearmThrustOut.Middle, Out);
 		FVector Head = FRotator(FMath::Lerp(AedirPolearmThrustBack.HeadPitch, AedirPolearmThrustOut.HeadPitch, Out), FMath::Lerp(AedirPolearmThrustBack.HeadYaw, AedirPolearmThrustOut.HeadYaw, Out) + Arm.PoseAimDeg.X * HandSide * AedirThrustSteerShare, 0.f).Vector();
@@ -1945,7 +1974,7 @@ void UAedirCombatComponent::ComputePolearmPose(EAedirHand Hand, const FAedirArmD
 			WeightSum += Weight;
 		}
 		FVector Middle = MiddleSum / WeightSum;
-		FVector Head = HeadSum.GetSafeNormal();
+		FVector Head = (CVarAedirSteerBlade.GetValueOnGameThread() & 2) != 0 ? AedirSteerBladeDir(AedirPoleSteer, Aim) : HeadSum.GetSafeNormal();
 		if (Head.IsNearlyZero())
 		{
 			Head = FVector::UpVector;
