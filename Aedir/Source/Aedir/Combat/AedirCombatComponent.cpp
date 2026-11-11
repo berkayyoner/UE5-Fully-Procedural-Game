@@ -205,11 +205,11 @@ namespace
 	// Rest poses out of the fight stance: how far below level and how far out to the carrying hand's side the point lies.
 	constexpr float AedirRestOneHandPitch = -62.f;
 	constexpr float AedirRestOneHandOutYaw = 20.f;
-	// In both hands, as in Half Sword, the hands rest by the hip of the carrying side and the blade lies across before the
-	// body, the point low and out towards the other side: a negative yaw is towards the other hand's side. Held so the blade
-	// never lies back along the forearm, where the wrist would have to choose a side and the blade turned over in the fist.
+	// In both hands, as in Half Sword, the hands rest before the belly and the blade goes down and forward out to the carrying
+	// hand's side. Asked no further round than that: asked round towards the back, the blade lay back along the forearm,
+	// where the wrist has to choose a side, and it turned over in the fist.
 	constexpr float AedirRestTwoHandPitch = -30.f;
-	constexpr float AedirRestTwoHandOutYaw = -40.f;
+	constexpr float AedirRestTwoHandOutYaw = 45.f;
 	// Measured in the game: asked this much further, the blade comes to rest at the angles above.
 	constexpr float AedirRestTwoHandFixPitch = 0.f;
 	constexpr float AedirRestTwoHandFixYaw = 0.f;
@@ -2170,7 +2170,7 @@ FVector UAedirCombatComponent::ComputeCarriedDir(EAedirHand Hand) const
 	const AAedirItemActor* Item = GetHeldItem(Hand);
 	const float Length = Item ? Item->GetWeaponLength() : 0.f;
 	// Out of the fight stance a weapon is not pointed at anyone. A pole stands upright beside the body, head up; a blade in
-	// both hands lies aslant before the hips, point low and out to the other side; one in a single hand hangs
+	// both hands lies aslant before the hips, point low and out to the side of the carrying hand; one in a single hand hangs
 	// point down and a little out. A long one is kept just off the ground.
 	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
 	float RestPitch = bTwoHandGrip ? AedirRestTwoHandPitch : AedirRestOneHandPitch;
