@@ -7,8 +7,8 @@
 * Physics based fully procedural medival fantasy RPG game.
 
 ## Design References
-* **Gameplay and mechanics: Half Sword style.** Fully physics-driven characters and melee (no canned animations). The player moves the weapon/arm with the mouse; weapons have weight and momentum; damage comes from real impact (speed, mass, contact point), not from a fixed number. Hit location matters (head, torso, arms, legs), armor covers body parts, limbs can be injured, stamina limits arm strength, and blocking/parrying happens through physical weapon contact. Character movement should be even more realistic than Half Sword: weight shift, momentum, foot placement, balance from the center of mass, stumbling, protective reactions when falling.
-* **UI and game content: The Elder Scrolls style (Skyrim/Oblivion).** Minimal HUD (compass on top, three bars at the bottom), list-based menus (inventory, magic, skills, map, journal), skill-based progression, races, factions and guilds, books and lore items, quests with compass markers. World lore is in `Game Lore.docx` (the planet Aedir, the Anga gods, Elves, Dark Elves, Dwarves and so on) and content must stay consistent with it.
+* **Gameplay and mechanics: Half Sword style.** Fully physics-driven characters and melee (no canned animations). The player moves the weapon/arm with the mouse; weapons have weight and momentum; damage comes from real impact (speed, mass, contact point), not from a fixed number. Hit location matters (head, torso, arms, legs), armor covers body parts, limbs can be injured, stamina limits arm strength, and blocking/parrying happens through physical weapon contact. Character movement should be even more realistic than Half Sword: weight shift, momentum, foot placement, balance from the center of mass, stumbling, protective reactions when falling. Inspiration: Half Sword.
+* **UI and game content: The Elder Scrolls style (Skyrim/Oblivion).** Minimal HUD (compass on top, three bars at the bottom), list-based menus (inventory, magic, skills, map, journal), skill-based progression, races, factions and guilds, books and lore items, quests with compass markers. World lore is in `Game Lore.docx` (the planet Aedir, the Anga gods, Elves, Dark Elves, Dwarves and so on) and content must stay consistent with it. Inspiration: The Elder Scrolls.
 
 ## Expectations
 * Player character will be a humanouid type. So body physics will be enabled except Pelvis bone. Pelvis hold the body up and will be simulated depending on the balance. When character losts balance, pelvis should rotate to opposite way to show the player like it's loosing balance visually and when character can't get it's balance back for a while character should fall. Falling from a high place or hitting a wall or get hit by an item/object should effect balance and health.
@@ -43,3 +43,33 @@
 * It will be a realistic game but should be as optimized as possible. So try to compress textures which are above 4K down to 4K by using Unreal Engine's feature.
 * This will be a game which can be played single player or Co-op.
 * Make sure blueprints are clean for easy to read.
+## Player Requests (gathered from play tests)
+### Body and physics
+* The body is a physics simulation, never an animation: it sways a little, carries weight, has momentum and inertia, and nothing passes through it, not even what it holds itself.
+* What is held is felt through real physics (its mass pulling on the hand), never by making the controls less precise. A two-handed weapon in one hand is hard to carry and swing.
+* Weapons collide with bodies and with each other. A blow lands, stops or glances; it never cuts the air through a body. How deep an edge cuts depends on its speed: too weak it glances or bounces, in between it bites and sticks, strong enough it goes through.
+* Being hit is felt by strength and direction: the struck part and the trunk move, balance is lost in proportion, a body that cannot recover stumbles and falls, and gets up again.
+* Nobody dies suddenly. Unless the head is cut off, death comes slowly, through wounds, bleeding, falling, failing to get up.
+* Limbs can be cut. A creature that loses its weapon arm drops the weapon; unarmed or without both arms it flees.
+* Bodies, living or dead, standing or lying, and severed limbs can be grabbed and dragged; every part has a weight.
+* Downward blows reach the ground so a lying enemy can be hit; the spine bends with vertical swings.
+* Sword-like weapons are held more upright. Half-swording keeps the upper hand fixed on the blade; it lets go only under real strain, and a weapon can be wrenched from the hand.
+* When running, loose arms swing moderately with the elbows only lightly bent.
+* Swings accelerate and decelerate, they never move at a constant speed.
+### Controls
+* F talks to NPCs or points at a spot or item for orders. G shoves. T/Y stow; Q/E reach, drop and, held, use. Holding the use key eats or drinks with the right angle at the mouth. Shift runs, also in the fight stance.
+* A big object (boulder) is let go with both hands at once.
+### NPCs
+* NPCs have health, mana and stamina with the same limits as the player; the player does not see enemy mana and stamina.
+* NPCs pick up and wear gear they lack, carry weapons on the belt outside fights and draw them when threatened; spears and staves do not go on the belt.
+* Orders: follow, go there (with a marker), fetch the pointed-at item and wear it.
+* Talking works as in Skyrim: the NPC turns to the player, the world stops, the NPC's head moves as it speaks. The dialogue screen looks like Skyrim's (see Skyrim references), and "Farewell" ends it.
+* NPCs say things to the player outside dialogue and hold long conversations with each other, shown as Skyrim-style subtitles.
+### World and look
+* The test level is a natural landscape with a master material made from all the Megascans surfaces, with height maps, non-repeating and at realistic scale; full of nature, decor and test-ready items (food and drink on tables).
+* Grass is realistic and calm, not tall or overly animated. Rain drops are small and splash on the ground; weather has sounds.
+* Blood stays on the ground for three game days. Footprints have the shape of a real shoe sole; footstep sounds match the ground and are not too loud; footstep effects are subtle and grow with step speed.
+* Props have collision. Weapons are of realistic size. Items drawn from the belt visibly come from the belt.
+### Tools
+* A Skyrim-style console (the " key) with base and reference ids, click to select, history with up/down, suggestions, help, player.additem/removeitem, spawn/placeatme, enable/disable, delete, kill, moveto, getpos, setscale, player.setstats/addstats/removestats, setweather and more.
+* Use the Fab library generously: add whatever makes the game better.
