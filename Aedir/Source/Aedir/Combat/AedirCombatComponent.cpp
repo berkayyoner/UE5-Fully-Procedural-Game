@@ -43,6 +43,10 @@ namespace
 	constexpr float AedirServoForgetPerSecond = 2.f;
 	constexpr float AedirServoFightShare = 0.95f;
 	TAutoConsoleVariable<int32> CVarAedirPosedArms(TEXT("aedir.PosedArms"), 1, TEXT("A weapon's arms in the stance move exactly as the pose has them (1), or are left to their muscles (0)."));
+	// A surface facing up at least this much is ground to a held blade.
+	constexpr double AedirHeldGroundNormalZ = 0.6;
+	TAutoConsoleVariable<int32> CVarAedirHeldBlockLog(TEXT("aedir.HeldBlockLog"), 0, TEXT("Log what stops a held blade."));
+	TAutoConsoleVariable<int32> CVarAedirHeldBlockWorld(TEXT("aedir.HeldBlockWorld"), 1, TEXT("The ground and the world stop a held blade (1), or only bodies and weapons do (0)."));
 	TAutoConsoleVariable<int32> CVarAedirPoseServo(TEXT("aedir.PoseServo"), 1, TEXT("Feed back where the hand and blade really are, so a held pose settles exactly where it is meant to (1)."));
 	// The fixed corrections measured once for each key pose were right only for the way they were measured coming to it; with
 	// the closed loop the poses are asked exactly as the reference stills have them.
@@ -1254,6 +1258,18 @@ void UAedirCombatComponent::ResolveHeldCollision(EAedirHand Hand, FAedirArmDynam
 	{
 		return;
 	}
+	if (CVarAedirHeldBlockLog.GetValueOnGameThread() != 0)
+	{
+		UE_LOG(LogAedir, Display, TEXT("[HeldBlock] %s blade stopped by %s (%s)"), *GetNameSafe(Creature), *GetNameSafe(Hit.GetActor()), *GetNameSafe(Hit.GetComponent()));
+	}
+	// The ground does not hold a held blade: the stance keeps it off the ground already, and stopped there the arm stayed
+	// caught where it last was clear, wherever the mouse went next (3,600 stops in one run of the stance grid). Walls,
+	// bodies and weapons still stop it.
+	const bool bGround = Hit.ImpactNormal.Z > AedirHeldGroundNormalZ && !Cast<AAedirCreature>(Hit.GetActor()) && !Cast<AAedirItemActor>(Hit.GetActor());
+	if (bGround || (CVarAedirHeldBlockWorld.GetValueOnGameThread() == 0 && !Cast<AAedirCreature>(Hit.GetActor()) && !Cast<AAedirItemActor>(Hit.GetActor())))
+	{
+		return;
+	}
 
 	// Steel on steel: the other weapon is knocked aside by what this one carried into it, as the two arms stand behind them.
 	if (DeltaTime > KINDA_SMALL_NUMBER)
@@ -1907,11 +1923,12 @@ namespace
 	// both games and each point filmed from behind and from the side (Saved/Measure). For each point: where the carrying
 	// hand is in the body's frame (forward, right, up, cm from the middle of the hips) and which way the blade points
 	// (pitch up +, yaw right +). The mouse runs 1875 counts from the middle to either side (100 degrees here) and 1750 up or
-	// down; the grid points are 750 and 1500 counts from the middle, which here is a little below level.
+	// down; the grid points are 750 and 1500 counts from where the button was pressed, the arm then before the chest with the
+	// blade straight at the enemy.
 	TAutoConsoleVariable<int32> CVarAedirClearOwnBody(TEXT("aedir.ClearOwnBody"), 0, TEXT("A blade wanted through its own holder's body in the stance is turned off it (1), or held where it is wanted (0)."));
 	TAutoConsoleVariable<int32> CVarAedirStanceTable(TEXT("aedir.StanceTable"), 1, TEXT("The sword stance comes from the table measured in Half Sword (1), or from the older key poses (0)."));
 	constexpr float AedirStanceGridX[5] = { -80.f, -40.f, 0.f, 40.f, 80.f };
-	constexpr float AedirStanceGridY[5] = { -77.f, -42.f, -7.f, 28.f, 64.f };
+	constexpr float AedirStanceGridY[5] = { -76.f, -38.f, 0.f, 38.f, 76.f };
 	struct FAedirStanceCell
 	{
 		FVector Hand;
@@ -1919,19 +1936,16 @@ namespace
 		float BladeYaw;
 	};
 	// Rows from the bottom of the mouse field to the top, columns from left to right.
-	const FAedirStanceCell AedirStanceTable[5][5] =
+	FAedirStanceCell AedirStanceTable[5][5] =
 	{
-		// Down: the hands low, at the left hip, before the belly, by the right hip; the point low to the left, hanging before
-		// the feet, and from the right hip forward and up across.
-		{ { FVector(15.f, -20.f, -2.f), -20.f, -110.f }, { FVector(25.f, 0.f, 4.f), -10.f, -90.f }, { FVector(25.f, 12.f, 0.f), -40.f, 20.f }, { FVector(20.f, 20.f, -4.f), 30.f, -60.f }, { FVector(20.f, 25.f, -4.f), 30.f, -50.f } },
-		{ { FVector(18.f, -19.f, 14.f), -5.f, -115.f }, { FVector(25.f, -2.f, 16.f), 0.f, -88.f }, { FVector(27.f, 10.f, 12.f), -10.f, -20.f }, { FVector(24.f, 19.f, 8.f), 28.f, -70.f }, { FVector(22.f, 23.f, 6.f), 32.f, -55.f } },
-		// The middle: the hands up before the right shoulder, the blade lying out to the left over the left shoulder; to the left
-		// up by the left shoulder, the blade back over it; to the right down by the right side, the blade rising across to the left.
-		{ { FVector(15.f, -15.f, 36.f), 15.f, -140.f }, { FVector(20.f, -3.f, 35.f), 12.f, -135.f }, { FVector(25.f, 12.f, 32.f), 10.f, -120.f }, { FVector(28.f, 18.f, 20.f), 25.f, -90.f }, { FVector(25.f, 22.f, 15.f), 40.f, -70.f } },
-		{ { FVector(14.f, -17.f, 46.f), 10.f, -125.f }, { FVector(18.f, -4.f, 50.f), 8.f, -115.f }, { FVector(20.f, 9.f, 48.f), 8.f, -105.f }, { FVector(22.f, 16.f, 44.f), 10.f, -95.f }, { FVector(22.f, 22.f, 38.f), 12.f, -100.f } },
-		// Up: the hands over the head, the blade lying level across it to the left; to the right over the right shoulder, the
-		// blade lying back over the head.
-		{ { FVector(12.f, -18.f, 58.f), 5.f, -105.f }, { FVector(15.f, -5.f, 66.f), 5.f, -95.f }, { FVector(15.f, 5.f, 68.f), 5.f, -95.f }, { FVector(18.f, 15.f, 58.f), 8.f, -100.f }, { FVector(18.f, 22.f, 54.f), 5.f, -120.f } },
+		// Fitted by measurement: our fighter rendered at each grid point and its wrists and elbows found by a pose detector
+		// were brought as close as they would go to Half Sword's at the same mouse point (mean error 1.21 -> 0.73 shoulder
+		// widths). Rows from the bottom of the mouse field to the top, columns from left to right.
+		{ { FVector(15.0f, -20.0f, -2.0f), -20.0f, -110.0f }, { FVector(25.0f, 0.0f, 10.0f), -10.0f, -90.0f }, { FVector(19.0f, 6.0f, -6.0f), -40.0f, 20.0f }, { FVector(8.0f, 26.0f, -4.0f), 30.0f, -60.0f }, { FVector(26.0f, 31.0f, -10.0f), 50.0f, -50.0f } },
+		{ { FVector(18.0f, -25.0f, 20.0f), -5.0f, -115.0f }, { FVector(25.0f, 4.0f, 16.0f), 0.0f, -88.0f }, { FVector(21.0f, 4.0f, 6.0f), -30.0f, 5.0f }, { FVector(18.0f, 19.0f, 8.0f), 48.0f, -70.0f }, { FVector(22.0f, 23.0f, 12.0f), 52.0f, -30.0f } },
+		{ { FVector(15.0f, -9.0f, 30.0f), 35.0f, -140.0f }, { FVector(26.0f, -3.0f, 35.0f), -8.0f, -135.0f }, { FVector(31.0f, 18.0f, 32.0f), 10.0f, -120.0f }, { FVector(34.0f, 30.0f, 20.0f), 25.0f, -90.0f }, { FVector(13.0f, 28.0f, 15.0f), 40.0f, -70.0f } },
+		{ { FVector(20.0f, -17.0f, 52.0f), 10.0f, -125.0f }, { FVector(24.0f, 2.0f, 50.0f), 8.0f, -115.0f }, { FVector(26.0f, 9.0f, 48.0f), 8.0f, -105.0f }, { FVector(28.0f, 22.0f, 56.0f), 10.0f, -95.0f }, { FVector(16.0f, 22.0f, 38.0f), 12.0f, -75.0f } },
+		{ { FVector(12.0f, -18.0f, 58.0f), 5.0f, -130.0f }, { FVector(15.0f, -5.0f, 66.0f), -15.0f, -95.0f }, { FVector(9.0f, 5.0f, 68.0f), 5.0f, -95.0f }, { FVector(12.0f, 21.0f, 64.0f), 28.0f, -125.0f }, { FVector(18.0f, 22.0f, 54.0f), -15.0f, -120.0f } },
 	};
 	void AedirGridSpan(const float (&Nodes)[5], float Value, int32& OutIndex, float& OutShare)
 	{
@@ -1961,6 +1975,14 @@ namespace
 		{
 			OutBlade = FVector::UpVector;
 		}
+	}
+}
+
+void UAedirCombatComponent::DevSetStanceCell(int32 Row, int32 Col, const FVector& Hand, float BladePitch, float BladeYaw)
+{
+	if (Row >= 0 && Row < 5 && Col >= 0 && Col < 5)
+	{
+		AedirStanceTable[Row][Col] = { Hand, BladePitch, BladeYaw };
 	}
 }
 

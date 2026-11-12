@@ -62,6 +62,11 @@
 
 namespace
 {
+	// The photo camera: how slow time runs while it is up, and how far the wheel takes it in and out.
+	constexpr float PhotoTimeDilation = 0.0001f;
+	constexpr float PhotoZoomStepCm = 25.f;
+	constexpr float PhotoMinArmCm = 60.f;
+	constexpr float PhotoMaxArmCm = 700.f;
 	// A press of the thrust key shorter than this is a tap that leaves the thrust on.
 	constexpr double ThrustTapSeconds = 0.25;
 	constexpr float AedirGuestStoreSeconds = 60.f;
@@ -520,6 +525,12 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 
 void AAedirPlayerCharacter::HandleMouseWheel(float Value)
 {
+	if (bPhotoCamera && CameraBoom)
+	{
+		PhotoArmLengthCm = FMath::Clamp(PhotoArmLengthCm - Value * PhotoZoomStepCm, PhotoMinArmCm, PhotoMaxArmCm);
+		CameraBoom->TargetArmLength = PhotoArmLengthCm;
+		return;
+	}
 	if (!Combat || Value == 0.f)
 	{
 		return;
@@ -642,8 +653,8 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 	{
 		// The fight stance draws the view in close and up over the shoulder; out of it the view goes back to where it was set.
 		const float FightAlpha = FMath::SmoothStep(0.f, 1.f, FightCameraAlpha);
-		const float WantedLength = bHeadCamera ? HeadCameraArmLengthCm : FMath::Lerp(CameraZoomTargetCm, FightArmLengthCm, FightAlpha);
-		CameraBoom->TargetArmLength = FMath::FInterpTo(CameraBoom->TargetArmLength, WantedLength, DeltaSeconds, 10.f);
+		const float WantedLength = bPhotoCamera ? PhotoArmLengthCm : (bHeadCamera ? HeadCameraArmLengthCm : FMath::Lerp(CameraZoomTargetCm, FightArmLengthCm, FightAlpha));
+		CameraBoom->TargetArmLength = bPhotoCamera ? WantedLength : FMath::FInterpTo(CameraBoom->TargetArmLength, WantedLength, DeltaSeconds, 10.f);
 		CameraBoom->SocketOffset = bHeadCamera ? HeadCameraOffset : FMath::Lerp(ThirdPersonShoulderOffset, FightShoulderOffset, FightAlpha);
 
 		// Let go of V, the camera comes back round behind the body.
@@ -1237,11 +1248,20 @@ void AAedirPlayerCharacter::HandleViewToggleReleased()
 
 void AAedirPlayerCharacter::HandleHeadCameraPressed()
 {
-	bHeadCamera = !bHeadCamera;
+	// The photo camera, as Half Sword's C: time all but stops and the mouse takes the view round the body.
+	bPhotoCamera = !bPhotoCamera;
+	UGameplayStatics::SetGlobalTimeDilation(this, bPhotoCamera ? PhotoTimeDilation : 1.f);
+	bOrbitHeld = bPhotoCamera;
+	bOrbitMoved = bPhotoCamera;
+	if (CameraBoom)
+	{
+		CameraBoom->bEnableCameraLag = !bPhotoCamera;
+		PhotoArmLengthCm = CameraBoom->TargetArmLength;
+	}
 	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (UAedirTravelSubsystem* Travel = PlayerController && PlayerController->GetLocalPlayer() ? PlayerController->GetLocalPlayer()->GetSubsystem<UAedirTravelSubsystem>() : nullptr)
 	{
-		Travel->ShowNotification(bHeadCamera ? NSLOCTEXT("Aedir", "HeadCameraOn", "Camera behind the head") : NSLOCTEXT("Aedir", "HeadCameraOff", "Camera over the shoulder"), 2.f);
+		Travel->ShowNotification(bPhotoCamera ? NSLOCTEXT("Aedir", "PhotoCameraOn", "Photo camera: mouse to turn, wheel to zoom, Z to go back") : NSLOCTEXT("Aedir", "PhotoCameraOff", "Photo camera off"), 2.f);
 	}
 }
 
@@ -1792,6 +1812,32 @@ void AAedirPlayerCharacter::PoseMeasure(const FString& Label)
 		const FVector PoseHand = Pose ? GetActorTransform().InverseTransformPosition(Pose->GetPoseArmWorld(1, 2).GetLocation()) : FVector::ZeroVector;
 		UE_LOG(LogAedir, Display, TEXT("[PoseMeasure] %s right %s | anim hand %.0f %.0f %.0f"), *Label, *Combat->DevMeasurePose(EAedirHand::Right), PoseHand.X, PoseHand.Y, PoseHand.Z);
 	}
+}
+
+void AAedirPlayerCharacter::ArmBones(const FString& Label)
+{
+	if (!GetMesh())
+	{
+		return;
+	}
+	FString Line;
+	for (const TCHAR* Bone : { TEXT("upperarm_l"), TEXT("lowerarm_l"), TEXT("hand_l"), TEXT("upperarm_r"), TEXT("lowerarm_r"), TEXT("hand_r"), TEXT("pelvis") })
+	{
+		const FVector Local = GetActorTransform().InverseTransformPositionNoScale(GetMesh()->GetBoneLocation(Bone));
+		Line += FString::Printf(TEXT(" %s %.1f %.1f %.1f"), Bone, Local.X, Local.Y, Local.Z);
+	}
+	if (UAedirProceduralAnimInstance* Pose = Cast<UAedirProceduralAnimInstance>(GetMesh()->GetAnimInstance()))
+	{
+		Line += TEXT(" | ") + Pose->DevWrists();
+		const FRotator Chest = GetActorTransform().InverseTransformRotation(GetMesh()->GetBoneQuaternion(TEXT("spine_05"))).Rotator();
+		Line += FString::Printf(TEXT(" | lead %d grip %d chest yaw %.0f pitch %.0f roll %.0f"), Combat && Combat->IsLeadFootRight() ? 1 : 0, Combat && Combat->IsTwoHandGrip() ? 1 : 0, Chest.Yaw, Chest.Pitch, Chest.Roll);
+	}
+	UE_LOG(LogAedir, Display, TEXT("[ArmBones] %s%s"), *Label, *Line);
+}
+
+void AAedirPlayerCharacter::StanceCell(int32 Row, int32 Col, float Forward, float Right, float Up, float Pitch, float Yaw)
+{
+	UAedirCombatComponent::DevSetStanceCell(Row, Col, FVector(Forward, Right, Up), Pitch, Yaw);
 }
 
 void AAedirPlayerCharacter::PoseLog(float Seconds)

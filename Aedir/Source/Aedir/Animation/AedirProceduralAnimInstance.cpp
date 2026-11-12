@@ -72,6 +72,9 @@ namespace
 	constexpr double AedirArmLedWristGiveCost = 0.12;
 	// However the blade and the forearm come to lie, a hand turns no faster than this.
 	constexpr float AedirHandMaxTurnDegrees = 1000.f;
+	TAutoConsoleVariable<int32> CVarAedirWeaponArmKeep(TEXT("aedir.WeaponArmKeep"), 0, TEXT("The weapon arm keeps to its last forearm where two would do (1), or takes the best alone (0)."));
+	TAutoConsoleVariable<float> CVarAedirWristMaxBlade(TEXT("aedir.WristMaxBlade"), 125.f, TEXT("How far back from the forearm a held blade may point, in degrees."));
+	TAutoConsoleVariable<float> CVarAedirWristMinScale(TEXT("aedir.WristMinScale"), 1.f, TEXT("Share of the least angle a held blade keeps off the line of the forearm."));
 	TAutoConsoleVariable<int32> CVarAedirDirectArm(TEXT("aedir.DirectArm"), 1, TEXT("The weapon arm is placed straight from the hand and blade wanted (1), or led by the older blade-led arm (0)."));
 	// The weapon arm's search: how far the blade may lean along the forearm, in how many steps each way, and how finely the
 	// circle of forearms about the blade is tried; then what each choice costs.
@@ -670,6 +673,14 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 
 	// The handle crosses the palm: the wrist bends only so far, and a blade pointing along the forearm stops short of its line.
 	const double Along = FVector::DotProduct(Blade, Forearm);
+	// The wrist's reach, tunable to see what the stance needs of it.
+	MinBladeDegrees *= CVarAedirWristMinScale.GetValueOnAnyThread();
+	const float WristMaxBlade = CVarAedirWristMaxBlade.GetValueOnAnyThread();
+	{
+		const float WantedDegrees = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(Blade, Forearm)), -1.f, 1.f)));
+		DevWristWanted[HandSlot] = WantedDegrees;
+		DevWristClamped[HandSlot] = WantedDegrees < MinBladeDegrees ? -1 : (WantedDegrees > WristMaxBlade ? 1 : 0);
+	}
 	const double LimitCos = FMath::Cos(FMath::DegreesToRadians(MinBladeDegrees));
 	if (FMath::Abs(Along) > LimitCos)
 	{
@@ -683,7 +694,7 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 		Blade = Forearm * (Along > 0.0 ? LimitCos : -LimitCos) + Across.GetSafeNormal() * FMath::Sin(FMath::DegreesToRadians(MinBladeDegrees));
 	}
 	// Nor does it bend back far enough to point the blade behind the forearm: past this the blade follows the arm round.
-	const double BackCos = FMath::Cos(FMath::DegreesToRadians(AedirWristMaxBladeDegrees));
+	const double BackCos = FMath::Cos(FMath::DegreesToRadians(WristMaxBlade));
 	if (FVector::DotProduct(Blade, Forearm) < BackCos)
 	{
 		FVector Across = FVector::VectorPlaneProject(Blade, Forearm);
@@ -691,7 +702,7 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 		{
 			Across = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector), Forearm);
 		}
-		Blade = Forearm * BackCos + Across.GetSafeNormal() * FMath::Sin(FMath::DegreesToRadians(AedirWristMaxBladeDegrees));
+		Blade = Forearm * BackCos + Across.GetSafeNormal() * FMath::Sin(FMath::DegreesToRadians(WristMaxBlade));
 	}
 
 	DevBladeWorld[2][HandSlot] = MeshToWorld.TransformVectorNoScale(Blade);
@@ -755,7 +766,7 @@ FVector FAedirProceduralAnimProxy::ApplyWeaponArm(FCSPose<FCompactPose>& CSPose,
 			const double Miss = FMath::Abs((Target - Forearm * ForeCm - Shoulder).Size() - UpperCm);
 			double Score = Miss * AedirWeaponArmMissWeight + FMath::Abs(Tilt) * AedirWeaponArmTiltWeight
 				- FVector::DotProduct(UpperDir, OutwardMesh) * AedirWeaponArmOutWeight - FVector::DotProduct(UpperDir, DownMesh) * AedirWeaponArmDownWeight;
-			if (!LastWeaponForearm[Slot].IsNearlyZero())
+			if (!LastWeaponForearm[Slot].IsNearlyZero() && CVarAedirWeaponArmKeep.GetValueOnAnyThread() != 0)
 			{
 				Score += (1.0 - FVector::DotProduct(Forearm, LastWeaponForearm[Slot])) * AedirWeaponArmKeepWeight;
 			}
@@ -1165,6 +1176,12 @@ FVector UAedirProceduralAnimInstance::DevGetPoseBlade(int32 Stage, int32 HandSlo
 FTransform UAedirProceduralAnimInstance::GetPoseArmWorld(int32 HandSlot, int32 Part)
 {
 	return GetProxyOnGameThread<FAedirProceduralAnimProxy>().PoseArmWorld[FMath::Clamp(HandSlot, 0, 1)][FMath::Clamp(Part, 0, 2)];
+}
+
+FString UAedirProceduralAnimInstance::DevWrists()
+{
+	const FAedirProceduralAnimProxy& Proxy = GetProxyOnGameThread<FAedirProceduralAnimProxy>();
+	return FString::Printf(TEXT("wrist L wanted %.0f clamp %d, R wanted %.0f clamp %d"), Proxy.DevWristWanted[0], Proxy.DevWristClamped[0], Proxy.DevWristWanted[1], Proxy.DevWristClamped[1]);
 }
 
 FQuat UAedirProceduralAnimInstance::DevGetPoseHand(int32 HandSlot)

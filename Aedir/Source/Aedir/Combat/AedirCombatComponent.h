@@ -374,6 +374,8 @@ public:
 	// there, as in Half Sword; short of it the view stays where it is.
 	bool IsWeaponAimAtEdge(float MouseAcross) const;
 	bool IsSteeringWeapon() const;
+	// Sets one point of the measured sword stance table for this run (rows bottom to top, columns left to right), for fitting it.
+	static void DevSetStanceCell(int32 Row, int32 Col, const FVector& Hand, float BladePitch, float BladeYaw);
 
 	// How far the arm alone aims the weapon, the wrist held at one angle: all of it in a fight with a blade in hand.
 	float GetArmLedShare(EAedirHand Hand) const;

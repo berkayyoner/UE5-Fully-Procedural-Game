@@ -390,6 +390,14 @@ public:
 	// PoseMeasure logged every given seconds (0 stops), for a run driven by the real mouse.
 	UFUNCTION(Exec)
 	void PoseLog(float Seconds);
+
+	// Sets one cell of the sword stance table: row col forward right up pitch yaw.
+	// Logs both arms' shoulder, elbow and wrist in the body's frame (forward, right, up), for comparing with a filmed pose.
+	UFUNCTION(Exec)
+	void ArmBones(const FString& Label);
+
+	UFUNCTION(Exec)
+	void StanceCell(int32 Row, int32 Col, float Forward, float Right, float Up, float Pitch, float Yaw);
 	FTimerHandle PoseLogTimer;
 
 	UFUNCTION(Exec)
@@ -563,6 +571,10 @@ private:
 	bool bOrbitMoved = false;
 	float OrbitHeldSeconds = 0.f;
 	bool bHeadCamera = false;
+	// Z: the photo camera, as Half Sword's C: time all but stops, the body holds its pose, and the mouse takes the camera round it
+	// and the wheel in and out, until Z again.
+	bool bPhotoCamera = false;
+	float PhotoArmLengthCm = 250.f;
 
 	void HandleMenuTogglePressed();
 	void HandleJournalPressed();
