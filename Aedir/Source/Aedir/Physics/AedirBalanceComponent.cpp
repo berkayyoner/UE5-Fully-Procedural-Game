@@ -32,6 +32,7 @@
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarAedirDirectPose(TEXT("aedir.DirectPose"), 1, TEXT("The body is shown and moved as the pose has it, kinematic, with no physics (1), or held to it by its muscles (0)."));
 	constexpr float AedirPhysicsRescaleStep = 0.005f;
 	constexpr float AedirLegInjuryRecoveryPenalty = 0.5f;
 	constexpr float AedirLeanInterpSpeed = 8.f;
@@ -2357,6 +2358,9 @@ void UAedirBalanceComponent::UpdatePosedArms()
 	{
 		return;
 	}
+	// aedir.DirectPose: the body shown and moved as the pose has it, with no physics in it, to get the pose right before the
+	// physics is let back in.
+	BodyControl->SetWholePosed(CVarAedirDirectPose.GetValueOnGameThread() != 0 && !bIsRagdoll);
 	const bool bLeft = Combat && !bIsRagdoll && Combat->WantsPosedArm(EAedirHand::Left);
 	const bool bRight = Combat && !bIsRagdoll && Combat->WantsPosedArm(EAedirHand::Right);
 	BodyControl->SetArmsPosed(bLeft, bRight);

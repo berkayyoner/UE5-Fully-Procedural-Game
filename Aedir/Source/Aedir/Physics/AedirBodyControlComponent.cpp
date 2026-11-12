@@ -273,7 +273,7 @@ void UAedirBodyControlComponent::SetHipsCarried(bool bCarried)
 	if (bHipsCarried != bCarried && Control && !HipModifier.IsNone())
 	{
 		bHipsCarried = bCarried;
-		Control->SetBodyModifierMovementType(HipModifier, bCarried ? EPhysicsMovementType::Kinematic : EPhysicsMovementType::Simulated);
+		Control->SetBodyModifierMovementType(HipModifier, bCarried || bWholePosed ? EPhysicsMovementType::Kinematic : EPhysicsMovementType::Simulated);
 		AppliedKey = -1.f;
 		ApplyMultipliers();
 	}
@@ -296,7 +296,7 @@ void UAedirBodyControlComponent::SetFeetPlanted(bool bLeft, bool bRight)
 		{
 			if (!Modifier.IsNone())
 			{
-				Control->SetBodyModifierMovementType(Modifier, bWantLeft ? EPhysicsMovementType::Kinematic : EPhysicsMovementType::Simulated);
+				Control->SetBodyModifierMovementType(Modifier, bWantLeft || bWholePosed ? EPhysicsMovementType::Kinematic : EPhysicsMovementType::Simulated);
 			}
 		}
 	}
@@ -307,7 +307,7 @@ void UAedirBodyControlComponent::SetFeetPlanted(bool bLeft, bool bRight)
 		{
 			if (!Modifier.IsNone())
 			{
-				Control->SetBodyModifierMovementType(Modifier, bWantRight ? EPhysicsMovementType::Kinematic : EPhysicsMovementType::Simulated);
+				Control->SetBodyModifierMovementType(Modifier, bWantRight || bWholePosed ? EPhysicsMovementType::Kinematic : EPhysicsMovementType::Simulated);
 			}
 		}
 	}
@@ -434,7 +434,7 @@ void UAedirBodyControlComponent::SetArmsPosed(bool bLeft, bool bRight)
 	const bool Wanted[2] = { bLeft, bRight };
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
-		if (!Control || bArmPosed[Side] == Wanted[Side])
+		if (!Control || bWholePosed || bArmPosed[Side] == Wanted[Side])
 		{
 			continue;
 		}
@@ -448,3 +448,28 @@ void UAedirBodyControlComponent::SetArmsPosed(bool bLeft, bool bRight)
 	}
 }
 
+
+void UAedirBodyControlComponent::SetWholePosed(bool bPosed)
+{
+	if (!Control || bWholePosed == bPosed)
+	{
+		return;
+	}
+	bWholePosed = bPosed;
+	Control->SetBodyModifiersInSetMovementType(TEXT("Body"), bPosed ? EPhysicsMovementType::Kinematic : EPhysicsMovementType::Simulated);
+	Control->SetBodyModifiersInSetPhysicsBlendWeight(TEXT("Body"), bPosed ? 0.f : 1.f);
+	// The hips and the feet have modifiers of their own, held kinematic by their own states when physics comes back.
+	TArray<FName> Own = { HipModifier, LeftFootModifiers[0], LeftFootModifiers[1], RightFootModifiers[0], RightFootModifiers[1] };
+	for (const FName& Modifier : Own)
+	{
+		if (Modifier.IsNone())
+		{
+			continue;
+		}
+		const bool bOwnKinematic = Modifier == HipModifier ? bHipsCarried : (Modifier == LeftFootModifiers[0] || Modifier == LeftFootModifiers[1] ? bLeftPlanted : bRightPlanted);
+		Control->SetBodyModifierMovementType(Modifier, bPosed || bOwnKinematic ? EPhysicsMovementType::Kinematic : EPhysicsMovementType::Simulated);
+		Control->SetBodyModifierPhysicsBlendWeight(Modifier, bPosed ? 0.f : 1.f);
+	}
+	// Back to physics, the arms take up their own posing again.
+	bArmPosed[0] = bArmPosed[1] = false;
+}

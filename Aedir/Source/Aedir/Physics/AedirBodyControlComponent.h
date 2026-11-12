@@ -98,6 +98,10 @@ public:
 	void SetArmsPosed(bool bLeft, bool bRight);
 	bool IsArmPosed(bool bRight) const { return bArmPosed[bRight ? 1 : 0]; }
 
+	// The whole body shown as the pose has it and its bodies moved with the pose (kinematic): no physics in the look of it.
+	void SetWholePosed(bool bPosed);
+	bool IsWholePosed() const { return bWholePosed; }
+
 
 	// While getting up the hips are carried through the moves by the pose; otherwise the control holds them.
 	void SetHipsCarried(bool bCarried);
@@ -144,6 +148,7 @@ private:
 	FName RightFootModifiers[2];
 	TArray<FName> ArmModifiers[2];
 	bool bArmPosed[2] = { false, false };
+	bool bWholePosed = false;
 
 	bool bReady = false;
 	bool bLimp = false;
