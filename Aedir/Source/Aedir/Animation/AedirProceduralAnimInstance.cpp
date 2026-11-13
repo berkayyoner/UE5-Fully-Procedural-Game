@@ -265,8 +265,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyGripHand(CSPose, RefCSPose, Bones, bGripLeft ? LeftOutwardMesh : RightOutwardMesh, DownMesh, ArmForwardMesh);
 
 	// The rebuilt fists have the last word on the arms they hold up.
-	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.FistArmHandWorld[0], GaitData.FistArmElbowWorld[0], GaitData.FistArmAlpha[0]);
-	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1]);
+	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.FistArmHandWorld[0], GaitData.FistArmElbowWorld[0], GaitData.FistArmAlpha[0], GaitData.FistArmWristTurn[0]);
+	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1], GaitData.FistArmWristTurn[1]);
 
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"));
@@ -727,7 +727,7 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
 }
 
-void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha) const
+void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha, float WristTurnDegrees) const
 {
 	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
 	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
@@ -754,7 +754,9 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 	SolvedRadius.SetRotation(RadiusDelta * HumerusDelta * RadiusTransform.GetRotation());
 	FTransform SolvedHand = HandTransform;
 	SolvedHand.SetTranslation(SolvedWrist);
-	SolvedHand.SetRotation(RadiusDelta * HumerusDelta * HandTransform.GetRotation());
+	// The hand keeps its set to the forearm, turned about the forearm as the fists ask.
+	const FQuat WristTurn((SolvedWrist - SolvedElbow).GetSafeNormal(), FMath::DegreesToRadians(WristTurnDegrees));
+	SolvedHand.SetRotation(WristTurn * RadiusDelta * HumerusDelta * HandTransform.GetRotation());
 	const float Share = FMath::Clamp(Alpha, 0.f, 1.f);
 	CSPose.SetComponentSpaceTransform(Humerus, BlendBoneTransform(HumerusTransform, SolvedHumerus, Share));
 	CSPose.SetComponentSpaceTransform(Radius, BlendBoneTransform(RadiusTransform, SolvedRadius, Share));

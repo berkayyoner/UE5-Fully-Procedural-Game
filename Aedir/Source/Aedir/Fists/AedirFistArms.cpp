@@ -9,13 +9,15 @@ UAedirFistArms::UAedirFistArms()
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
 }
 
-void UAedirFistArms::SetHeld(EAedirHand Hand, bool bInHeld)
+void UAedirFistArms::SetHeld(EAedirHand Hand, bool bInHeld, float ViewPitchDegrees)
 {
 	const int32 Slot = Index(Hand);
-	// The first button down starts the mouse from the middle: the guard comes up straight before the chin.
+	// The first button down starts the mouse from the middle across, and up or down where the view looks: looking down, the
+	// first blow goes down.
 	if (bInHeld && !bHeld[0] && !bHeld[1])
 	{
-		Aim = FVector2D::ZeroVector;
+		const float Range = ViewPitchDegrees > 0.f ? ArcUpDegrees : ArcDownDegrees;
+		Aim = FVector2D(0.0, FMath::Clamp(ViewPitchDegrees / FMath::Max(Range, 1.f), -1.f, 1.f));
 		PendingMouse = FVector2D::ZeroVector;
 		Punch = 0.f;
 	}
@@ -97,8 +99,6 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 
 	// Up and down the guard turns round the chest as a whole, so its shape holds.
 	const float Phi = FMath::DegreesToRadians(UpDown > 0.f ? UpDown * ArcUpDegrees : UpDown * ArcDownDegrees);
-	const float SinP = FMath::Sin(Phi);
-	const float CosP = FMath::Cos(Phi);
 
 	// The elbow goes from down by the ribs, the two a little apart, to up behind the fist as the arm is drawn round.
 	const float Lift = FMath::SmoothStep(ElbowLiftFrom, ElbowLiftTo, AcrossAbs);
@@ -122,6 +122,11 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float Radius = FMath::Lerp(GuardForwardCm, SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT;
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
+		// Round towards the side the height of the middle falls away and turns the other way, so a raised fist comes down
+		// across and a lowered one up.
+		const float ArmPhi = Phi * (1.f - (1.f + ArcSideReverse) * FMath::Abs(SinT));
+		const float SinP = FMath::Sin(ArmPhi);
+		const float CosP = FMath::Cos(ArmPhi);
 		// Tips a direction of the level guard up round the chest, about the axis across this arm's way out.
 		const auto Tip = [&](const FVector& V)
 		{
@@ -138,7 +143,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float OwnLift = FMath::Max(AimSide == Side ? Lift : 0.f, ArmPunch * PunchElbowLift);
 		const FVector Pole = Tip(FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal());
 		const FVector Shoulder = Slot == 1 ? ShoulderR : ShoulderL;
+		// Out at its own side the wrist turns back out against the forearm's roll.
+		WristTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * WristTurnOutDegrees * Side;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 	}
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * WaistForwardDegrees) * Raised;
+	WaistYaw = Across * WaistTurnDegrees * Raised;
 }

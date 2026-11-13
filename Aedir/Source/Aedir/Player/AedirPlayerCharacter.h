@@ -594,6 +594,8 @@ private:
 	bool bPhotoWasFirstPerson = false;
 	FVector FreeCameraLocation = FVector::ZeroVector;
 	FRotator FreeCameraRotation = FRotator::ZeroRotator;
+	// Where the mouse has turned the free camera to; the camera turns after it smoothly.
+	FRotator FreeCameraTargetRotation = FRotator::ZeroRotator;
 	float FreeCameraSpeedCm = 300.f;
 	void UpdatePhotoCamera();
 

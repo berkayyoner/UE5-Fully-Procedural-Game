@@ -715,6 +715,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	{
 		Fists->GetArm(EAedirHand::Left, GaitState.FistArmHandWorld[0], GaitState.FistArmElbowWorld[0], GaitState.FistArmAlpha[0]);
 		Fists->GetArm(EAedirHand::Right, GaitState.FistArmHandWorld[1], GaitState.FistArmElbowWorld[1], GaitState.FistArmAlpha[1]);
+		GaitState.FistArmWristTurn[0] = Fists->GetWristTurn(EAedirHand::Left);
+		GaitState.FistArmWristTurn[1] = Fists->GetWristTurn(EAedirHand::Right);
 		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmAlpha[0]);
 		GaitState.FistAlphaRight = FMath::Max(GaitState.FistAlphaRight, GaitState.FistArmAlpha[1]);
 	}
@@ -764,6 +766,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	if (const UAedirFistArms* Fists = CreatureOwner->FindComponentByClass<UAedirFistArms>())
 	{
 		GaitState.SpineLeanPitch += Fists->GetWaistPitch();
+		GaitState.SpineTwistYaw += Fists->GetWaistYaw();
 	}
 	GaitState.SpineLeanRoll = InertiaRoll + LocalDirection.Y * SpeedAlpha * MoveDirectionLeanRollDegrees;
 

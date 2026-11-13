@@ -74,6 +74,8 @@ namespace
 	constexpr float FreeCameraWheelScale = 1.2f;
 	constexpr float FreeCameraMinSpeedCm = 25.f;
 	constexpr float FreeCameraMaxSpeedCm = 3000.f;
+	// How quickly the free camera turns after the mouse (the larger, the closer it follows).
+	constexpr float FreeCameraTurnFollow = 6.f;
 	// A press of the thrust key shorter than this is a tap that leaves the thrust on.
 	constexpr double ThrustTapSeconds = 0.25;
 	constexpr float AedirGuestStoreSeconds = 60.f;
@@ -496,7 +498,7 @@ void AAedirPlayerCharacter::HandleMouseX(float Value)
 	const float CameraValue = Value * Settings.MouseSensitivity;
 	if (bPhotoCamera)
 	{
-		FreeCameraRotation.Yaw += CameraValue * FreeCameraDegreesPerInput;
+		FreeCameraTargetRotation.Yaw += CameraValue * FreeCameraDegreesPerInput;
 		return;
 	}
 	if (bOrbitHeld && CameraBoom)
@@ -532,7 +534,7 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 	const float CameraValue = (Settings.bInvertMouseY ? Value : -Value) * Settings.MouseSensitivity;
 	if (bPhotoCamera)
 	{
-		FreeCameraRotation.Pitch = FMath::Clamp(FreeCameraRotation.Pitch - CameraValue * FreeCameraDegreesPerInput, -89.0, 89.0);
+		FreeCameraTargetRotation.Pitch = FMath::Clamp(FreeCameraTargetRotation.Pitch - CameraValue * FreeCameraDegreesPerInput, -89.0, 89.0);
 		return;
 	}
 	if (bOrbitHeld && CameraBoom)
@@ -624,7 +626,7 @@ void AAedirPlayerCharacter::HandleLeftGuardPressed()
 	bRightButtonFreedHand = false;
 	if (UsesFistArms(EAedirHand::Left) && !(Combat && Combat->IsTwoHandGrip()))
 	{
-		FistArms->SetHeld(EAedirHand::Left, true);
+		FistArms->SetHeld(EAedirHand::Left, true, static_cast<float>(FRotator::NormalizeAxis(GetControlRotation().Pitch)));
 		bRightButtonFreedHand = true;
 		return;
 	}
@@ -680,7 +682,7 @@ void AAedirPlayerCharacter::HandleRightGuardPressed()
 {
 	if (UsesFistArms(EAedirHand::Right))
 	{
-		FistArms->SetHeld(EAedirHand::Right, true);
+		FistArms->SetHeld(EAedirHand::Right, true, static_cast<float>(FRotator::NormalizeAxis(GetControlRotation().Pitch)));
 		return;
 	}
 	if (Combat)
@@ -1335,6 +1337,7 @@ void AAedirPlayerCharacter::HandleHeadCameraPressed()
 		FreeCameraLocation = View ? View->GetCameraLocation() : GetActorLocation();
 		FreeCameraRotation = View ? View->GetCameraRotation() : GetActorRotation();
 		FreeCameraRotation.Roll = 0.f;
+		FreeCameraTargetRotation = FreeCameraRotation;
 		if (bFirstPerson)
 		{
 			SetFirstPerson(false);
@@ -1380,6 +1383,10 @@ void AAedirPlayerCharacter::UpdatePhotoCamera()
 		Move += FVector(Key(EKeys::W) - Key(EKeys::S), Key(EKeys::D) - Key(EKeys::A), Key(EKeys::E) - Key(EKeys::Q));
 		Move *= Key(EKeys::LeftShift) > 0.f ? FreeCameraFastScale : 1.f;
 	}
+	// The view turns after the mouse over a moment, not at once. Yaw goes the short way round as the target may be far past 180.
+	FRotator Turn = FreeCameraTargetRotation - FreeCameraRotation;
+	Turn.Normalize();
+	FreeCameraRotation += Turn * FMath::Min(FreeCameraTurnFollow * RealSeconds, 1.f);
 	const FRotationMatrix Look(FreeCameraRotation);
 	FreeCameraLocation += (Look.GetUnitAxis(EAxis::X) * Move.X + Look.GetUnitAxis(EAxis::Y) * Move.Y + FVector::UpVector * Move.Z) * FreeCameraSpeedCm * RealSeconds;
 	FollowCamera->SetWorldLocationAndRotation(FreeCameraLocation, FreeCameraRotation);

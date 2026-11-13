@@ -265,3 +265,6 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Fists: the mouse up and down takes the whole guard round an arc about the chest (ArcUpDegrees 55, ArcDownDegrees 50) so its shape holds; a punch lifts its elbow (PunchElbowLift 0.8); elbow lift -10 deg; the view follows 1% of the mouse while a fist is held (CameraShare)
 - Grass: a step only bends a tuft a little (to 80% height, stands again after 2 s) and the foliage lean away from the legs is cut to 30%
 - Z camera: free flying camera (mouse to look, WASD, E up, Q down, Shift faster, wheel for speed); time stops only playing alone
+- Fists: waist turns with the fists across (WaistTurnDegrees 30); first button starts the fists up or down where the view looks; drawn to the side a raised fist comes down across and a lowered one up (ArcSideReverse 0.25); wrist turns back out at the side (WristTurnOutDegrees 45); dead zone 15%
+- Z free camera turns after the mouse smoothly
+- Grass: pressed and leaned around the middle of each sole (ankle to ball), over half the area as before

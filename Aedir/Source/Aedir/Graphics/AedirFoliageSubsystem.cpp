@@ -35,9 +35,16 @@ namespace
 	constexpr float FoliageBareCheckBelowCm = 30.f;
 	constexpr float FoliageFlowerShare = 0.12f;
 	constexpr float FoliageCrushSeconds = 0.1f;
+	// The middle of a foot's sole: halfway from the ankle to the ball of the foot, where the weight of a step falls.
+	FVector SoleMiddle(const USkeletalMeshComponent& Mesh, const TCHAR* Side)
+	{
+		const FVector Ankle = Mesh.GetBoneLocation(FName(*FString::Printf(TEXT("foot_%s"), Side)));
+		const FName Ball(*FString::Printf(TEXT("ball_%s"), Side));
+		return Mesh.GetBoneIndex(Ball) != INDEX_NONE ? (Ankle + Mesh.GetBoneLocation(Ball)) * 0.5 : Ankle;
+	}
 	// Only what is under a foot that is down on the ground is pressed, a little more for every moment the foot stands on
 	// it, and it bends down over a moment rather than at once.
-	constexpr float FoliageCrushRadiusCm = 16.f;
+	constexpr float FoliageCrushRadiusCm = 8.f;
 	constexpr float FoliageCrushFootHeightCm = 14.f;
 	constexpr float FoliagePressPerStep = 0.35f;
 	constexpr float FoliageBendPerSecond = 2.5f;
@@ -46,7 +53,7 @@ namespace
 	constexpr float FoliageHoldSeconds = 2.f;
 	constexpr float FoliageRisePerSecond = 0.4f;
 	constexpr int32 FoliageMaxBend = 3;
-	constexpr float FoliageBendDistance = 20.f;
+	constexpr float FoliageBendDistance = 10.f;
 	// Share of the foliage pack's own lean away from a leg that is kept: its own pushes the grass down out of sight.
 	constexpr float FoliageBendStrengthShare = 0.3f;
 	constexpr float FoliageWindFollow = 0.4f;
@@ -522,9 +529,9 @@ void UAedirFoliageSubsystem::UpdateBending()
 		const USkeletalMeshComponent* Mesh = Body->GetMesh();
 		if (Index == 0 && Mesh && Mesh->GetBoneIndex(TEXT("foot_l")) != INDEX_NONE && Mesh->GetBoneIndex(TEXT("foot_r")) != INDEX_NONE)
 		{
-			for (const TCHAR* Bone : { TEXT("foot_l"), TEXT("foot_r") })
+			for (const TCHAR* Side : { TEXT("l"), TEXT("r") })
 			{
-				const FVector Foot = Mesh->GetBoneLocation(FName(Bone));
+				const FVector Foot = SoleMiddle(*Mesh, Side);
 				Places.Add(FVector(Foot.X, Foot.Y, Feet.Z));
 			}
 			continue;
@@ -581,9 +588,9 @@ void UAedirFoliageSubsystem::CrushUnderFeet()
 		{
 			continue;
 		}
-		for (const TCHAR* Bone : { TEXT("foot_l"), TEXT("foot_r") })
+		for (const TCHAR* Side : { TEXT("l"), TEXT("r") })
 		{
-			const FVector Foot = Body->GetBoneLocation(FName(Bone));
+			const FVector Foot = SoleMiddle(*Body, Side);
 			const FVector Feet = It->GetActorLocation() - FVector(0.f, 0.f, It->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
 			if (Foot.Z > Feet.Z + FoliageCrushFootHeightCm)
 			{

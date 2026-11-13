@@ -24,7 +24,7 @@ public:
 
 	// Share of the mouse's travel either side of the middle that leaves the guard where it is.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float CenterDeadZone = 0.1f;
+	float CenterDeadZone = 0.15f;
 
 	// Between these shares of the mouse's travel across, the elbow of the arm drawn back to its own side rises from down by
 	// the ribs to out behind the fist.
@@ -97,6 +97,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float ArcDownDegrees = 50.f;
 
+	// Drawn round to the side the fist leaves the height of the middle behind and goes the other way: from a guard raised it
+	// comes down across, from one lowered up. At the side it is this share of the middle's angle the other way.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float ArcSideReverse = 0.25f;
+
+	// The waist turns with the fists across: this many degrees with the mouse all the way to one side.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float WaistTurnDegrees = 30.f;
+
+	// Drawn round to its side, the fist's wrist turns back out this many degrees against the forearm's roll.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float WristTurnOutDegrees = 45.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistBackDegrees = 8.f;
 
@@ -108,7 +121,8 @@ public:
 	float RaiseSeconds = 0.15f;
 
 	// The button for an arm went down or up. An arm with something in its hand is left to the rest of the game.
-	void SetHeld(EAedirHand Hand, bool bHeld);
+	// The first button down starts the fists where the view looks: up or down by its pitch (degrees, up positive).
+	void SetHeld(EAedirHand Hand, bool bHeld, float ViewPitchDegrees = 0.f);
 	bool IsHeld(EAedirHand Hand) const { return bHeld[Index(Hand)]; }
 	bool IsSteering() const { return bHeld[0] || bHeld[1]; }
 
@@ -120,6 +134,10 @@ public:
 
 	// Torso pitch the guard asks for, FRotator convention (forward negative).
 	float GetWaistPitch() const { return WaistPitch; }
+	// Torso turn the fists ask for, FRotator convention.
+	float GetWaistYaw() const { return WaistYaw; }
+	// How far the wrist of an arm turns about its forearm, degrees.
+	float GetWristTurn(EAedirHand Hand) const { return WristTurn[Index(Hand)]; }
 
 	// For tests and measuring: where the mouse stands across and up (-1..1) and how far out the punch is (0..1).
 	FVector2D GetAim() const { return Aim; }
@@ -144,6 +162,8 @@ private:
 	// The arm the punch belongs to: the one that was drawn back on the side the mouse last came in from.
 	int32 PunchSlot = 1;
 	float WaistPitch = 0.f;
+	float WaistYaw = 0.f;
+	float WristTurn[2] = { 0.f, 0.f };
 	float PeakPunch = 0.f;
 	FVector2D PeakAim = FVector2D::ZeroVector;
 	bool bDevFrozen = false;
