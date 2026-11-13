@@ -46,7 +46,9 @@ private:
 	{
 		TWeakObjectPtr<UInstancedStaticMeshComponent> Mesh;
 		int32 Instance = 0;
-		float StandingZ = 1.f;
+		// How it stood, and the axis it tips over about, away from the foot that stepped by it.
+		FQuat StandingRotation = FQuat::Identity;
+		FVector TipAxis = FVector::ForwardVector;
 		float Share = 0.f;
 		// How far the steps on it have pressed it down; it bends there over a moment.
 		float Pressed = 0.f;

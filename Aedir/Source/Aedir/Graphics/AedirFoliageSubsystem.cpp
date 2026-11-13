@@ -49,13 +49,14 @@ namespace
 	constexpr float FoliagePressPerStep = 0.35f;
 	constexpr float FoliageBendPerSecond = 2.5f;
 	// Stepped on, a tuft only bends a little and soon stands again: enough to feel it was touched, never gone.
-	constexpr float FoliageFlatZ = 0.8f;
+	// The most a stepped-on tuft leans over, away from the foot, in degrees; it keeps its height and shape.
+	constexpr float FoliageTipDegrees = 22.f;
 	constexpr float FoliageHoldSeconds = 2.f;
 	constexpr float FoliageRisePerSecond = 0.4f;
 	constexpr int32 FoliageMaxBend = 3;
 	constexpr float FoliageBendDistance = 10.f;
 	// Share of the foliage pack's own lean away from a leg that is kept: its own pushes the grass down out of sight.
-	constexpr float FoliageBendStrengthShare = 0.3f;
+	constexpr float FoliageBendStrengthShare = 0.15f;
 	constexpr float FoliageWindFollow = 0.4f;
 	const TCHAR* const FoliageNaniteGrassRoot = TEXT("/Game/OWD_Nanite_Base_Grass/Meshes/");
 	const TCHAR* const FoliageScannedGrassRoot = TEXT("/Game/Aedir/Megascans/Grass/");
@@ -608,7 +609,10 @@ void UAedirFoliageSubsystem::CrushUnderFeet()
 						FCrushed& Entry = Crushed.AddDefaulted_GetRef();
 						Entry.Mesh = Patch;
 						Entry.Instance = Instance;
-						Entry.StandingZ = static_cast<float>(Now.GetScale3D().Z);
+						Entry.StandingRotation = Now.GetRotation();
+						FVector Away = Now.GetLocation() - FVector(Foot.X, Foot.Y, Now.GetLocation().Z);
+						Away = Away.IsNearlyZero(0.5) ? It->GetActorForwardVector() : Away.GetSafeNormal2D();
+						Entry.TipAxis = FVector::CrossProduct(FVector::UpVector, Away).GetSafeNormal();
 						Entry.Pressed = FoliagePressPerStep;
 						Entry.HoldSeconds = FoliageHoldSeconds;
 						CrushedKeys.Add(Key);
@@ -630,9 +634,7 @@ void UAedirFoliageSubsystem::SetInstanceFlatness(FCrushed& Entry)
 	{
 		FTransform Now;
 		Patch->GetInstanceTransform(Entry.Instance, Now, true);
-		FVector Scale = Now.GetScale3D();
-		Scale.Z = Entry.StandingZ * FMath::Lerp(1.f, FoliageFlatZ, Entry.Share);
-		Now.SetScale3D(Scale);
+		Now.SetRotation(FQuat(Entry.TipAxis, FMath::DegreesToRadians(FoliageTipDegrees * Entry.Share)) * Entry.StandingRotation);
 		Patch->UpdateInstanceTransform(Entry.Instance, Now, true, true, true);
 	}
 }

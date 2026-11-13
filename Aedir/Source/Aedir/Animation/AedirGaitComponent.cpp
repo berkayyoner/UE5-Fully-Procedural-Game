@@ -619,7 +619,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		0.f);
 	// The chest turns with a swing, a punch or a reach, and the neck and head turn back against it: the eyes stay on the
 	// enemy ahead, not on the weapon.
-	const float ChestTurn = SmoothedSwingTwist * (1.f + AedirSwingPelvisShare) + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f);
+	const UAedirFistArms* WaistFists = CreatureOwner ? CreatureOwner->FindComponentByClass<UAedirFistArms>() : nullptr;
+	const float ChestTurn = SmoothedSwingTwist * (1.f + AedirSwingPelvisShare) + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f) + (WaistFists ? WaistFists->GetWaistYaw() : 0.f);
 	const FRotator HeadKept(HeadTarget.Pitch, HeadTarget.Yaw - ChestTurn * AedirHeadKeepsAheadShare, HeadTarget.Roll);
 	const FRotator NeckKept(NeckTarget.Pitch, NeckTarget.Yaw - ChestTurn * (1.f - AedirHeadKeepsAheadShare), NeckTarget.Roll);
 	GaitState.HeadLookRotation = FMath::RInterpTo(GaitState.HeadLookRotation, HeadKept, DeltaTime, LookInterpSpeed);
@@ -717,6 +718,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		Fists->GetArm(EAedirHand::Right, GaitState.FistArmHandWorld[1], GaitState.FistArmElbowWorld[1], GaitState.FistArmAlpha[1]);
 		GaitState.FistArmWristTurn[0] = Fists->GetWristTurn(EAedirHand::Left);
 		GaitState.FistArmWristTurn[1] = Fists->GetWristTurn(EAedirHand::Right);
+		GaitState.FistArmKnuckleDirection[0] = Fists->GetKnuckleDirection(EAedirHand::Left);
+		GaitState.FistArmKnuckleDirection[1] = Fists->GetKnuckleDirection(EAedirHand::Right);
 		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmAlpha[0]);
 		GaitState.FistAlphaRight = FMath::Max(GaitState.FistAlphaRight, GaitState.FistArmAlpha[1]);
 	}

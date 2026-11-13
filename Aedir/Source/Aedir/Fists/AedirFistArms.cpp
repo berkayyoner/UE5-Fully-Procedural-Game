@@ -134,6 +134,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			const double B = FVector::DotProduct(V, Up);
 			return V - Out * A - Up * B + Out * (A * CosP - B * SinP) + Up * (A * SinP + B * CosP);
 		};
+		// The knuckles lead out from the chest the way the arc goes there: up for a blow upwards, down for one downwards,
+		// out to the side drawn round, never curled in.
+		KnuckleDirection[Slot] = Tip(Out).GetSafeNormal();
 		FistWorld[Slot] = Chest + Tip(Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * GuardHeightCm);
 		const FVector GuardPole = -Forward * 0.25f + Right * (Side * FMath::Sin(HalfSpread)) - Up * FMath::Cos(HalfSpread);
 		const float LiftAngle = FMath::DegreesToRadians(ElbowLiftDegrees);

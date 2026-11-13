@@ -138,6 +138,8 @@ public:
 	float GetWaistYaw() const { return WaistYaw; }
 	// How far the wrist of an arm turns about its forearm, degrees.
 	float GetWristTurn(EAedirHand Hand) const { return WristTurn[Index(Hand)]; }
+	// Where the knuckles of an arm's fist point in the world: out from the chest the way the blow would go.
+	FVector GetKnuckleDirection(EAedirHand Hand) const { return KnuckleDirection[Index(Hand)]; }
 
 	// For tests and measuring: where the mouse stands across and up (-1..1) and how far out the punch is (0..1).
 	FVector2D GetAim() const { return Aim; }
@@ -164,6 +166,7 @@ private:
 	float WaistPitch = 0.f;
 	float WaistYaw = 0.f;
 	float WristTurn[2] = { 0.f, 0.f };
+	FVector KnuckleDirection[2] = { FVector::ForwardVector, FVector::ForwardVector };
 	float PeakPunch = 0.f;
 	FVector2D PeakAim = FVector2D::ZeroVector;
 	bool bDevFrozen = false;

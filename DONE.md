@@ -268,3 +268,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Fists: waist turns with the fists across (WaistTurnDegrees 30); first button starts the fists up or down where the view looks; drawn to the side a raised fist comes down across and a lowered one up (ArcSideReverse 0.25); wrist turns back out at the side (WristTurnOutDegrees 45); dead zone 15%
 - Z free camera turns after the mouse smoothly
 - Grass: pressed and leaned around the middle of each sole (ankle to ball), over half the area as before
+- Fists: the wrist leads the knuckles out from the chest the way the blow goes (up for upward blows, down for downward, out at the side), at most 60 deg; the neck and head turn back against the fists' waist turn so the eyes stay ahead
+- Grass: a stepped-on tuft leans over away from the foot (at most 22 deg) instead of being squashed, and the foliage lean from the legs is cut to 15%
