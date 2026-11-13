@@ -764,10 +764,19 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 	const FVector Forearm = (SolvedWrist - SolvedElbow).GetSafeNormal();
 	if (Middle.IsValid() && First.IsValid() && Little.IsValid() && !Forearm.IsNearlyZero())
 	{
-		// The knuckles' places under the hand, from the local pose: asking for them in the component would keep those old
-		// places once the hand turns, and pull the skin out.
-		const FVector BackOfHand = CSPose.GetPose()[Middle].GetTranslation();
-		const FVector KnuckleRow = CSPose.GetPose()[First].GetTranslation() - CSPose.GetPose()[Little].GetTranslation();
+		// The knuckles' places in the hand's own frame, put together from the local pose up through the bones of the palm:
+		// asking for them in the component would keep those old places once the hand turns, and pull the skin out.
+		const auto InHand = [&CSPose, &Hand](FCompactPoseBoneIndex Bone)
+		{
+			FTransform Place = CSPose.GetPose()[Bone];
+			for (FCompactPoseBoneIndex Parent = CSPose.GetPose().GetParentBoneIndex(Bone); Parent.IsValid() && Parent != Hand; Parent = CSPose.GetPose().GetParentBoneIndex(Parent))
+			{
+				Place = Place * CSPose.GetPose()[Parent];
+			}
+			return Place.GetLocation();
+		};
+		const FVector BackOfHand = InHand(Middle);
+		const FVector KnuckleRow = InHand(First) - InHand(Little);
 		FVector RowWanted = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector - FVector::ForwardVector), Forearm);
 		if (RowWanted.IsNearlyZero(0.01))
 		{
