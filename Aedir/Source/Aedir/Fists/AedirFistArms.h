@@ -106,10 +106,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistTurnDegrees = 30.f;
 
-	// Drawn round to its side, the fist's wrist turns back out this many degrees against the forearm's roll.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float WristTurnOutDegrees = 45.f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistBackDegrees = 8.f;
 
@@ -136,10 +132,6 @@ public:
 	float GetWaistPitch() const { return WaistPitch; }
 	// Torso turn the fists ask for, FRotator convention.
 	float GetWaistYaw() const { return WaistYaw; }
-	// How far the wrist of an arm turns about its forearm, degrees.
-	float GetWristTurn(EAedirHand Hand) const { return WristTurn[Index(Hand)]; }
-	// Where the knuckles of an arm's fist point in the world: out from the chest the way the blow would go.
-	FVector GetKnuckleDirection(EAedirHand Hand) const { return KnuckleDirection[Index(Hand)]; }
 
 	// For tests and measuring: where the mouse stands across and up (-1..1) and how far out the punch is (0..1).
 	FVector2D GetAim() const { return Aim; }
@@ -165,8 +157,6 @@ private:
 	int32 PunchSlot = 1;
 	float WaistPitch = 0.f;
 	float WaistYaw = 0.f;
-	float WristTurn[2] = { 0.f, 0.f };
-	FVector KnuckleDirection[2] = { FVector::ForwardVector, FVector::ForwardVector };
 	float PeakPunch = 0.f;
 	FVector2D PeakAim = FVector2D::ZeroVector;
 	bool bDevFrozen = false;

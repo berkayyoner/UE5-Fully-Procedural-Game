@@ -134,9 +134,6 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			const double B = FVector::DotProduct(V, Up);
 			return V - Out * A - Up * B + Out * (A * CosP - B * SinP) + Up * (A * SinP + B * CosP);
 		};
-		// The knuckles lead out from the chest the way the arc goes there: up for a blow upwards, down for one downwards,
-		// out to the side drawn round, never curled in.
-		KnuckleDirection[Slot] = Tip(Out).GetSafeNormal();
 		FistWorld[Slot] = Chest + Tip(Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * GuardHeightCm);
 		const FVector GuardPole = -Forward * 0.25f + Right * (Side * FMath::Sin(HalfSpread)) - Up * FMath::Cos(HalfSpread);
 		const float LiftAngle = FMath::DegreesToRadians(ElbowLiftDegrees);
@@ -146,8 +143,6 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float OwnLift = FMath::Max(AimSide == Side ? Lift : 0.f, ArmPunch * PunchElbowLift);
 		const FVector Pole = Tip(FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal());
 		const FVector Shoulder = Slot == 1 ? ShoulderR : ShoulderL;
-		// Out at its own side the wrist turns back out against the forearm's roll.
-		WristTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * WristTurnOutDegrees * Side;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 	}
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * WaistForwardDegrees) * Raised;

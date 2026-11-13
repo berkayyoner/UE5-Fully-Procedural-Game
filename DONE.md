@@ -270,3 +270,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Grass: pressed and leaned around the middle of each sole (ankle to ball), over half the area as before
 - Fists: the wrist leads the knuckles out from the chest the way the blow goes (up for upward blows, down for downward, out at the side), at most 60 deg; the neck and head turn back against the fists' waist turn so the eyes stay ahead
 - Grass: a stepped-on tuft leans over away from the foot (at most 22 deg) instead of being squashed, and the foliage lean from the legs is cut to 15%
+- Fists: wrists kept straight (back of the hand along the forearm, palm facing in, thumb side towards the face in the guard and on top in a straight blow) in place of the knuckle aim and the extra wrist roll

@@ -716,10 +716,6 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	{
 		Fists->GetArm(EAedirHand::Left, GaitState.FistArmHandWorld[0], GaitState.FistArmElbowWorld[0], GaitState.FistArmAlpha[0]);
 		Fists->GetArm(EAedirHand::Right, GaitState.FistArmHandWorld[1], GaitState.FistArmElbowWorld[1], GaitState.FistArmAlpha[1]);
-		GaitState.FistArmWristTurn[0] = Fists->GetWristTurn(EAedirHand::Left);
-		GaitState.FistArmWristTurn[1] = Fists->GetWristTurn(EAedirHand::Right);
-		GaitState.FistArmKnuckleDirection[0] = Fists->GetKnuckleDirection(EAedirHand::Left);
-		GaitState.FistArmKnuckleDirection[1] = Fists->GetKnuckleDirection(EAedirHand::Right);
 		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmAlpha[0]);
 		GaitState.FistAlphaRight = FMath::Max(GaitState.FistAlphaRight, GaitState.FistArmAlpha[1]);
 	}

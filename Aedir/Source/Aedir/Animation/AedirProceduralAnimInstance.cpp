@@ -27,8 +27,6 @@ namespace
 	constexpr float AedirHeelLiftStartShare = 0.2f;
 	constexpr float AedirHeelLiftRangeShare = 0.2f;
 	constexpr float AedirHeelRaiseCm = 7.f;
-	// A bare fist's wrist bends at most this far to lead its knuckles the way the blow goes.
-	constexpr float AedirFistWristMaxBendDegrees = 60.f;
 	constexpr float AedirFootLooseGain = 3.f;
 	constexpr float AedirWristFollowShare = 0.25f;
 	// At a full run (the run spread at its most, 0.6) the free hand is turned about 20 degrees in.
@@ -267,8 +265,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyGripHand(CSPose, RefCSPose, Bones, bGripLeft ? LeftOutwardMesh : RightOutwardMesh, DownMesh, ArmForwardMesh);
 
 	// The rebuilt fists have the last word on the arms they hold up.
-	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.FistArmHandWorld[0], GaitData.FistArmElbowWorld[0], GaitData.FistArmAlpha[0], GaitData.FistArmWristTurn[0], GaitData.FistArmKnuckleDirection[0]);
-	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1], GaitData.FistArmWristTurn[1], GaitData.FistArmKnuckleDirection[1]);
+	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.FistArmHandWorld[0], GaitData.FistArmElbowWorld[0], GaitData.FistArmAlpha[0]);
+	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1]);
 
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"));
@@ -729,7 +727,7 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
 }
 
-void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha, float WristTurnDegrees, const FVector& KnuckleWorld) const
+void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha) const
 {
 	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
 	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
@@ -756,23 +754,28 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 	SolvedRadius.SetRotation(RadiusDelta * HumerusDelta * RadiusTransform.GetRotation());
 	FTransform SolvedHand = HandTransform;
 	SolvedHand.SetTranslation(SolvedWrist);
-	// The hand keeps its set to the forearm, turned about the forearm as the fists ask.
-	const FQuat WristTurn((SolvedWrist - SolvedElbow).GetSafeNormal(), FMath::DegreesToRadians(WristTurnDegrees));
-	SolvedHand.SetRotation(WristTurn * RadiusDelta * HumerusDelta * HandTransform.GetRotation());
-	// Then the wrist bends the knuckles round to lead the way the blow goes, as far as a wrist bends.
-	const FString HandText = HandName.ToString();
-	const FCompactPoseBoneIndex Middle = ResolveCompactBone(Bones, FName(*(TEXT("middle_01") + HandText.Right(2))));
-	const FVector KnuckleWanted = MeshToWorld.InverseTransformVectorNoScale(KnuckleWorld).GetSafeNormal();
-	if (Middle.IsValid() && !KnuckleWanted.IsNearlyZero())
+	SolvedHand.SetRotation(RadiusDelta * HumerusDelta * HandTransform.GetRotation());
+	// A fist keeps its wrist straight: the back of the hand runs on along the forearm, and the hand is turned about it so
+	// the palm faces in, the row of knuckles from the little finger to the first leaning up and back (thumb side towards the face in the guard, on top in a straight blow).
+	const FString Suffix = HandName.ToString().Right(2);
+	const FCompactPoseBoneIndex Middle = ResolveCompactBone(Bones, FName(*(TEXT("middle_01") + Suffix)));
+	const FCompactPoseBoneIndex First = ResolveCompactBone(Bones, FName(*(TEXT("index_01") + Suffix)));
+	const FCompactPoseBoneIndex Little = ResolveCompactBone(Bones, FName(*(TEXT("pinky_01") + Suffix)));
+	const FVector Forearm = (SolvedWrist - SolvedElbow).GetSafeNormal();
+	if (Middle.IsValid() && First.IsValid() && Little.IsValid() && !Forearm.IsNearlyZero())
 	{
-		// From the knuckle's own place under the hand: asking for its pose in the component would keep that old place for it
-		// once the hand turns, and pull the skin out.
-		const FVector HandToMiddle = CSPose.GetPose()[Middle].GetTranslation();
-		const FVector KnuckleNow = SolvedHand.GetRotation().RotateVector(HandToMiddle).GetSafeNormal();
-		const float BendDegrees = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(KnuckleNow, KnuckleWanted)), -1.f, 1.f)));
-		const float BendShare = BendDegrees > AedirFistWristMaxBendDegrees ? AedirFistWristMaxBendDegrees / BendDegrees : 1.f;
-		const FQuat Bend = FQuat::Slerp(FQuat::Identity, SafeDeltaRotation(KnuckleNow, KnuckleWanted), BendShare);
-		SolvedHand.SetRotation(Bend * SolvedHand.GetRotation());
+		// The knuckles' places under the hand, from the local pose: asking for them in the component would keep those old
+		// places once the hand turns, and pull the skin out.
+		const FVector BackOfHand = CSPose.GetPose()[Middle].GetTranslation();
+		const FVector KnuckleRow = CSPose.GetPose()[First].GetTranslation() - CSPose.GetPose()[Little].GetTranslation();
+		FVector RowWanted = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector - FVector::ForwardVector), Forearm);
+		if (RowWanted.IsNearlyZero(0.01))
+		{
+			RowWanted = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector), Forearm);
+		}
+		const FQuat HandFrame = FRotationMatrix::MakeFromXY(BackOfHand, KnuckleRow).ToQuat();
+		const FQuat WantedFrame = FRotationMatrix::MakeFromXY(Forearm, RowWanted.GetSafeNormal()).ToQuat();
+		SolvedHand.SetRotation(WantedFrame * HandFrame.Inverse());
 	}
 	const float Share = FMath::Clamp(Alpha, 0.f, 1.f);
 	CSPose.SetComponentSpaceTransform(Humerus, BlendBoneTransform(HumerusTransform, SolvedHumerus, Share));
