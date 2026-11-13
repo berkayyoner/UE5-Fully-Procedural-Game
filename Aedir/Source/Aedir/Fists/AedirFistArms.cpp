@@ -110,7 +110,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		Raised = FMath::Max(Raised, Alpha[Slot]);
 		FistWorld[Slot] = Chest + Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * Height;
 		const FVector GuardPole = -Forward * 0.25f + Right * (Side * FMath::Sin(HalfSpread)) - Up * FMath::Cos(HalfSpread);
-		const FVector LiftPole = -Forward * 0.3f + Right * (Side * 0.45f) + Up * 0.85f;
+		const float LiftAngle = FMath::DegreesToRadians(ElbowLiftDegrees);
+		// Lifted, the elbow goes back and out behind the fist, only a little over level.
+		const FVector LiftPole = (-Forward + Right * Side).GetSafeNormal() * FMath::Cos(LiftAngle) + Up * FMath::Sin(LiftAngle);
 		// Only the arm drawn back to its own side lifts its elbow; the one brought across keeps it down.
 		const float OwnLift = FMath::Sign(static_cast<float>(Aim.X)) == Side ? Lift : 0.f;
 		const FVector Pole = FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal();

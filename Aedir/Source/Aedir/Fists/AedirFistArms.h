@@ -32,7 +32,11 @@ public:
 	float ElbowLiftFrom = 0.05f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float ElbowLiftTo = 0.25f;
+	float ElbowLiftTo = 0.8f;
+
+	// At the most the elbow is lifted to out at its side, this many degrees over level.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float ElbowLiftDegrees = 20.f;
 
 	// How far the mouse goes from the middle to the end of the arc, and to the top or bottom (mouse axis units, 0.07 a count).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
@@ -57,7 +61,7 @@ public:
 
 	// Out at the side of the arc the fist is this far from the middle of the shoulders.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float SideRadiusCm = 40.f;
+	float SideRadiusCm = 50.f;
 
 	// A punch: how much further out the middle of the arc goes at most, and the mouse speeds in towards the middle (shares of
 	// its travel a second) between which it goes from none of that to all of it.
