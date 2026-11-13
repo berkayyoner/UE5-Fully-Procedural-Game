@@ -587,10 +587,15 @@ private:
 	bool bOrbitMoved = false;
 	float OrbitHeldSeconds = 0.f;
 	bool bHeadCamera = false;
-	// Z: the photo camera, as Half Sword's C: time all but stops, the body holds its pose, and the mouse takes the camera round it
-	// and the wheel in and out, until Z again.
+	// Z: the photo camera, as Half Sword's C: the camera comes off the body and flies free (mouse to look, WASD to move, E up,
+	// Q down, Shift faster, wheel for the speed) until Z again. Playing alone time all but stops; with others it runs on.
 	bool bPhotoCamera = false;
 	float PhotoArmLengthCm = 250.f;
+	bool bPhotoWasFirstPerson = false;
+	FVector FreeCameraLocation = FVector::ZeroVector;
+	FRotator FreeCameraRotation = FRotator::ZeroRotator;
+	float FreeCameraSpeedCm = 300.f;
+	void UpdatePhotoCamera();
 
 	void HandleMenuTogglePressed();
 	void HandleJournalPressed();

@@ -36,7 +36,15 @@ public:
 
 	// At the most the elbow is lifted to out at its side, this many degrees over level (below it when negative).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float ElbowLiftDegrees = -30.f;
+	float ElbowLiftDegrees = -10.f;
+
+	// While a punch is out, its arm's elbow is lifted this share of the way at the least, as if drawn to the side.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float PunchElbowLift = 0.8f;
+
+	// Share of the mouse that still turns the view while a fist's button is down.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float CameraShare = 0.01f;
 
 	// How far the mouse goes from the middle to the end of the arc, and to the top or bottom (mouse axis units, 0.07 a count).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
@@ -81,12 +89,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float PunchBackRate = 3.f;
 
-	// The mouse all the way up or down raises or lowers the guard this far, and bends the waist back or forward this much.
+	// The mouse all the way up or down takes the whole guard round an arc about the chest this many degrees up or down, the
+	// fists keeping their shape and distance, and bends the waist back or forward this much.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float RaiseCm = 30.f;
+	float ArcUpDegrees = 55.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float LowerCm = 30.f;
+	float ArcDownDegrees = 50.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistBackDegrees = 8.f;

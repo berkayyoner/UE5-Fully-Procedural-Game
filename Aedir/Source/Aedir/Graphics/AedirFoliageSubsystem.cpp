@@ -41,11 +41,14 @@ namespace
 	constexpr float FoliageCrushFootHeightCm = 14.f;
 	constexpr float FoliagePressPerStep = 0.35f;
 	constexpr float FoliageBendPerSecond = 2.5f;
-	constexpr float FoliageFlatZ = 0.3f;
-	constexpr float FoliageHoldSeconds = 7.f;
-	constexpr float FoliageRisePerSecond = 0.1f;
+	// Stepped on, a tuft only bends a little and soon stands again: enough to feel it was touched, never gone.
+	constexpr float FoliageFlatZ = 0.8f;
+	constexpr float FoliageHoldSeconds = 2.f;
+	constexpr float FoliageRisePerSecond = 0.4f;
 	constexpr int32 FoliageMaxBend = 3;
-	constexpr float FoliageBendDistance = 28.f;
+	constexpr float FoliageBendDistance = 20.f;
+	// Share of the foliage pack's own lean away from a leg that is kept: its own pushes the grass down out of sight.
+	constexpr float FoliageBendStrengthShare = 0.3f;
 	constexpr float FoliageWindFollow = 0.4f;
 	const TCHAR* const FoliageNaniteGrassRoot = TEXT("/Game/OWD_Nanite_Base_Grass/Meshes/");
 	const TCHAR* const FoliageScannedGrassRoot = TEXT("/Game/Aedir/Megascans/Grass/");
@@ -438,6 +441,13 @@ void UAedirFoliageSubsystem::Tick(float DeltaTime)
 		// Grass leans out of the way close to the legs, not in a wide ring around the body.
 		bBendSet = true;
 		UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Bending_Distance"), FoliageBendDistance);
+		for (const TCHAR* Strength : { TEXT("BendingStrengthAway"), TEXT("BendingStrengthForward") })
+		{
+			if (const FCollectionScalarParameter* Parameter = Collection->GetScalarParameterByName(FName(Strength)))
+			{
+				UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, FName(Strength), Parameter->DefaultValue * FoliageBendStrengthShare);
+			}
+		}
 	}
 	ApplyGrassSettings();
 	UpdateBending();

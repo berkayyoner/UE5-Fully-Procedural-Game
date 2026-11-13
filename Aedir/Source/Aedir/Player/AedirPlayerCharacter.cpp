@@ -1,5 +1,7 @@
 #include "AedirPlayerCharacter.h"
 #include "Aedir.h"
+#include "Camera/PlayerCameraManager.h"
+#include "Misc/App.h"
 #include "Travel/AedirTravelSubsystem.h"
 #include "EngineUtils.h"
 #include "LandscapeProxy.h"
@@ -66,9 +68,12 @@ namespace
 	TAutoConsoleVariable<int32> CVarAedirNewFists(TEXT("aedir.NewFists"), 1, TEXT("Empty hands fight with the rebuilt fists (1) or the older fist code (0)."));
 	// The photo camera: how slow time runs while it is up, and how far the wheel takes it in and out.
 	constexpr float PhotoTimeDilation = 0.0001f;
-	constexpr float PhotoZoomStepCm = 25.f;
-	constexpr float PhotoMinArmCm = 60.f;
-	constexpr float PhotoMaxArmCm = 700.f;
+	// The free camera: degrees it turns for a unit of mouse, how much faster Shift makes it, and the wheel's speed range.
+	constexpr float FreeCameraDegreesPerInput = 2.5f;
+	constexpr float FreeCameraFastScale = 4.f;
+	constexpr float FreeCameraWheelScale = 1.2f;
+	constexpr float FreeCameraMinSpeedCm = 25.f;
+	constexpr float FreeCameraMaxSpeedCm = 3000.f;
 	// A press of the thrust key shorter than this is a tap that leaves the thrust on.
 	constexpr double ThrustTapSeconds = 0.25;
 	constexpr float AedirGuestStoreSeconds = 60.f;
@@ -277,7 +282,8 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		const float BackwardKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::S) ? 1.f : 0.f;
 		const float RightKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::D) ? 1.f : 0.f;
 		const float LeftKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::A) ? 1.f : 0.f;
-		const FVector2D MoveInput = FVector2D(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue) + DevAutoMove;
+		// The keys fly the free camera instead of walking the body while it is up.
+		const FVector2D MoveInput = bPhotoCamera ? FVector2D::ZeroVector : FVector2D(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue) + DevAutoMove;
 		MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
 		// Down on the ground the same keys get the body up: W off the back, S from face down, held all the way up.
 		if (Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()) && FMath::Abs(MoveInput.Y) > 0.5)
@@ -290,6 +296,7 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 	UpdateTutorialObjectives();
 	UpdateHandUseHold(DeltaSeconds);
 	UpdateSwingInput(DeltaSeconds);
+	UpdatePhotoCamera();
 
 	if (bDebugBody)
 	{
@@ -487,6 +494,11 @@ void AAedirPlayerCharacter::HandleMouseX(float Value)
 	const bool bFighting = Combat && Combat->IsInFightStance();
 	const FAedirGameplaySettings& Settings = UAedirSettingsSubsystem::GetValues();
 	const float CameraValue = Value * Settings.MouseSensitivity;
+	if (bPhotoCamera)
+	{
+		FreeCameraRotation.Yaw += CameraValue * FreeCameraDegreesPerInput;
+		return;
+	}
 	if (bOrbitHeld && CameraBoom)
 	{
 		// The camera alone goes round; the body, its view and the arms are left as they are.
@@ -494,10 +506,11 @@ void AAedirPlayerCharacter::HandleMouseX(float Value)
 		bOrbitMoved |= !FMath::IsNearlyZero(Value);
 		return;
 	}
-	// The fists hold the view still while their button is down, as a weapon does.
+	// While a fist's button is down the mouse works the fists; the view only follows a small share of it.
 	if (FistArms && FistArms->IsSteering())
 	{
 		PendingMouseDelta.X += Value * Settings.WeaponSensitivity;
+		AddControllerYawInput(CameraValue * FistArms->CameraShare);
 		return;
 	}
 	// Steering a weapon the view is locked as in Half Sword: the mouse moves the weapon alone, and turns the view only once
@@ -517,6 +530,11 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 	const bool bFighting = Combat && Combat->IsInFightStance();
 	const FAedirGameplaySettings& Settings = UAedirSettingsSubsystem::GetValues();
 	const float CameraValue = (Settings.bInvertMouseY ? Value : -Value) * Settings.MouseSensitivity;
+	if (bPhotoCamera)
+	{
+		FreeCameraRotation.Pitch = FMath::Clamp(FreeCameraRotation.Pitch - CameraValue * FreeCameraDegreesPerInput, -89.0, 89.0);
+		return;
+	}
 	if (bOrbitHeld && CameraBoom)
 	{
 		OrbitOffset.Pitch = FMath::Clamp(OrbitOffset.Pitch - CameraValue * PlayerOrbitDegreesPerInput, -70.0, 70.0);
@@ -526,6 +544,7 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 	if (FistArms && FistArms->IsSteering())
 	{
 		PendingMouseDelta.Y += Value * Settings.WeaponSensitivity;
+		AddControllerPitchInput(CameraValue * FistArms->CameraShare);
 		return;
 	}
 	AddControllerPitchInput(Combat && Combat->IsSteeringWeapon() ? 0.f : (bFighting ? CameraValue * FightCameraMouseScale : CameraValue));
@@ -539,10 +558,9 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 
 void AAedirPlayerCharacter::HandleMouseWheel(float Value)
 {
-	if (bPhotoCamera && CameraBoom)
+	if (bPhotoCamera)
 	{
-		PhotoArmLengthCm = FMath::Clamp(PhotoArmLengthCm - Value * PhotoZoomStepCm, PhotoMinArmCm, PhotoMaxArmCm);
-		CameraBoom->TargetArmLength = PhotoArmLengthCm;
+		FreeCameraSpeedCm = FMath::Clamp(FreeCameraSpeedCm * FMath::Pow(FreeCameraWheelScale, Value), FreeCameraMinSpeedCm, FreeCameraMaxSpeedCm);
 		return;
 	}
 	if (!Combat || Value == 0.f)
@@ -807,6 +825,11 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 
 void AAedirPlayerCharacter::HandleLeftHandPressed()
 {
+	// Q and E take the free camera down and up while it is out.
+	if (bPhotoCamera)
+	{
+		return;
+	}
 	HandleHandPressed(EAedirHand::Left);
 }
 
@@ -817,6 +840,11 @@ void AAedirPlayerCharacter::HandleLeftHandReleased()
 
 void AAedirPlayerCharacter::HandleRightHandPressed()
 {
+	// Q and E take the free camera down and up while it is out.
+	if (bPhotoCamera)
+	{
+		return;
+	}
 	HandleHandPressed(EAedirHand::Right);
 }
 
@@ -1292,21 +1320,69 @@ void AAedirPlayerCharacter::HandleViewToggleReleased()
 
 void AAedirPlayerCharacter::HandleHeadCameraPressed()
 {
-	// The photo camera, as Half Sword's C: time all but stops and the mouse takes the view round the body.
+	// The photo camera, as Half Sword's C: the camera leaves the body and flies free from where the view was.
 	bPhotoCamera = !bPhotoCamera;
-	UGameplayStatics::SetGlobalTimeDilation(this, bPhotoCamera ? PhotoTimeDilation : 1.f);
-	bOrbitHeld = bPhotoCamera;
-	bOrbitMoved = bPhotoCamera;
-	if (CameraBoom)
+	// Only playing alone may time stop; with others in the world it would stop it for them too.
+	if (GetNetMode() == NM_Standalone)
 	{
-		CameraBoom->bEnableCameraLag = !bPhotoCamera;
-		PhotoArmLengthCm = CameraBoom->TargetArmLength;
+		UGameplayStatics::SetGlobalTimeDilation(this, bPhotoCamera ? PhotoTimeDilation : 1.f);
 	}
-	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	if (bPhotoCamera)
+	{
+		bPhotoWasFirstPerson = bFirstPerson;
+		const APlayerCameraManager* View = PlayerController ? PlayerController->PlayerCameraManager.Get() : nullptr;
+		FreeCameraLocation = View ? View->GetCameraLocation() : GetActorLocation();
+		FreeCameraRotation = View ? View->GetCameraRotation() : GetActorRotation();
+		FreeCameraRotation.Roll = 0.f;
+		if (bFirstPerson)
+		{
+			SetFirstPerson(false);
+		}
+	}
+	if (FollowCamera)
+	{
+		FollowCamera->SetUsingAbsoluteLocation(bPhotoCamera);
+		FollowCamera->SetUsingAbsoluteRotation(bPhotoCamera);
+		if (bPhotoCamera)
+		{
+			FollowCamera->SetWorldLocationAndRotation(FreeCameraLocation, FreeCameraRotation);
+		}
+		else
+		{
+			FollowCamera->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator);
+		}
+	}
+	if (!bPhotoCamera && bPhotoWasFirstPerson)
+	{
+		SetFirstPerson(true);
+	}
 	if (UAedirTravelSubsystem* Travel = PlayerController && PlayerController->GetLocalPlayer() ? PlayerController->GetLocalPlayer()->GetSubsystem<UAedirTravelSubsystem>() : nullptr)
 	{
-		Travel->ShowNotification(bPhotoCamera ? NSLOCTEXT("Aedir", "PhotoCameraOn", "Photo camera: mouse to turn, wheel to zoom, Z to go back") : NSLOCTEXT("Aedir", "PhotoCameraOff", "Photo camera off"), 2.f);
+		Travel->ShowNotification(bPhotoCamera ? NSLOCTEXT("Aedir", "PhotoCameraOn", "Free camera: mouse to look, WASD to move, E up, Q down, Shift faster, wheel for speed, Z to go back") : NSLOCTEXT("Aedir", "PhotoCameraOff", "Free camera off"), 2.f);
 	}
+}
+
+void AAedirPlayerCharacter::UpdatePhotoCamera()
+{
+	if (!bPhotoCamera || !FollowCamera)
+	{
+		return;
+	}
+	// Time may all but stand still, so the camera moves by the real time of the frame.
+	const float RealSeconds = static_cast<float>(FApp::GetDeltaTime());
+	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
+	// The dev AutoMove flies it the same way, for tests.
+	FVector Move(DevAutoMove.Y, DevAutoMove.X, 0.0);
+	if (PlayerController && !IsMenuOpen())
+	{
+		const auto Key = [PlayerController](const FKey& Each) { return PlayerController->IsInputKeyDown(Each) ? 1.f : 0.f; };
+		Move += FVector(Key(EKeys::W) - Key(EKeys::S), Key(EKeys::D) - Key(EKeys::A), Key(EKeys::E) - Key(EKeys::Q));
+		Move *= Key(EKeys::LeftShift) > 0.f ? FreeCameraFastScale : 1.f;
+	}
+	const FRotationMatrix Look(FreeCameraRotation);
+	FreeCameraLocation += (Look.GetUnitAxis(EAxis::X) * Move.X + Look.GetUnitAxis(EAxis::Y) * Move.Y + FVector::UpVector * Move.Z) * FreeCameraSpeedCm * RealSeconds;
+	FollowCamera->SetWorldLocationAndRotation(FreeCameraLocation, FreeCameraRotation);
 }
 
 void AAedirPlayerCharacter::HandleMenuTogglePressed()

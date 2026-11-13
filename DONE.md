@@ -262,3 +262,6 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - FistButton, FistInfo and FistPose dev commands for testing the fists.
 - Fists: the elbow lifts over 5%-80% of the mouse's travel, and lifted it goes back and out behind the fist only a little over level (ElbowLiftDegrees 20) instead of up over the shoulder; out at the side the fist is further from the body (SideRadiusCm 50).
 - Fists: dead zone 10%, elbow lift 10-90% and down below level (-30 deg), side fist 38 cm, guard raises 30 cm; with both arms up only the drawn arm goes round the arc and only the arm that came in punches, the other keeps its guard
+- Fists: the mouse up and down takes the whole guard round an arc about the chest (ArcUpDegrees 55, ArcDownDegrees 50) so its shape holds; a punch lifts its elbow (PunchElbowLift 0.8); elbow lift -10 deg; the view follows 1% of the mouse while a fist is held (CameraShare)
+- Grass: a step only bends a tuft a little (to 80% height, stands again after 2 s) and the foliage lean away from the legs is cut to 30%
+- Z camera: free flying camera (mouse to look, WASD, E up, Q down, Shift faster, wheel for speed); time stops only playing alone

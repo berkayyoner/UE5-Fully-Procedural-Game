@@ -95,7 +95,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	const FVector ShoulderR = Mesh ? Mesh->GetBoneLocation(TEXT("upperarm_r")) : Owner->GetActorLocation() + Right * 18.f + Up * 45.f;
 	const FVector Chest = (ShoulderL + ShoulderR) * 0.5;
 
-	const float Height = GuardHeightCm + (UpDown > 0.f ? UpDown * RaiseCm : UpDown * LowerCm);
+	// Up and down the guard turns round the chest as a whole, so its shape holds.
+	const float Phi = FMath::DegreesToRadians(UpDown > 0.f ? UpDown * ArcUpDegrees : UpDown * ArcDownDegrees);
+	const float SinP = FMath::Sin(Phi);
+	const float CosP = FMath::Cos(Phi);
 
 	// The elbow goes from down by the ribs, the two a little apart, to up behind the fist as the arm is drawn round.
 	const float Lift = FMath::SmoothStep(ElbowLiftFrom, ElbowLiftTo, AcrossAbs);
@@ -119,14 +122,21 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float Radius = FMath::Lerp(GuardForwardCm, SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT;
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
-		FistWorld[Slot] = Chest + Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * Height;
+		// Tips a direction of the level guard up round the chest, about the axis across this arm's way out.
+		const auto Tip = [&](const FVector& V)
+		{
+			const double A = FVector::DotProduct(V, Out);
+			const double B = FVector::DotProduct(V, Up);
+			return V - Out * A - Up * B + Out * (A * CosP - B * SinP) + Up * (A * SinP + B * CosP);
+		};
+		FistWorld[Slot] = Chest + Tip(Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * GuardHeightCm);
 		const FVector GuardPole = -Forward * 0.25f + Right * (Side * FMath::Sin(HalfSpread)) - Up * FMath::Cos(HalfSpread);
 		const float LiftAngle = FMath::DegreesToRadians(ElbowLiftDegrees);
 		// Lifted, the elbow goes back and out behind the fist, about level.
 		const FVector LiftPole = (-Forward + Right * Side).GetSafeNormal() * FMath::Cos(LiftAngle) + Up * FMath::Sin(LiftAngle);
 		// Only the arm drawn back to its own side lifts its elbow; the one brought across keeps it down.
-		const float OwnLift = AimSide == Side ? Lift : 0.f;
-		const FVector Pole = FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal();
+		const float OwnLift = FMath::Max(AimSide == Side ? Lift : 0.f, ArmPunch * PunchElbowLift);
+		const FVector Pole = Tip(FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal());
 		const FVector Shoulder = Slot == 1 ? ShoulderR : ShoulderL;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 	}
