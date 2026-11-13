@@ -60,6 +60,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// Through the middle, only the way in to it counts as coming in.
 		const float InwardShare = FMath::Sign(Before) == FMath::Sign(After) ? FMath::Abs(Before) - FMath::Abs(After) : FMath::Abs(Before);
 		Inward = FMath::Max(InwardShare, 0.f) / DeltaTime;
+		if (InwardShare > 0.f)
+		{
+			PunchSlot = Before > 0.f ? 1 : 0;
+		}
 	}
 	PendingMouse = FVector2D::ZeroVector;
 
@@ -91,30 +95,37 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	const FVector ShoulderR = Mesh ? Mesh->GetBoneLocation(TEXT("upperarm_r")) : Owner->GetActorLocation() + Right * 18.f + Up * 45.f;
 	const FVector Chest = (ShoulderL + ShoulderR) * 0.5;
 
-	// The arc: in at the sides, out at the middle as far as the punch carries it.
-	const float SinT = FMath::Sin(Theta);
-	const float CosT = FMath::Cos(Theta);
-	const float Radius = FMath::Lerp(GuardForwardCm, SideRadiusCm, FMath::Abs(SinT)) + Punch * PunchReachCm * CosT * CosT;
-	const FVector Out = Forward * CosT + Right * SinT;
-	const FVector Along = -Forward * SinT + Right * CosT;
 	const float Height = GuardHeightCm + (UpDown > 0.f ? UpDown * RaiseCm : UpDown * LowerCm);
 
 	// The elbow goes from down by the ribs, the two a little apart, to up behind the fist as the arm is drawn round.
 	const float Lift = FMath::SmoothStep(ElbowLiftFrom, ElbowLiftTo, AcrossAbs);
 	const float HalfSpread = FMath::DegreesToRadians(ElbowSpreadDegrees * 0.5f);
+	const float AimSide = FMath::Sign(static_cast<float>(Aim.X));
+	const bool bBoth = bHeld[0] && bHeld[1];
 	float Raised = 0.f;
 	for (int32 Slot = 0; Slot < 2; ++Slot)
 	{
 		const float Side = Slot == 1 ? 1.f : -1.f;
 		Alpha[Slot] = FMath::FInterpConstantTo(Alpha[Slot], bHeld[Slot] ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(RaiseSeconds, KINDA_SMALL_NUMBER));
 		Raised = FMath::Max(Raised, Alpha[Slot]);
+		// With both arms up, only the arm on the side the mouse is drawn to goes round the arc and only the arm that came in
+		// punches; the other keeps its guard. One arm alone goes all the way round.
+		const bool bFollows = !bBoth || AimSide == Side;
+		const float ArmTheta = bFollows ? Theta : 0.f;
+		const float ArmPunch = (!bBoth || Slot == PunchSlot) ? Punch : 0.f;
+		// The arc: in at the sides, out at the middle as far as the punch carries it.
+		const float SinT = FMath::Sin(ArmTheta);
+		const float CosT = FMath::Cos(ArmTheta);
+		const float Radius = FMath::Lerp(GuardForwardCm, SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT;
+		const FVector Out = Forward * CosT + Right * SinT;
+		const FVector Along = -Forward * SinT + Right * CosT;
 		FistWorld[Slot] = Chest + Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * Height;
 		const FVector GuardPole = -Forward * 0.25f + Right * (Side * FMath::Sin(HalfSpread)) - Up * FMath::Cos(HalfSpread);
 		const float LiftAngle = FMath::DegreesToRadians(ElbowLiftDegrees);
-		// Lifted, the elbow goes back and out behind the fist, only a little over level.
+		// Lifted, the elbow goes back and out behind the fist, about level.
 		const FVector LiftPole = (-Forward + Right * Side).GetSafeNormal() * FMath::Cos(LiftAngle) + Up * FMath::Sin(LiftAngle);
 		// Only the arm drawn back to its own side lifts its elbow; the one brought across keeps it down.
-		const float OwnLift = FMath::Sign(static_cast<float>(Aim.X)) == Side ? Lift : 0.f;
+		const float OwnLift = AimSide == Side ? Lift : 0.f;
 		const FVector Pole = FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal();
 		const FVector Shoulder = Slot == 1 ? ShoulderR : ShoulderL;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;

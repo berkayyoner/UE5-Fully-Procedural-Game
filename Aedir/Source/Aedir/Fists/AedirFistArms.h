@@ -24,19 +24,19 @@ public:
 
 	// Share of the mouse's travel either side of the middle that leaves the guard where it is.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float CenterDeadZone = 0.05f;
+	float CenterDeadZone = 0.1f;
 
 	// Between these shares of the mouse's travel across, the elbow of the arm drawn back to its own side rises from down by
-	// the ribs to up behind the fist.
+	// the ribs to out behind the fist.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float ElbowLiftFrom = 0.05f;
+	float ElbowLiftFrom = 0.1f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float ElbowLiftTo = 0.8f;
+	float ElbowLiftTo = 0.9f;
 
-	// At the most the elbow is lifted to out at its side, this many degrees over level.
+	// At the most the elbow is lifted to out at its side, this many degrees over level (below it when negative).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float ElbowLiftDegrees = 20.f;
+	float ElbowLiftDegrees = -30.f;
 
 	// How far the mouse goes from the middle to the end of the arc, and to the top or bottom (mouse axis units, 0.07 a count).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
@@ -61,7 +61,7 @@ public:
 
 	// Out at the side of the arc the fist is this far from the middle of the shoulders.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float SideRadiusCm = 50.f;
+	float SideRadiusCm = 38.f;
 
 	// A punch: how much further out the middle of the arc goes at most, and the mouse speeds in towards the middle (shares of
 	// its travel a second) between which it goes from none of that to all of it.
@@ -83,7 +83,7 @@ public:
 
 	// The mouse all the way up or down raises or lowers the guard this far, and bends the waist back or forward this much.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float RaiseCm = 12.f;
+	float RaiseCm = 30.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float LowerCm = 30.f;
@@ -132,6 +132,8 @@ private:
 	FVector2D Aim = FVector2D::ZeroVector;
 	FVector2D PendingMouse = FVector2D::ZeroVector;
 	float Punch = 0.f;
+	// The arm the punch belongs to: the one that was drawn back on the side the mouse last came in from.
+	int32 PunchSlot = 1;
 	float WaistPitch = 0.f;
 	float PeakPunch = 0.f;
 	FVector2D PeakAim = FVector2D::ZeroVector;
