@@ -1,6 +1,8 @@
 #include "AedirPlayerCharacter.h"
 #include "Aedir.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Engine/SkeletalMesh.h"
+#include "UObject/ConstructorHelpers.h"
 #include "Misc/App.h"
 #include "Travel/AedirTravelSubsystem.h"
 #include "EngineUtils.h"
@@ -62,6 +64,12 @@
 #include "UI/AedirMenuSubsystem.h"
 #include "Weather/AedirWeatherEffectsComponent.h"
 #include "Weather/AedirWeatherManager.h"
+
+namespace
+{
+	const TCHAR* const AedirPlayerBodyPath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Body/SKM_MHC_AedirMan_BodyMesh.SKM_MHC_AedirMan_BodyMesh");
+	const TCHAR* const AedirPlayerFacePath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Face/SKM_MHC_AedirMan_FaceMesh.SKM_MHC_AedirMan_FaceMesh");
+}
 
 namespace
 {
@@ -160,6 +168,41 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 
 	WeatherEffects = CreateDefaultSubobject<UAedirWeatherEffectsComponent>(TEXT("WeatherEffects"));
 	FistArms = CreateDefaultSubobject<UAedirFistArms>(TEXT("FistArms"));
+
+	// The player is a plain bald man in underwear made with MetaHuman, so tests read more clearly than with the mannequin.
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> ManBody(AedirPlayerBodyPath);
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> ManFace(AedirPlayerFacePath);
+	if (ManBody.Succeeded())
+	{
+		GetMesh()->SetSkeletalMeshAsset(ManBody.Object);
+	}
+	Face = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Face"));
+	Face->SetupAttachment(GetMesh());
+	Face->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Face->SetGenerateOverlapEvents(false);
+	Face->bUseAttachParentBound = true;
+	if (ManFace.Succeeded() && ManBody.Succeeded())
+	{
+		Face->SetSkeletalMeshAsset(ManFace.Object);
+	}
+}
+
+void AAedirPlayerCharacter::UseManBody()
+{
+	// A blueprint made before the man may still carry the mannequin.
+	USkeletalMesh* Body = LoadObject<USkeletalMesh>(nullptr, AedirPlayerBodyPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (Body && GetMesh()->GetSkeletalMeshAsset() != Body)
+	{
+		GetMesh()->SetSkeletalMeshAsset(Body);
+	}
+	if (Face && Body)
+	{
+		if (!Face->GetSkeletalMeshAsset())
+		{
+			Face->SetSkeletalMeshAsset(LoadObject<USkeletalMesh>(nullptr, AedirPlayerFacePath, nullptr, LOAD_NoWarn | LOAD_Quiet));
+		}
+		Face->SetLeaderPoseComponent(GetMesh());
+	}
 }
 
 void AAedirPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -170,6 +213,7 @@ void AAedirPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AAedirPlayerCharacter::BeginPlay()
 {
+	UseManBody();
 	Super::BeginPlay();
 
 	// The camera settings of the code win over values stored on the boom in older blueprints.

@@ -119,6 +119,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float SingleArmAcrossShare = 0.5f;
 
+	// Brought across that far, its elbow turns out from the shoulder this share of the way to straight out at its side.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float CrossElbowOut = 0.6f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float SideFistDropCm = 10.f;
 

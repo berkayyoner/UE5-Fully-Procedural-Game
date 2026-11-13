@@ -173,6 +173,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Fists")
 	TObjectPtr<class UAedirFistArms> FistArms;
 
+	// The face of the MetaHuman body, following the body's bones.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Body")
+	TObjectPtr<USkeletalMeshComponent> Face;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Player")
 	float MinViewPitch = -80.f;
 
@@ -180,6 +184,7 @@ public:
 	float MaxViewPitch = 80.f;
 
 	virtual void BeginPlay() override;
+	void UseManBody();
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void Tick(float DeltaSeconds) override;

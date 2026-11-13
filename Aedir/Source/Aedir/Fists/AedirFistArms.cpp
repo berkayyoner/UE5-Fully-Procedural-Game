@@ -183,7 +183,15 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const FVector LiftPole = (-Forward + Right * Side).GetSafeNormal() * FMath::Cos(LiftAngle) + Up * FMath::Sin(LiftAngle);
 		// Only the arm drawn back to its own side lifts its elbow; the one brought across keeps it down.
 		const float OwnLift = FMath::Max(AimSide == Side ? Lift : 0.f, ArmPunch * PunchElbowLift);
-		const FVector Pole = Tip(FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal());
+		FVector PoleLevel = FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal();
+		// One arm alone brought across past the middle turns its elbow out from the shoulder, so the arm goes round the body
+		// and not into it.
+		if (!bBoth && AimSide != 0.f && AimSide != Side)
+		{
+			const FVector CrossPole = (Right * Side + Up * 0.25f).GetSafeNormal();
+			PoleLevel = FMath::Lerp(PoleLevel, CrossPole, CrossElbowOut * FMath::Clamp(FMath::Abs(SinT) / FMath::Max(FMath::Sin(FMath::DegreesToRadians(SingleArmAcrossShare * ArcDegrees * 0.5f)), 0.01f), 0.f, 1.f)).GetSafeNormal();
+		}
+		const FVector Pole = Tip(PoleLevel);
 		const FVector Shoulder = Slot == 1 ? ShoulderR : ShoulderL;
 		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright.
 		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side;
