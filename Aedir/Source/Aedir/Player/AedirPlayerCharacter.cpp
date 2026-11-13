@@ -21,6 +21,7 @@
 #include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Combat/AedirCombatComponent.h"
+#include "Fists/AedirFistArms.h"
 #include "Animation/AedirGaitComponent.h"
 #include "Creature/AedirStatsComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -62,6 +63,7 @@
 
 namespace
 {
+	TAutoConsoleVariable<int32> CVarAedirNewFists(TEXT("aedir.NewFists"), 1, TEXT("Empty hands fight with the rebuilt fists (1) or the older fist code (0)."));
 	// The photo camera: how slow time runs while it is up, and how far the wheel takes it in and out.
 	constexpr float PhotoTimeDilation = 0.0001f;
 	constexpr float PhotoZoomStepCm = 25.f;
@@ -150,6 +152,7 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 	FirstPersonCamera->SetAutoActivate(false);
 
 	WeatherEffects = CreateDefaultSubobject<UAedirWeatherEffectsComponent>(TEXT("WeatherEffects"));
+	FistArms = CreateDefaultSubobject<UAedirFistArms>(TEXT("FistArms"));
 }
 
 void AAedirPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -491,6 +494,12 @@ void AAedirPlayerCharacter::HandleMouseX(float Value)
 		bOrbitMoved |= !FMath::IsNearlyZero(Value);
 		return;
 	}
+	// The fists hold the view still while their button is down, as a weapon does.
+	if (FistArms && FistArms->IsSteering())
+	{
+		PendingMouseDelta.X += Value * Settings.WeaponSensitivity;
+		return;
+	}
 	// Steering a weapon the view is locked as in Half Sword: the mouse moves the weapon alone, and turns the view only once
 	// the weapon is at the end of its travel that way.
 	const bool bSteering = Combat && Combat->IsSteeringWeapon();
@@ -512,6 +521,11 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 	{
 		OrbitOffset.Pitch = FMath::Clamp(OrbitOffset.Pitch - CameraValue * PlayerOrbitDegreesPerInput, -70.0, 70.0);
 		bOrbitMoved |= !FMath::IsNearlyZero(Value);
+		return;
+	}
+	if (FistArms && FistArms->IsSteering())
+	{
+		PendingMouseDelta.Y += Value * Settings.WeaponSensitivity;
 		return;
 	}
 	AddControllerPitchInput(Combat && Combat->IsSteeringWeapon() ? 0.f : (bFighting ? CameraValue * FightCameraMouseScale : CameraValue));
@@ -590,6 +604,12 @@ void AAedirPlayerCharacter::HandleLeftGuardPressed()
 	bRightButtonDown = true;
 	RightButtonHeldSeconds = 0.f;
 	bRightButtonFreedHand = false;
+	if (UsesFistArms(EAedirHand::Left) && !(Combat && Combat->IsTwoHandGrip()))
+	{
+		FistArms->SetHeld(EAedirHand::Left, true);
+		bRightButtonFreedHand = true;
+		return;
+	}
 	if (Combat && !Combat->IsTwoHandGrip())
 	{
 		Combat->SetGuard(EAedirHand::Left, true);
@@ -600,6 +620,11 @@ void AAedirPlayerCharacter::HandleLeftGuardPressed()
 void AAedirPlayerCharacter::HandleLeftGuardReleased()
 {
 	bRightButtonDown = false;
+	if (FistArms && FistArms->IsHeld(EAedirHand::Left))
+	{
+		FistArms->SetHeld(EAedirHand::Left, false);
+		return;
+	}
 	if (!Combat)
 	{
 		return;
@@ -628,8 +653,18 @@ void AAedirPlayerCharacter::UpdateRightButtonHold(float DeltaSeconds)
 	}
 }
 
+bool AAedirPlayerCharacter::UsesFistArms(EAedirHand Hand) const
+{
+	return FistArms && CVarAedirNewFists.GetValueOnGameThread() != 0 && !(Interaction && Interaction->GetHeldItem(Hand));
+}
+
 void AAedirPlayerCharacter::HandleRightGuardPressed()
 {
+	if (UsesFistArms(EAedirHand::Right))
+	{
+		FistArms->SetHeld(EAedirHand::Right, true);
+		return;
+	}
 	if (Combat)
 	{
 		Combat->SetGuard(EAedirHand::Right, true);
@@ -638,6 +673,11 @@ void AAedirPlayerCharacter::HandleRightGuardPressed()
 
 void AAedirPlayerCharacter::HandleRightGuardReleased()
 {
+	if (FistArms && FistArms->IsHeld(EAedirHand::Right))
+	{
+		FistArms->SetHeld(EAedirHand::Right, false);
+		return;
+	}
 	if (Combat)
 	{
 		Combat->SetGuard(EAedirHand::Right, false);
@@ -747,6 +787,10 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 		FollowCamera->SetRelativeRotation(FightCameraSway + Shake);
 	}
 
+	if (FistArms && FistArms->IsSteering())
+	{
+		FistArms->AddMouse(PendingMouseDelta);
+	}
 	if (Combat)
 	{
 		for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
@@ -1833,6 +1877,51 @@ void AAedirPlayerCharacter::ArmBones(const FString& Label)
 		Line += FString::Printf(TEXT(" | lead %d grip %d chest yaw %.0f pitch %.0f roll %.0f"), Combat && Combat->IsLeadFootRight() ? 1 : 0, Combat && Combat->IsTwoHandGrip() ? 1 : 0, Chest.Yaw, Chest.Pitch, Chest.Roll);
 	}
 	UE_LOG(LogAedir, Display, TEXT("[ArmBones] %s%s"), *Label, *Line);
+}
+
+void AAedirPlayerCharacter::FistButton(int32 LeftButton, int32 Down)
+{
+	if (LeftButton != 0)
+	{
+		Down != 0 ? HandleRightGuardPressed() : HandleRightGuardReleased();
+	}
+	else
+	{
+		Down != 0 ? HandleLeftGuardPressed() : HandleLeftGuardReleased();
+	}
+}
+
+void AAedirPlayerCharacter::FistPose(const FString& Args)
+{
+	TArray<FString> T;
+	Args.ParseIntoArrayWS(T);
+	if (FistArms)
+	{
+		if (T.Num() >= 3)
+		{
+			FistArms->DevSetPose(FVector2D(FCString::Atof(*T[0]), FCString::Atof(*T[1])), FCString::Atof(*T[2]), true);
+		}
+		else
+		{
+			FistArms->DevSetPose(FistArms->GetAim(), FistArms->GetPunch(), false);
+		}
+	}
+}
+
+void AAedirPlayerCharacter::FistInfo(const FString& Label)
+{
+	if (FistArms)
+	{
+		FVector Fist[2], Elbow[2];
+		float Alpha[2];
+		FistArms->GetArm(EAedirHand::Left, Fist[0], Elbow[0], Alpha[0]);
+		FistArms->GetArm(EAedirHand::Right, Fist[1], Elbow[1], Alpha[1]);
+		const FTransform& Body = GetActorTransform();
+		FVector2D PeakAim;
+		const float Peak = FistArms->TakePeakPunch(PeakAim);
+		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s aim %.2f %.2f punch %.2f peak %.2f at %.2f | L %.2f fist %s | R %.2f fist %s"), *Label, FistArms->GetAim().X, FistArms->GetAim().Y, FistArms->GetPunch(), Peak, PeakAim.X,
+			Alpha[0], *Body.InverseTransformPositionNoScale(Fist[0]).ToCompactString(), Alpha[1], *Body.InverseTransformPositionNoScale(Fist[1]).ToCompactString());
+	}
 }
 
 void AAedirPlayerCharacter::StanceCell(int32 Row, int32 Col, float Forward, float Right, float Up, float Pitch, float Yaw)

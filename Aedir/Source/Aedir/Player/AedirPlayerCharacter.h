@@ -169,6 +169,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Weather")
 	TObjectPtr<UAedirWeatherEffectsComponent> WeatherEffects;
 
+	// Bare-handed fighting, rebuilt step by step (see UAedirFistArms).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Fists")
+	TObjectPtr<class UAedirFistArms> FistArms;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Player")
 	float MinViewPitch = -80.f;
 
@@ -396,6 +400,18 @@ public:
 	UFUNCTION(Exec)
 	void ArmBones(const FString& Label);
 
+	// Presses (1) or lets go (0) a mouse button for the fists as the player would: left button 1, right button 0.
+	UFUNCTION(Exec)
+	void FistButton(int32 LeftButton, int32 Down);
+
+	// Logs where the fists' mouse stands and how far the punch is out.
+	UFUNCTION(Exec)
+	void FistInfo(const FString& Label);
+
+	// Holds the fists' mouse at x y (-1..1) and the punch out (0..1) for a picture; FistPose off lets it go.
+	UFUNCTION(Exec)
+	void FistPose(const FString& Args);
+
 	UFUNCTION(Exec)
 	void StanceCell(int32 Row, int32 Col, float Forward, float Right, float Up, float Pitch, float Yaw);
 	FTimerHandle PoseLogTimer;
@@ -610,6 +626,8 @@ private:
 	void HandleCrouchReleased();
 	void HandleJumpPressed();
 	void HandleJumpReleased();
+	// An empty hand whose button is held is fought with by the rebuilt fists.
+	bool UsesFistArms(EAedirHand Hand) const;
 	void HandleLeftGuardPressed();
 	void HandleLeftGuardReleased();
 	void HandleRightGuardPressed();

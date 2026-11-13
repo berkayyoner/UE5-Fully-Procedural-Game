@@ -1,4 +1,5 @@
 #include "Animation/AedirGaitComponent.h"
+#include "Fists/AedirFistArms.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Combat/AedirCombatComponent.h"
@@ -710,6 +711,13 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.RightReachTargetWorld = RightReachTarget;
 	GaitState.FistAlphaLeft = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Left), 0.f, 1.f) : 0.f;
 	GaitState.FistAlphaRight = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Right), 0.f, 1.f) : 0.f;
+	if (const UAedirFistArms* Fists = CreatureOwner->FindComponentByClass<UAedirFistArms>())
+	{
+		Fists->GetArm(EAedirHand::Left, GaitState.FistArmHandWorld[0], GaitState.FistArmElbowWorld[0], GaitState.FistArmAlpha[0]);
+		Fists->GetArm(EAedirHand::Right, GaitState.FistArmHandWorld[1], GaitState.FistArmElbowWorld[1], GaitState.FistArmAlpha[1]);
+		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmAlpha[0]);
+		GaitState.FistAlphaRight = FMath::Max(GaitState.FistAlphaRight, GaitState.FistArmAlpha[1]);
+	}
 	// Loose arms hang straight while standing; the elbows start to break with the walking and running speed.
 	GaitState.ElbowBend = FMath::Lerp(ElbowBendWalkDegrees, ElbowBendRunDegrees, SpeedAlpha * SpeedAlpha) * ArmBlend;
 	GaitState.KneeBend = FMath::Max(Lift[0], Lift[1]) * KneeBendMaxDegrees + ReachLowerAlpha * KneeBendMaxDegrees;
@@ -752,6 +760,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float InertiaPitch = FMath::Clamp(-ForwardLoad * InertiaLeanPitchDegrees, -InertiaLeanLimitDegrees, InertiaLeanLimitDegrees) * Alive;
 	const float InertiaRoll = FMath::Clamp(RightLoad * InertiaLeanRollDegrees + TurnLoad * YawRateLeanDegrees, -InertiaLeanLimitDegrees, InertiaLeanLimitDegrees) * Alive;
 	GaitState.SpineLeanPitch += InertiaPitch;
+	// The waist bends with the fists' guard raised or lowered.
+	if (const UAedirFistArms* Fists = CreatureOwner->FindComponentByClass<UAedirFistArms>())
+	{
+		GaitState.SpineLeanPitch += Fists->GetWaistPitch();
+	}
 	GaitState.SpineLeanRoll = InertiaRoll + LocalDirection.Y * SpeedAlpha * MoveDirectionLeanRollDegrees;
 
 	// Idle sway and weight shift only while standing still and out of the fighting stance.

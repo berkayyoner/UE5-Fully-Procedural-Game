@@ -264,6 +264,10 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	const bool bGripLeft = GaitData.GripSecondaryHand == static_cast<int32>(EAedirHand::Left);
 	ApplyGripHand(CSPose, RefCSPose, Bones, bGripLeft ? LeftOutwardMesh : RightOutwardMesh, DownMesh, ArmForwardMesh);
 
+	// The rebuilt fists have the last word on the arms they hold up.
+	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.FistArmHandWorld[0], GaitData.FistArmElbowWorld[0], GaitData.FistArmAlpha[0]);
+	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1]);
+
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"));
 
@@ -721,6 +725,40 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 	bLastHandValid[HandSlot] = true;
 	HandTransform.SetRotation(FQuat::Slerp(HandTransform.GetRotation(), HandRotation, FMath::Clamp(Alpha, 0.f, 1.f)).GetNormalized());
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
+}
+
+void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha) const
+{
+	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
+	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
+	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, HandName);
+	if (Alpha <= 0.f || !Humerus.IsValid() || !Radius.IsValid() || !Hand.IsValid())
+	{
+		return;
+	}
+	const FTransform HumerusTransform = CSPose.GetComponentSpaceTransform(Humerus);
+	const FTransform RadiusTransform = CSPose.GetComponentSpaceTransform(Radius);
+	const FTransform HandTransform = CSPose.GetComponentSpaceTransform(Hand);
+	const FVector Shoulder = HumerusTransform.GetLocation();
+	const FVector Elbow = RadiusTransform.GetLocation();
+	const FVector Wrist = HandTransform.GetLocation();
+	FVector SolvedElbow;
+	FVector SolvedWrist;
+	AnimationCore::SolveTwoBoneIK(Shoulder, Elbow, Wrist, MeshToWorld.InverseTransformPosition(ElbowWorld), MeshToWorld.InverseTransformPosition(FistWorld), SolvedElbow, SolvedWrist, false, 1.0, 1.0);
+	const FQuat HumerusDelta = SafeDeltaRotation(Elbow - Shoulder, SolvedElbow - Shoulder);
+	const FQuat RadiusDelta = SafeDeltaRotation(HumerusDelta.RotateVector(Wrist - Elbow), SolvedWrist - SolvedElbow);
+	FTransform SolvedHumerus = HumerusTransform;
+	SolvedHumerus.SetRotation(HumerusDelta * HumerusTransform.GetRotation());
+	FTransform SolvedRadius = RadiusTransform;
+	SolvedRadius.SetTranslation(SolvedElbow);
+	SolvedRadius.SetRotation(RadiusDelta * HumerusDelta * RadiusTransform.GetRotation());
+	FTransform SolvedHand = HandTransform;
+	SolvedHand.SetTranslation(SolvedWrist);
+	SolvedHand.SetRotation(RadiusDelta * HumerusDelta * HandTransform.GetRotation());
+	const float Share = FMath::Clamp(Alpha, 0.f, 1.f);
+	CSPose.SetComponentSpaceTransform(Humerus, BlendBoneTransform(HumerusTransform, SolvedHumerus, Share));
+	CSPose.SetComponentSpaceTransform(Radius, BlendBoneTransform(RadiusTransform, SolvedRadius, Share));
+	CSPose.SetComponentSpaceTransform(Hand, BlendBoneTransform(HandTransform, SolvedHand, Share));
 }
 
 FVector FAedirProceduralAnimProxy::ApplyWeaponArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, const FVector& DirectionWorld, float Share, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const

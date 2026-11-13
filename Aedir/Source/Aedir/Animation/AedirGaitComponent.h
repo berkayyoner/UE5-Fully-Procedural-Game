@@ -150,6 +150,11 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float FistAlphaRight = 0.f;
 
+	// The rebuilt fists (UAedirFistArms): how far each arm is in their guard, and where they put its fist and its elbow.
+	float FistArmAlpha[2] = { 0.f, 0.f };
+	FVector FistArmHandWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector FistArmElbowWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
+
 	// Fighting stance blend, 0 = relaxed, 1 = fully in stance.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float StanceAlpha = 0.f;

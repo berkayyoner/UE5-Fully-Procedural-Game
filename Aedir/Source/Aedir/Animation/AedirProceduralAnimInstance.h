@@ -47,6 +47,9 @@ private:
 	// and gives back the way the blade then points.
 	// The weapon arm placed straight from where the hand and blade are wanted: the forearm runs across the blade as a fist
 	// holds a handle, the elbow goes where the upper arm then reaches, and the same aim always gives the same arm.
+	// The rebuilt fists: the arm laid from the shoulder to the fist through the elbow where they put it, the hand kept as it
+	// sits on the forearm.
+	void ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha) const;
 	FVector ApplyWeaponArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, const FVector& DirectionWorld, float Share, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
 	mutable FVector LastWeaponForearm[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector ApplyArmLedBlade(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& DirectionWorld, float Share, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
