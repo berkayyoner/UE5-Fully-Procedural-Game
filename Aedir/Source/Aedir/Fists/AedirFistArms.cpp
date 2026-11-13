@@ -82,7 +82,11 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	if (bSteering && !bDevFrozen)
 	{
 		const float Before = static_cast<float>(Aim.X);
-		Aim.X = FMath::Clamp(Aim.X + PendingMouse.X / FMath::Max(MouseFieldAcross, 1.f), -1.0, 1.0);
+		// One arm alone goes across past the middle only this share of the arc on the other side.
+		const double OtherSide = CenterDeadZone + SingleArmAcrossShare * (1.f - CenterDeadZone);
+		const double AcrossMin = bHeld[1] && !bHeld[0] ? -OtherSide : -1.0;
+		const double AcrossMax = bHeld[0] && !bHeld[1] ? OtherSide : 1.0;
+		Aim.X = FMath::Clamp(Aim.X + PendingMouse.X / FMath::Max(MouseFieldAcross, 1.f), AcrossMin, AcrossMax);
 		Aim.Y = FMath::Clamp(Aim.Y + PendingMouse.Y / FMath::Max(MouseFieldUpDown, 1.f), -1.0, 1.0);
 		const float After = static_cast<float>(Aim.X);
 		// Through the middle, only the way in to it counts as coming in.

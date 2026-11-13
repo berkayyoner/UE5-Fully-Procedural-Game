@@ -278,3 +278,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - A cut throws about twice as many drops of blood (40-70, a puncture 20-34), and up to 400 drops fly at once.
 - No more pool appearing under a bleeding body: the ground is marked only by the drops that fall from the wounds.
 - Bruises fade slowly over 7 game days (72 real minutes a day), shrinking as they turn yellow; the blood of cuts and holes dries on the skin and stays.
+- One fist raised alone reaches past the middle to the other side only half as far as before (SingleArmAcrossShare 0.5).
+- "settime <hour> [minute]" in the ' console puts the clock at that time of day; the shift is kept on the weather manager and replicated.

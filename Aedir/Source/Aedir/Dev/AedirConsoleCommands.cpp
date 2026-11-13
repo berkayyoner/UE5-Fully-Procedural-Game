@@ -1,5 +1,7 @@
 #include "Dev/AedirConsoleCommands.h"
 
+#include "Weather/AedirWeatherSubsystem.h"
+#include "Weather/AedirWeatherManager.h"
 #include "Aedir.h"
 #include "Components/PrimitiveComponent.h"
 #include "Creature/AedirStatsComponent.h"
@@ -20,7 +22,7 @@ namespace
 	constexpr float ConsoleSpawnAheadCm = 160.f;
 	constexpr float ConsoleSpawnUpCm = 60.f;
 
-	const TCHAR* const ConsoleVerbs[] = { TEXT("help"), TEXT("player.additem"), TEXT("additem"), TEXT("player.removeitem"), TEXT("removeitem"), TEXT("spawn"), TEXT("placeatme"), TEXT("player.placeatme"), TEXT("enable"), TEXT("disable"), TEXT("delete"), TEXT("markfordelete"), TEXT("prid"), TEXT("kill"), TEXT("moveto"), TEXT("player.moveto"), TEXT("getpos"), TEXT("setscale"), TEXT("player.setav"), TEXT("player.getav"), TEXT("player.setstats"), TEXT("player.addstats"), TEXT("player.removestats"), TEXT("tgm"), TEXT("sw"), TEXT("setweather"), TEXT("showinventory"), TEXT("player.showinventory") };
+	const TCHAR* const ConsoleVerbs[] = { TEXT("help"), TEXT("player.additem"), TEXT("additem"), TEXT("player.removeitem"), TEXT("removeitem"), TEXT("spawn"), TEXT("placeatme"), TEXT("player.placeatme"), TEXT("enable"), TEXT("disable"), TEXT("delete"), TEXT("markfordelete"), TEXT("prid"), TEXT("kill"), TEXT("moveto"), TEXT("player.moveto"), TEXT("getpos"), TEXT("setscale"), TEXT("player.setav"), TEXT("player.getav"), TEXT("player.setstats"), TEXT("player.addstats"), TEXT("player.removestats"), TEXT("tgm"), TEXT("sw"), TEXT("setweather"), TEXT("settime"), TEXT("showinventory"), TEXT("player.showinventory") };
 	const TCHAR* const ConsoleRefVerbs[] = { TEXT("enable"), TEXT("disable"), TEXT("delete"), TEXT("markfordelete"), TEXT("kill"), TEXT("moveto"), TEXT("player.moveto"), TEXT("getpos"), TEXT("setscale") };
 
 	void ConsoleReport(const FString& Message)
@@ -63,6 +65,27 @@ namespace
 		{
 			Item->Destroy();
 		}
+	}
+
+	void ConsoleSetTime(AAedirPlayerCharacter* Player, const TArray<FString>& Words)
+	{
+		const int32 Hour = Words.IsValidIndex(1) ? FCString::Atoi(*Words[1]) : -1;
+		const int32 Minute = Words.IsValidIndex(2) ? FCString::Atoi(*Words[2]) : 0;
+		if (!Words.IsValidIndex(1) || !Words[1].IsNumeric() || Hour < 0 || Hour > 23 || Minute < 0 || Minute > 59)
+		{
+			ConsoleReport(TEXT("Usage: settime <hour 0-23> [minute 0-59]"));
+			return;
+		}
+		UWorld* World = Player->GetWorld();
+		const UAedirWeatherSubsystem* Weather = World ? World->GetSubsystem<UAedirWeatherSubsystem>() : nullptr;
+		AAedirWeatherManager* Manager = Weather ? Weather->GetManager() : nullptr;
+		if (!Manager)
+		{
+			ConsoleReport(TEXT("No weather manager in this world"));
+			return;
+		}
+		Manager->SetHour(Hour + Minute / 60.f);
+		ConsoleReport(FString::Printf(TEXT("Time set to %02d:%02d"), Hour, Minute));
 	}
 
 	void ConsoleAddItem(AAedirPlayerCharacter* Player, const TArray<FString>& Words)
@@ -436,6 +459,7 @@ namespace
 		{ TEXT("prid"), TEXT("prid <ref id>  selects a thing by its reference id") },
 		{ TEXT("tgm"), TEXT("tgm  god mode on or off") },
 		{ TEXT("setweather"), TEXT("setweather <Sunny|ExtraSunny|Cloudy|Rainy|Stormy|Thunderstorm|Snowy>  changes the weather (sw)") },
+		{ TEXT("settime"), TEXT("settime <hour> [minute]  puts the clock at that time of day, 0-23 and 0-59") },
 	};
 
 	const TCHAR* const ConsoleStatNames[] = { TEXT("health"), TEXT("stamina"), TEXT("magicka"), TEXT("strength"), TEXT("athletics"), TEXT("hunger"), TEXT("thirst"), TEXT("onehanded"), TEXT("twohanded"), TEXT("ranged"), TEXT("destruction"), TEXT("regeneration"), TEXT("illusion"), TEXT("metamorphosis"), TEXT("summon"), TEXT("heavyarmor"), TEXT("lightarmor"), TEXT("smelting"), TEXT("alchemy"), TEXT("enchanting") };
@@ -636,6 +660,10 @@ void AedirConsoleCommands::Run(AAedirPlayerCharacter* Player, const FString& Lin
 	else if (Verb == TEXT("sw") || Verb == TEXT("setweather"))
 	{
 		UAedirDevTools::SetWeather(Player, Words.IsValidIndex(1) ? Words[1] : FString());
+	}
+	else if (Verb == TEXT("settime"))
+	{
+		ConsoleSetTime(Player, Words);
 	}
 	else if (Verb == TEXT("showinventory") || Verb == TEXT("player.showinventory"))
 	{

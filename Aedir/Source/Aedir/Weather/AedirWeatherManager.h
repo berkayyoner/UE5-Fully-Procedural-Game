@@ -40,6 +40,13 @@ public:
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Weather")
 	float RandomSeed = 0.f;
 
+	// Hours the day has been moved on from its own course, so the clock reads what settime asked for.
+	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Weather")
+	float HourShift = 0.f;
+
+	// Puts the clock at this hour of the day (0 to 24) from now on; server only.
+	void SetHour(float Hour);
+
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;

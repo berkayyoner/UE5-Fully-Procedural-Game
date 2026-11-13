@@ -19,6 +19,7 @@
 #include "Engine/ExponentialHeightFog.h"
 #include "Engine/SkyLight.h"
 #include "Engine/World.h"
+#include "Weather/AedirWeatherSubsystem.h"
 #include "GameFramework/GameStateBase.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
@@ -258,6 +259,7 @@ void AAedirWeatherManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 	DOREPLIFETIME(AAedirWeatherManager, TransitionStartServerTime);
 	DOREPLIFETIME(AAedirWeatherManager, TransitionSeconds);
 	DOREPLIFETIME(AAedirWeatherManager, RandomSeed);
+	DOREPLIFETIME(AAedirWeatherManager, HourShift);
 }
 
 void AAedirWeatherManager::SetWeather(EAedirWeather NewWeather, float NewTransitionSeconds)
@@ -870,7 +872,26 @@ float AAedirWeatherManager::GetHourOfDay(const UWorld* World)
 		return FMath::Fmod(Fixed, 24.f);
 	}
 	const double Seconds = World ? World->GetTimeSeconds() : 0.0;
-	return static_cast<float>(FMath::Fmod(WeatherStartHour + Seconds * 24.0 / WeatherDayRealSeconds, 24.0));
+	const UAedirWeatherSubsystem* Weather = World ? World->GetSubsystem<UAedirWeatherSubsystem>() : nullptr;
+	const AAedirWeatherManager* Manager = Weather ? Weather->GetManager() : nullptr;
+	const double Shift = Manager ? Manager->HourShift : 0.0;
+	const double Hour = FMath::Fmod(WeatherStartHour + Shift + Seconds * 24.0 / WeatherDayRealSeconds, 24.0);
+	return static_cast<float>(Hour < 0.0 ? Hour + 24.0 : Hour);
+}
+
+void AAedirWeatherManager::SetHour(float Hour)
+{
+	if (!HasAuthority())
+	{
+		return;
+	}
+	const float Wanted = FMath::Fmod(FMath::Fmod(Hour, 24.f) + 24.f, 24.f);
+	// A clock held by aedir.Hour is moved to the new hour too.
+	if (IConsoleVariable* Held = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.Hour")); Held && Held->GetFloat() >= 0.f)
+	{
+		Held->Set(Wanted, ECVF_SetByConsole);
+	}
+	HourShift = static_cast<float>(FMath::Fmod(HourShift + Wanted - GetHourOfDay(GetWorld()), 24.0));
 }
 
 float AAedirWeatherManager::GetDaylight(const UWorld* World)

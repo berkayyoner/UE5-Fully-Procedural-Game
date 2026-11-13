@@ -115,6 +115,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float SideFistRiseCm = 10.f;
 
+	// One arm up alone reaches past the middle to the other side only this share of the way it would go there.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float SingleArmAcrossShare = 0.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float SideFistDropCm = 10.f;
 
