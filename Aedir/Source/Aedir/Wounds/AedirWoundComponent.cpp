@@ -33,9 +33,9 @@ namespace
 	constexpr float AedirSeverOneBlowShare = 3.f;
 	constexpr float AedirSeverInjuredShare = 0.7f;
 	constexpr int32 AedirWoundPulseDrops = 5;
-	constexpr float AedirWoundPoolSeconds = 1.5f;
-	constexpr float AedirWoundPoolGrowth = 0.25f;
-	constexpr float AedirWoundPoolMax = 5.f;
+	// A game day passes in 72 real minutes; a bruise is gone in a week of them.
+	constexpr float AedirGameDaySeconds = 72.f * 60.f;
+	constexpr float AedirBruiseHealDays = 7.f;
 	constexpr double AedirWoundBandageSeconds = 60.0;
 	constexpr float WoundTickIntervalSeconds = 0.25f;
 	constexpr int32 WoundMaxCount = 24;
@@ -276,7 +276,7 @@ float UAedirWoundComponent::GetHealSeconds(EAedirWoundType Type, float Severity)
 		return FMath::Lerp(300.f, 840.f, Alpha);
 	case EAedirWoundType::Bruise:
 	default:
-		return FMath::Lerp(120.f, 420.f, Alpha);
+		return AedirBruiseHealDays * AedirGameDaySeconds;
 	}
 }
 
@@ -523,20 +523,6 @@ void UAedirWoundComponent::UpdateArterialBleeding(float DeltaTime)
 		}
 	}
 
-	// A body lying still bleeds into a slowly spreading pool.
-	PoolTimer -= DeltaTime;
-	if (PoolTimer <= 0.f && Owner->GetVelocity().SizeSquared() < 400.0)
-	{
-		PoolTimer = AedirWoundPoolSeconds;
-		const FVector Body = Character->GetMesh()->GetBoneLocation(TEXT("pelvis"));
-		FHitResult Hit;
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirBloodPool), false, Owner);
-		if (World->LineTraceSingleByChannel(Hit, Body, Body - FVector(0.f, 0.f, 200.f), ECC_Visibility, Params))
-		{
-			PoolSize = FMath::Min(PoolSize + AedirWoundPoolGrowth * FMath::Min(Total, 3.f), AedirWoundPoolMax);
-			Blood->SpawnSplat(Hit.ImpactPoint + FVector(FMath::FRandRange(-8.f, 8.f), FMath::FRandRange(-8.f, 8.f), 0.f), Hit.ImpactNormal, PoolSize);
-		}
-	}
 }
 
 void UAedirWoundComponent::StopBleedingSome()
@@ -623,9 +609,10 @@ void UAedirWoundComponent::UpdateBleeding(float DeltaTime)
 
 	for (int32 Index = ActiveWounds.Num() - 1; Index >= 0; --Index)
 	{
+		// A bruise fades away; the blood of a cut or a hole dries on the skin and stays.
 		const FAedirWound& Wound = ActiveWounds[Index];
 		const float Age = static_cast<float>(FMath::Max(0.0, Now - Wound.StartServerTime));
-		if (Age >= GetHealSeconds(Wound.Type, Wound.GetSeverity()))
+		if (Wound.Type == EAedirWoundType::Bruise && Age >= GetHealSeconds(Wound.Type, Wound.GetSeverity()))
 		{
 			ActiveWounds.RemoveAt(Index);
 		}
@@ -848,7 +835,9 @@ void UAedirWoundComponent::UpdateSkinBlood()
 			const FAedirWoundVisual* Visual = FindVisual(Wound.Id);
 			// The run creeps down as the wound bleeds, as far as the old laid-on run went.
 			const float RunCm = (Visual ? Visual->RunLength : 0.f) * 2.f * (WoundRunHalfLengthMinCm + WoundRunHalfLengthPerSeverityCm * FMath::Clamp(Severity, 0.f, 1.f));
-			Where = FLinearColor(Point.X, Point.Y, Point.Z, WoundDecalRadius(Wound.Type, Severity));
+			// A bruise shrinks slowly to nothing over its week as it turns from purple to yellow.
+			const float Healed = Wound.Type == EAedirWoundType::Bruise ? FMath::SmoothStep(0.f, 1.f, ComputeAge01(Wound.Type, Severity, Age)) : 0.f;
+			Where = FLinearColor(Point.X, Point.Y, Point.Z, WoundDecalRadius(Wound.Type, Severity) * (1.f - Healed));
 			UE_CLOG(CVarAedirSkinBloodLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Wounds] skin blood %d on %s at %s, radius %.1f, run %.1f cm"), Slot, *Wound.Bone.ToString(), *Point.ToCompactString(), Where.A, RunCm);
 			// A bruise has no run: the material knows it by a run length below zero.
 			const bool bBruise = Wound.Type == EAedirWoundType::Bruise;

@@ -110,6 +110,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float SideFistTurnDegrees = 90.f;
 
+	// Drawn round to the side, the fist alone (not the elbow) goes this much higher with the mouse all the way up and this
+	// much lower with it all the way down.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float SideFistRiseCm = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float SideFistDropCm = 10.f;
+
+	// A whole punch thrown out costs this much stamina; without enough left, it only goes out as far as what is left pays for.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float PunchStaminaCost = 8.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistBackDegrees = 8.f;
 
@@ -150,6 +162,11 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+	// The fists are steered where the player is; the stamina they cost is taken where the stats are kept.
+	UFUNCTION(Server, Unreliable)
+	void ServerSpendStamina(float Amount);
+	void SpendStamina(float Amount);
+
 	static int32 Index(EAedirHand Hand) { return Hand == EAedirHand::Left ? 0 : 1; }
 
 	bool bHeld[2] = { false, false };

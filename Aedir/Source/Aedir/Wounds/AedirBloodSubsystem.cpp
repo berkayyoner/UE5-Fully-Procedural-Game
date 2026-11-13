@@ -29,10 +29,10 @@ namespace
 	constexpr float BloodDropStartOutCm = 6.f;
 	constexpr float BloodDropLinearDamping = 0.05f;
 	constexpr float BloodSprayConeHalfAngleDeg = 18.f;
-	constexpr int32 BloodCutDropMin = 18;
-	constexpr int32 BloodCutDropMax = 34;
-	constexpr int32 BloodPunctureDropMin = 8;
-	constexpr int32 BloodPunctureDropMax = 14;
+	constexpr int32 BloodCutDropMin = 40;
+	constexpr int32 BloodCutDropMax = 70;
+	constexpr int32 BloodPunctureDropMin = 20;
+	constexpr int32 BloodPunctureDropMax = 34;
 	constexpr float BloodCutSpeedMin = 280.f;
 	constexpr float BloodCutSpeedMax = 900.f;
 	constexpr float BloodPunctureSpeedMin = 60.f;

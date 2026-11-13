@@ -273,3 +273,8 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Fists: wrists kept straight (back of the hand along the forearm, palm facing in, thumb side towards the face in the guard and on top in a straight blow) in place of the knuckle aim and the extra wrist roll
 - Fists: the knuckles are found in the hand's frame through the palm bones (the fingers hang off metacarpals), so the straight wrist turns the palm in as meant; it had turned the fists over
 - Fists: drawn round to its own side the fist turns over 90 deg about the forearm (SideFistTurnDegrees); guard fists 12 cm apart so they no longer run into each other
+- Drawn round to the side, the fist alone goes up to 10 cm higher with the mouse up and 10 cm lower with it down (SideFistRiseCm, SideFistDropCm); the elbow stays where it was.
+- A punch costs stamina: 8 for a whole one thrown out (PunchStaminaCost), and with too little left it goes out only as far as what is left pays for; taken on the server through the fists component.
+- A cut throws about twice as many drops of blood (40-70, a puncture 20-34), and up to 400 drops fly at once.
+- No more pool appearing under a bleeding body: the ground is marked only by the drops that fall from the wounds.
+- Bruises fade slowly over 7 game days (72 real minutes a day), shrinking as they turn yellow; the blood of cuts and holes dries on the skin and stays.

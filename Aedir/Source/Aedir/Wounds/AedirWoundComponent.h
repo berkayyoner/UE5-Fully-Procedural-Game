@@ -140,11 +140,9 @@ private:
 	// How much cutting each joint has taken so far, towards parting it.
 	TMap<FName, float> CutWear;
 
-	// Blood running from an open artery comes in beats, and what falls from a lying body gathers under it.
+	// Blood running from an open artery comes in beats.
 	float SeverBleedPerSecond = 0.f;
 	float PulseTimer = 0.f;
-	float PoolTimer = 0.f;
-	float PoolSize = 1.f;
 	void UpdateArterialBleeding(float DeltaTime);
 
 	UFUNCTION(NetMulticast, Unreliable)

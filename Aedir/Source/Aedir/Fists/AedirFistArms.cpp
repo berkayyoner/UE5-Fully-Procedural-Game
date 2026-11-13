@@ -1,12 +1,38 @@
 #include "Fists/AedirFistArms.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Creature/AedirStatsComponent.h"
 #include "GameFramework/Character.h"
 
 UAedirFistArms::UAedirFistArms()
 {
 	PrimaryComponentTick.bCanEverTick = true;
 	PrimaryComponentTick.TickGroup = TG_PrePhysics;
+	SetIsReplicatedByDefault(true);
+}
+
+void UAedirFistArms::SpendStamina(float Amount)
+{
+	if (Amount <= 0.f || !GetOwner())
+	{
+		return;
+	}
+	if (GetOwner()->HasAuthority())
+	{
+		if (UAedirStatsComponent* Stats = GetOwner()->FindComponentByClass<UAedirStatsComponent>())
+		{
+			Stats->ConsumeStamina(FMath::Min(Amount, Stats->GetStamina()));
+		}
+	}
+	else
+	{
+		ServerSpendStamina(Amount);
+	}
+}
+
+void UAedirFistArms::ServerSpendStamina_Implementation(float Amount)
+{
+	SpendStamina(FMath::Min(Amount, PunchStaminaCost));
 }
 
 void UAedirFistArms::SetHeld(EAedirHand Hand, bool bInHeld, float ViewPitchDegrees)
@@ -73,7 +99,19 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	const float PunchWanted = bSteering ? FMath::Clamp((Inward - PunchSlowSpeed) / FMath::Max(PunchFastSpeed - PunchSlowSpeed, KINDA_SMALL_NUMBER), 0.f, 1.f) : 0.f;
 	if (!bDevFrozen)
 	{
-		Punch = FMath::FInterpConstantTo(Punch, PunchWanted, DeltaTime, PunchWanted > Punch ? PunchOutRate : PunchBackRate);
+		const float Before = Punch;
+		float Next = FMath::FInterpConstantTo(Punch, PunchWanted, DeltaTime, PunchWanted > Punch ? PunchOutRate : PunchBackRate);
+		// Going out costs breath: as far as what is left pays for, and no further.
+		if (Next > Before && PunchStaminaCost > 0.f)
+		{
+			const UAedirStatsComponent* Stats = Owner->FindComponentByClass<UAedirStatsComponent>();
+			if (Stats)
+			{
+				Next = FMath::Min(Next, Before + Stats->GetStamina() / PunchStaminaCost);
+			}
+			SpendStamina((Next - Before) * PunchStaminaCost);
+		}
+		Punch = Next;
 	}
 	if (Punch > PeakPunch)
 	{
@@ -146,6 +184,8 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright.
 		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
+		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
+		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm));
 	}
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * WaistForwardDegrees) * Raised;
 	WaistYaw = Across * WaistTurnDegrees * Raised;
