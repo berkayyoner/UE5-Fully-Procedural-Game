@@ -272,3 +272,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Grass: a stepped-on tuft leans over away from the foot (at most 22 deg) instead of being squashed, and the foliage lean from the legs is cut to 15%
 - Fists: wrists kept straight (back of the hand along the forearm, palm facing in, thumb side towards the face in the guard and on top in a straight blow) in place of the knuckle aim and the extra wrist roll
 - Fists: the knuckles are found in the hand's frame through the palm bones (the fingers hang off metacarpals), so the straight wrist turns the palm in as meant; it had turned the fists over
+- Fists: drawn round to its own side the fist turns over 90 deg about the forearm (SideFistTurnDegrees); guard fists 12 cm apart so they no longer run into each other

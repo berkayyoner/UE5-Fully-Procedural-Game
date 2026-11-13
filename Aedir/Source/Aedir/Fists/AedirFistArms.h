@@ -59,7 +59,7 @@ public:
 	float GuardForwardCm = 30.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float GuardGapCm = 9.f;
+	float GuardGapCm = 12.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float GuardHeightCm = 2.f;
@@ -106,6 +106,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistTurnDegrees = 30.f;
 
+	// Drawn round to its own side the fist turns over about the forearm this far, palm going down, as for a hook.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float SideFistTurnDegrees = 90.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistBackDegrees = 8.f;
 
@@ -132,6 +136,8 @@ public:
 	float GetWaistPitch() const { return WaistPitch; }
 	// Torso turn the fists ask for, FRotator convention.
 	float GetWaistYaw() const { return WaistYaw; }
+	// How far an arm's fist is turned over about its forearm from the guard's, degrees.
+	float GetFistTurn(EAedirHand Hand) const { return FistTurn[Index(Hand)]; }
 
 	// For tests and measuring: where the mouse stands across and up (-1..1) and how far out the punch is (0..1).
 	FVector2D GetAim() const { return Aim; }
@@ -157,6 +163,7 @@ private:
 	int32 PunchSlot = 1;
 	float WaistPitch = 0.f;
 	float WaistYaw = 0.f;
+	float FistTurn[2] = { 0.f, 0.f };
 	float PeakPunch = 0.f;
 	FVector2D PeakAim = FVector2D::ZeroVector;
 	bool bDevFrozen = false;

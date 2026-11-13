@@ -154,6 +154,7 @@ struct AEDIR_API FAedirGaitState
 	float FistArmAlpha[2] = { 0.f, 0.f };
 	FVector FistArmHandWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector FistArmElbowWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float FistArmTurn[2] = { 0.f, 0.f };
 
 	// Fighting stance blend, 0 = relaxed, 1 = fully in stance.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
