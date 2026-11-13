@@ -283,3 +283,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - One fist raised alone and brought across turns its elbow out from the shoulder (CrossElbowOut 0.6), so the arm goes round the body and not into it.
 - The player is a bald man in underwear made with MetaHuman (MHC_AedirMan, built to /Game/Aedir/Characters/MetaHuman/Build), body mesh on the character and the face following it; without those assets it stays the mannequin.
 - The MetaHuman man's assets are committed through Git LFS (a .gitattributes in their folder sends every .uasset there to LFS).
+- The FSR and XeSS download archives (2.26 GB) are taken out of the unpushed history and ignored, so the branch can be pushed to GitHub.

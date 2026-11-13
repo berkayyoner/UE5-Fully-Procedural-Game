@@ -43,3 +43,6 @@ Aedir/Content/Essential_Foosteps_SK/
 FabImports/
 Aedir/Content/Aedir/Fab/
 Aedir/Content/Aedir/Megascans/
+
+# Downloaded plugin archives, kept out of git (over GitHub limits)
+Aedir/Source/Aedir/*.zip
