@@ -299,3 +299,8 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Mouse down takes a blade lower: 65 degrees round, the arm 20 cm further out and the waist bending 40 degrees, so the fist goes about 20 cm lower than before.
 - A blade swung out costs 12 stamina (a punch 8), and quick moves of it 4 more per width of the mouse field.
 - The blade's guard point and wrist bend moved from fixed numbers in the pose code to variables on the fists (BladeGuardUpShare, BladeWristBendDegrees).
+- A blade's wrist turns out 80 degrees (not 90) drawn all the way to its own side.
+- The wrist bends a blade's point 30 degrees up drawn all the way to either side and raised, and 45 degrees down lowered (BladeSideWristUpDegrees, BladeRaiseWristUpDegrees, BladeLowerWristDownDegrees), never past 85 degrees off level.
+- Lowered, a blade's point is no longer brought round ahead and up, and the waist bends 55 degrees, so a low blow reaches the ground.
+- Drawn to the side a blade keeps half the up or down angle the same way (BladeArcSideKeep) instead of turning against it, so horizontal sweeps aim high or low with the mouse.
+- FistInfo logs how far the blade's lowest point is above the soles, and the blade's wrist bend.

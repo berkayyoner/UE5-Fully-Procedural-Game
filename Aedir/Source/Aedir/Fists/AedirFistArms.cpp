@@ -230,7 +230,8 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// A blade goes on up round over the head and back.
 		// and further down, to strike low.
 		const float ArmUp = bBlade ? FMath::DegreesToRadians(UpDown > 0.f ? UpDown * BladeArcUpDegrees : UpDown * BladeArcDownDegrees) : Phi;
-		const float ArmPhi = ArmUp * (1.f - (1.f + ArcSideReverse) * FMath::Abs(SinT));
+		// A blade keeps some of it the same way at the side, so the sweep is tipped up or down with the mouse.
+		const float ArmPhi = ArmUp * (bBlade ? FMath::Lerp(1.f, BladeArcSideKeep, FMath::Abs(SinT)) : 1.f - (1.f + ArcSideReverse) * FMath::Abs(SinT));
 		const float SinP = FMath::Sin(ArmPhi);
 		const float CosP = FMath::Cos(ArmPhi);
 		// Tips a direction of the level guard up round the chest, about the axis across this arm's way out.
@@ -285,6 +286,12 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			? (OwnShare <= Split ? 1.f : 1.f - (OwnShare - Split) / (1.f - Split))
 			: 1.f - FMath::Abs(SinT);
 		BladeAhead[Slot] = bBlade ? Ahead * (1.f - Raise) : 0.f;
+		// Lowered, the point is no longer brought round ahead and up but bent down with the wrist.
+		const float Lower = FMath::Max(-UpDown, 0.f);
+		BladeAim[Slot] = BladeAhead[Slot] * (1.f - Lower);
+		// Up at either side from the middle of the way there on, up raised, down lowered.
+		const float SideShare = bFollows ? FMath::Clamp((FMath::Abs(Across) - Split) / (1.f - Split), 0.f, 1.f) : 0.f;
+		BladeWristUp[Slot] = bBlade ? SideShare * BladeSideWristUpDegrees + Raise * BladeRaiseWristUpDegrees - Lower * BladeLowerWristDownDegrees : 0.f;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
 		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm));

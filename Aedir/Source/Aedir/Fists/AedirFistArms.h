@@ -173,7 +173,7 @@ public:
 	float BladeDownReachCm = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeWaistForwardDegrees = 40.f;
+	float BladeWaistForwardDegrees = 55.f;
 
 	// Drawn to its own side, a blade's wrist turns in two steps. Up to this share of the way from the middle it turns in, as
 	// far as BladeSideInDegrees, the wrist still bending the point round ahead, so it keeps looking at the other; from
@@ -186,7 +186,28 @@ public:
 	float BladeSideInDegrees = 90.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeSideOutDegrees = 90.f;
+	float BladeSideOutDegrees = 80.f;
+
+	// The wrist bends a blade's point up or down (as seen in the world), in degrees, up positive: up
+	// this far drawn all the way round to either side (from the middle of the way there on), up this far raised all the
+	// way and down this far lowered all the way, so it reaches the ground.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeSideWristUpDegrees = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeRaiseWristUpDegrees = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeLowerWristDownDegrees = 45.f;
+
+	// Those bends take the blade no further than this far above or below level, short of straight up or down.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeMostElevationDegrees = 85.f;
+
+	// Drawn round to the side a blade keeps this share of the middle's angle up or down, the same way (a fist turns the
+	// other way, ArcSideReverse), so the whole sweep is tipped up or down with the mouse and strikes high or low.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeArcSideKeep = 0.5f;
 
 	// Held up still, the point looks ahead and this much up (share of up to ahead), the wrist bending the blade on from
 	// upright at most this far, as far as a wrist bends.
@@ -236,6 +257,9 @@ public:
 	// Whether an arm holds a blade swung as a fist, and how far its point is to be brought round ahead (0..1).
 	bool IsArmed(EAedirHand Hand) const { return bArmed[Index(Hand)]; }
 	float GetBladeAhead(EAedirHand Hand) const { return BladeAhead[Index(Hand)]; }
+	// How far the wrist brings a blade's point round to look ahead (0..1), and how far it bends it up (degrees, down negative).
+	float GetBladeAim(EAedirHand Hand) const { return BladeAim[Index(Hand)]; }
+	float GetBladeWristUp(EAedirHand Hand) const { return BladeWristUp[Index(Hand)]; }
 
 	// Where the pose puts each arm this frame: the fist and the elbow in the world, and how far the arm is in the guard (0..1).
 	bool GetArm(EAedirHand Hand, FVector& OutFistWorld, FVector& OutElbowWorld, float& OutAlpha) const;
@@ -279,6 +303,8 @@ private:
 	float FistTurn[2] = { 0.f, 0.f };
 	bool bArmed[2] = { false, false };
 	float BladeAhead[2] = { 0.f, 0.f };
+	float BladeAim[2] = { 0.f, 0.f };
+	float BladeWristUp[2] = { 0.f, 0.f };
 	bool bTwoHand = false;
 	bool bOffHandOut = false;
 	float GripAlpha = 0.f;

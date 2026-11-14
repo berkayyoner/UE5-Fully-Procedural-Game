@@ -158,6 +158,11 @@ struct AEDIR_API FAedirGaitState
 	// A blade held in an arm the fists move: how far its point is brought round ahead, and how it lies in the hand.
 	bool FistArmArmed[2] = { false, false };
 	float FistArmBladeAhead[2] = { 0.f, 0.f };
+	// How far the wrist brings a blade's point round ahead (0..1), and bends it up (degrees, down negative).
+	float FistArmBladeAim[2] = { 0.f, 0.f };
+	float FistArmBladeWristUp[2] = { 0.f, 0.f };
+	// The wrist bends a blade no further up or down than this far off level.
+	float FistArmBladeMostElevation = 85.f;
 	FQuat FistArmItemInHand[2] = { FQuat::Identity, FQuat::Identity };
 	// The left hand on the grip of the blade in the right hand, and how far below the right hand it closes.
 	float FistArmGripAlpha = 0.f;
