@@ -2056,7 +2056,9 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 			const FVector Forearm = GetMesh()->GetBoneLocation(TEXT("hand_r")) - GetMesh()->GetBoneLocation(TEXT("lowerarm_r"));
 			const FVector UpperArm = GetMesh()->GetBoneLocation(TEXT("lowerarm_r")) - GetMesh()->GetBoneLocation(TEXT("upperarm_r"));
 			const float ElbowDegrees = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(static_cast<float>(UpperArm.GetSafeNormal().Z), -1.f, 1.f)));
-			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s blade %s row %s thumb %s forearm %s upper arm %.0f deg over level"), *Label, *Way(Blade->GetActorForwardVector()), *Way(Row), *Way(Thumb), *Way(Forearm), ElbowDegrees);
+			const float ElbowBend = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(UpperArm.GetSafeNormal(), Forearm.GetSafeNormal())), -1.f, 1.f)));
+			const FVector HandAboveHead = GetActorTransform().InverseTransformVectorNoScale(GetMesh()->GetBoneLocation(TEXT("hand_r")) - GetMesh()->GetBoneLocation(TEXT("head")));
+			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s blade %s row %s thumb %s forearm %s upper arm %.0f deg over level, elbow bent %.0f deg, hand from head %s"), *Label, *Way(Blade->GetActorForwardVector()), *Way(Row), *Way(Thumb), *Way(Forearm), ElbowDegrees, ElbowBend, *HandAboveHead.ToCompactString());
 		}
 	}
 }

@@ -151,13 +151,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeGuardForwardCm = 36.f;
 
-	// The mouse all the way up raises a blade this far round over the head and back, for a blow straight down, the arm
-	// reaching this much further up.
+	// The mouse all the way up raises a blade this far round over the head and back, for a blow straight down, the fist this
+	// much further out than in the guard, so the arm stays a little bent over the head and is never thrown straight up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeArcUpDegrees = 115.f;
+	float BladeArcUpDegrees = 108.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeUpReachCm = 15.f;
+	float BladeUpReachCm = 5.f;
 
 	// Drawn back to its own side, a blade arm's elbow is pointed this far below level, which leaves the upper arm about half
 	// way down (45 degrees).

@@ -293,3 +293,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Mouse up raises a blade round over the head and back (115 degrees, the arm reaching higher) for a blow straight down.
 - Brought across, a blade's wrist turns in 30 degrees more; drawn back to its own side, its upper arm hangs about 45 degrees below level.
 - Walking with a blade the fists hold, the older weapon code no longer turns its hand; FistInfo also logs the blade, knuckle, thumb and upper arm directions.
+- Raised over the head a blade arm stays a little bent (elbow about 60 degrees, the hand some 20 cm over the head and a little behind), no longer thrown straight up; FistInfo logs the elbow bend and the hand's place from the head.
