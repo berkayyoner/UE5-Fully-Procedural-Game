@@ -67,8 +67,6 @@
 
 namespace
 {
-	const TCHAR* const AedirPlayerBodyPath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Body/SKM_MHC_AedirMan_BodyMesh.SKM_MHC_AedirMan_BodyMesh");
-	const TCHAR* const AedirPlayerFacePath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Face/SKM_MHC_AedirMan_FaceMesh.SKM_MHC_AedirMan_FaceMesh");
 }
 
 namespace
@@ -168,41 +166,6 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 
 	WeatherEffects = CreateDefaultSubobject<UAedirWeatherEffectsComponent>(TEXT("WeatherEffects"));
 	FistArms = CreateDefaultSubobject<UAedirFistArms>(TEXT("FistArms"));
-
-	// The player is a plain bald man in underwear made with MetaHuman, so tests read more clearly than with the mannequin.
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh> ManBody(AedirPlayerBodyPath);
-	static ConstructorHelpers::FObjectFinder<USkeletalMesh> ManFace(AedirPlayerFacePath);
-	if (ManBody.Succeeded())
-	{
-		GetMesh()->SetSkeletalMeshAsset(ManBody.Object);
-	}
-	Face = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Face"));
-	Face->SetupAttachment(GetMesh());
-	Face->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	Face->SetGenerateOverlapEvents(false);
-	Face->bUseAttachParentBound = true;
-	if (ManFace.Succeeded() && ManBody.Succeeded())
-	{
-		Face->SetSkeletalMeshAsset(ManFace.Object);
-	}
-}
-
-void AAedirPlayerCharacter::UseManBody()
-{
-	// A blueprint made before the man may still carry the mannequin.
-	USkeletalMesh* Body = LoadObject<USkeletalMesh>(nullptr, AedirPlayerBodyPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
-	if (Body && GetMesh()->GetSkeletalMeshAsset() != Body)
-	{
-		GetMesh()->SetSkeletalMeshAsset(Body);
-	}
-	if (Face && Body)
-	{
-		if (!Face->GetSkeletalMeshAsset())
-		{
-			Face->SetSkeletalMeshAsset(LoadObject<USkeletalMesh>(nullptr, AedirPlayerFacePath, nullptr, LOAD_NoWarn | LOAD_Quiet));
-		}
-		Face->SetLeaderPoseComponent(GetMesh());
-	}
 }
 
 void AAedirPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -213,7 +176,6 @@ void AAedirPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 
 void AAedirPlayerCharacter::BeginPlay()
 {
-	UseManBody();
 	Super::BeginPlay();
 
 	// The camera settings of the code win over values stored on the boom in older blueprints.
@@ -549,7 +511,8 @@ void AAedirPlayerCharacter::HandleMouseX(float Value)
 	{
 		// The camera alone goes round; the body, its view and the arms are left as they are.
 		OrbitOffset.Yaw += CameraValue * PlayerOrbitDegreesPerInput;
-		bOrbitMoved |= !FMath::IsNearlyZero(Value);
+		OrbitTurnedDegrees += FMath::Abs(CameraValue * PlayerOrbitDegreesPerInput);
+		bOrbitMoved |= OrbitTurnedDegrees > ViewTapMaxTurnDegrees;
 		return;
 	}
 	// While a fist's button is down the mouse works the fists; the view only follows a small share of it.
@@ -584,7 +547,8 @@ void AAedirPlayerCharacter::HandleMouseY(float Value)
 	if (bOrbitHeld && CameraBoom)
 	{
 		OrbitOffset.Pitch = FMath::Clamp(OrbitOffset.Pitch - CameraValue * PlayerOrbitDegreesPerInput, -70.0, 70.0);
-		bOrbitMoved |= !FMath::IsNearlyZero(Value);
+		OrbitTurnedDegrees += FMath::Abs(CameraValue * PlayerOrbitDegreesPerInput);
+		bOrbitMoved |= OrbitTurnedDegrees > ViewTapMaxTurnDegrees;
 		return;
 	}
 	if (FistArms && FistArms->IsSteering())
@@ -668,6 +632,12 @@ void AAedirPlayerCharacter::HandleLeftGuardPressed()
 	bRightButtonDown = true;
 	RightButtonHeldSeconds = 0.f;
 	bRightButtonFreedHand = false;
+	// A blade in the right hand with the left empty: whether the button is clicked or held down is known only when it comes
+	// up or has been down a moment (UpdateRightButtonHold).
+	if (UsesFistArms(EAedirHand::Left) && FistArms->CanTakeBothHands())
+	{
+		return;
+	}
 	if (UsesFistArms(EAedirHand::Left) && !(Combat && Combat->IsTwoHandGrip()))
 	{
 		FistArms->SetHeld(EAedirHand::Left, true, static_cast<float>(FRotator::NormalizeAxis(GetControlRotation().Pitch)));
@@ -686,7 +656,15 @@ void AAedirPlayerCharacter::HandleLeftGuardReleased()
 	bRightButtonDown = false;
 	if (FistArms && FistArms->IsHeld(EAedirHand::Left))
 	{
+		// Let go, a left hand that came off the grip goes back on it.
 		FistArms->SetHeld(EAedirHand::Left, false);
+		FistArms->SetOffHandOut(false);
+		return;
+	}
+	// Clicked with a blade in the right hand: it is taken in both hands, or back in one.
+	if (UsesFistArms(EAedirHand::Left) && FistArms->CanTakeBothHands() && !bRightButtonFreedHand)
+	{
+		FistArms->SetTwoHand(!FistArms->IsTwoHand());
 		return;
 	}
 	if (!Combat)
@@ -704,11 +682,26 @@ void AAedirPlayerCharacter::HandleLeftGuardReleased()
 
 void AAedirPlayerCharacter::UpdateRightButtonHold(float DeltaSeconds)
 {
-	if (!bRightButtonDown || bRightButtonFreedHand || !Combat)
+	if (!bRightButtonDown || bRightButtonFreedHand)
 	{
 		return;
 	}
 	RightButtonHeldSeconds += DeltaSeconds;
+	// Held down with a blade in the right hand, the left hand comes off its grip, or up from the side, as a fist.
+	if (UsesFistArms(EAedirHand::Left) && FistArms->CanTakeBothHands())
+	{
+		if (RightButtonHeldSeconds >= RightButtonHoldSeconds)
+		{
+			bRightButtonFreedHand = true;
+			FistArms->SetOffHandOut(true);
+			FistArms->SetHeld(EAedirHand::Left, true, static_cast<float>(FRotator::NormalizeAxis(GetControlRotation().Pitch)));
+		}
+		return;
+	}
+	if (!Combat)
+	{
+		return;
+	}
 	if (RightButtonHeldSeconds >= RightButtonHoldSeconds)
 	{
 		bRightButtonFreedHand = true;
@@ -719,7 +712,9 @@ void AAedirPlayerCharacter::UpdateRightButtonHold(float DeltaSeconds)
 
 bool AAedirPlayerCharacter::UsesFistArms(EAedirHand Hand) const
 {
-	return FistArms && CVarAedirNewFists.GetValueOnGameThread() != 0 && !(Interaction && Interaction->GetHeldItem(Hand));
+	// Empty hands and hands with a knife or a one-handed sword are moved by the fists; anything else by the older code.
+	const AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(Hand) : nullptr;
+	return FistArms && CVarAedirNewFists.GetValueOnGameThread() != 0 && (!Item || UAedirFistArms::IsOneHandBlade(Item));
 }
 
 void AAedirPlayerCharacter::HandleRightGuardPressed()
@@ -1352,13 +1347,16 @@ void AAedirPlayerCharacter::HandleViewTogglePressed()
 	bOrbitHeld = true;
 	bOrbitMoved = false;
 	OrbitHeldSeconds = 0.f;
+	OrbitTurnedDegrees = 0.f;
 }
 
 void AAedirPlayerCharacter::HandleViewToggleReleased()
 {
-	// A short tap with the camera left where it was changes the view; a hold went round the body and now comes back.
+	// A short tap changes the view, even if the hand on the mouse moved it a hair; a hold that took the camera round the
+	// body only lets it come back. A tap the camera turned a little for is undone, so the new view starts straight.
 	if (bOrbitHeld && !bOrbitMoved && OrbitHeldSeconds < ViewTapSeconds)
 	{
+		OrbitOffset = FRotator::ZeroRotator;
 		ToggleView();
 	}
 	bOrbitHeld = false;

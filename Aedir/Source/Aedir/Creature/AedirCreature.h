@@ -45,6 +45,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
 	TObjectPtr<UAedirWoundComponent> Wounds;
 
+	// The face of the MetaHuman body, following the body's bones.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Body")
+	TObjectPtr<USkeletalMeshComponent> Face;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_GroupId, Category="Aedir|Groups")
 	FName GroupId;
 
@@ -61,6 +65,8 @@ public:
 	float CarriedWeight = 0.f;
 
 	virtual void BeginPlay() override;
+	// Every body is the plain MetaHuman man, also where a blueprint made before him still carries the mannequin.
+	void UseManBody();
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	uint8 BodyMaskBit = 0;

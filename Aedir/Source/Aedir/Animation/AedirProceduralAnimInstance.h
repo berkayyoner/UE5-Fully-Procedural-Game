@@ -49,7 +49,12 @@ private:
 	// holds a handle, the elbow goes where the upper arm then reaches, and the same aim always gives the same arm.
 	// The rebuilt fists: the arm laid from the shoulder to the fist through the elbow where they put it, the hand kept as it
 	// sits on the forearm.
-	void ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha, float TurnDegrees) const;
+	// A blade in the hand (bArmed) has its point brought round ahead by BladeAhead, the wrist bending at most BladeBendDegrees;
+	// a hand closing on another hand's grip lays its knuckles along RowMesh, when that is not zero.
+	void ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha, float TurnDegrees,
+		bool bArmed = false, float BladeAhead = 0.f, const FQuat& ItemInHand = FQuat::Identity, float BladeBendDegrees = 0.f, const FVector& RowMesh = FVector::ZeroVector) const;
+	// The left hand closes on the grip of the blade the right hand holds, this far below it.
+	void ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
 	FVector ApplyWeaponArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, const FVector& DirectionWorld, float Share, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
 	mutable FVector LastWeaponForearm[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector ApplyArmLedBlade(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& DirectionWorld, float Share, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;

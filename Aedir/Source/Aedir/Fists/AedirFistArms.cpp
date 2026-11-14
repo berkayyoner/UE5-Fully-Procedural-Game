@@ -1,8 +1,39 @@
 #include "Fists/AedirFistArms.h"
 
 #include "Components/SkeletalMeshComponent.h"
+#include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "GameFramework/Character.h"
+#include "Items/AedirInteractionComponent.h"
+#include "Items/AedirItemActor.h"
+
+namespace
+{
+	const AAedirItemActor* AedirFistsHeldItem(const AActor* Owner, int32 Slot)
+	{
+		const AAedirCreature* Creature = Cast<AAedirCreature>(Owner);
+		const UAedirInteractionComponent* Interaction = Creature ? Creature->Interaction.Get() : nullptr;
+		return Interaction ? Interaction->GetHeldItem(Slot == 0 ? EAedirHand::Left : EAedirHand::Right) : nullptr;
+	}
+}
+
+bool UAedirFistArms::IsOneHandBlade(const AAedirItemActor* Item)
+{
+	return Item && Item->ItemClass == EAedirItemClass::Weapon && !Item->bTwoHanded && !Item->bPolearm && !Item->IsShield()
+		&& (Item->DamageType == EAedirDamageType::Slash || Item->DamageType == EAedirDamageType::Pierce);
+}
+
+bool UAedirFistArms::CanTakeBothHands() const
+{
+	const AAedirItemActor* Right = AedirFistsHeldItem(GetOwner(), 1);
+	return IsOneHandBlade(Right) && !AedirFistsHeldItem(GetOwner(), 0);
+}
+
+void UAedirFistArms::SetTwoHand(bool bInTwoHand)
+{
+	bTwoHand = bInTwoHand && CanTakeBothHands();
+	bOffHandOut = false;
+}
 
 UAedirFistArms::UAedirFistArms()
 {
@@ -76,6 +107,20 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		return;
 	}
 
+	// Which hands hold a blade swung like a fist; both hands on one only while the left is still empty.
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		const AAedirItemActor* Item = AedirFistsHeldItem(Owner, Slot);
+		bArmed[Slot] = IsOneHandBlade(Item) && AedirFistsHeldItem(Owner, 1 - Slot) != Item;
+	}
+	if (bTwoHand && !CanTakeBothHands())
+	{
+		bTwoHand = false;
+		bOffHandOut = false;
+	}
+	// A blade has no still middle: it answers the mouse from the first move.
+	const float DeadZone = bArmed[0] || bArmed[1] ? 0.f : CenterDeadZone;
+
 	// Where the mouse stands, as shares of its travel, and how fast it came in towards the middle across.
 	const bool bSteering = IsSteering();
 	float Inward = 0.f;
@@ -83,7 +128,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	{
 		const float Before = static_cast<float>(Aim.X);
 		// One arm alone goes across past the middle only this share of the arc on the other side.
-		const double OtherSide = CenterDeadZone + SingleArmAcrossShare * (1.f - CenterDeadZone);
+		const double OtherSide = DeadZone + SingleArmAcrossShare * (1.f - DeadZone);
 		const double AcrossMin = bHeld[1] && !bHeld[0] ? -OtherSide : -1.0;
 		const double AcrossMax = bHeld[0] && !bHeld[1] ? OtherSide : 1.0;
 		Aim.X = FMath::Clamp(Aim.X + PendingMouse.X / FMath::Max(MouseFieldAcross, 1.f), AcrossMin, AcrossMax);
@@ -125,7 +170,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 
 	// Across the dead zone in the middle the guard stays; past it the fists go round the arc.
 	const float AcrossAbs = FMath::Abs(static_cast<float>(Aim.X));
-	const float Across = FMath::Sign(static_cast<float>(Aim.X)) * FMath::Max(AcrossAbs - CenterDeadZone, 0.f) / FMath::Max(1.f - CenterDeadZone, KINDA_SMALL_NUMBER);
+	const float Across = FMath::Sign(static_cast<float>(Aim.X)) * FMath::Max(AcrossAbs - DeadZone, 0.f) / FMath::Max(1.f - DeadZone, KINDA_SMALL_NUMBER);
 	const float Theta = FMath::DegreesToRadians(Across * ArcDegrees * 0.5f);
 	const float UpDown = static_cast<float>(Aim.Y);
 
@@ -152,6 +197,11 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	{
 		const float Side = Slot == 1 ? 1.f : -1.f;
 		Alpha[Slot] = FMath::FInterpConstantTo(Alpha[Slot], bHeld[Slot] ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(RaiseSeconds, KINDA_SMALL_NUMBER));
+		// In both hands the left one stays on the grip, whether the blade is up or not, until it is let go.
+		if (Slot == 0)
+		{
+			GripAlpha = FMath::FInterpConstantTo(GripAlpha, bTwoHand && !bOffHandOut ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(RaiseSeconds, KINDA_SMALL_NUMBER));
+		}
 		Raised = FMath::Max(Raised, Alpha[Slot]);
 		// With both arms up, only the arm on the side the mouse is drawn to goes round the arc and only the arm that came in
 		// punches; the other keeps its guard. One arm alone goes all the way round.
@@ -193,8 +243,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		}
 		const FVector Pole = Tip(PoleLevel);
 		const FVector Shoulder = Slot == 1 ? ShoulderR : ShoulderL;
-		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright.
-		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side;
+		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright. A blade's wrist
+		// turns out the other way there, and the nearer the middle, the more its point is brought round ahead.
+		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side * (bArmed[Slot] ? -1.f : 1.f);
+		BladeAhead[Slot] = bArmed[Slot] ? 1.f - FMath::Abs(SinT) : 0.f;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
 		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm));

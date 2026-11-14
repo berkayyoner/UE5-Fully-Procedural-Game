@@ -155,6 +155,13 @@ struct AEDIR_API FAedirGaitState
 	FVector FistArmHandWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector FistArmElbowWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	float FistArmTurn[2] = { 0.f, 0.f };
+	// A blade held in an arm the fists move: how far its point is brought round ahead, and how it lies in the hand.
+	bool FistArmArmed[2] = { false, false };
+	float FistArmBladeAhead[2] = { 0.f, 0.f };
+	FQuat FistArmItemInHand[2] = { FQuat::Identity, FQuat::Identity };
+	// The left hand on the grip of the blade in the right hand, and how far below the right hand it closes.
+	float FistArmGripAlpha = 0.f;
+	float FistArmGripGapCm = 9.f;
 
 	// Fighting stance blend, 0 = relaxed, 1 = fully in stance.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")

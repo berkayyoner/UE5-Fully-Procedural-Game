@@ -50,7 +50,7 @@ namespace
 	constexpr float FoliageBendPerSecond = 2.5f;
 	// Stepped on, a tuft only bends a little and soon stands again: enough to feel it was touched, never gone.
 	// The most a stepped-on tuft leans over, away from the foot, in degrees; it keeps its height and shape.
-	constexpr float FoliageTipDegrees = 22.f;
+	constexpr float FoliageTipDegrees = 28.f;
 	constexpr float FoliageHoldSeconds = 2.f;
 	constexpr float FoliageRisePerSecond = 0.4f;
 	constexpr int32 FoliageMaxBend = 3;

@@ -10,6 +10,7 @@
 // little apart (the guard). The mouse across takes the fists round the body on an arc about the chest, back to the side
 // of the arm it is drawn towards; up and down it raises and lowers the guard, the waist bending with it. Drawn fast in
 // towards the middle the arc reaches out from the body, a punch; slowed or stopped, it comes back in to the guard.
+// A knife or a one-handed sword in a hand is swung the same way, on the same arc: see the blade settings below.
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
 class AEDIR_API UAedirFistArms : public UActorComponent
 {
@@ -140,7 +141,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float RaiseSeconds = 0.15f;
 
-	// The button for an arm went down or up. An arm with something in its hand is left to the rest of the game.
+	// A blade in the hand: held up still, its point looks ahead at the other; drawn round to its own side the wrist turns
+	// out the opposite way a fist's does. The wrist bends at most this far to bring the point ahead.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeWristBendDegrees = 75.f;
+
+	// Held in both hands, the second hand closes on the grip this far below the first, towards the pommel.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandGapCm = 9.f;
+
+	// A knife or a one-handed sword: what these hands swing like a fist, one in a hand.
+	static bool IsOneHandBlade(const class AAedirItemActor* Item);
+
+	// The button for an arm went down or up. An arm holding something other than a one-handed blade is left to the rest of
+	// the game.
 	// The first button down starts the fists where the view looks: up or down by its pitch (degrees, up positive).
 	void SetHeld(EAedirHand Hand, bool bHeld, float ViewPitchDegrees = 0.f);
 	bool IsHeld(EAedirHand Hand) const { return bHeld[Index(Hand)]; }
@@ -148,6 +162,18 @@ public:
 
 	// The mouse moved while a button is held (mouse axis units, up positive).
 	void AddMouse(const FVector2D& Delta);
+
+	// A one-handed blade in the right hand with the left hand empty: the right button clicked takes it in both hands or
+	// back in one, held down it lets the left hand go and raises it on its own.
+	bool CanTakeBothHands() const;
+	bool IsTwoHand() const { return bTwoHand; }
+	void SetTwoHand(bool bInTwoHand);
+	void SetOffHandOut(bool bOut) { bOffHandOut = bOut; }
+	// How far the left hand is on the grip of the blade in the right hand (0..1).
+	float GetGripAlpha() const { return GripAlpha; }
+	// Whether an arm holds a blade swung as a fist, and how far its point is to be brought round ahead (0..1).
+	bool IsArmed(EAedirHand Hand) const { return bArmed[Index(Hand)]; }
+	float GetBladeAhead(EAedirHand Hand) const { return BladeAhead[Index(Hand)]; }
 
 	// Where the pose puts each arm this frame: the fist and the elbow in the world, and how far the arm is in the guard (0..1).
 	bool GetArm(EAedirHand Hand, FVector& OutFistWorld, FVector& OutElbowWorld, float& OutAlpha) const;
@@ -189,6 +215,11 @@ private:
 	float WaistPitch = 0.f;
 	float WaistYaw = 0.f;
 	float FistTurn[2] = { 0.f, 0.f };
+	bool bArmed[2] = { false, false };
+	float BladeAhead[2] = { 0.f, 0.f };
+	bool bTwoHand = false;
+	bool bOffHandOut = false;
+	float GripAlpha = 0.f;
 	float PeakPunch = 0.f;
 	FVector2D PeakAim = FVector2D::ZeroVector;
 	bool bDevFrozen = false;

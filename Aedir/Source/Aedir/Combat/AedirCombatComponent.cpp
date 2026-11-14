@@ -1,4 +1,5 @@
 #include "Combat/AedirCombatComponent.h"
+#include "Fists/AedirFistArms.h"
 #include "Audio/AedirSfxSubsystem.h"
 
 #include "Aedir.h"
@@ -4004,7 +4005,9 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 	bStrikePrevValid[Index] = true;
 	// A weapon still flying on after its button was let go strikes all the same: a blow is the steel arriving, not a key
 	// held. A loose fist, or the second hand on a weapon the first one already strikes with, does not.
-	const bool bLoose = !IsArmActive(Hand);
+	// A blade the fists swing is up while its button is held.
+	const UAedirFistArms* Fists = Creature->FindComponentByClass<UAedirFistArms>();
+	const bool bLoose = !IsArmActive(Hand) && !(Item && Fists && Fists->IsArmed(Hand) && Fists->IsHeld(Hand));
 	if (!bHadPath || (bLoose && (!Item || IsSecondaryGripHand(Hand))))
 	{
 		return;
@@ -5047,6 +5050,11 @@ bool UAedirCombatComponent::EvaluateTwoHandGrip() const
 	const AAedirItemActor* Single = LeftItem ? LeftItem : RightItem;
 	if (Creature && Creature->IsPlayerControlled() && !(LeftItem && RightItem))
 	{
+		// A knife or a one-handed sword is the fists' to hold, in one hand or in both (UAedirFistArms).
+		if (Creature->FindComponentByClass<UAedirFistArms>() && UAedirFistArms::IsOneHandBlade(Single))
+		{
+			return false;
+		}
 		return !bOffHandFree && Single->ItemClass == EAedirItemClass::Weapon && Single->GetWeaponLength() >= AedirTwoHandMinLengthCm;
 	}
 	return (LeftItem && RightItem) || (bLeftGuard && RightItem && RightItem->ItemClass == EAedirItemClass::Weapon) || (bLeftGuard && bRightGuard);

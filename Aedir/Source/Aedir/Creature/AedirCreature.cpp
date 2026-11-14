@@ -15,6 +15,7 @@
 #include "Animation/AedirProceduralAnimInstance.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Math/RotationMatrix.h"
@@ -25,6 +26,12 @@
 #include "Wounds/AedirWoundComponent.h"
 
 static TAutoConsoleVariable<int32> CVarAedirSelfCollision(TEXT("aedir.SelfCollision"), 1, TEXT("Whether a body stands against its own weapon and its arms against its trunk (1), or passes through them (0)."));
+
+namespace
+{
+	const TCHAR* const AedirManBodyPath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Body/SKM_MHC_AedirMan_BodyMesh.SKM_MHC_AedirMan_BodyMesh");
+	const TCHAR* const AedirManFacePath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Face/SKM_MHC_AedirMan_FaceMesh.SKM_MHC_AedirMan_FaceMesh");
+}
 
 namespace
 {
@@ -83,11 +90,19 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	Footsteps = CreateDefaultSubobject<UAedirFootstepComponent>(TEXT("Footsteps"));
 	Wounds = CreateDefaultSubobject<UAedirWoundComponent>(TEXT("Wounds"));
 
+	// Everyone is a plain bald man in underwear made with MetaHuman, so tests read more clearly than with the mannequin; the
+	// mannequin stays for a build without him.
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> ManBody(AedirManBodyPath);
+	static ConstructorHelpers::FObjectFinder<USkeletalMesh> ManFace(AedirManFacePath);
 	static ConstructorHelpers::FObjectFinder<USkeletalMesh> DefaultBodyMesh(TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple"));
 
 	if (USkeletalMeshComponent* MeshComponent = GetMesh())
 	{
-		if (DefaultBodyMesh.Succeeded())
+		if (ManBody.Succeeded())
+		{
+			MeshComponent->SetSkeletalMeshAsset(ManBody.Object);
+		}
+		else if (DefaultBodyMesh.Succeeded())
 		{
 			MeshComponent->SetSkeletalMeshAsset(DefaultBodyMesh.Object);
 		}
@@ -97,6 +112,32 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 		MeshComponent->SetAnimInstanceClass(UAedirProceduralAnimInstance::StaticClass());
 		MeshComponent->bEnableUpdateRateOptimizations = false;
 		MeshComponent->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::AlwaysTickPoseAndRefreshBones;
+	}
+	Face = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Face"));
+	Face->SetupAttachment(GetMesh());
+	Face->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Face->SetGenerateOverlapEvents(false);
+	Face->bUseAttachParentBound = true;
+	if (ManFace.Succeeded() && ManBody.Succeeded())
+	{
+		Face->SetSkeletalMeshAsset(ManFace.Object);
+	}
+}
+
+void AAedirCreature::UseManBody()
+{
+	USkeletalMesh* Body = LoadObject<USkeletalMesh>(nullptr, AedirManBodyPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	if (Body && GetMesh() && GetMesh()->GetSkeletalMeshAsset() != Body)
+	{
+		GetMesh()->SetSkeletalMeshAsset(Body);
+	}
+	if (Face && Body)
+	{
+		if (!Face->GetSkeletalMeshAsset())
+		{
+			Face->SetSkeletalMeshAsset(LoadObject<USkeletalMesh>(nullptr, AedirManFacePath, nullptr, LOAD_NoWarn | LOAD_Quiet));
+		}
+		Face->SetLeaderPoseComponent(GetMesh());
 	}
 }
 
@@ -142,6 +183,7 @@ uint8 AAedirCreature::GetHeldMaskBit() const
 
 void AAedirCreature::BeginPlay()
 {
+	UseManBody();
 	Super::BeginPlay();
 
 	// The body is solid to every other body, held weapon, corpse and loose thing: it is a physics body of its own, and only the

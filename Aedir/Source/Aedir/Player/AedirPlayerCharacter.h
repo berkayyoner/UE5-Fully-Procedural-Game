@@ -143,7 +143,11 @@ public:
 	// V held: the camera goes round the body as the mouse moves it, the body, its view and the arms left as they are; let go,
 	// it comes back. A short tap still changes between first and third person.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	float ViewTapSeconds = 0.25f;
+	float ViewTapSeconds = 0.4f;
+
+	// A tap may still move the mouse a little; only a turn of the camera further than this, in degrees, makes it a hold.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float ViewTapMaxTurnDegrees = 4.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float OrbitReturnSpeed = 6.f;
@@ -173,10 +177,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Fists")
 	TObjectPtr<class UAedirFistArms> FistArms;
 
-	// The face of the MetaHuman body, following the body's bones.
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Body")
-	TObjectPtr<USkeletalMeshComponent> Face;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Player")
 	float MinViewPitch = -80.f;
 
@@ -184,7 +184,6 @@ public:
 	float MaxViewPitch = 80.f;
 
 	virtual void BeginPlay() override;
-	void UseManBody();
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void PossessedBy(AController* NewController) override;
 	virtual void Tick(float DeltaSeconds) override;
@@ -590,6 +589,7 @@ private:
 	bool bOrbitHeld = false;
 	FRotator OrbitOffset = FRotator::ZeroRotator;
 	bool bOrbitMoved = false;
+	float OrbitTurnedDegrees = 0.f;
 	float OrbitHeldSeconds = 0.f;
 	bool bHeadCamera = false;
 	// Z: the photo camera, as Half Sword's C: the camera comes off the body and flies free (mouse to look, WASD to move, E up,
