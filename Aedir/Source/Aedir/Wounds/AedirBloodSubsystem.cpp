@@ -29,10 +29,6 @@ namespace
 	constexpr float BloodDropStartOutCm = 6.f;
 	constexpr float BloodDropLinearDamping = 0.05f;
 	constexpr float BloodSprayConeHalfAngleDeg = 18.f;
-	constexpr int32 BloodCutDropMin = 40;
-	constexpr int32 BloodCutDropMax = 70;
-	constexpr int32 BloodPunctureDropMin = 20;
-	constexpr int32 BloodPunctureDropMax = 34;
 	constexpr float BloodCutSpeedMin = 280.f;
 	constexpr float BloodCutSpeedMax = 900.f;
 	constexpr float BloodPunctureSpeedMin = 60.f;
@@ -223,8 +219,8 @@ void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Di
 
 	const bool bCut = Type == EAedirWoundType::Cut;
 	const int32 DropCount = bCut
-		? Random.RandRange(BloodCutDropMin, BloodCutDropMax)
-		: Random.RandRange(BloodPunctureDropMin, BloodPunctureDropMax);
+		? Random.RandRange(FMath::Min(CutDropsMin, CutDropsMax), FMath::Max(CutDropsMin, CutDropsMax))
+		: Random.RandRange(FMath::Min(PunctureDropsMin, PunctureDropsMax), FMath::Max(PunctureDropsMin, PunctureDropsMax));
 	const float MinSpeed = bCut ? BloodCutSpeedMin : BloodPunctureSpeedMin;
 	const float MaxSpeed = bCut ? BloodCutSpeedMax : BloodPunctureSpeedMax;
 	const float SeverityScale = FMath::Lerp(BloodSeverityMinSpeedScale, 1.f, FMath::Clamp(Severity, 0.f, 1.f));

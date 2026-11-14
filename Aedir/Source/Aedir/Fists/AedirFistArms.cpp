@@ -63,7 +63,7 @@ void UAedirFistArms::SpendStamina(float Amount)
 
 void UAedirFistArms::ServerSpendStamina_Implementation(float Amount)
 {
-	SpendStamina(FMath::Min(Amount, PunchStaminaCost));
+	SpendStamina(FMath::Min(Amount, FMath::Max(PunchStaminaCost, BladeSwingStaminaCost)));
 }
 
 void UAedirFistArms::SetHeld(EAedirHand Hand, bool bInHeld, float ViewPitchDegrees)
@@ -132,8 +132,15 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const double AcrossMin = bHeld[1] && !bHeld[0] ? -OtherSide : -1.0;
 		const double AcrossMax = bHeld[0] && !bHeld[1] ? OtherSide : 1.0;
 		Aim.X = FMath::Clamp(Aim.X + PendingMouse.X / FMath::Max(MouseFieldAcross, 1.f), AcrossMin, AcrossMax);
+		const FVector2D AimBefore(Before, Aim.Y);
 		Aim.Y = FMath::Clamp(Aim.Y + PendingMouse.Y / FMath::Max(MouseFieldUpDown, 1.f), -1.0, 1.0);
 		const float After = static_cast<float>(Aim.X);
+		// A blade moved quickly, any way, takes breath.
+		const float Travel = static_cast<float>(FVector2D::Distance(AimBefore, Aim));
+		if (((bHeld[0] && bArmed[0]) || (bHeld[1] && bArmed[1])) && Travel / DeltaTime > PunchSlowSpeed)
+		{
+			SpendStamina(Travel * 0.5f * BladeFastMoveStaminaPerField);
+		}
 		// Through the middle, only the way in to it counts as coming in.
 		const float InwardShare = FMath::Sign(Before) == FMath::Sign(After) ? FMath::Abs(Before) - FMath::Abs(After) : FMath::Abs(Before);
 		Inward = FMath::Max(InwardShare, 0.f) / DeltaTime;
@@ -150,15 +157,16 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	{
 		const float Before = Punch;
 		float Next = FMath::FInterpConstantTo(Punch, PunchWanted, DeltaTime, PunchWanted > Punch ? PunchOutRate : PunchBackRate);
-		// Going out costs breath: as far as what is left pays for, and no further.
-		if (Next > Before && PunchStaminaCost > 0.f)
+		// Going out costs breath: as far as what is left pays for, and no further. A blade costs more than a fist.
+		const float Cost = bArmed[PunchSlot] && bHeld[PunchSlot] ? BladeSwingStaminaCost : PunchStaminaCost;
+		if (Next > Before && Cost > 0.f)
 		{
 			const UAedirStatsComponent* Stats = Owner->FindComponentByClass<UAedirStatsComponent>();
 			if (Stats)
 			{
-				Next = FMath::Min(Next, Before + Stats->GetStamina() / PunchStaminaCost);
+				Next = FMath::Min(Next, Before + Stats->GetStamina() / Cost);
 			}
-			SpendStamina((Next - Before) * PunchStaminaCost);
+			SpendStamina((Next - Before) * Cost);
 		}
 		Punch = Next;
 	}
@@ -214,13 +222,14 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float SinT = FMath::Sin(ArmTheta);
 		const float CosT = FMath::Cos(ArmTheta);
 		// A blade is held further out, and reaches up further over the head.
-		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT + (bBlade ? Raise * BladeUpReachCm : 0.f);
+		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : 0.f);
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
 		// Round towards the side the height of the middle falls away and turns the other way, so a raised fist comes down
 		// across and a lowered one up.
 		// A blade goes on up round over the head and back.
-		const float ArmUp = bBlade && UpDown > 0.f ? FMath::DegreesToRadians(UpDown * BladeArcUpDegrees) : Phi;
+		// and further down, to strike low.
+		const float ArmUp = bBlade ? FMath::DegreesToRadians(UpDown > 0.f ? UpDown * BladeArcUpDegrees : UpDown * BladeArcDownDegrees) : Phi;
 		const float ArmPhi = ArmUp * (1.f - (1.f + ArcSideReverse) * FMath::Abs(SinT));
 		const float SinP = FMath::Sin(ArmPhi);
 		const float CosP = FMath::Cos(ArmPhi);
@@ -252,18 +261,35 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const FVector Shoulder = Slot == 1 ? ShoulderR : ShoulderL;
 		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright. A blade's wrist
 		// turns out the other way there, and the nearer the middle, the more its point is brought round ahead.
-		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side * (bBlade ? -1.f : 1.f);
+		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side;
+		// A blade drawn to its own side: first in, the point kept on the other, then back out past where it started.
+		if (bBlade)
+		{
+			const float Share = bFollows && AimSide == Side ? FMath::Abs(Across) : 0.f;
+			const float TurnSplit = FMath::Clamp(BladeSideTurnSplit, 0.01f, 0.99f);
+			const float Turn = Share <= TurnSplit
+				? FMath::Lerp(0.f, BladeSideInDegrees, Share / TurnSplit)
+				: FMath::Lerp(BladeSideInDegrees, -BladeSideOutDegrees, (Share - TurnSplit) / (1.f - TurnSplit));
+			FistTurn[Slot] = Turn * Side;
+		}
 		// Brought across, a blade's wrist turns in a little.
 		if (bBlade && bFollows && AimSide != 0.f && AimSide != Side)
 		{
 			FistTurn[Slot] += FMath::Abs(SinT) * BladeCrossTurnDegrees * Side;
 		}
 		// Raised over the head its point goes back, no longer ahead.
-		BladeAhead[Slot] = bBlade ? (1.f - FMath::Abs(SinT)) * (1.f - Raise) : 0.f;
+		// Drawn to its own side it keeps looking ahead while the wrist turns in, and lets go of that as it opens out.
+		const float OwnShare = bFollows && AimSide == Side ? FMath::Abs(Across) : 0.f;
+		const float Split = FMath::Clamp(BladeSideTurnSplit, 0.01f, 0.99f);
+		const float Ahead = OwnShare > 0.f
+			? (OwnShare <= Split ? 1.f : 1.f - (OwnShare - Split) / (1.f - Split))
+			: 1.f - FMath::Abs(SinT);
+		BladeAhead[Slot] = bBlade ? Ahead * (1.f - Raise) : 0.f;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
 		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm));
 	}
-	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * WaistForwardDegrees) * Raised;
+	const bool bBladeUp = (bHeld[0] && bArmed[0]) || (bHeld[1] && bArmed[1]);
+	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * (bBladeUp ? BladeWaistForwardDegrees : WaistForwardDegrees)) * Raised;
 	WaistYaw = Across * WaistTurnDegrees * Raised;
 }

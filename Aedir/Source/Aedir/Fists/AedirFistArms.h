@@ -164,6 +164,46 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeElbowLiftDegrees = -52.f;
 
+	// The mouse all the way down takes a blade this far round down (a fist goes ArcDownDegrees), the arm reaching this much
+	// further out and the waist bending this far forward (a fist's bends WaistForwardDegrees), to strike low.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeArcDownDegrees = 65.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeDownReachCm = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeWaistForwardDegrees = 40.f;
+
+	// Drawn to its own side, a blade's wrist turns in two steps. Up to this share of the way from the middle it turns in, as
+	// far as BladeSideInDegrees, the wrist still bending the point round ahead, so it keeps looking at the other; from
+	// there to the end it turns back out again,
+	// on to BladeSideOutDegrees the other way, the blade opening out to the side.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeSideTurnSplit = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeSideInDegrees = 90.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeSideOutDegrees = 90.f;
+
+	// Held up still, the point looks ahead and this much up (share of up to ahead), the wrist bending the blade on from
+	// upright at most this far, as far as a wrist bends.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeGuardUpShare = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeWristBendDegrees = 45.f;
+
+	// A blade swung out costs this much stamina where a fist's punch costs PunchStaminaCost, and every quick move of it
+	// (faster than PunchSlowSpeed) this much more for each whole width of the mouse's field it goes.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeSwingStaminaCost = 12.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeFastMoveStaminaPerField = 4.f;
+
 	// Brought across to the other side, a blade's wrist turns in this far.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeCrossTurnDegrees = 30.f;

@@ -41,7 +41,24 @@ class AEDIR_API UAedirBloodSubsystem : public UWorldSubsystem
 	GENERATED_BODY()
 
 public:
-	static constexpr int32 MaxDrops = 400;
+	// The most drops in the air at once; the oldest goes when a new one needs room.
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	int32 MaxDrops = 1000;
+
+	// How many drops a cut throws out, back the way the blow came: a number between these two, both counted in.
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	int32 CutDropsMin = 120;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	int32 CutDropsMax = 180;
+
+	// The same for a stab.
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	int32 PunctureDropsMin = 20;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	int32 PunctureDropsMax = 34;
+
 	static constexpr int32 MaxSplats = 700;
 	// Three game days at Skyrim's pace, where a day passes in 72 real minutes.
 	static constexpr float SplatLifetime = 3.f * 72.f * 60.f;

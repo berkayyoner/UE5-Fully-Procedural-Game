@@ -100,10 +100,6 @@ namespace
 	constexpr float AedirGripSlideStepCm = 2.f;
 	constexpr float AedirGripMinHandsApartCm = 12.f;
 	constexpr float AedirFistAlphaThreshold = 0.001f;
-	// A blade held up still points ahead and a little up, at the other's face, as a sword is held on guard: the thumb on
-	// top, the wrist bending the blade on forward from upright at most this far, as far as a wrist bends.
-	constexpr float AedirBladeWristBendDegrees = 45.f;
-	constexpr float AedirBladeGuardUpShare = 0.7f;
 	constexpr int32 AedirFingerCount = 5;
 	constexpr int32 AedirFingerJointCount = 3;
 	// The chest pitch grows by this factor times the exertion, so a fully exerted breath is three times as deep.
@@ -271,9 +267,9 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	// The rebuilt fists have the last word on the arms they hold up.
 	// The right arm first: a left hand on the grip of its blade goes where the right hand has been put.
 	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1], GaitData.FistArmTurn[1],
-		GaitData.FistArmArmed[1], GaitData.FistArmBladeAhead[1], GaitData.FistArmItemInHand[1], AedirBladeWristBendDegrees);
+		GaitData.FistArmArmed[1], GaitData.FistArmBladeAhead[1], GaitData.FistArmItemInHand[1], GaitData.FistArmBladeBendDegrees);
 	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.FistArmHandWorld[0], GaitData.FistArmElbowWorld[0], GaitData.FistArmAlpha[0], GaitData.FistArmTurn[0],
-		GaitData.FistArmArmed[0], GaitData.FistArmBladeAhead[0], GaitData.FistArmItemInHand[0], AedirBladeWristBendDegrees);
+		GaitData.FistArmArmed[0], GaitData.FistArmBladeAhead[0], GaitData.FistArmItemInHand[0], GaitData.FistArmBladeBendDegrees);
 	ApplyGripOnBlade(CSPose, Bones);
 
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
@@ -834,7 +830,7 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 		if (bArmed && BladeAhead > 0.f)
 		{
 			const FVector Blade = (HandRotation * ItemInHand).GetAxisX();
-			const FQuat Bend = FQuat::FindBetweenNormals(Blade, (Ahead + ActorToMesh.RotateVector(FVector::UpVector) * AedirBladeGuardUpShare).GetSafeNormal());
+			const FQuat Bend = FQuat::FindBetweenNormals(Blade, (Ahead + ActorToMesh.RotateVector(FVector::UpVector) * GaitData.FistArmBladeUpShare).GetSafeNormal());
 			FVector Axis;
 			float Angle = 0.f;
 			Bend.ToAxisAndAngle(Axis, Angle);

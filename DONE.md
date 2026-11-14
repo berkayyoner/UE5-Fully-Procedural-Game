@@ -294,3 +294,8 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Brought across, a blade's wrist turns in 30 degrees more; drawn back to its own side, its upper arm hangs about 45 degrees below level.
 - Walking with a blade the fists hold, the older weapon code no longer turns its hand; FistInfo also logs the blade, knuckle, thumb and upper arm directions.
 - Raised over the head a blade arm stays a little bent (elbow about 60 degrees, the hand some 20 cm over the head and a little behind), no longer thrown straight up; FistInfo logs the elbow bend and the hand's place from the head.
+- A cut throws out 120-180 drops of blood (was 40-70), up to 1000 in the air; the counts are two variables on the blood subsystem (CutDropsMin, CutDropsMax), with PunctureDropsMin/Max and MaxDrops beside them.
+- A blade drawn to its own side turns its wrist in two steps: up to half way in (90 degrees, the point kept on the other), then back out past where it began (90 degrees out) to the end.
+- Mouse down takes a blade lower: 65 degrees round, the arm 20 cm further out and the waist bending 40 degrees, so the fist goes about 20 cm lower than before.
+- A blade swung out costs 12 stamina (a punch 8), and quick moves of it 4 more per width of the mouse field.
+- The blade's guard point and wrist bend moved from fixed numbers in the pose code to variables on the fists (BladeGuardUpShare, BladeWristBendDegrees).
