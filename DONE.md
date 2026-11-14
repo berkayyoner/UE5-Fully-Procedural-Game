@@ -289,3 +289,7 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Stepped-on grass leans a little further over (28 degrees instead of 22).
 - Knives and one-handed swords are swung by the fist arms in the hand that picked them up: same arc, no middle dead zone, the point ahead in the guard, the wrist turning out at its own side.
 - Right button clicked with a blade in the right hand and the left empty takes it in both hands (left hand on the grip) or back in one; held down, the left hand comes off as a fist.
+- A one-handed blade is held lower in the middle, before the chest, thumb on top and the point ahead and a little up, the wrist bending at most 45 degrees (no more turning the hand over).
+- Mouse up raises a blade round over the head and back (115 degrees, the arm reaching higher) for a blow straight down.
+- Brought across, a blade's wrist turns in 30 degrees more; drawn back to its own side, its upper arm hangs about 45 degrees below level.
+- Walking with a blade the fists hold, the older weapon code no longer turns its hand; FistInfo also logs the blade, knuckle, thumb and upper arm directions.

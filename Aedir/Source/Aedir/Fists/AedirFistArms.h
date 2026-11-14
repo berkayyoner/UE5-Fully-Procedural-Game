@@ -142,9 +142,31 @@ public:
 	float RaiseSeconds = 0.15f;
 
 	// A blade in the hand: held up still, its point looks ahead at the other; drawn round to its own side the wrist turns
-	// out the opposite way a fist's does. The wrist bends at most this far to bring the point ahead.
+	// out the opposite way a fist's does.
+	// A blade is held up lower and further out than a fist, before the chest rather than the face: this much lower and this
+	// far before the middle of the shoulders, in the middle of the arc.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeWristBendDegrees = 75.f;
+	float BladeGuardDropCm = 22.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeGuardForwardCm = 36.f;
+
+	// The mouse all the way up raises a blade this far round over the head and back, for a blow straight down, the arm
+	// reaching this much further up.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeArcUpDegrees = 115.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeUpReachCm = 15.f;
+
+	// Drawn back to its own side, a blade arm's elbow is pointed this far below level, which leaves the upper arm about half
+	// way down (45 degrees).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeElbowLiftDegrees = -52.f;
+
+	// Brought across to the other side, a blade's wrist turns in this far.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeCrossTurnDegrees = 30.f;
 
 	// Held in both hands, the second hand closes on the grip this far below the first, towards the pommel.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")

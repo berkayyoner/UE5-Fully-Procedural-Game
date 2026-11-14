@@ -100,8 +100,10 @@ namespace
 	constexpr float AedirGripSlideStepCm = 2.f;
 	constexpr float AedirGripMinHandsApartCm = 12.f;
 	constexpr float AedirFistAlphaThreshold = 0.001f;
-	// A blade held up still points ahead: the wrist bends at most this far to bring it round.
-	constexpr float AedirBladeWristBendDegrees = 75.f;
+	// A blade held up still points ahead and a little up, at the other's face, as a sword is held on guard: the thumb on
+	// top, the wrist bending the blade on forward from upright at most this far, as far as a wrist bends.
+	constexpr float AedirBladeWristBendDegrees = 45.f;
+	constexpr float AedirBladeGuardUpShare = 0.7f;
 	constexpr int32 AedirFingerCount = 5;
 	constexpr int32 AedirFingerJointCount = 3;
 	// The chest pitch grows by this factor times the exertion, so a fully exerted breath is three times as deep.
@@ -806,13 +808,13 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 		};
 		const FVector BackOfHand = InHand(Middle);
 		const FVector KnuckleRow = InHand(First) - InHand(Little);
-		// A blade's knuckles, and so the blade, lean ahead rather than up and back the more its point is to look ahead; a hand
-		// closing on a grip lays them along it.
+		// A blade's knuckles, and so the blade, stand up (thumb on top) rather than lean back the more its point is to look
+		// ahead, and the wrist bends it on forward from there; a hand closing on a grip lays them along it.
 		const FVector Ahead = ActorToMesh.RotateVector(FVector::ForwardVector);
 		FVector Lean = ActorToMesh.RotateVector(FVector::UpVector - FVector::ForwardVector).GetSafeNormal();
 		if (bArmed)
 		{
-			Lean = FMath::Lerp(Lean, Ahead, FMath::Clamp(BladeAhead, 0.f, 1.f)).GetSafeNormal();
+			Lean = FMath::Lerp(Lean, ActorToMesh.RotateVector(FVector::UpVector), FMath::Clamp(BladeAhead, 0.f, 1.f)).GetSafeNormal();
 		}
 		if (!RowMesh.IsNearlyZero())
 		{
@@ -832,7 +834,7 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 		if (bArmed && BladeAhead > 0.f)
 		{
 			const FVector Blade = (HandRotation * ItemInHand).GetAxisX();
-			const FQuat Bend = FQuat::FindBetweenNormals(Blade, Ahead);
+			const FQuat Bend = FQuat::FindBetweenNormals(Blade, (Ahead + ActorToMesh.RotateVector(FVector::UpVector) * AedirBladeGuardUpShare).GetSafeNormal());
 			FVector Axis;
 			float Angle = 0.f;
 			Bend.ToAxisAndAngle(Axis, Angle);

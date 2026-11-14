@@ -649,11 +649,13 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.ArmBalanceSpread = FMath::FInterpTo(GaitState.ArmBalanceSpread, FMath::Clamp((0.85f - BalanceNow) / 0.5f, 0.f, 1.f), DeltaTime, 10.f);
 	GaitState.ArmRunSpread = RunBlend * RunArmSpreadShare;
 	const UAedirInteractionComponent* Hands = CreatureOwner ? CreatureOwner->Interaction.Get() : nullptr;
-	const auto ReadWeaponAim = [Combat, Hands, DeltaTime](EAedirHand Hand, FVector& OutDirection, float& OutAlpha)
+	// A blade the fists hold is theirs: the older weapon code does not turn its hand, neither raised nor carried.
+	const UAedirFistArms* BladeFists = CreatureOwner ? CreatureOwner->FindComponentByClass<UAedirFistArms>() : nullptr;
+	const auto ReadWeaponAim = [Combat, Hands, DeltaTime, BladeFists](EAedirHand Hand, FVector& OutDirection, float& OutAlpha)
 	{
 		FVector Direction = FVector::ForwardVector;
 		float Alpha = 0.f;
-		if (Combat && Combat->GetWeaponAim(Hand, Direction, Alpha))
+		if (Combat && !(BladeFists && BladeFists->IsArmed(Hand)) && Combat->GetWeaponAim(Hand, Direction, Alpha))
 		{
 			// Reversed in the hand, what strikes comes out by the little finger: the hand is pointed the other way round.
 			const AAedirItemActor* Held = Hands ? Hands->GetHeldItem(Hand) : nullptr;

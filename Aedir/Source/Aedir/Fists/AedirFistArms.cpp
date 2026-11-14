@@ -208,15 +208,20 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const bool bFollows = !bBoth || AimSide == Side;
 		const float ArmTheta = bFollows ? Theta : 0.f;
 		const float ArmPunch = (!bBoth || Slot == PunchSlot) ? Punch : 0.f;
+		const bool bBlade = bArmed[Slot];
+		const float Raise = FMath::Max(UpDown, 0.f);
 		// The arc: in at the sides, out at the middle as far as the punch carries it.
 		const float SinT = FMath::Sin(ArmTheta);
 		const float CosT = FMath::Cos(ArmTheta);
-		const float Radius = FMath::Lerp(GuardForwardCm, SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT;
+		// A blade is held further out, and reaches up further over the head.
+		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT + (bBlade ? Raise * BladeUpReachCm : 0.f);
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
 		// Round towards the side the height of the middle falls away and turns the other way, so a raised fist comes down
 		// across and a lowered one up.
-		const float ArmPhi = Phi * (1.f - (1.f + ArcSideReverse) * FMath::Abs(SinT));
+		// A blade goes on up round over the head and back.
+		const float ArmUp = bBlade && UpDown > 0.f ? FMath::DegreesToRadians(UpDown * BladeArcUpDegrees) : Phi;
+		const float ArmPhi = ArmUp * (1.f - (1.f + ArcSideReverse) * FMath::Abs(SinT));
 		const float SinP = FMath::Sin(ArmPhi);
 		const float CosP = FMath::Cos(ArmPhi);
 		// Tips a direction of the level guard up round the chest, about the axis across this arm's way out.
@@ -226,9 +231,11 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			const double B = FVector::DotProduct(V, Up);
 			return V - Out * A - Up * B + Out * (A * CosP - B * SinP) + Up * (A * SinP + B * CosP);
 		};
-		FistWorld[Slot] = Chest + Tip(Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * GuardHeightCm);
+		// A blade held up in the middle is lower, before the chest; raised or drawn round it comes up to the fist's height.
+		const float Height = GuardHeightCm - (bBlade ? BladeGuardDropCm * (1.f - FMath::Abs(SinT)) * (1.f - Raise) : 0.f);
+		FistWorld[Slot] = Chest + Tip(Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * Height);
 		const FVector GuardPole = -Forward * 0.25f + Right * (Side * FMath::Sin(HalfSpread)) - Up * FMath::Cos(HalfSpread);
-		const float LiftAngle = FMath::DegreesToRadians(ElbowLiftDegrees);
+		const float LiftAngle = FMath::DegreesToRadians(bBlade ? BladeElbowLiftDegrees : ElbowLiftDegrees);
 		// Lifted, the elbow goes back and out behind the fist, about level.
 		const FVector LiftPole = (-Forward + Right * Side).GetSafeNormal() * FMath::Cos(LiftAngle) + Up * FMath::Sin(LiftAngle);
 		// Only the arm drawn back to its own side lifts its elbow; the one brought across keeps it down.
@@ -245,8 +252,14 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const FVector Shoulder = Slot == 1 ? ShoulderR : ShoulderL;
 		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright. A blade's wrist
 		// turns out the other way there, and the nearer the middle, the more its point is brought round ahead.
-		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side * (bArmed[Slot] ? -1.f : 1.f);
-		BladeAhead[Slot] = bArmed[Slot] ? 1.f - FMath::Abs(SinT) : 0.f;
+		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side * (bBlade ? -1.f : 1.f);
+		// Brought across, a blade's wrist turns in a little.
+		if (bBlade && bFollows && AimSide != 0.f && AimSide != Side)
+		{
+			FistTurn[Slot] += FMath::Abs(SinT) * BladeCrossTurnDegrees * Side;
+		}
+		// Raised over the head its point goes back, no longer ahead.
+		BladeAhead[Slot] = bBlade ? (1.f - FMath::Abs(SinT)) * (1.f - Raise) : 0.f;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
 		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm));

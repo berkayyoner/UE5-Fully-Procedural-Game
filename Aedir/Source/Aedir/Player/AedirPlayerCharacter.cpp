@@ -2046,6 +2046,18 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 		const float Peak = FistArms->TakePeakPunch(PeakAim);
 		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s aim %.2f %.2f punch %.2f peak %.2f at %.2f | L %.2f fist %s | R %.2f fist %s"), *Label, FistArms->GetAim().X, FistArms->GetAim().Y, FistArms->GetPunch(), Peak, PeakAim.X,
 			Alpha[0], *Body.InverseTransformPositionNoScale(Fist[0]).ToCompactString(), Alpha[1], *Body.InverseTransformPositionNoScale(Fist[1]).ToCompactString());
+		// Which way the blade in the right hand points, and the hand's knuckle row (little finger to first) and thumb, in the
+		// body's frame (forward, right, up).
+		if (const AAedirItemActor* Blade = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr)
+		{
+			const auto Way = [&](const FVector& V) { return Body.InverseTransformVectorNoScale(V.GetSafeNormal()).ToCompactString(); };
+			const FVector Row = GetMesh()->GetBoneLocation(TEXT("index_01_r")) - GetMesh()->GetBoneLocation(TEXT("pinky_01_r"));
+			const FVector Thumb = GetMesh()->GetBoneLocation(TEXT("thumb_02_r")) - GetMesh()->GetBoneLocation(TEXT("hand_r"));
+			const FVector Forearm = GetMesh()->GetBoneLocation(TEXT("hand_r")) - GetMesh()->GetBoneLocation(TEXT("lowerarm_r"));
+			const FVector UpperArm = GetMesh()->GetBoneLocation(TEXT("lowerarm_r")) - GetMesh()->GetBoneLocation(TEXT("upperarm_r"));
+			const float ElbowDegrees = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(static_cast<float>(UpperArm.GetSafeNormal().Z), -1.f, 1.f)));
+			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s blade %s row %s thumb %s forearm %s upper arm %.0f deg over level"), *Label, *Way(Blade->GetActorForwardVector()), *Way(Row), *Way(Thumb), *Way(Forearm), ElbowDegrees);
+		}
 	}
 }
 
