@@ -186,9 +186,10 @@ public:
 	float BladeSideInDegrees = 90.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeSideOutDegrees = 80.f;
+	float BladeSideOutDegrees = 70.f;
 
-	// The wrist bends a blade's point up or down (as seen in the world), in degrees, up positive: up
+	// The wrist bends up (towards the thumb, the point going back over the forearm) or down (towards the little finger,
+	// the point going on along the forearm), in degrees, up positive, without turning the hand about the forearm: up
 	// this far drawn all the way round to either side (from the middle of the way there on), up this far raised all the
 	// way and down this far lowered all the way, so it reaches the ground.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
@@ -199,10 +200,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeLowerWristDownDegrees = 45.f;
-
-	// Those bends take the blade no further than this far above or below level, short of straight up or down.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeMostElevationDegrees = 85.f;
 
 	// Drawn round to the side a blade keeps this share of the middle's angle up or down, the same way (a fist turns the
 	// other way, ArcSideReverse), so the whole sweep is tipped up or down with the mouse and strikes high or low.

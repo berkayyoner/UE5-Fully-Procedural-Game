@@ -2061,7 +2061,7 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 			// How far the lowest point of the blade is above the soles, to see whether it reaches the ground.
 			const float Feet = static_cast<float>(GetActorLocation().Z) - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 			const float LowestAboveFeet = static_cast<float>(Blade->GetComponentsBoundingBox(true).Min.Z) - Feet;
-			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s blade %s row %s thumb %s forearm %s upper arm %.0f deg over level, elbow bent %.0f deg, hand from head %s, blade low point %.0f cm above the soles, wrist up %.0f aim %.2f"), *Label, *Way(Blade->GetActorForwardVector()), *Way(Row), *Way(Thumb), *Way(Forearm), ElbowDegrees, ElbowBend, *HandAboveHead.ToCompactString(), LowestAboveFeet, FistArms->GetBladeWristUp(EAedirHand::Right), FistArms->GetBladeAim(EAedirHand::Right));
+			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s blade %s row %s thumb %s forearm %s upper arm %.0f deg over level, elbow bent %.0f deg, hand from head %s, blade low point %.0f cm above the soles, wrist up %.0f aim %.2f, blade to forearm %.0f deg"), *Label, *Way(Blade->GetActorForwardVector()), *Way(Row), *Way(Thumb), *Way(Forearm), ElbowDegrees, ElbowBend, *HandAboveHead.ToCompactString(), LowestAboveFeet, FistArms->GetBladeWristUp(EAedirHand::Right), FistArms->GetBladeAim(EAedirHand::Right), FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(Blade->GetActorForwardVector().GetSafeNormal(), Forearm.GetSafeNormal())), -1.f, 1.f))));
 		}
 	}
 }

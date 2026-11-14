@@ -304,3 +304,6 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Lowered, a blade's point is no longer brought round ahead and up, and the waist bends 55 degrees, so a low blow reaches the ground.
 - Drawn to the side a blade keeps half the up or down angle the same way (BladeArcSideKeep) instead of turning against it, so horizontal sweeps aim high or low with the mouse.
 - FistInfo logs how far the blade's lowest point is above the soles, and the blade's wrist bend.
+- The blade wrist's up/down bend is now the wrist's own (about the palm's normal, towards the thumb or the little finger) instead of turning the blade toward world up or down; the 85-degree world limit is gone.
+- A blade's wrist turns out 70 degrees (was 80) drawn all the way to its own side.
+- FistInfo logs the angle between the blade and the forearm.
