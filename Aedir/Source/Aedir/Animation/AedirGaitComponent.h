@@ -165,6 +165,8 @@ struct AEDIR_API FAedirGaitState
 	FVector FistArmBladeLean[2] = { FVector::UpVector, FVector::UpVector };
 	FVector FistArmBladeAimWay[2] = { FVector::ForwardVector, FVector::ForwardVector };
 	FQuat FistArmItemInHand[2] = { FQuat::Identity, FQuat::Identity };
+	// Where the held blade's grip is in the hand's frame (its root, the blade running on along its X).
+	FVector FistArmItemPlace[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	// The left hand on the grip of the blade in the right hand, and how far below the right hand it closes.
 	float FistArmGripAlpha = 0.f;
 	float FistArmGripGapCm = 9.f;

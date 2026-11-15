@@ -70,6 +70,8 @@ public:
 	// Grip point along the long axis of the item, used when the item is held in the closed hand.
 	float GripLocalCm = 0.f;
 	float GripSpanCm = 13.f;
+	// How far below the grip point the end of the pommel is.
+	float GetPommelBelowGripCm() const;
 
 	// The hollow of a closed hand: this share of the way from the wrist to the knuckles and this far off the back of the hand.
 	static constexpr float HandGripPalmShare = 0.62f;

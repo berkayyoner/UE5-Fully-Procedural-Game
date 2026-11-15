@@ -389,7 +389,7 @@ void AAedirPlayerCharacter::HandleLockOnTogglePressed()
 	}
 }
 
-AAedirCreature* AAedirPlayerCharacter::FindLockOnTarget() const
+AAedirCreature* AAedirPlayerCharacter::FindLockOnTarget(float ConeDegrees) const
 {
 	const APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (!PlayerController || !GetWorld())
@@ -400,7 +400,7 @@ AAedirCreature* AAedirPlayerCharacter::FindLockOnTarget() const
 	FRotator ViewRotation;
 	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
 	const FVector Look = ViewRotation.Vector();
-	const float MinCos = FMath::Cos(FMath::DegreesToRadians(LockOnConeDegrees));
+	const float MinCos = FMath::Cos(FMath::DegreesToRadians(ConeDegrees > 0.f ? ConeDegrees : LockOnConeDegrees));
 
 	// The living creature nearest to where the view points, among those close enough; a little further away counts a little.
 	AAedirCreature* Best = nullptr;
@@ -445,12 +445,14 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 	}
 
 	AAedirCreature* Target = LockOnTarget.Get();
+	// The one locked on to has fallen: the view goes on to whoever is nearest to where it looks, further round than a new lock.
+	const bool bKilled = (Target && Target->Stats && Target->Stats->IsDead()) || LockOnTarget.IsStale();
 	const bool bLost = !Target || (Target->Stats && Target->Stats->IsDead()) || FVector::Dist(Target->GetActorLocation(), GetActorLocation()) > LockOnRangeCm * 1.4f;
 	// Held on someone who is no enemy, the view goes over to an enemy as soon as one comes into it.
 	const AAedirCreature* Better = !bLost && !IsEnemyOf(Target) ? FindLockOnTarget() : nullptr;
 	if (bLost || (Better && Better != Target && IsEnemyOf(Better)))
 	{
-		Target = FindLockOnTarget();
+		Target = FindLockOnTarget(bKilled ? LockOnSwitchConeDegrees : 0.f);
 		LockOnTarget = Target;
 		UE_CLOG(Target != nullptr, LogAedir, Log, TEXT("[LockOn] The view locks on %s."), *GetNameSafe(Target));
 	}
@@ -2095,6 +2097,26 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 			const float Feet = static_cast<float>(GetActorLocation().Z) - GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 			const float LowestAboveFeet = static_cast<float>(Blade->GetComponentsBoundingBox(true).Min.Z) - Feet;
 			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s blade %s row %s thumb %s forearm %s upper arm %.0f deg over level, elbow bent %.0f deg, hand from head %s, blade low point %.0f cm above the soles, wrist up %.0f aim %.2f, blade to forearm %.0f deg"), *Label, *Way(Blade->GetActorForwardVector()), *Way(Row), *Way(Thumb), *Way(Forearm), ElbowDegrees, ElbowBend, *HandAboveHead.ToCompactString(), LowestAboveFeet, FistArms->GetBladeWristUp(EAedirHand::Right), FistArms->GetBladeAim(EAedirHand::Right), FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(Blade->GetActorForwardVector().GetSafeNormal(), Forearm.GetSafeNormal())), -1.f, 1.f))));
+			// Where the hollow of each palm is: how far off the blade's line, and how far along it from the item's root (the
+			// handle runs from the grip point on up towards the point, the pommel lies below it).
+			const FVector Root = Blade->GetActorLocation();
+			const FVector Along = Blade->GetActorForwardVector().GetSafeNormal();
+			const auto Hollow = [&](const TCHAR* Suffix)
+			{
+				const auto At = [&](const TCHAR* Bone) { return GetMesh()->GetBoneLocation(FName(*FString::Printf(TEXT("%s%s"), Bone, Suffix))); };
+				const FVector Hand = At(TEXT("hand"));
+				FVector Normal = FVector::CrossProduct(At(TEXT("index_01")) - At(TEXT("pinky_01")), At(TEXT("middle_01")) - Hand).GetSafeNormal();
+				if (FVector::DotProduct(Normal, At(TEXT("thumb_01")) - Hand) < 0.0)
+				{
+					Normal = -Normal;
+				}
+				const FVector Palm = Hand + (At(TEXT("middle_01")) - Hand) * AAedirItemActor::HandGripPalmShare + Normal * AAedirItemActor::HandGripPalmDepthCm;
+				const FVector From = Palm - Root;
+				// And whether the first finger is towards the point (1) or the pommel (-1), and the palm's normal.
+				return FString::Printf(TEXT("off %.1f along %.1f first finger to point %.2f palm %s"), FVector::VectorPlaneProject(From, Along).Size(), FVector::DotProduct(From, Along),
+					FVector::DotProduct((At(TEXT("index_01")) - At(TEXT("pinky_01"))).GetSafeNormal(), Along), *Body.InverseTransformVectorNoScale(Normal).ToCompactString());
+			};
+			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s palms: right %s, left %s | grip at %.1f span %.1f, both hands %d"), *Label, *Hollow(TEXT("_r")), *Hollow(TEXT("_l")), Blade->GripLocalCm + Blade->HeldGripShiftCm, Blade->GripSpanCm, FistArms->IsTwoHand() ? 1 : 0);
 		}
 	}
 }

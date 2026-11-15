@@ -55,7 +55,7 @@ private:
 		bool bArmed = false, float BladeAhead = 0.f, const FQuat& ItemInHand = FQuat::Identity, float BladeBendDegrees = 0.f, const FVector& RowMesh = FVector::ZeroVector,
 		float BladeAim = 0.f, float WristUpDegrees = 0.f, const FVector& BladeLeanMesh = FVector::ZeroVector, const FVector& AimWayMesh = FVector::ZeroVector) const;
 	// The left hand closes on the grip of the blade the right hand holds, this far below it.
-	void ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
+	void ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones) const;
 	FVector ApplyWeaponArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, const FVector& DirectionWorld, float Share, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
 	mutable FVector LastWeaponForearm[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector ApplyArmLedBlade(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& DirectionWorld, float Share, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;

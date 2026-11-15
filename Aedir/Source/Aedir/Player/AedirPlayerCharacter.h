@@ -88,6 +88,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float LockOnConeDegrees = 35.f;
 
+	// When the one locked on to dies, the lock goes over to the creature nearest to where the view looks, this far round.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnSwitchConeDegrees = 90.f;
+
 	// How quickly the view turns to the locked target.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float LockOnTurnSpeed = 7.f;
@@ -696,7 +700,8 @@ private:
 
 	// Lock-on: while a guard is held the camera keeps the nearest creature the view points at in sight.
 	void UpdateLockOn(float DeltaSeconds);
-	class AAedirCreature* FindLockOnTarget() const;
+	// The nearest creature to where the view looks, within this far of it (the lock's own cone if none given).
+	class AAedirCreature* FindLockOnTarget(float ConeDegrees = 0.f) const;
 	void HandleThrustPressed();
 	void HandleThrustReleased();
 

@@ -196,7 +196,7 @@ public:
 	float BladeSideWristUpDegrees = 50.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeRaiseWristUpDegrees = 35.f;
+	float BladeRaiseWristUpDegrees = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeLowerWristDownDegrees = 45.f;
@@ -248,23 +248,38 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandGapCm = 9.f;
 
-	// Held in both hands, in the guard the hands come to the middle before the body, the right this far ahead of the
-	// shoulders, to the side (right positive) and up (below them negative), and the blade lies across, its point turned
-	// this far to the right and this far up (down negative). Moved, the blade goes as in one hand.
+	// On a short handle the second hand comes no further down than this far past the end of the pommel, closing over it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandGuardForwardCm = 26.f;
+	float TwoHandPastPommelCm = 2.5f;
+
+	// Held in both hands and not raised, the blade is carried as a two-handed sword is: the right hand this far ahead of the
+	// middle of the body, to the side (right positive) and up from it, before the hips, the blade aslant across, its point
+	// turned this far out to the right and this far up (down negative). Raised, it goes as in one hand.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandRestForwardCm = 24.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandGuardSideCm = 0.f;
+	float TwoHandRestSideCm = -10.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandGuardHeightCm = -18.f;
+	float TwoHandRestHeightCm = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandGuardYawDegrees = 45.f;
+	float TwoHandRestYawDegrees = 45.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandGuardPitchDegrees = -20.f;
+	float TwoHandRestPitchDegrees = -25.f;
+
+	// A blade's whole arc is tipped up or down with the view, this share of its pitch and no further than these, so a blow
+	// drawn across goes round the way the view looks and the arm drawn back goes back from there.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeLookTiltShare = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeLookTiltDownMaxDegrees = 60.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeLookTiltUpMaxDegrees = 40.f;
 
 	// A knife or a one-handed sword: what these hands swing like a fist, one in a hand.
 	static bool IsOneHandBlade(const class AAedirItemActor* Item);
@@ -328,6 +343,8 @@ private:
 
 	bool bHeld[2] = { false, false };
 	float Alpha[2] = { 0.f, 0.f };
+	// How far each arm is the fists' to pose: up, or carried in both hands.
+	float ShownAlpha[2] = { 0.f, 0.f };
 	FVector FistWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector ElbowWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector2D Aim = FVector2D::ZeroVector;

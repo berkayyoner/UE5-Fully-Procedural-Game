@@ -274,7 +274,7 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 		GaitData.FistArmArmed[0], GaitData.FistArmBladeAhead[0], GaitData.FistArmItemInHand[0], GaitData.FistArmBladeBendDegrees,
 		FVector::ZeroVector, GaitData.FistArmBladeAim[0], GaitData.FistArmBladeWristUp[0], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[0]),
 		MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeAimWay[0]));
-	ApplyGripOnBlade(CSPose, Bones);
+	ApplyGripOnBlade(CSPose, RefCSPose, Bones);
 
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"));
@@ -735,19 +735,54 @@ void FAedirProceduralAnimProxy::ApplyHandAim(FCSPose<FCompactPose>& CSPose, FCSP
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
 }
 
-void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const
+void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones) const
 {
 	const float Alpha = GaitData.FistArmGripAlpha;
 	const FCompactPoseBoneIndex RightHand = ResolveCompactBone(Bones, BoneNameSet.RightHand);
+	const FCompactPoseBoneIndex LeftHand = ResolveCompactBone(Bones, BoneNameSet.LeftHand);
 	const FCompactPoseBoneIndex LeftHumerus = ResolveCompactBone(Bones, BoneNameSet.LeftHumerus);
-	if (Alpha <= 0.f || !RightHand.IsValid() || !LeftHumerus.IsValid())
+	const FCompactPoseBoneIndex Middle = ResolveCompactBone(Bones, TEXT("middle_01_r"));
+	const FCompactPoseBoneIndex First = ResolveCompactBone(Bones, TEXT("index_01_r"));
+	const FCompactPoseBoneIndex Little = ResolveCompactBone(Bones, TEXT("pinky_01_r"));
+	if (Alpha <= 0.f || !RightHand.IsValid() || !LeftHand.IsValid() || !LeftHumerus.IsValid() || !Middle.IsValid() || !First.IsValid() || !Little.IsValid())
 	{
 		return;
 	}
-	// The blade as the right hand has it now, and the place on its grip a hand's width below, towards the pommel.
+	// The blade as the right hand has it now: its grip, and the way it runs.
 	const FTransform Right = CSPose.GetComponentSpaceTransform(RightHand);
-	const FVector Blade = (Right.GetRotation() * GaitData.FistArmItemInHand[1]).GetAxisX();
-	const FVector Wrist = Right.GetLocation() - Blade * GaitData.FistArmGripGapCm;
+	const FQuat RightRotation = Right.GetRotation();
+	const FVector Blade = (RightRotation * GaitData.FistArmItemInHand[1]).GetAxisX();
+	const FVector Grip = Right.TransformPosition(GaitData.FistArmItemPlace[1]);
+	// The palm of the right hand faces this way, from the knuckles' places in the hand's own frame (built up from the
+	// local pose, as the hand has just been turned).
+	const auto InHand = [&CSPose, &RightHand](FCompactPoseBoneIndex Bone)
+	{
+		FTransform Place = CSPose.GetPose()[Bone];
+		for (FCompactPoseBoneIndex Parent = CSPose.GetPose().GetParentBoneIndex(Bone); Parent.IsValid() && Parent != RightHand; Parent = CSPose.GetPose().GetParentBoneIndex(Parent))
+		{
+			Place = Place * CSPose.GetPose()[Parent];
+		}
+		return Place.GetLocation();
+	};
+	const FVector Palm = RightRotation.RotateVector(FVector::CrossProduct(InHand(Middle), InHand(First) - InHand(Little))).GetSafeNormal();
+	// The left hand closes on the grip as the right hand's mirror: palm the same way, thumb on to the point, the fingers
+	// coming round from the other side. It is the right hand mirrored in the plane along the blade through the palm, and
+	// moved a hand's width down the grip, towards the pommel.
+	const FVector Mirror = FVector::CrossProduct(Blade, Palm).GetSafeNormal();
+	if (Mirror.IsNearlyZero())
+	{
+		return;
+	}
+	const auto Reflect = [&Mirror](const FVector& V) { return V - Mirror * (2.0 * FVector::DotProduct(V, Mirror)); };
+	const FVector Wrist = Grip + Reflect(Right.GetLocation() - Grip) - Blade * GaitData.FistArmGripGapCm;
+	// The left hand's bones are the right's mirrored across the body: from the two hands at rest, how the left hand's own
+	// frame lies in the right's mirrored one.
+	const FVector Across = ActorToMesh.RotateVector(FVector::RightVector);
+	const auto Sideways = [&Across](const FVector& V) { return V - Across * (2.0 * FVector::DotProduct(V, Across)); };
+	const FQuat RightRest = RefCSPose.GetComponentSpaceTransform(RightHand).GetRotation();
+	const FQuat LeftRest = RefCSPose.GetComponentSpaceTransform(LeftHand).GetRotation();
+	const auto LeftAxis = [&](const FVector& Axis) { return Reflect(RightRotation.RotateVector(RightRest.Inverse().RotateVector(Sideways(LeftRest.RotateVector(Axis))))); };
+	const FQuat LeftRotation = FMatrix(LeftAxis(FVector::XAxisVector), LeftAxis(FVector::YAxisVector), LeftAxis(FVector::ZAxisVector), FVector::ZeroVector).ToQuat().GetNormalized();
 	// The elbow hangs down and out to its own side, behind the hand.
 	const FVector Shoulder = CSPose.GetComponentSpaceTransform(LeftHumerus).GetLocation();
 	const FVector Down = ActorToMesh.RotateVector(FVector::DownVector);
@@ -755,6 +790,9 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	const FVector Back = ActorToMesh.RotateVector(FVector::BackwardVector);
 	const FVector Elbow = (Shoulder + Wrist) * 0.5 + (Down * 0.8 + Out * 0.6 + Back * 0.2).GetSafeNormal() * 40.0;
 	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, MeshToWorld.TransformPosition(Wrist), MeshToWorld.TransformPosition(Elbow), Alpha, 0.f, false, 0.f, FQuat::Identity, 0.f, Blade);
+	FTransform Left = CSPose.GetComponentSpaceTransform(LeftHand);
+	Left.SetRotation(FQuat::Slerp(Left.GetRotation(), LeftRotation, FMath::Clamp(Alpha, 0.f, 1.f)).GetNormalized());
+	CSPose.SetComponentSpaceTransform(LeftHand, Left);
 }
 
 void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha, float TurnDegrees,

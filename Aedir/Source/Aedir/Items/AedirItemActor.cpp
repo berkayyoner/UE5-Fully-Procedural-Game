@@ -128,6 +128,11 @@ void AAedirItemActor::Use_Implementation(AAedirCreature* User)
 	OnUsed(User);
 }
 
+float AAedirItemActor::GetPommelBelowGripCm() const
+{
+	return GripSpanCm * ItemPommelBeyondGripShare;
+}
+
 void AAedirItemActor::AttachToCreatureHand(AAedirCreature* Creature, EAedirHand Hand, float GripShiftCm)
 {
 	if (!HasAuthority() || !Creature || !Creature->Interaction)

@@ -74,7 +74,9 @@ void UAedirFistArms::SetHeld(EAedirHand Hand, bool bInHeld, float ViewPitchDegre
 	if (bInHeld && !bHeld[0] && !bHeld[1])
 	{
 		const float Range = ViewPitchDegrees > 0.f ? ArcUpDegrees : ArcDownDegrees;
-		Aim = FVector2D(0.0, FMath::Clamp(ViewPitchDegrees / FMath::Max(Range, 1.f), -1.f, 1.f));
+		// A blade's arc is tipped with the view itself, so its mouse starts in the middle.
+		const bool bBladeArc = bArmed[0] || bArmed[1];
+		Aim = FVector2D(0.0, bBladeArc ? 0.f : FMath::Clamp(ViewPitchDegrees / FMath::Max(Range, 1.f), -1.f, 1.f));
 		PendingMouse = FVector2D::ZeroVector;
 		Punch = 0.f;
 	}
@@ -94,7 +96,7 @@ bool UAedirFistArms::GetArm(EAedirHand Hand, FVector& OutFistWorld, FVector& Out
 	const int32 Slot = Index(Hand);
 	OutFistWorld = FistWorld[Slot];
 	OutElbowWorld = ElbowWorld[Slot];
-	OutAlpha = Alpha[Slot];
+	OutAlpha = ShownAlpha[Slot];
 	return OutAlpha > 0.f;
 }
 
@@ -202,6 +204,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	const float HalfSpread = FMath::DegreesToRadians(ElbowSpreadDegrees * 0.5f);
 	const float AimSide = FMath::Sign(static_cast<float>(Aim.X));
 	const bool bBoth = bHeld[0] && bHeld[1];
+	// A blade's arc tipped with the view, about the axis across the body through the chest.
+	const float ViewPitch = static_cast<float>(FRotator::NormalizeAxis(Owner->GetControlRotation().Pitch));
+	const float LookTilt = FMath::DegreesToRadians(FMath::Clamp(ViewPitch * BladeLookTiltShare, -BladeLookTiltDownMaxDegrees, BladeLookTiltUpMaxDegrees));
 	float Raised = 0.f;
 	for (int32 Slot = 0; Slot < 2; ++Slot)
 	{
@@ -246,7 +251,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		};
 		// A blade held up in the middle is lower, before the chest; raised or drawn round it comes up to the fist's height.
 		const float Height = GuardHeightCm - (bBlade ? BladeGuardDropCm * (1.f - FMath::Abs(SinT)) * (1.f - Raise) : 0.f);
-		FistWorld[Slot] = Chest + Tip(Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * Height);
+		const FVector FistFromChest = Tip(Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * Height);
 		const FVector GuardPole = -Forward * 0.25f + Right * (Side * FMath::Sin(HalfSpread)) - Up * FMath::Cos(HalfSpread);
 		const float LiftAngle = FMath::DegreesToRadians(bBlade ? BladeElbowLiftDegrees : ElbowLiftDegrees);
 		// Lifted, the elbow goes back and out behind the fist, about level.
@@ -261,8 +266,17 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			const FVector CrossPole = (Right * Side + Up * 0.25f).GetSafeNormal();
 			PoleLevel = FMath::Lerp(PoleLevel, CrossPole, CrossElbowOut * FMath::Clamp(FMath::Abs(SinT) / FMath::Max(FMath::Sin(FMath::DegreesToRadians(SingleArmAcrossShare * ArcDegrees * 0.5f)), 0.01f), 0.f, 1.f)).GetSafeNormal();
 		}
-		const FVector Pole = Tip(PoleLevel);
 		const FVector Shoulder = Slot == 1 ? ShoulderR : ShoulderL;
+		const float SinL = FMath::Sin(bBlade ? LookTilt : 0.f);
+		const float CosL = FMath::Cos(bBlade ? LookTilt : 0.f);
+		const auto Look = [&](const FVector& V)
+		{
+			const double A = FVector::DotProduct(V, Forward);
+			const double B = FVector::DotProduct(V, Up);
+			return V - Forward * A - Up * B + Forward * (A * CosL - B * SinL) + Up * (A * SinL + B * CosL);
+		};
+		FistWorld[Slot] = Chest + Look(FistFromChest);
+		const FVector Pole = Look(Tip(PoleLevel));
 		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright. A blade's wrist
 		// turns out the other way there, and the nearer the middle, the more its point is brought round ahead.
 		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side;
@@ -283,30 +297,40 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float Ahead = Share <= Split ? 1.f : 1.f - (Share - Split) / (1.f - Split);
 		BladeAhead[Slot] = bBlade ? Ahead : 0.f;
 		// The way the knuckles (and so the blade) lean, tipped up or down round the chest with the arm.
-		BladeLean[Slot] = Tip(FMath::Lerp((Up - Forward).GetSafeNormal(), Up, Ahead).GetSafeNormal()).GetSafeNormal();
+		BladeLean[Slot] = Look(Tip(FMath::Lerp((Up - Forward).GetSafeNormal(), Up, Ahead).GetSafeNormal())).GetSafeNormal();
 		// Raised or lowered, the point is no longer bent round ahead and up by the wrist.
 		const float Lower = FMath::Max(-UpDown, 0.f);
 		BladeAim[Slot] = bBlade ? Ahead * (1.f - Raise) * (1.f - Lower) : 0.f;
 		// Up at either side from the middle of the way there on, up raised, down lowered.
-		const float SideShare = bFollows ? FMath::Clamp((FMath::Abs(Across) - Split) / (1.f - Split), 0.f, 1.f) : 0.f;
+		// Brought across to the other side it stays straight.
+		const float SideShare = bFollows && bOwnSide ? FMath::Clamp((FMath::Abs(Across) - Split) / (1.f - Split), 0.f, 1.f) : 0.f;
 		// Drawn round and raised at once, the larger of the two, not both on top of each other.
-		BladeWristUp[Slot] = bBlade ? FMath::Max(SideShare * BladeSideWristUpDegrees, Raise * BladeRaiseWristUpDegrees) - Lower * BladeLowerWristDownDegrees : 0.f;
-		BladeAimWay[Slot] = (Forward + Up * BladeGuardUpShare).GetSafeNormal();
-		// In both hands the guard is in the middle before the body, the blade across it with its point a little down; as the
-		// blade is moved off the guard it goes over to the one-handed way.
-		const float TwoGuard = Slot == 1 && bBlade ? GripAlpha * BladeAim[Slot] : 0.f;
-		if (TwoGuard > 0.f)
-		{
-			const FVector Lay = FRotator(TwoHandGuardPitchDegrees, TwoHandGuardYawDegrees, 0.f).RotateVector(FVector::ForwardVector);
-			const FVector Way = Forward * Lay.X + Right * Lay.Y + Up * Lay.Z;
-			const FVector GuardPlace = Chest + Forward * TwoHandGuardForwardCm + Right * TwoHandGuardSideCm + Up * TwoHandGuardHeightCm;
-			FistWorld[Slot] = FMath::Lerp(FistWorld[Slot], GuardPlace, TwoGuard);
-			BladeAimWay[Slot] = FMath::Lerp(BladeAimWay[Slot], Way, TwoGuard).GetSafeNormal();
-			BladeLean[Slot] = FMath::Lerp(BladeLean[Slot], Way, TwoGuard).GetSafeNormal();
-		}
+		// Raised, the side's bend gives way to the raise's, so over the head the point is not thrown back.
+		BladeWristUp[Slot] = bBlade ? FMath::Max(SideShare * (1.f - Raise) * BladeSideWristUpDegrees, Raise * BladeRaiseWristUpDegrees) - Lower * BladeLowerWristDownDegrees : 0.f;
+		BladeAimWay[Slot] = Look((Forward + Up * BladeGuardUpShare).GetSafeNormal());
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
 		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm));
+		ShownAlpha[Slot] = Alpha[Slot];
+		// In both hands and not raised, the blade is carried low before the hips, aslant across with its point out to the
+		// right and down, the elbow hanging out at its side; raised, it goes as in one hand.
+		const float Rest = Slot == 1 && bBlade ? GripAlpha * (1.f - Alpha[Slot]) : 0.f;
+		if (Rest > 0.f)
+		{
+			const FVector Lay = FRotator(TwoHandRestPitchDegrees, TwoHandRestYawDegrees, 0.f).RotateVector(FVector::ForwardVector);
+			const FVector Way = Forward * Lay.X + Right * Lay.Y + Up * Lay.Z;
+			const FVector RestPlace = Owner->GetActorLocation() + Forward * TwoHandRestForwardCm + Right * TwoHandRestSideCm + Up * TwoHandRestHeightCm;
+			const FVector RestPole = (-Up * 0.8f + Right * 0.6f - Forward * 0.2f).GetSafeNormal();
+			FistWorld[Slot] = FMath::Lerp(FistWorld[Slot], RestPlace, Rest);
+			ElbowWorld[Slot] = FMath::Lerp(ElbowWorld[Slot], (Shoulder + RestPlace) * 0.5 + RestPole * 40.f, Rest);
+			BladeAimWay[Slot] = FMath::Lerp(BladeAimWay[Slot], Way, Rest).GetSafeNormal();
+			BladeLean[Slot] = FMath::Lerp(BladeLean[Slot], Way, Rest).GetSafeNormal();
+			BladeAim[Slot] = FMath::Lerp(BladeAim[Slot], 1.f, Rest);
+			BladeAhead[Slot] = FMath::Lerp(BladeAhead[Slot], 1.f, Rest);
+			BladeWristUp[Slot] = FMath::Lerp(BladeWristUp[Slot], 0.f, Rest);
+			FistTurn[Slot] = FMath::Lerp(FistTurn[Slot], 0.f, Rest);
+			ShownAlpha[Slot] = 1.f - (1.f - Alpha[Slot]) * (1.f - GripAlpha);
+		}
 	}
 	const bool bBladeUp = (bHeld[0] && bArmed[0]) || (bHeld[1] && bArmed[1]);
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * (bBladeUp ? BladeWaistForwardDegrees : WaistForwardDegrees)) * Raised;

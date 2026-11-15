@@ -329,3 +329,10 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The volume bars are a dark rounded groove with a brass rim, a brass fill up to the value, notches at the quarters and a round ivory knob.
 - The Bloody Sword is now called the Rusty Sword.
 - A one-hand blade in both hands guards in the middle before the body, the blade across with its point to the right and a little down (TwoHandGuard variables); moved, it goes as in one hand. Dev command TwoHand 0/1.
+- A one-hand blade brought all the way across to the other side no longer bends its wrist up; on its own side it is as before.
+- At the top of a one-hand blade's raise the wrist bends up less (BladeRaiseWristUpDegrees 20), and drawn round while raised the side's bend gives way to the raise's.
+- When the locked-on target dies, the lock goes over to the creature nearest to where the view looks (LockOnSwitchConeDegrees 90).
+- The Bloody Sword is now the Battle-Worn Iron Sword and the old Rusty Sword the Rusty Iron Sword.
+- A one-hand blade in both hands, not raised, is carried low before the hips like the old two-handed sword (TwoHandRest variables); raised, it moves exactly as in one hand.
+- The second hand on a one-hand blade closes as the first hand's mirror: palm on the blade's line, first finger towards the point, and no further down than just past the pommel (TwoHandPastPommelCm).
+- A one-hand blade's whole arc tips with the view (BladeLookTilt variables), so looking down and drawing it back takes the blade and elbow up and back, away from the target.
