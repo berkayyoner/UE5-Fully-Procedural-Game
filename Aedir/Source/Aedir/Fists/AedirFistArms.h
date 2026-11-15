@@ -201,14 +201,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeLowerWristDownDegrees = 45.f;
 
-	// The wrist takes the point up towards the thumb with the forearm pointing down, towards the little finger with it
-	// pointing up; level, it goes over from one to the other, wholly one way once the forearm points this far (sine) off
-	// level.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeWristFlipShare = 0.3f;
-
-	// Brought across to the other side a blade's wrist turns this far by BladeSideTurnSplit of the way (in, the point kept
-	// on the other), and on to BladeCrossTurnDegrees at the end.
+	// Brought across to the other side a blade's wrist turns out this far by BladeSideTurnSplit of the way, the point kept
+	// on the other, then back in to BladeCrossTurnDegrees at the end, the blade reaching from the other side round back.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeCrossInDegrees = -90.f;
 

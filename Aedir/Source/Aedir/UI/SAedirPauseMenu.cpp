@@ -29,6 +29,28 @@ namespace
 	// A volume bar is this wide, its percentage beside it this wide.
 	constexpr float PauseSliderWidth = 220.f;
 	constexpr float PauseSliderValueWidth = 52.f;
+	// The bar is drawn this thick in a light metal, its handle a bright ivory block, so both stand out over the scenery.
+	constexpr float PauseSliderBarThickness = 6.f;
+	const FLinearColor PauseSliderBarColor(0.62f, 0.58f, 0.48f, 1.f);
+	constexpr float PauseSliderHandleSize = 16.f;
+	const FSliderStyle& PauseSliderStyle()
+	{
+		static FSliderStyle Style = []()
+		{
+			FSliderStyle Made = FCoreStyle::Get().GetWidgetStyle<FSliderStyle>("Slider");
+			Made.SetBarThickness(PauseSliderBarThickness);
+			const FSlateColorBrush Handle(FLinearColor::White);
+			FSlateBrush HandleBrush = Handle;
+			HandleBrush.ImageSize = FVector2D(PauseSliderHandleSize * 0.6f, PauseSliderHandleSize);
+			Made.SetNormalThumbImage(HandleBrush);
+			Made.SetHoveredThumbImage(HandleBrush);
+			const FSlateColorBrush Bar(FLinearColor::White);
+			Made.SetNormalBarImage(Bar);
+			Made.SetHoveredBarImage(Bar);
+			return Made;
+		}();
+		return Style;
+	}
 	const TCHAR* const PauseTabNames[] = { TEXT("OPTIONS"), TEXT("JOURNAL") };
 	constexpr float PauseRowFontSize = 18.f;
 	constexpr float PauseSaveRowFontSize = 15.f;
@@ -441,6 +463,7 @@ TSharedRef<SWidget> SAedirPauseMenu::MakeOptionControl(int32 RowIndex, int32 Opt
 				SNew(SBox).WidthOverride(PauseSliderWidth)
 				[
 					SNew(SSlider)
+					.Style(&PauseSliderStyle())
 					.Value_Lambda([this, OptionIndex, Steps]()
 					{
 						const UAedirSettingsSubsystem* Now = PauseGetSettings(World.Get());
@@ -448,8 +471,8 @@ TSharedRef<SWidget> SAedirPauseMenu::MakeOptionControl(int32 RowIndex, int32 Opt
 						return Line ? FMath::Max(Line->Read(), 0) / static_cast<float>(Steps) : 0.f;
 					})
 					.StepSize(1.f / Steps)
-					.SliderBarColor(FLinearColor(0.25f, 0.24f, 0.21f))
-					.SliderHandleColor(Metal)
+					.SliderBarColor(PauseSliderBarColor)
+					.SliderHandleColor(IvoryBright)
 					.OnValueChanged_Lambda([this, OptionIndex, Steps](float NewValue)
 					{
 						UAedirSettingsSubsystem* Now = PauseGetSettings(World.Get());

@@ -848,19 +848,16 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 				HandRotation = FQuat(Axis.GetSafeNormal(), Angle) * HandRotation;
 			}
 		}
-		// Then the wrist bends in its own way, about the palm's normal, without turning the hand about the forearm: towards
-		// the thumb the point goes back over the forearm, towards the little finger on along it. Which of the two takes the
-		// point up depends on whether the forearm points down or up, so the bend is turned to suit: up means the point up.
+		// Then the wrist bends in its own way, about the palm's normal, without turning the hand about the forearm: up
+		// towards the thumb, the point going back over the forearm, down towards the little finger, on along it.
 		if (bArmed && !FMath::IsNearlyZero(WristUpDegrees))
 		{
 			const FVector Back = HandRotation.RotateVector(BackOfHand).GetSafeNormal();
 			const FVector Row = HandRotation.RotateVector(KnuckleRow).GetSafeNormal();
 			const FVector PalmAxis = FVector::CrossProduct(Back, Row).GetSafeNormal();
-			const float ForearmDown = static_cast<float>(-FVector::DotProduct(Forearm, ActorToMesh.RotateVector(FVector::UpVector)));
-			const float Way = FMath::Clamp(ForearmDown / FMath::Max(GaitData.FistArmBladeFlipShare, 0.01f), -1.f, 1.f);
 			if (!PalmAxis.IsNearlyZero())
 			{
-				HandRotation = FQuat(PalmAxis, FMath::DegreesToRadians(WristUpDegrees * Way)) * HandRotation;
+				HandRotation = FQuat(PalmAxis, FMath::DegreesToRadians(WristUpDegrees)) * HandRotation;
 			}
 		}
 		SolvedHand.SetRotation(HandRotation);

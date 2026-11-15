@@ -163,8 +163,6 @@ struct AEDIR_API FAedirGaitState
 	float FistArmBladeWristUp[2] = { 0.f, 0.f };
 	// Which way (world) a blade's knuckle row leans.
 	FVector FistArmBladeLean[2] = { FVector::UpVector, FVector::UpVector };
-	// How far off level (sine) the forearm has to point before the wrist's up bend is wholly one way.
-	float FistArmBladeFlipShare = 0.3f;
 	FQuat FistArmItemInHand[2] = { FQuat::Identity, FQuat::Identity };
 	// The left hand on the grip of the blade in the right hand, and how far below the right hand it closes.
 	float FistArmGripAlpha = 0.f;

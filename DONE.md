@@ -318,3 +318,6 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Target lock works with the fist and blade arms: while a mouse button is held it turns the view smoothly to the enemy nearest where the view looks, within range.
 - Master, footstep, combat and weather volumes are bars dragged left and right in 5% steps.
 - Dev: SeverMe <bone>, BloodCount, and MenuRow pause.
+- The blade wrist's up bend is towards the thumb again at the sides and raised (the flip by forearm direction is gone, with BladeWristFlipShare).
+- Brought across, a blade's wrist turns out (90 degrees) up to half way and back in to 30 degrees at the end, the blade reaching from the left round behind the back.
+- Volume bars are drawn 6 px thick in light metal with a bright ivory handle.
