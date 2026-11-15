@@ -456,6 +456,28 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 		}
 		UE_LOG(LogAedir, Display, TEXT("%s"), *Line);
 	}
+	else if (Command == TEXT("BloodCount"))
+	{
+		// BloodCount: how many drops of blood are in the world now.
+		int32 Count = 0;
+		for (TActorIterator<AAedirBloodDrop> It(Player->GetWorld()); It; ++It)
+		{
+			++Count;
+		}
+		UE_LOG(LogAedir, Display, TEXT("[Dev] BloodCount %d"), Count);
+	}
+	else if (Command == TEXT("SeverMe"))
+	{
+		// SeverMe <bone>: the player's limb at that bone is cut off at once, as by a great blow from the front.
+		const TArray<FString> Tokens = DevToolsTokens(Args);
+		const FName Bone = Tokens.IsValidIndex(0) ? FName(*Tokens[0]) : FName(TEXT("lowerarm_l"));
+		if (Player->Wounds && Player->GetMesh()->GetBoneIndex(Bone) != INDEX_NONE)
+		{
+			const FVector At = Player->GetMesh()->GetBoneLocation(Bone);
+			const bool bCut = Player->Wounds->TrySever(Bone, At, (At - Player->GetMesh()->GetBoneLocation(Player->GetMesh()->GetParentBone(Bone))).GetSafeNormal(), Player->GetActorRightVector() * 200.f, 100000.f, 0.f);
+			UE_LOG(LogAedir, Display, TEXT("[Dev] SeverMe %s: %s"), *Bone.ToString(), bCut ? TEXT("cut off") : TEXT("not cut"));
+		}
+	}
 	else if (Command == TEXT("HitMe"))
 	{
 		// HitMe <bone> <joules> <from yaw> [cut 0|1]: a blow on the player's own body as a weapon would land it, coming from

@@ -45,6 +45,27 @@ namespace
 	const TArray<FString> SettingsPercentNames = { TEXT("0%"), TEXT("10%"), TEXT("25%"), TEXT("50%"), TEXT("75%"), TEXT("100%") };
 	const TArray<float> SettingsPercentValues = { 0.f, 0.1f, 0.25f, 0.5f, 0.75f, 1.f };
 
+	// Volumes go along a bar from silent to full in steps of this many percent.
+	constexpr int32 SettingsVolumeStepPercent = 5;
+	TArray<FString> SettingsVolumeNames()
+	{
+		TArray<FString> Names;
+		for (int32 Percent = 0; Percent <= 100; Percent += SettingsVolumeStepPercent)
+		{
+			Names.Add(FString::Printf(TEXT("%d%%"), Percent));
+		}
+		return Names;
+	}
+	TArray<float> SettingsVolumeValues()
+	{
+		TArray<float> Values;
+		for (int32 Percent = 0; Percent <= 100; Percent += SettingsVolumeStepPercent)
+		{
+			Values.Add(Percent / 100.f);
+		}
+		return Values;
+	}
+
 	UGameUserSettings* SettingsGetUser()
 	{
 		return GEngine ? GEngine->GetGameUserSettings() : nullptr;
@@ -501,11 +522,13 @@ void UAedirSettingsSubsystem::BuildQualityOptions()
 
 void UAedirSettingsSubsystem::BuildAudioOptions()
 {
-	AddChoice(EAedirSettingsPage::Audio, TEXT("MasterVolume"), TEXT("Master volume"), TEXT("Volume of everything."), SettingsPercentNames,
-		[this]() { return SettingsNearestIndex(SettingsPercentValues, MasterVolume); },
-		[this](int32 Index)
+	const TArray<FString> VolumeNames = SettingsVolumeNames();
+	const TArray<float> VolumeValues = SettingsVolumeValues();
+	AddChoice(EAedirSettingsPage::Audio, TEXT("MasterVolume"), TEXT("Master volume"), TEXT("Volume of everything."), VolumeNames,
+		[this, VolumeValues]() { return SettingsNearestIndex(VolumeValues, MasterVolume); },
+		[this, VolumeValues](int32 Index)
 		{
-			MasterVolume = SettingsPercentValues[Index];
+			MasterVolume = VolumeValues[Index];
 			if (FAudioDevice* Device = GEngine ? GEngine->GetMainAudioDevice().GetAudioDevice() : nullptr)
 			{
 				Device->SetTransientPrimaryVolume(MasterVolume);
@@ -513,9 +536,13 @@ void UAedirSettingsSubsystem::BuildAudioOptions()
 		});
 
 	FAedirGameplaySettings& Values = GetValues();
-	AddFloat(EAedirSettingsPage::Audio, TEXT("FootstepVolume"), TEXT("Footsteps"), TEXT("Volume of steps and landings."), SettingsPercentNames, SettingsPercentValues, &Values.FootstepVolume);
-	AddFloat(EAedirSettingsPage::Audio, TEXT("EffectsVolume"), TEXT("Combat sounds"), TEXT("Volume of blows, cuts, clashing steel and swings."), SettingsPercentNames, SettingsPercentValues, &Values.EffectsVolume);
-	AddFloat(EAedirSettingsPage::Audio, TEXT("WeatherVolume"), TEXT("Weather"), TEXT("Volume of rain, wind and thunder."), SettingsPercentNames, SettingsPercentValues, &Values.WeatherVolume);
+	Options.Last().bSlider = true;
+	AddFloat(EAedirSettingsPage::Audio, TEXT("FootstepVolume"), TEXT("Footsteps"), TEXT("Volume of steps and landings."), VolumeNames, VolumeValues, &Values.FootstepVolume);
+	Options.Last().bSlider = true;
+	AddFloat(EAedirSettingsPage::Audio, TEXT("EffectsVolume"), TEXT("Combat sounds"), TEXT("Volume of blows, cuts, clashing steel and swings."), VolumeNames, VolumeValues, &Values.EffectsVolume);
+	Options.Last().bSlider = true;
+	AddFloat(EAedirSettingsPage::Audio, TEXT("WeatherVolume"), TEXT("Weather"), TEXT("Volume of rain, wind and thunder."), VolumeNames, VolumeValues, &Values.WeatherVolume);
+	Options.Last().bSlider = true;
 	AddChoice(EAedirSettingsPage::Audio, TEXT("BackgroundSound"), TEXT("Sound in the background"), TEXT("Whether the game stays audible while another window has the focus."), SettingsOffOn,
 		[]() { return FApp::GetUnfocusedVolumeMultiplier() > 0.f ? 1 : 0; },
 		[](int32 Index) { FApp::SetUnfocusedVolumeMultiplier(Index != 0 ? 1.f : 0.f); });

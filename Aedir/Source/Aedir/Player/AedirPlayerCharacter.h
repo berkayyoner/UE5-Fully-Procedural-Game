@@ -322,6 +322,14 @@ public:
 	UFUNCTION(Exec)
 	void HitMe(const FString& HitArgs);
 
+	// SeverMe <bone>: cuts off the player's limb at that bone at once.
+	UFUNCTION(Exec)
+	void SeverMe(const FString& Bone);
+
+	// BloodCount: logs how many drops of blood are in the world.
+	UFUNCTION(Exec)
+	void BloodCount();
+
 	UFUNCTION(Exec)
 	void ElbowCheck(const FString& CheckArgs);
 

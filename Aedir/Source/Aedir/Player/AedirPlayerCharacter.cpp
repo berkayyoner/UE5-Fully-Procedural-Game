@@ -434,7 +434,9 @@ AAedirCreature* AAedirPlayerCharacter::FindLockOnTarget() const
 void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 {
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
-	const bool bGuard = Combat && Combat->IsInFightStance();
+	// The older guard, or a fist's (or blade's) button held down.
+	const bool bOldGuard = Combat && Combat->IsInFightStance();
+	const bool bGuard = bOldGuard || (FistArms && FistArms->IsSteering());
 	const bool bDown = Balance && (Balance->IsRagdoll() || Balance->IsGettingUp());
 	if (!bLockOnEnabled || !bGuard || bDown || !PlayerController || IsMenuOpen())
 	{
@@ -454,6 +456,10 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 	}
 	if (!Target)
 	{
+		if (!bOldGuard)
+		{
+			return;
+		}
 		// With nobody to look at, the guard still brings the view down over the shoulder.
 		FRotator Control = PlayerController->GetControlRotation();
 		const float Pitch = FMath::FInterpTo(static_cast<float>(FRotator::NormalizeAxis(Control.Pitch)), FightViewPitch, DeltaSeconds, FightViewPitchSpeed);
@@ -1820,6 +1826,12 @@ void AAedirPlayerCharacter::MenuRow(const FString& RowName)
 	{
 		return;
 	}
+	if (RowName == TEXT("pause"))
+	{
+		// Opens the pause menu, for stepping through its pages from the console.
+		Menus->TogglePauseMenu(0);
+		return;
+	}
 	if (RowName == TEXT("dump"))
 	{
 		// Every graphics line, its value and whether it can be changed now.
@@ -1849,6 +1861,16 @@ void AAedirPlayerCharacter::ElbowCheck(const FString& CheckArgs)
 void AAedirPlayerCharacter::HitMe(const FString& HitArgs)
 {
 	RunDevCommand(TEXT("HitMe"), HitArgs, false);
+}
+
+void AAedirPlayerCharacter::SeverMe(const FString& Bone)
+{
+	RunDevCommand(TEXT("SeverMe"), Bone, false);
+}
+
+void AAedirPlayerCharacter::BloodCount()
+{
+	RunDevCommand(TEXT("BloodCount"), FString(), false);
 }
 
 void AAedirPlayerCharacter::GripInfo()

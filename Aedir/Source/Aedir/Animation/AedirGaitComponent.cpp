@@ -728,12 +728,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			GaitState.FistArmBladeAhead[Slot] = Fists->GetBladeAhead(ArmHand);
 			GaitState.FistArmBladeAim[Slot] = Fists->GetBladeAim(ArmHand);
 			GaitState.FistArmBladeWristUp[Slot] = Fists->GetBladeWristUp(ArmHand);
+			GaitState.FistArmBladeLean[Slot] = Fists->GetBladeLean(ArmHand);
 			GaitState.FistArmItemInHand[Slot] = GaitState.FistArmArmed[Slot] ? Blade->GetRootComponent()->GetRelativeTransform().GetRotation() : FQuat::Identity;
 		}
 		GaitState.FistArmGripAlpha = GaitState.FistArmArmed[1] ? Fists->GetGripAlpha() : 0.f;
 		GaitState.FistArmGripGapCm = Fists->TwoHandGapCm;
 		GaitState.FistArmBladeUpShare = Fists->BladeGuardUpShare;
 		GaitState.FistArmBladeBendDegrees = Fists->BladeWristBendDegrees;
+		GaitState.FistArmBladeFlipShare = Fists->BladeWristFlipShare;
 		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmGripAlpha);
 		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmAlpha[0]);
 		GaitState.FistAlphaRight = FMath::Max(GaitState.FistAlphaRight, GaitState.FistArmAlpha[1]);

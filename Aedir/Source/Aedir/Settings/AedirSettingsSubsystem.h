@@ -25,6 +25,8 @@ struct FAedirSettingOption
 	TFunction<void(int32)> Apply;
 	// Whether the line can be changed now; a locked line is shown dimmed with the value in force. Unset means always.
 	TFunction<bool()> Enabled;
+	// Shown as a bar dragged left and right over its values (in order) instead of a list to pick from.
+	bool bSlider = false;
 };
 
 // Values that the game code reads directly.

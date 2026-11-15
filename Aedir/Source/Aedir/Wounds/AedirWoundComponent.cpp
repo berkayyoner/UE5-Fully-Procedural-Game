@@ -11,6 +11,8 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/SkinnedAsset.h"
+#include "Engine/Texture2D.h"
+#include "RenderUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "ReferenceSkeleton.h"
@@ -38,7 +40,8 @@ namespace
 	constexpr float AedirBruiseHealDays = 7.f;
 	constexpr double AedirWoundBandageSeconds = 60.0;
 	constexpr float WoundTickIntervalSeconds = 0.25f;
-	constexpr int32 WoundMaxCount = 24;
+	// Wound ids are one byte, so no more than this can be told apart.
+	constexpr int32 WoundMaxCount = 250;
 	constexpr float WoundMergeDistance = 8.f;
 	constexpr float WoundArmorSeverityFactor = 0.7f;
 	constexpr float WoundBluntReferenceEnergy = 90.f;
@@ -119,7 +122,8 @@ namespace
 	constexpr float WoundRunOpenPerSeverity = 0.35f;
 	// The material that draws blood on the skin, and how many wounds it holds at once.
 	const TCHAR* const WoundSkinBloodPath = TEXT("/Game/Aedir/Materials/M_AedirBloodSkin.M_AedirBloodSkin");
-	constexpr int32 WoundSkinBloodSlots = 8;
+	// The skin material's data texture is this wide: one texel for each wound it can draw.
+	constexpr int32 WoundSkinBloodSlots = 256;
 	TAutoConsoleVariable<int32> CVarAedirSkinBloodLog(TEXT("aedir.SkinBloodLog"), 0, TEXT("Log where each wound's blood is drawn on the skin (1)."));
 
 	FWoundMaterialSlot& WoundCutSlot()
@@ -349,7 +353,7 @@ bool UAedirWoundComponent::AddWound(FName Bone, const FVector& WorldLocation, co
 	else
 	{
 		const uint8 NewId = AllocateWoundId();
-		if (ActiveWounds.Num() >= WoundMaxCount)
+		while (ActiveWounds.Num() >= FMath::Clamp(MaxWounds, 1, WoundMaxCount))
 		{
 			ActiveWounds.RemoveAt(0);
 		}
@@ -480,10 +484,21 @@ bool UAedirWoundComponent::BreakLimb(EAedirLimb Limb)
 void UAedirWoundComponent::MulticastSever_Implementation(FName Bone, FVector PlanePoint, FVector PlaneNormal, FVector Push)
 {
 	SeveredBones.Add(Bone);
+	SetComponentTickInterval(FMath::Min(PrimaryComponentTick.TickInterval, StumpTickSeconds));
 	const ACharacter* Character = Cast<ACharacter>(GetOwner());
 	if (Character && Character->GetNetMode() != NM_DedicatedServer)
 	{
-		AedirSever::CutLimb(Character->GetMesh(), Bone, PlanePoint, PlaneNormal, Push);
+		USkeletalMeshComponent* Body = Character->GetMesh();
+		const FVector Joint = Body->GetBoneLocation(Bone);
+		const FVector TowardBody = (Body->GetBoneLocation(Body->GetParentBone(Bone)) - Joint).GetSafeNormal();
+		if (AActor* Piece = AedirSever::CutLimb(Body, Bone, PlanePoint, PlaneNormal, Push))
+		{
+			// The piece runs from its cut end, which faces back where the body was.
+			FAedirCutPiece& Cut = CutPieces.AddDefaulted_GetRef();
+			Cut.Piece = Piece;
+			Cut.LocalEnd = Piece->GetActorTransform().InverseTransformPosition(Joint);
+			Cut.LocalOut = Piece->GetActorTransform().InverseTransformVectorNoScale(TowardBody);
+		}
 	}
 }
 
@@ -500,8 +515,49 @@ void UAedirWoundComponent::UpdateArterialBleeding(float DeltaTime)
 	const ACharacter* Character = Cast<ACharacter>(Owner);
 	UWorld* World = GetWorld();
 	UAedirBloodSubsystem* Blood = World ? World->GetSubsystem<UAedirBloodSubsystem>() : nullptr;
+	if (!Character || !Blood || IsDedicatedServer())
+	{
+		return;
+	}
+	DeadSeconds = bDead ? DeadSeconds + DeltaTime : 0.f;
+	const auto Running = [this, Blood](const FVector& From, const FVector& Out, float Count)
+	{
+		for (int32 Drop = 0; Drop < static_cast<int32>(Count); ++Drop)
+		{
+			Blood->SpawnDrop(From + FMath::VRand() * 1.5f, Out * FMath::FRandRange(FMath::Min(StumpDropSpeedMin, StumpDropSpeedMax), FMath::Max(StumpDropSpeedMin, StumpDropSpeedMax)) + FMath::VRand() * StumpDropScatter);
+		}
+	};
+	// Every stump runs all the time, thinning out once the heart has stopped.
+	const float StumpShare = bDead ? FMath::Clamp(1.f - DeadSeconds / FMath::Max(StumpDeadBleedSeconds, KINDA_SMALL_NUMBER), 0.f, 1.f) : 1.f;
+	if (!SeveredBones.IsEmpty() && StumpShare > 0.f)
+	{
+		StumpDebt += StumpDropsPerSecond * StumpShare * DeltaTime;
+		const float Whole = FMath::FloorToFloat(StumpDebt);
+		StumpDebt -= Whole;
+		for (const FName& Bone : SeveredBones)
+		{
+			const FVector From = Character->GetMesh()->GetBoneLocation(Bone);
+			Running(From, (From - Character->GetMesh()->GetBoneLocation(Character->GetMesh()->GetParentBone(Bone))).GetSafeNormal(), Whole);
+		}
+	}
+	// And so does every piece cut off, from its cut end.
+	for (int32 Index = CutPieces.Num() - 1; Index >= 0; --Index)
+	{
+		FAedirCutPiece& Cut = CutPieces[Index];
+		const AActor* Piece = Cut.Piece.Get();
+		Cut.Seconds += DeltaTime;
+		if (!Piece || Cut.Seconds > PieceBleedSeconds)
+		{
+			CutPieces.RemoveAt(Index);
+			continue;
+		}
+		Cut.Debt += PieceDropsPerSecond * (1.f - Cut.Seconds / FMath::Max(PieceBleedSeconds, KINDA_SMALL_NUMBER)) * DeltaTime;
+		const float Whole = FMath::FloorToFloat(Cut.Debt);
+		Cut.Debt -= Whole;
+		Running(Piece->GetActorTransform().TransformPosition(Cut.LocalEnd), Piece->GetActorTransform().TransformVectorNoScale(Cut.LocalOut), Whole);
+	}
 	const float Total = GetTotalBleedRate() + SeverBleedPerSecond;
-	if (!Character || !Blood || Total <= 0.f || IsDedicatedServer())
+	if (Total <= 0.f)
 	{
 		return;
 	}
@@ -814,21 +870,31 @@ void UAedirWoundComponent::UpdateSkinBlood()
 		return Pose;
 	};
 
-	// The worst wounds and bruises, as many as the material holds.
-	TArray<const FAedirWound*, TInlineAllocator<16>> Open;
-	for (const FAedirWound& Wound : ActiveWounds)
+	// Every wound and bruise, one texel each in the material's data texture.
+	if (!SkinBloodData)
 	{
-		Open.Add(&Wound);
+		SkinBloodData = UTexture2D::CreateTransient(WoundSkinBloodSlots, 2, PF_A32B32G32R32F);
+		if (!SkinBloodData)
+		{
+			return;
+		}
+		SkinBloodData->SRGB = false;
+		SkinBloodData->Filter = TF_Nearest;
+		SkinBloodData->CompressionSettings = TC_HDR;
+		SkinBloodData->NeverStream = true;
+		SkinBloodData->UpdateResource();
+		SkinBlood->SetTextureParameterValue(TEXT("Data"), SkinBloodData);
 	}
-	Open.Sort([](const FAedirWound& A, const FAedirWound& B) { return A.GetSeverity() > B.GetSeverity(); });
+	FLinearColor* Texels = new FLinearColor[WoundSkinBloodSlots * 2];
+	const int32 Count = FMath::Min(ActiveWounds.Num(), WoundSkinBloodSlots);
 	const double Now = GetWoundServerTime();
 	for (int32 Slot = 0; Slot < WoundSkinBloodSlots; ++Slot)
 	{
 		FLinearColor Where(0.f, 0.f, 0.f, 0.f);
 		FLinearColor How(0.f, 0.f, 0.f, 0.f);
-		if (Open.IsValidIndex(Slot))
+		if (Slot < Count)
 		{
-			const FAedirWound& Wound = *Open[Slot];
+			const FAedirWound& Wound = ActiveWounds[Slot];
 			const float Severity = Wound.GetSeverity();
 			const float Age = static_cast<float>(FMath::Max(0.0, Now - Wound.StartServerTime));
 			const FVector Point = BindPose(WoundResolveBone(Mesh, Wound.Bone)).TransformPosition(Wound.Offset);
@@ -843,9 +909,17 @@ void UAedirWoundComponent::UpdateSkinBlood()
 			const bool bBruise = Wound.Type == EAedirWoundType::Bruise;
 			How = FLinearColor(FMath::Max(Severity, 0.2f), ComputeAge01(Wound.Type, Severity, Age), bBruise ? -1.f : RunCm, static_cast<float>(Wound.Id % 17));
 		}
-		SkinBlood->SetVectorParameterValue(FName(*FString::Printf(TEXT("W%d"), Slot)), Where);
-		SkinBlood->SetVectorParameterValue(FName(*FString::Printf(TEXT("D%d"), Slot)), How);
+		Texels[Slot] = Where;
+		Texels[WoundSkinBloodSlots + Slot] = How;
 	}
+	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, WoundSkinBloodSlots, 2);
+	SkinBloodData->UpdateTextureRegions(0, 1, Region, WoundSkinBloodSlots * sizeof(FLinearColor), sizeof(FLinearColor), reinterpret_cast<uint8*>(Texels),
+		[](uint8* Data, const FUpdateTextureRegion2D* Regions)
+		{
+			delete[] reinterpret_cast<FLinearColor*>(Data);
+			delete Regions;
+		});
+	SkinBlood->SetScalarParameterValue(TEXT("Count"), static_cast<float>(Count));
 }
 
 FAedirWoundVisual* UAedirWoundComponent::FindVisual(uint8 Id)

@@ -53,7 +53,7 @@ private:
 	// a hand closing on another hand's grip lays its knuckles along RowMesh, when that is not zero.
 	void ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha, float TurnDegrees,
 		bool bArmed = false, float BladeAhead = 0.f, const FQuat& ItemInHand = FQuat::Identity, float BladeBendDegrees = 0.f, const FVector& RowMesh = FVector::ZeroVector,
-		float BladeAim = 0.f, float WristUpDegrees = 0.f) const;
+		float BladeAim = 0.f, float WristUpDegrees = 0.f, const FVector& BladeLeanMesh = FVector::ZeroVector) const;
 	// The left hand closes on the grip of the blade the right hand holds, this far below it.
 	void ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
 	FVector ApplyWeaponArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, const FVector& DirectionWorld, float Share, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;

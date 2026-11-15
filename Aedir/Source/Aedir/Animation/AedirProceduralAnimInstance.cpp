@@ -268,10 +268,10 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	// The right arm first: a left hand on the grip of its blade goes where the right hand has been put.
 	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1], GaitData.FistArmTurn[1],
 		GaitData.FistArmArmed[1], GaitData.FistArmBladeAhead[1], GaitData.FistArmItemInHand[1], GaitData.FistArmBladeBendDegrees,
-		FVector::ZeroVector, GaitData.FistArmBladeAim[1], GaitData.FistArmBladeWristUp[1]);
+		FVector::ZeroVector, GaitData.FistArmBladeAim[1], GaitData.FistArmBladeWristUp[1], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[1]));
 	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.FistArmHandWorld[0], GaitData.FistArmElbowWorld[0], GaitData.FistArmAlpha[0], GaitData.FistArmTurn[0],
 		GaitData.FistArmArmed[0], GaitData.FistArmBladeAhead[0], GaitData.FistArmItemInHand[0], GaitData.FistArmBladeBendDegrees,
-		FVector::ZeroVector, GaitData.FistArmBladeAim[0], GaitData.FistArmBladeWristUp[0]);
+		FVector::ZeroVector, GaitData.FistArmBladeAim[0], GaitData.FistArmBladeWristUp[0], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[0]));
 	ApplyGripOnBlade(CSPose, Bones);
 
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
@@ -757,7 +757,7 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 
 void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha, float TurnDegrees,
 	bool bArmed, float BladeAhead, const FQuat& ItemInHand, float BladeBendDegrees, const FVector& RowMesh,
-	float BladeAim, float WristUpDegrees) const
+	float BladeAim, float WristUpDegrees, const FVector& BladeLeanMesh) const
 {
 	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
 	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
@@ -814,6 +814,11 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 		if (bArmed)
 		{
 			Lean = FMath::Lerp(Lean, ActorToMesh.RotateVector(FVector::UpVector), FMath::Clamp(BladeAhead, 0.f, 1.f)).GetSafeNormal();
+			// Turned up or down round the chest with the arm, so the hand is not turned about the forearm as it goes.
+			if (!BladeLeanMesh.IsNearlyZero())
+			{
+				Lean = BladeLeanMesh.GetSafeNormal();
+			}
 		}
 		if (!RowMesh.IsNearlyZero())
 		{
@@ -843,17 +848,19 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 				HandRotation = FQuat(Axis.GetSafeNormal(), Angle) * HandRotation;
 			}
 		}
-		// Then the wrist bends up or down in its own way, about the palm's normal: up towards the thumb, the point (on the
-		// thumb side) going back over the forearm, down towards the little finger, the point going on along it. It does not
-		// turn the hand about the forearm.
+		// Then the wrist bends in its own way, about the palm's normal, without turning the hand about the forearm: towards
+		// the thumb the point goes back over the forearm, towards the little finger on along it. Which of the two takes the
+		// point up depends on whether the forearm points down or up, so the bend is turned to suit: up means the point up.
 		if (bArmed && !FMath::IsNearlyZero(WristUpDegrees))
 		{
 			const FVector Back = HandRotation.RotateVector(BackOfHand).GetSafeNormal();
 			const FVector Row = HandRotation.RotateVector(KnuckleRow).GetSafeNormal();
 			const FVector PalmAxis = FVector::CrossProduct(Back, Row).GetSafeNormal();
+			const float ForearmDown = static_cast<float>(-FVector::DotProduct(Forearm, ActorToMesh.RotateVector(FVector::UpVector)));
+			const float Way = FMath::Clamp(ForearmDown / FMath::Max(GaitData.FistArmBladeFlipShare, 0.01f), -1.f, 1.f);
 			if (!PalmAxis.IsNearlyZero())
 			{
-				HandRotation = FQuat(PalmAxis, FMath::DegreesToRadians(WristUpDegrees)) * HandRotation;
+				HandRotation = FQuat(PalmAxis, FMath::DegreesToRadians(WristUpDegrees * Way)) * HandRotation;
 			}
 		}
 		SolvedHand.SetRotation(HandRotation);

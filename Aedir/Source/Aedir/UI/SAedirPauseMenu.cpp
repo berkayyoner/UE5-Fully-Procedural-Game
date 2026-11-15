@@ -20,10 +20,15 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Text/STextBlock.h"
+#include "Widgets/Input/SSlider.h"
+#include "Widgets/Layout/SBox.h"
 
 namespace
 {
 	constexpr float PauseOptionValueWidth = 130.f;
+	// A volume bar is this wide, its percentage beside it this wide.
+	constexpr float PauseSliderWidth = 220.f;
+	constexpr float PauseSliderValueWidth = 52.f;
 	const TCHAR* const PauseTabNames[] = { TEXT("OPTIONS"), TEXT("JOURNAL") };
 	constexpr float PauseRowFontSize = 18.f;
 	constexpr float PauseSaveRowFontSize = 15.f;
@@ -425,6 +430,55 @@ TSharedRef<SWidget> SAedirPauseMenu::MakeOptionControl(int32 RowIndex, int32 Opt
 		.ColorAndOpacity_Lambda([this, RowIndex]() { return FSlateColor(WithAlpha(GetRowTextColor(RowIndex), 0.85f)); })
 		.ShadowOffset(FVector2D(1.f, 1.f))
 		.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.7f));
+
+	// A volume and the like: a bar dragged left and right, its value written beside it.
+	if (Option && Option->bSlider && Option->Values.Num() > 1)
+	{
+		const int32 Steps = Option->Values.Num() - 1;
+		return SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(SBox).WidthOverride(PauseSliderWidth)
+				[
+					SNew(SSlider)
+					.Value_Lambda([this, OptionIndex, Steps]()
+					{
+						const UAedirSettingsSubsystem* Now = PauseGetSettings(World.Get());
+						const FAedirSettingOption* Line = Now ? Now->GetOption(OptionIndex) : nullptr;
+						return Line ? FMath::Max(Line->Read(), 0) / static_cast<float>(Steps) : 0.f;
+					})
+					.StepSize(1.f / Steps)
+					.SliderBarColor(FLinearColor(0.25f, 0.24f, 0.21f))
+					.SliderHandleColor(Metal)
+					.OnValueChanged_Lambda([this, OptionIndex, Steps](float NewValue)
+					{
+						UAedirSettingsSubsystem* Now = PauseGetSettings(World.Get());
+						const FAedirSettingOption* Line = Now ? Now->GetOption(OptionIndex) : nullptr;
+						const int32 ValueIndex = FMath::Clamp(FMath::RoundToInt(NewValue * Steps), 0, Steps);
+						if (Line && Line->Read() != ValueIndex)
+						{
+							Now->SetOptionValue(OptionIndex, ValueIndex);
+						}
+					})
+				]
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(10.f, 0.f, 0.f, 0.f))
+			[
+				SNew(SBox).MinDesiredWidth(PauseSliderValueWidth).HAlign(HAlign_Right)
+				[
+					SNew(STextBlock)
+					.Text_Lambda([this, OptionIndex]()
+					{
+						const UAedirSettingsSubsystem* Now = PauseGetSettings(World.Get());
+						return FText::FromString(Now ? Now->GetValueText(OptionIndex) : FString());
+					})
+					.Font(LightFont(FMath::Max(12.f, PauseRowFontSize - 2.f)))
+					.ColorAndOpacity_Lambda([this, RowIndex]() { return FSlateColor(WithAlpha(GetRowTextColor(RowIndex), 0.85f)); })
+					.ShadowOffset(FVector2D(1.f, 1.f))
+					.ShadowColorAndOpacity(FLinearColor(0.f, 0.f, 0.f, 0.7f))
+				]
+			];
+	}
 
 	if (Option && Option->Values.Num() == 2)
 	{
@@ -1004,7 +1058,12 @@ void SAedirPauseMenu::Activate(int32 Action)
 		const int32 OptionIndex = Action - static_cast<int32>(EPauseAction::FirstOptionRow);
 		const UAedirSettingsSubsystem* Settings = PauseGetSettings(World.Get());
 		const FAedirSettingOption* Option = Settings ? Settings->GetOption(OptionIndex) : nullptr;
-		if (Option && Option->Values.Num() > 2)
+		if (Option && Option->bSlider)
+		{
+			// A bar is dragged, or stepped with left and right; a click on the line opens nothing.
+			OpenDropDown = INDEX_NONE;
+		}
+		else if (Option && Option->Values.Num() > 2)
 		{
 			ToggleDropDown(OptionIndex);
 		}

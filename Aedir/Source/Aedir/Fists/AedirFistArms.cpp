@@ -20,7 +20,7 @@ namespace
 bool UAedirFistArms::IsOneHandBlade(const AAedirItemActor* Item)
 {
 	return Item && Item->ItemClass == EAedirItemClass::Weapon && !Item->bTwoHanded && !Item->bPolearm && !Item->IsShield()
-		&& (Item->DamageType == EAedirDamageType::Slash || Item->DamageType == EAedirDamageType::Pierce);
+		&& (Item->DamageType == EAedirDamageType::Slash || Item->DamageType == EAedirDamageType::Pierce || Item->DamageType == EAedirDamageType::Blunt);
 }
 
 bool UAedirFistArms::CanTakeBothHands() const
@@ -263,32 +263,27 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright. A blade's wrist
 		// turns out the other way there, and the nearer the middle, the more its point is brought round ahead.
 		FistTurn[Slot] = (bFollows && AimSide == Side ? FMath::Abs(SinT) : 0.f) * SideFistTurnDegrees * Side;
-		// A blade drawn to its own side: first in, the point kept on the other, then back out past where it started.
+		// A blade drawn either way: first in, the point kept on the other, then on its own side back out past where it
+		// started, across on to a little in.
+		const float Split = FMath::Clamp(BladeSideTurnSplit, 0.01f, 0.99f);
+		const bool bOwnSide = AimSide == Side;
+		const float Share = bFollows && AimSide != 0.f ? FMath::Abs(Across) : 0.f;
 		if (bBlade)
 		{
-			const float Share = bFollows && AimSide == Side ? FMath::Abs(Across) : 0.f;
-			const float TurnSplit = FMath::Clamp(BladeSideTurnSplit, 0.01f, 0.99f);
-			const float Turn = Share <= TurnSplit
-				? FMath::Lerp(0.f, BladeSideInDegrees, Share / TurnSplit)
-				: FMath::Lerp(BladeSideInDegrees, -BladeSideOutDegrees, (Share - TurnSplit) / (1.f - TurnSplit));
+			const float Turn = Share <= Split
+				? FMath::Lerp(0.f, bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, Share / Split)
+				: FMath::Lerp(bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, bOwnSide ? -BladeSideOutDegrees : BladeCrossTurnDegrees, (Share - Split) / (1.f - Split));
 			FistTurn[Slot] = Turn * Side;
 		}
-		// Brought across, a blade's wrist turns in a little.
-		if (bBlade && bFollows && AimSide != 0.f && AimSide != Side)
-		{
-			FistTurn[Slot] += FMath::Abs(SinT) * BladeCrossTurnDegrees * Side;
-		}
-		// Raised over the head its point goes back, no longer ahead.
-		// Drawn to its own side it keeps looking ahead while the wrist turns in, and lets go of that as it opens out.
-		const float OwnShare = bFollows && AimSide == Side ? FMath::Abs(Across) : 0.f;
-		const float Split = FMath::Clamp(BladeSideTurnSplit, 0.01f, 0.99f);
-		const float Ahead = OwnShare > 0.f
-			? (OwnShare <= Split ? 1.f : 1.f - (OwnShare - Split) / (1.f - Split))
-			: 1.f - FMath::Abs(SinT);
-		BladeAhead[Slot] = bBlade ? Ahead * (1.f - Raise) : 0.f;
-		// Lowered, the point is no longer brought round ahead and up but bent down with the wrist.
+		// Either way it keeps looking ahead while the wrist turns in, and lets go of that from there on. Raised or lowered the
+		// hand is not turned about the forearm: only the wrist bends, so a blow comes straight down.
+		const float Ahead = Share <= Split ? 1.f : 1.f - (Share - Split) / (1.f - Split);
+		BladeAhead[Slot] = bBlade ? Ahead : 0.f;
+		// The way the knuckles (and so the blade) lean, tipped up or down round the chest with the arm.
+		BladeLean[Slot] = Tip(FMath::Lerp((Up - Forward).GetSafeNormal(), Up, Ahead).GetSafeNormal()).GetSafeNormal();
+		// Raised or lowered, the point is no longer bent round ahead and up by the wrist.
 		const float Lower = FMath::Max(-UpDown, 0.f);
-		BladeAim[Slot] = BladeAhead[Slot] * (1.f - Lower);
+		BladeAim[Slot] = bBlade ? Ahead * (1.f - Raise) * (1.f - Lower) : 0.f;
 		// Up at either side from the middle of the way there on, up raised, down lowered.
 		const float SideShare = bFollows ? FMath::Clamp((FMath::Abs(Across) - Split) / (1.f - Split), 0.f, 1.f) : 0.f;
 		BladeWristUp[Slot] = bBlade ? SideShare * BladeSideWristUpDegrees + Raise * BladeRaiseWristUpDegrees - Lower * BladeLowerWristDownDegrees : 0.f;

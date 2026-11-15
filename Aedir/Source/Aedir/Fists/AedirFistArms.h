@@ -154,7 +154,7 @@ public:
 	// The mouse all the way up raises a blade this far round over the head and back, for a blow straight down, the fist this
 	// much further out than in the guard, so the arm stays a little bent over the head and is never thrown straight up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeArcUpDegrees = 108.f;
+	float BladeArcUpDegrees = 95.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeUpReachCm = 5.f;
@@ -186,20 +186,31 @@ public:
 	float BladeSideInDegrees = 90.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeSideOutDegrees = 70.f;
+	float BladeSideOutDegrees = 55.f;
 
 	// The wrist bends up (towards the thumb, the point going back over the forearm) or down (towards the little finger,
 	// the point going on along the forearm), in degrees, up positive, without turning the hand about the forearm: up
 	// this far drawn all the way round to either side (from the middle of the way there on), up this far raised all the
 	// way and down this far lowered all the way, so it reaches the ground.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeSideWristUpDegrees = 30.f;
+	float BladeSideWristUpDegrees = 50.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeRaiseWristUpDegrees = 30.f;
+	float BladeRaiseWristUpDegrees = 50.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeLowerWristDownDegrees = 45.f;
+
+	// The wrist takes the point up towards the thumb with the forearm pointing down, towards the little finger with it
+	// pointing up; level, it goes over from one to the other, wholly one way once the forearm points this far (sine) off
+	// level.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeWristFlipShare = 0.3f;
+
+	// Brought across to the other side a blade's wrist turns this far by BladeSideTurnSplit of the way (in, the point kept
+	// on the other), and on to BladeCrossTurnDegrees at the end.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeCrossInDegrees = -90.f;
 
 	// Drawn round to the side a blade keeps this share of the middle's angle up or down, the same way (a fist turns the
 	// other way, ArcSideReverse), so the whole sweep is tipped up or down with the mouse and strikes high or low.
@@ -222,7 +233,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeFastMoveStaminaPerField = 4.f;
 
-	// Brought across to the other side, a blade's wrist turns in this far.
+	// Brought all the way across to the other side, a blade's wrist ends turned in this far (it turns in BladeSideInDegrees
+	// up to BladeSideTurnSplit of the way, as on its own side).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeCrossTurnDegrees = 30.f;
 
@@ -257,6 +269,8 @@ public:
 	// How far the wrist brings a blade's point round to look ahead (0..1), and how far it bends it up (degrees, down negative).
 	float GetBladeAim(EAedirHand Hand) const { return BladeAim[Index(Hand)]; }
 	float GetBladeWristUp(EAedirHand Hand) const { return BladeWristUp[Index(Hand)]; }
+	// Which way (world) a blade's knuckle row is to lean, turned up or down round the chest with the arm.
+	FVector GetBladeLean(EAedirHand Hand) const { return BladeLean[Index(Hand)]; }
 
 	// Where the pose puts each arm this frame: the fist and the elbow in the world, and how far the arm is in the guard (0..1).
 	bool GetArm(EAedirHand Hand, FVector& OutFistWorld, FVector& OutElbowWorld, float& OutAlpha) const;
@@ -302,6 +316,7 @@ private:
 	float BladeAhead[2] = { 0.f, 0.f };
 	float BladeAim[2] = { 0.f, 0.f };
 	float BladeWristUp[2] = { 0.f, 0.f };
+	FVector BladeLean[2] = { FVector::UpVector, FVector::UpVector };
 	bool bTwoHand = false;
 	bool bOffHandOut = false;
 	float GripAlpha = 0.f;

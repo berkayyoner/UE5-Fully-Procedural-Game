@@ -55,6 +55,38 @@ public:
 	UPROPERTY(ReplicatedUsing=OnRep_Wounds, VisibleAnywhere, Category="Aedir|Wounds")
 	TArray<FAedirWound> ActiveWounds;
 
+	// The most wounds a body keeps at once, all drawn on the skin; the oldest goes only past this (no more than 250).
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	int32 MaxWounds = 250;
+
+	// A parted limb's stump runs with blood all the time, this many drops a second, and goes on for this long after death,
+	// thinning out; the piece cut off runs from its cut end this many a second for this long.
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	float StumpDropsPerSecond = 16.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	float StumpDeadBleedSeconds = 90.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	float PieceDropsPerSecond = 8.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	float PieceBleedSeconds = 45.f;
+
+	// How fast the running blood leaves the stump (cm/s, a range) and how much it scatters.
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	float StumpDropSpeedMin = 25.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	float StumpDropSpeedMax = 80.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	float StumpDropScatter = 18.f;
+
+	// With a limb off, the wounds tick this often (seconds) so the running blood is smooth.
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	float StumpTickSeconds = 0.04f;
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -155,7 +187,24 @@ private:
 	// its bind pose, so the blood moves with the skin instead of sliding over it like a picture laid on.
 	UPROPERTY(Transient)
 	TObjectPtr<UMaterialInstanceDynamic> SkinBlood;
+	// Every wound for the skin's material, one texel across each: where it is (bind pose, radius) on the first row, how it is
+	// on the second.
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> SkinBloodData;
 	bool bSkinBloodTried = false;
+
+	// Pieces cut off, where their cut end is in their own frame and which way it faces, and how long they have run.
+	struct FAedirCutPiece
+	{
+		TWeakObjectPtr<AActor> Piece;
+		FVector LocalEnd = FVector::ZeroVector;
+		FVector LocalOut = FVector::ZeroVector;
+		float Seconds = 0.f;
+		float Debt = 0.f;
+	};
+	TArray<FAedirCutPiece> CutPieces;
+	float StumpDebt = 0.f;
+	float DeadSeconds = 0.f;
 	bool UsesSkinBlood();
 	void UpdateSkinBlood();
 

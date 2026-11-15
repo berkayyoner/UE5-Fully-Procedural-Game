@@ -307,3 +307,14 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The blade wrist's up/down bend is now the wrist's own (about the palm's normal, towards the thumb or the little finger) instead of turning the blade toward world up or down; the 85-degree world limit is gone.
 - A blade's wrist turns out 70 degrees (was 80) drawn all the way to its own side.
 - FistInfo logs the angle between the blade and the forearm.
+- A blade's wrist turns out 55 degrees (was 70) drawn all the way to its own side.
+- Raised all the way a blade goes 95 degrees round (was 108), the hand over the head rather than behind it.
+- A blade's knuckle lean turns up and down round the chest with the arm, so raising or lowering it no longer turns the hand about the forearm and a blow comes straight down.
+- The wrist's up bend (50 degrees at the sides and raised) takes the point up whether the forearm points down or up (BladeWristFlipShare).
+- Brought across, a blade's wrist turns in up to half way (BladeCrossInDegrees), the point kept on the other, as on its own side.
+- Maces, clubs and other one-handed blunt weapons are swung with the one-handed blade system.
+- Wounds on the body are no longer limited to the 8 worst: the skin material reads every wound (up to 250) from a data texture.
+- A cut-off limb's stump runs with blood all the time (thinning out over 90 s after death), and the cut-off piece runs from its cut end for 45 s.
+- Target lock works with the fist and blade arms: while a mouse button is held it turns the view smoothly to the enemy nearest where the view looks, within range.
+- Master, footstep, combat and weather volumes are bars dragged left and right in 5% steps.
+- Dev: SeverMe <bone>, BloodCount, and MenuRow pause.
