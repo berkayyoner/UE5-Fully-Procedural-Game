@@ -33,6 +33,8 @@ namespace
 	constexpr float AedirGuardBlendSpeed = 6.f;
 	// How long a weapon must be off a body before touching it again counts as a new blow.
 	constexpr float AedirFreshContactSeconds = 0.12f;
+	// A blow lands at the fastest it came in at over this long before it touched.
+	constexpr double AedirStrikeSpeedMemorySeconds = 0.12;
 	// The closed loop between the pose and what is shown: how quickly it learns, how far it may ask beyond the pose, how still
 	// the pose must be for it to learn, and how quickly it forgets out of the stance.
 	constexpr float AedirServoGainPerSecond = 2.5f;
@@ -4023,6 +4025,12 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 
 	const FVector FromVelocity = (From - PrevFrom) / DeltaTime;
 	const FVector ToVelocity = (To - PrevTo) / DeltaTime;
+	{
+		const double Time = World->GetTimeSeconds();
+		TArray<TPair<double, FVector>>& Recent = RecentStrikeVelocity[Index];
+		Recent.Add(TPair<double, FVector>(Time, ToVelocity));
+		Recent.RemoveAll([Time](const TPair<double, FVector>& Entry) { return Time - Entry.Key > AedirStrikeSpeedMemorySeconds; });
+	}
 	const double FastestEnd = FMath::Max(FromVelocity.Size(), ToVelocity.Size());
 	// A fast swing is heard cutting the air, the faster the louder.
 	if (FastestEnd > AedirSfxWhooshSpeed && World->GetTimeSeconds() - LastWhooshTime[Index] > AedirSfxWhooshSeconds)
@@ -4154,6 +4162,13 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 			const int32 Index = HandIndex(Hand);
 			const bool bPassing = PassVictim[Index].Get() == Victim && Now < PassUntil[Index];
 			const float RelativeSpeed = FMath::Max(0.f, static_cast<float>(FVector::DotProduct(TipVelocity - Victim->GetVelocity(), -Hit.ImpactNormal)));
+			// The speed it came in at: stopped against the body (by the physics, or by the arm holding it there), the frame it
+			// touches shows it slow, though it arrived fast a moment before.
+			float CameInSpeed = RelativeSpeed;
+			for (const TPair<double, FVector>& Entry : RecentStrikeVelocity[HandIndex(Hand)])
+			{
+				CameInSpeed = FMath::Max(CameInSpeed, static_cast<float>(FVector::DotProduct(Entry.Value - Victim->GetVelocity(), -Hit.ImpactNormal)));
+			}
 			// A blade that has stayed against the body since it last struck presses or grinds; only one that comes off
 			// and strikes again lands a new blow.
 			// A cut that goes on from one part of the body into another lands on each: only the same part waits out the
@@ -4162,16 +4177,16 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 			// A fist or blade resting against the body that is driven in again from rest (it had all but stopped against it and
 			// now comes in fast) lands a new blow too: a punch thrown from against a guard arm still hits.
 			const float MinSpeed = HeldItem ? MinImpactSpeed : FMath::Min(MinImpactSpeed, AedirFistMinImpactSpeed);
-			const bool bDrivenAgain = TouchSpeed[Index] < MinSpeed * AedirRestingIntoShare && RelativeSpeed >= MinSpeed;
+			const bool bDrivenAgain = TouchSpeed[Index] < MinSpeed * AedirRestingIntoShare && CameInSpeed >= MinSpeed;
 			const bool bFreshContact = TouchVictim[Index].Get() != Victim || TouchPart[Index] != Part || Now - TouchTime[Index] > AedirFreshContactSeconds || bDrivenAgain;
 			TouchVictim[Index] = Victim;
 			TouchPart[Index] = Part;
 			TouchTime[Index] = Now;
 			TouchSpeed[Index] = RelativeSpeed;
-			if (IsImpactOnCooldown(Hand, HitActor, Now, Part) || RelativeSpeed < MinSpeed || !bFreshContact)
+			if (IsImpactOnCooldown(Hand, HitActor, Now, Part) || CameInSpeed < MinSpeed || !bFreshContact)
 			{
 				UE_CLOG(CVarAedirHitLog.GetValueOnGameThread() != 0 && TipVelocity.Size() > MinImpactSpeed, LogAedir, Log, TEXT("[Hit] %s's %s touched %s on %s at %.0f cm/s (%.0f into it) and did not count: %s"),
-					*Creature->GetName(), Hand == EAedirHand::Right ? TEXT("right") : TEXT("left"), *Victim->GetName(), *Part.ToString(), TipVelocity.Size(), RelativeSpeed,
+					*Creature->GetName(), Hand == EAedirHand::Right ? TEXT("right") : TEXT("left"), *Victim->GetName(), *Part.ToString(), TipVelocity.Size(), CameInSpeed,
 					IsImpactOnCooldown(Hand, HitActor, Now, Part) ? TEXT("struck there just before") : !bFreshContact ? TEXT("still resting against it") : TEXT("too slow into it"));
 				if (!bPassing && !Arm.LodgedIn.IsValid())
 				{
@@ -4180,7 +4195,7 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 				continue;
 			}
 			// Faster than any arm can move is a body that was just put somewhere else, not a blow.
-			if (RelativeSpeed > AedirImpactMaxSpeed)
+			if (CameInSpeed > AedirImpactMaxSpeed)
 			{
 				continue;
 			}
@@ -4192,7 +4207,7 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 			const float PointSpeed = FMath::Max(static_cast<float>(TipVelocity.Size()), 1.f);
 			const float WeaponKg = HeldItem ? HeldItem->Weight : 0.f;
 			const float MassAtPoint = FMath::Min(WeaponKg + (MassEff - WeaponKg) * FMath::Square(FMath::Min(HandSpeed / PointSpeed, 1.f)), MassEff);
-			const float StruckSpeed = FMath::Min(RelativeSpeed, AedirImpactCountedMaxSpeed);
+			const float StruckSpeed = FMath::Min(CameInSpeed, AedirImpactCountedMaxSpeed);
 			ApplyCreatureImpact(Hand, Arm, Victim, Hit, TipVelocity, StruckSpeed, HeldItem ? MassAtPoint : MassEff, AxialAlignment);
 			continue;
 		}

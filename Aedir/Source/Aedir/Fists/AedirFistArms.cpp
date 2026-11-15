@@ -23,6 +23,11 @@ bool UAedirFistArms::IsOneHandBlade(const AAedirItemActor* Item)
 		&& (Item->DamageType == EAedirDamageType::Slash || Item->DamageType == EAedirDamageType::Pierce || Item->DamageType == EAedirDamageType::Blunt);
 }
 
+float UAedirFistArms::GetGripGapCm(const AAedirItemActor* Blade) const
+{
+	return Blade ? FMath::Min(TwoHandGapCm, Blade->GetPommelBelowGripCm() + TwoHandPastPommelCm) : TwoHandGapCm;
+}
+
 bool UAedirFistArms::CanTakeBothHands() const
 {
 	const AAedirItemActor* Right = AedirFistsHeldItem(GetOwner(), 1);

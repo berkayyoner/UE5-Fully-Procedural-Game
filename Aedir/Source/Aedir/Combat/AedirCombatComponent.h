@@ -584,6 +584,9 @@ private:
 	FName TouchPart[2];
 	double TouchTime[2] = { -1.0, -1.0 };
 	float TouchSpeed[2] = { 0.f, 0.f };
+	// How fast the striking end of each hand went over the last frames, with when: a blow is counted at the speed it came
+	// in at, which the frame it is stopped against the body no longer shows.
+	TArray<TPair<double, FVector>> RecentStrikeVelocity[2];
 	void ApplyRemoteArmState(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	void PublishArmState(EAedirHand Hand, const FAedirArmDynamics& Arm);
 	void SendArmAimToServer(float DeltaTime);

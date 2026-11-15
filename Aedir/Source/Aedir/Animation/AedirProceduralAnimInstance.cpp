@@ -797,6 +797,23 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	{
 		Elbow = Grip + Reflect(CSPose.GetComponentSpaceTransform(RightRadius).GetLocation() - Grip) - Blade * GaitData.FistArmGripGapCm;
 	}
+	// Still the elbow stays out at its own side: the mirror can fall across the middle of the body, and the arm would bend
+	// in through the chest.
+	const FVector ArmMiddle = (Shoulder + Wrist) * 0.5;
+	FVector Pole = (Elbow - ArmMiddle).GetSafeNormal();
+	const double Outward = FVector::DotProduct(Pole, Out);
+	if (Outward < GaitData.FistArmGripElbowOutShare)
+	{
+		Pole = (Pole + Out * (GaitData.FistArmGripElbowOutShare - Outward)).GetSafeNormal();
+	}
+	Elbow = ArmMiddle + Pole * 40.0;
+	// Nor does it go into the trunk: right of the left shoulder it is kept out before the chest.
+	const FVector Ahead = ActorToMesh.RotateVector(FVector::ForwardVector);
+	const double InFront = FVector::DotProduct(Elbow - Shoulder, Ahead);
+	if (FVector::DotProduct(Elbow - Shoulder, Out) < 0.0 && InFront < GaitData.FistArmGripElbowFrontCm)
+	{
+		Elbow += Ahead * (GaitData.FistArmGripElbowFrontCm - InFront);
+	}
 	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, MeshToWorld.TransformPosition(Wrist), MeshToWorld.TransformPosition(Elbow), Alpha, 0.f, false, 0.f, FQuat::Identity, 0.f, Blade);
 	FTransform Left = CSPose.GetComponentSpaceTransform(LeftHand);
 	Left.SetRotation(FQuat::Slerp(Left.GetRotation(), LeftRotation, FMath::Clamp(Alpha, 0.f, 1.f)).GetNormalized());

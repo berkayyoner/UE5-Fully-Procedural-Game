@@ -252,6 +252,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandPastPommelCm = 2.5f;
 
+	// The second arm's elbow points at least this share out to its own side (0 straight down or back, 1 straight out), so
+	// it never bends in through the chest.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandElbowOutShare = 0.f;
+
+	// Brought across past its own shoulder, the second elbow stays this far before the shoulder, out of the chest.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandElbowFrontCm = 18.f;
+
 	// Held in both hands and not raised, the blade is carried as a two-handed sword is: the right hand this far ahead of the
 	// middle of the body, to the side (right positive) and up from it, before the hips, the blade aslant across, its point
 	// turned this far out to the right and this far up (down negative). Raised, it goes as in one hand.
@@ -280,6 +289,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeLookTiltUpMaxDegrees = 40.f;
+
+	// How far below the first hand the second closes on this blade's grip: a hand's width, but no further than just past
+	// the end of its pommel.
+	float GetGripGapCm(const class AAedirItemActor* Blade) const;
 
 	// A knife or a one-handed sword: what these hands swing like a fist, one in a hand.
 	static bool IsOneHandBlade(const class AAedirItemActor* Item);

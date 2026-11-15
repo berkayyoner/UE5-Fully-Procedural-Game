@@ -735,7 +735,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		}
 		GaitState.FistArmGripAlpha = GaitState.FistArmArmed[1] ? Fists->GetGripAlpha() : 0.f;
 		const AAedirItemActor* RightBlade = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
-		GaitState.FistArmGripGapCm = FMath::Min(Fists->TwoHandGapCm, RightBlade ? RightBlade->GetPommelBelowGripCm() + Fists->TwoHandPastPommelCm : Fists->TwoHandGapCm);
+		GaitState.FistArmGripElbowOutShare = Fists->TwoHandElbowOutShare;
+		GaitState.FistArmGripElbowFrontCm = Fists->TwoHandElbowFrontCm;
+		GaitState.FistArmGripGapCm = Fists->GetGripGapCm(RightBlade);
 		GaitState.FistArmBladeUpShare = Fists->BladeGuardUpShare;
 		GaitState.FistArmBladeBendDegrees = Fists->BladeWristBendDegrees;
 		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmGripAlpha);

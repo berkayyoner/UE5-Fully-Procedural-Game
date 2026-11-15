@@ -4,6 +4,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
+#include "Fists/AedirFistArms.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "Items/AedirInteractionComponent.h"
@@ -153,7 +154,21 @@ void UAedirCombatComponent::UpdateGripJoint(float DeltaTime)
 	FVector BladeInPrimary;
 	float Alpha = 0.f;
 	const bool bRagdoll = Creature && Creature->Balance && Creature->Balance->IsRagdoll();
-	const bool bWanted = CVarAedirGripJoint.GetValueOnGameThread() != 0 && Body && Interaction && !bRagdoll && GetSecondaryGrip(OtherHand, PointInPrimary, BladeInPrimary, Alpha) && Alpha >= GripJointMinAlpha;
+	bool bGrip = GetSecondaryGrip(OtherHand, PointInPrimary, BladeInPrimary, Alpha);
+	// A one-handed blade the fists hold in both hands: the left palm goes on the grip a hand's width below the right one's,
+	// where the pose puts it too.
+	const UAedirFistArms* Fists = Creature ? Creature->FindComponentByClass<UAedirFistArms>() : nullptr;
+	const AAedirItemActor* FistBlade = GetHeldItem(EAedirHand::Right);
+	if (!bGrip && Fists && FistBlade && FistBlade->GetRootComponent() && Fists->IsArmed(EAedirHand::Right) && Fists->GetGripAlpha() > 0.f)
+	{
+		const FTransform InHand = FistBlade->GetRootComponent()->GetRelativeTransform();
+		BladeInPrimary = InHand.GetRotation().GetAxisX();
+		PointInPrimary = InHand.GetLocation() + BladeInPrimary * (FistBlade->GripLocalCm + FistBlade->HeldGripShiftCm - Fists->GetGripGapCm(FistBlade));
+		OtherHand = EAedirHand::Left;
+		Alpha = Fists->GetGripAlpha();
+		bGrip = true;
+	}
+	const bool bWanted = CVarAedirGripJoint.GetValueOnGameThread() != 0 && Body && Interaction && !bRagdoll && bGrip && Alpha >= GripJointMinAlpha;
 	const EAedirHand PrimaryHand = OtherHand == EAedirHand::Left ? EAedirHand::Right : EAedirHand::Left;
 	const AAedirItemActor* Item = bWanted ? GetHeldItem(PrimaryHand) : nullptr;
 	if (!bWanted || !Item || Item->ItemClass != EAedirItemClass::Weapon)

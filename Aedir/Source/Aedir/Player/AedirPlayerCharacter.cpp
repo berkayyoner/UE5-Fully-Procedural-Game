@@ -36,6 +36,7 @@
 #include "DrawDebugHelpers.h"
 #include "Dev/AedirDevTools.h"
 #include "Surface/AedirFootprintSubsystem.h"
+#include "Physics/AedirBodyControlComponent.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/Engine.h"
 #include "Dev/AedirConsoleCommands.h"
@@ -2086,10 +2087,10 @@ void AAedirPlayerCharacter::Physics(int32 On)
 	const bool bPhysics = On < 0 ? Posed->GetInt() != 0 : On != 0;
 	Posed->Set(bPhysics ? 0 : 1, ECVF_SetByConsole);
 	// With the physics on, a held weapon is part of the hand's body and its arm is left to its muscles, so the weapon is
-	// stopped by what it meets; it is solid to every other body and weapon and passes only its holder's own body. Off, all
-	// four are as the game runs without physics.
+	// stopped by what it meets; it is solid to every body and weapon, its holder's own trunk and limbs too, and passes only
+	// its holder's own hands, which close on it. Off, all three are as the game runs without physics.
 	const TPair<const TCHAR*, int32> Settings[] = { { TEXT("aedir.WeldHeld"), bPhysics ? 1 : 0 }, { TEXT("aedir.PosedArms"), bPhysics ? 0 : 1 },
-		{ TEXT("aedir.HeldPassesOwnBody"), bPhysics ? 0 : 1 }, { TEXT("aedir.SelfCollision"), bPhysics ? 0 : 1 } };
+		{ TEXT("aedir.HeldPassesOwnBody"), bPhysics ? 0 : 1 } };
 	for (const TPair<const TCHAR*, int32>& Setting : Settings)
 	{
 		if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(Setting.Key))
@@ -2209,6 +2210,79 @@ void AAedirPlayerCharacter::BladeNear(float Seconds)
 		{
 			GetWorldTimerManager().ClearTimer(BladeWatchTimer);
 			UE_LOG(LogAedir, Display, TEXT("[BladeWatch] the blade came within %.1f cm of the chest bone of the nearest body"), BladeWatchClosest);
+		}
+	}), 0.001f, true);
+}
+
+void AAedirPlayerCharacter::Wobble(float Seconds)
+{
+	WobbleLeft = Seconds;
+	WobbleFrames = 0;
+	WobbleTurns = 0;
+	for (int32 Index = 0; Index < 4; ++Index)
+	{
+		WobbleSum[Index] = 0.f;
+		WobbleMost[Index] = 0.f;
+	}
+	WobbleLastOff = FVector::ZeroVector;
+	WobbleLastStep = FVector::ZeroVector;
+	WobbleHeadSum = FVector::ZeroVector;
+	WobbleHeadSquares = FVector::ZeroVector;
+	WobbleLastHead = FVector::ZeroVector;
+	WobbleLastHeadStep = FVector::ZeroVector;
+	WobbleHeadTurns = 0;
+	GetWorldTimerManager().SetTimer(WobbleTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		WobbleLeft -= GetWorld()->GetDeltaSeconds();
+		const UAedirBodyControlComponent* Muscles = FindComponentByClass<UAedirBodyControlComponent>();
+		const TCHAR* const Watched[4] = { TEXT("head"), TEXT("spine_03"), TEXT("hand_l"), TEXT("hand_r") };
+		// The head as the body carries it, in the frame of the capsule: a body that bobs on its hips moves it about there.
+		const FVector Head = GetActorTransform().InverseTransformPositionNoScale(GetMesh()->GetBoneLocation(TEXT("head")));
+		WobbleHeadSum += Head;
+		WobbleHeadSquares += Head * Head;
+		const FVector HeadStep = Head - WobbleLastHead;
+		if (WobbleFrames > 1 && HeadStep.Size() > 0.05 && FVector::DotProduct(HeadStep, WobbleLastHeadStep) < 0.0)
+		{
+			++WobbleHeadTurns;
+		}
+		if (HeadStep.Size() > 0.05)
+		{
+			WobbleLastHeadStep = HeadStep;
+		}
+		WobbleLastHead = Head;
+		if (Muscles)
+		{
+			++WobbleFrames;
+			for (int32 Index = 0; Index < 4; ++Index)
+			{
+				const FVector Off = GetMesh()->GetBoneLocation(FName(Watched[Index])) - Muscles->GetPoseLocation(FName(Watched[Index]));
+				WobbleSum[Index] += static_cast<float>(Off.Size());
+				WobbleMost[Index] = FMath::Max(WobbleMost[Index], static_cast<float>(Off.Size()));
+				if (Index == 0)
+				{
+					const FVector Step = Off - WobbleLastOff;
+					if (Step.Size() > 0.05 && FVector::DotProduct(Step, WobbleLastStep) < 0.0)
+					{
+						++WobbleTurns;
+					}
+					if (Step.Size() > 0.05)
+					{
+						WobbleLastStep = Step;
+					}
+					WobbleLastOff = Off;
+				}
+			}
+		}
+		if (WobbleLeft <= 0.f)
+		{
+			GetWorldTimerManager().ClearTimer(WobbleTimer);
+			const float Frames = static_cast<float>(FMath::Max(WobbleFrames, 1));
+			UE_LOG(LogAedir, Display, TEXT("[Wobble] off the pose (mean / most cm): head %.1f / %.1f, chest %.1f / %.1f, left hand %.1f / %.1f, right hand %.1f / %.1f; the head turned back %d times in %d frames"),
+				WobbleSum[0] / Frames, WobbleMost[0], WobbleSum[1] / Frames, WobbleMost[1], WobbleSum[2] / Frames, WobbleMost[2], WobbleSum[3] / Frames, WobbleMost[3], WobbleTurns, WobbleFrames);
+			const FVector Mean = WobbleHeadSum / Frames;
+			const FVector Spread = (WobbleHeadSquares / Frames - Mean * Mean).ComponentMax(FVector::ZeroVector);
+			UE_LOG(LogAedir, Display, TEXT("[Wobble] the head on the capsule moved about by %.1f cm forward, %.1f sideways, %.1f up (standard deviation), and turned back %d times"),
+				FMath::Sqrt(Spread.X), FMath::Sqrt(Spread.Y), FMath::Sqrt(Spread.Z), WobbleHeadTurns);
 		}
 	}), 0.001f, true);
 }

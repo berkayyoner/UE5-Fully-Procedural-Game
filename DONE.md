@@ -346,3 +346,9 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - physics 1 also welds held weapons into the hand's body, leaves weapon arms to their muscles and makes held weapons solid to every other body (passing only the holder's own); physics 0 puts all of it back.
 - A one-hand blade carried in both hands at rest has its point a little up (10 degrees) and the hands a little higher.
 - Dev commands BodyHeights, JointCheck and BladeNear measure bone lengths, joint anchors and how close a blade comes to a body.
+- Blood drops are swept as they fall, so they no longer slip through the ground: drops from bleeding wounds and sprays leave their marks where they land.
+- A blow counts at the fastest it came in over the last 0.12 s, not at the speed of the frame it touched, when the body (or the physics) had already stopped it.
+- The second arm on a one-hand blade held in both hands keeps its elbow out of the chest (TwoHandElbowOutShare, TwoHandElbowFrontCm).
+- With the physics on, the left palm is pulled onto the grip of a one-hand blade held in both hands by the grip spring, and held weapons are solid to their holder's own trunk and limbs too, passing only the holder's hands.
+- Firmer muscles with the physics on (arms twice as strong, trunk, head and legs half as strong again, more damping): the hands stay within 1-2 cm of their pose instead of sagging 6-7 cm.
+- Dev command Wobble measures how far the physical body strays from its pose and how much the head moves about on the capsule; BloodCount also counts the marks on the ground.

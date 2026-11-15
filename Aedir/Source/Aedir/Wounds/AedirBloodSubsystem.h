@@ -60,6 +60,7 @@ public:
 	int32 PunctureDropsMax = 34;
 
 	static constexpr int32 MaxSplats = 700;
+	int32 GetSplatCount() const { return Splats.Num(); }
 	// Three game days at Skyrim's pace, where a day passes in 72 real minutes.
 	static constexpr float SplatLifetime = 3.f * 72.f * 60.f;
 

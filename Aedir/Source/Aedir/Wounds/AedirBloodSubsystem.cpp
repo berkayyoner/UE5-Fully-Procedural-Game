@@ -120,6 +120,8 @@ AAedirBloodDrop::AAedirBloodDrop()
 	Mesh->SetCollisionResponseToAllChannels(ECR_Ignore);
 	Mesh->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
 	Mesh->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	// So small and so fast, a drop stepped through the ground between two frames and never left a mark: it is swept.
+	Mesh->BodyInstance.bUseCCD = true;
 	Mesh->SetSimulatePhysics(true);
 	Mesh->SetEnableGravity(true);
 	Mesh->SetLinearDamping(BloodDropLinearDamping);

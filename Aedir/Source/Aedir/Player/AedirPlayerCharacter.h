@@ -454,6 +454,11 @@ public:
 	UFUNCTION(Exec)
 	void BladeNear(float Seconds);
 
+	// For this many seconds, logs how far the physical body strays from its pose (the mean and the most, for the head, the
+	// chest and the hands) and how often the head's stray turns back, to see a body that wobbles like jelly.
+	UFUNCTION(Exec)
+	void Wobble(float Seconds);
+
 	// How fast the player flies in noclip, and how many times that with Shift held.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Dev")
 	float NoclipSpeed = 900.f;
@@ -654,6 +659,19 @@ private:
 	FTimerHandle BladeWatchTimer;
 	float BladeWatchLeft = 0.f;
 	float BladeWatchClosest = 0.f;
+	FTimerHandle WobbleTimer;
+	float WobbleLeft = 0.f;
+	int32 WobbleFrames = 0;
+	int32 WobbleTurns = 0;
+	float WobbleSum[4] = { 0.f, 0.f, 0.f, 0.f };
+	float WobbleMost[4] = { 0.f, 0.f, 0.f, 0.f };
+	FVector WobbleLastOff = FVector::ZeroVector;
+	FVector WobbleLastStep = FVector::ZeroVector;
+	FVector WobbleHeadSum = FVector::ZeroVector;
+	FVector WobbleHeadSquares = FVector::ZeroVector;
+	FVector WobbleLastHead = FVector::ZeroVector;
+	FVector WobbleLastHeadStep = FVector::ZeroVector;
+	int32 WobbleHeadTurns = 0;
 	void SetNoclip(bool bOn);
 	UFUNCTION(Server, Reliable)
 	void ServerSetNoclip(bool bOn);

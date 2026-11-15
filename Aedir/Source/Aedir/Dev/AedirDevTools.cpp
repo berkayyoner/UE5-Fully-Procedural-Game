@@ -464,7 +464,8 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 		{
 			++Count;
 		}
-		UE_LOG(LogAedir, Display, TEXT("[Dev] BloodCount %d"), Count);
+		const UAedirBloodSubsystem* Blood = Player->GetWorld()->GetSubsystem<UAedirBloodSubsystem>();
+		UE_LOG(LogAedir, Display, TEXT("[Dev] BloodCount %d drops flying, %d marks on the ground"), Count, Blood ? Blood->GetSplatCount() : 0);
 	}
 	else if (Command == TEXT("SeverMe"))
 	{
