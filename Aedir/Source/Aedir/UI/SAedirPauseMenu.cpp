@@ -7,6 +7,9 @@
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
 #include "Brushes/SlateColorBrush.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
+#include "Brushes/SlateNoResource.h"
+#include "Widgets/Images/SImage.h"
 #include "Settings/AedirSettingsSubsystem.h"
 #include "InputCoreTypes.h"
 #include "Input/Events.h"
@@ -29,24 +32,47 @@ namespace
 	// A volume bar is this wide, its percentage beside it this wide.
 	constexpr float PauseSliderWidth = 220.f;
 	constexpr float PauseSliderValueWidth = 52.f;
-	// The bar is drawn this thick in a light metal, its handle a bright ivory block, so both stand out over the scenery.
-	constexpr float PauseSliderBarThickness = 6.f;
-	const FLinearColor PauseSliderBarColor(0.62f, 0.58f, 0.48f, 1.f);
-	constexpr float PauseSliderHandleSize = 16.f;
+	// The bar: a dark groove with a thin worn-brass rim, filled with brass up to the value, faint notches at the quarters,
+	// and a round ivory knob ringed in dark metal.
+	constexpr float PauseSliderHeight = 22.f;
+	constexpr float PauseSliderGrooveHeight = 8.f;
+	constexpr float PauseSliderKnobSize = 16.f;
+	constexpr float PauseSliderNotchHeight = 12.f;
+	const FLinearColor PauseSliderGroove(0.03f, 0.028f, 0.024f, 0.85f);
+	const FLinearColor PauseSliderRim(0.56f, 0.47f, 0.31f, 0.75f);
+	const FLinearColor PauseSliderFill(0.80f, 0.63f, 0.33f, 1.f);
+	const FLinearColor PauseSliderNotch(0.56f, 0.47f, 0.31f, 0.45f);
+	const FLinearColor PauseSliderKnobRing(0.12f, 0.10f, 0.07f, 1.f);
+	const FSlateBrush& PauseSliderGrooveBrush()
+	{
+		static const FSlateRoundedBoxBrush Brush(PauseSliderGroove, PauseSliderGrooveHeight * 0.5f, PauseSliderRim, 1.f);
+		return Brush;
+	}
+	const FSlateBrush& PauseSliderFillBrush()
+	{
+		static const FSlateRoundedBoxBrush Brush(FLinearColor::White, PauseSliderGrooveHeight * 0.5f);
+		return Brush;
+	}
+	const FSlateBrush& PauseSliderNotchBrush()
+	{
+		static const FSlateColorBrush Brush(FLinearColor::White);
+		return Brush;
+	}
 	const FSliderStyle& PauseSliderStyle()
 	{
 		static FSliderStyle Style = []()
 		{
 			FSliderStyle Made = FCoreStyle::Get().GetWidgetStyle<FSliderStyle>("Slider");
-			Made.SetBarThickness(PauseSliderBarThickness);
-			const FSlateColorBrush Handle(FLinearColor::White);
-			FSlateBrush HandleBrush = Handle;
-			HandleBrush.ImageSize = FVector2D(PauseSliderHandleSize * 0.6f, PauseSliderHandleSize);
-			Made.SetNormalThumbImage(HandleBrush);
-			Made.SetHoveredThumbImage(HandleBrush);
-			const FSlateColorBrush Bar(FLinearColor::White);
-			Made.SetNormalBarImage(Bar);
-			Made.SetHoveredBarImage(Bar);
+			// The slider itself draws only the knob; the groove and its fill are drawn under it.
+			Made.SetBarThickness(0.f);
+			const FSlateNoResource None;
+			Made.SetNormalBarImage(None);
+			Made.SetHoveredBarImage(None);
+			Made.SetDisabledBarImage(None);
+			FSlateRoundedBoxBrush Knob(FLinearColor::White, PauseSliderKnobSize * 0.5f, PauseSliderKnobRing, 2.f, FVector2D(PauseSliderKnobSize, PauseSliderKnobSize));
+			Made.SetNormalThumbImage(Knob);
+			Made.SetHoveredThumbImage(Knob);
+			Made.SetDisabledThumbImage(Knob);
 			return Made;
 		}();
 		return Style;
@@ -457,22 +483,51 @@ TSharedRef<SWidget> SAedirPauseMenu::MakeOptionControl(int32 RowIndex, int32 Opt
 	if (Option && Option->bSlider && Option->Values.Num() > 1)
 	{
 		const int32 Steps = Option->Values.Num() - 1;
-		return SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+		const auto Share = [this, OptionIndex, Steps]()
+		{
+			const UAedirSettingsSubsystem* Now = PauseGetSettings(World.Get());
+			const FAedirSettingOption* Line = Now ? Now->GetOption(OptionIndex) : nullptr;
+			return Line ? FMath::Max(Line->Read(), 0) / static_cast<float>(Steps) : 0.f;
+		};
+		// The knob's middle runs from half a knob in from one end to half a knob in from the other; the fill follows it.
+		const float Travel = PauseSliderWidth - PauseSliderKnobSize;
+		TSharedRef<SOverlay> Groove = SNew(SOverlay)
+			+ SOverlay::Slot().VAlign(VAlign_Center)
 			[
-				SNew(SBox).WidthOverride(PauseSliderWidth)
+				SNew(SBox).HeightOverride(PauseSliderGrooveHeight)
 				[
+					SNew(SImage).Image(&PauseSliderGrooveBrush())
+				]
+			]
+			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(FMargin(1.f, 0.f))
+			[
+				SNew(SBox)
+				.HeightOverride(PauseSliderGrooveHeight - 2.f)
+				.WidthOverride_Lambda([Share, Travel]() { return FOptionalSize(FMath::Max(PauseSliderKnobSize * 0.5f + Share() * Travel - 1.f, 0.f)); })
+				[
+					SNew(SImage)
+					.Image(&PauseSliderFillBrush())
+					.ColorAndOpacity_Lambda([this, RowIndex]() { return FSlateColor(FLinearColor::LerpUsingHSV(PauseSliderFill, IvoryBright, (SelectedRow == RowIndex) ? 0.25f : 0.f)); })
+				]
+			];
+		for (int32 Quarter = 1; Quarter < 4; ++Quarter)
+		{
+			Groove->AddSlot().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(FMargin(PauseSliderKnobSize * 0.5f + Travel * Quarter / 4.f, 0.f, 0.f, 0.f))
+			[
+				SNew(SBox).WidthOverride(1.f).HeightOverride(PauseSliderNotchHeight)
+				[
+					SNew(SImage).Image(&PauseSliderNotchBrush()).ColorAndOpacity(PauseSliderNotch)
+				]
+			];
+		}
+		Groove->AddSlot()
+			[
 					SNew(SSlider)
 					.Style(&PauseSliderStyle())
-					.Value_Lambda([this, OptionIndex, Steps]()
-					{
-						const UAedirSettingsSubsystem* Now = PauseGetSettings(World.Get());
-						const FAedirSettingOption* Line = Now ? Now->GetOption(OptionIndex) : nullptr;
-						return Line ? FMath::Max(Line->Read(), 0) / static_cast<float>(Steps) : 0.f;
-					})
+					.IndentHandle(true)
+					.Value_Lambda(Share)
 					.StepSize(1.f / Steps)
-					.SliderBarColor(PauseSliderBarColor)
-					.SliderHandleColor(IvoryBright)
+					.SliderHandleColor_Lambda([this, RowIndex]() { return FSlateColor((SelectedRow == RowIndex) ? IvoryBright : FLinearColor::LerpUsingHSV(IvoryBright, PauseSliderFill, 0.35f)); })
 					.OnValueChanged_Lambda([this, OptionIndex, Steps](float NewValue)
 					{
 						UAedirSettingsSubsystem* Now = PauseGetSettings(World.Get());
@@ -483,6 +538,13 @@ TSharedRef<SWidget> SAedirPauseMenu::MakeOptionControl(int32 RowIndex, int32 Opt
 							Now->SetOptionValue(OptionIndex, ValueIndex);
 						}
 					})
+			];
+		return SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(SBox).WidthOverride(PauseSliderWidth).HeightOverride(PauseSliderHeight)
+				[
+					Groove
 				]
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(FMargin(10.f, 0.f, 0.f, 0.f))

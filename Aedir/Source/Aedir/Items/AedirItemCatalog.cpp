@@ -244,7 +244,7 @@ namespace
 			Item.ModelThickShare = ThickShare;
 			Definitions.Add(Item);
 		};
-		AddModelWeapon(TEXT("BloodySword"), TEXT("Bloody Sword"), 1.20f, 95.0f, -10.1f, 74.8f, EAedirDamageType::Slash, 11.0f, false, FVector(0.748, 0.048, 0.010), TEXT("/Game/Aedir/Fab/BloodySword/Sword_uitlbiaga_High.Sword_uitlbiaga_High"), true, false, -47.1f, 11.1f, 1.00f);
+		AddModelWeapon(TEXT("BloodySword"), TEXT("Rusty Sword"), 1.20f, 95.0f, -10.1f, 74.8f, EAedirDamageType::Slash, 11.0f, false, FVector(0.748, 0.048, 0.010), TEXT("/Game/Aedir/Fab/BloodySword/Sword_uitlbiaga_High.Sword_uitlbiaga_High"), true, false, -47.1f, 11.1f, 1.00f);
 		AddModelWeapon(TEXT("RustySword"), TEXT("Rusty Sword"), 1.10f, 88.0f, -9.4f, 69.3f, EAedirDamageType::Slash, 9.0f, false, FVector(0.693, 0.048, 0.010), TEXT("/Game/Aedir/Fab/RustySword/uh2tagpfa_LOD0_TIER1_000.uh2tagpfa_LOD0_TIER1_000"), false, false, -43.6f, 10.3f, 1.00f);
 		AddModelWeapon(TEXT("IronSword"), TEXT("Iron Sword"), 1.15f, 92.0f, -8.6f, 74.8f, EAedirDamageType::Slash, 10.0f, false, FVector(0.748, 0.048, 0.010), TEXT("/Game/Aedir/Fab/IronSword/viking_sword/StaticMeshes/viking_sword.viking_sword"), false, false, -45.7f, 9.5f, 1.00f);
 		AddModelWeapon(TEXT("SteelSword"), TEXT("Steel Sword"), 1.45f, 116.0f, -13.8f, 88.5f, EAedirDamageType::Slash, 13.0f, true, FVector(0.885, 0.050, 0.010), TEXT("/Game/Aedir/Fab/SteelSword/Sword_Long_A.Sword_Long_A"), false, false, -63.1f, 10.35f, 1.00f);

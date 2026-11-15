@@ -225,7 +225,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float SinT = FMath::Sin(ArmTheta);
 		const float CosT = FMath::Cos(ArmTheta);
 		// A blade is held further out, and reaches up further over the head.
-		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : 0.f);
+		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : 0.f);
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
 		// Round towards the side the height of the middle falls away and turns the other way, so a raised fist comes down
@@ -291,6 +291,19 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float SideShare = bFollows ? FMath::Clamp((FMath::Abs(Across) - Split) / (1.f - Split), 0.f, 1.f) : 0.f;
 		// Drawn round and raised at once, the larger of the two, not both on top of each other.
 		BladeWristUp[Slot] = bBlade ? FMath::Max(SideShare * BladeSideWristUpDegrees, Raise * BladeRaiseWristUpDegrees) - Lower * BladeLowerWristDownDegrees : 0.f;
+		BladeAimWay[Slot] = (Forward + Up * BladeGuardUpShare).GetSafeNormal();
+		// In both hands the guard is in the middle before the body, the blade across it with its point a little down; as the
+		// blade is moved off the guard it goes over to the one-handed way.
+		const float TwoGuard = Slot == 1 && bBlade ? GripAlpha * BladeAim[Slot] : 0.f;
+		if (TwoGuard > 0.f)
+		{
+			const FVector Lay = FRotator(TwoHandGuardPitchDegrees, TwoHandGuardYawDegrees, 0.f).RotateVector(FVector::ForwardVector);
+			const FVector Way = Forward * Lay.X + Right * Lay.Y + Up * Lay.Z;
+			const FVector GuardPlace = Chest + Forward * TwoHandGuardForwardCm + Right * TwoHandGuardSideCm + Up * TwoHandGuardHeightCm;
+			FistWorld[Slot] = FMath::Lerp(FistWorld[Slot], GuardPlace, TwoGuard);
+			BladeAimWay[Slot] = FMath::Lerp(BladeAimWay[Slot], Way, TwoGuard).GetSafeNormal();
+			BladeLean[Slot] = FMath::Lerp(BladeLean[Slot], Way, TwoGuard).GetSafeNormal();
+		}
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
 		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm));

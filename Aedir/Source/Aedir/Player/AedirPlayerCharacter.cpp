@@ -720,7 +720,9 @@ bool AAedirPlayerCharacter::UsesFistArms(EAedirHand Hand) const
 {
 	// Empty hands and hands with a knife or a one-handed sword are moved by the fists; anything else by the older code.
 	const AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(Hand) : nullptr;
-	return FistArms && CVarAedirNewFists.GetValueOnGameThread() != 0 && (!Item || UAedirFistArms::IsOneHandBlade(Item));
+	// Something that is not a weapon (a torch, a cup, a stone) is held in the fist, and the arm moves as a fist does.
+	const bool bObject = Item && Item->ItemClass != EAedirItemClass::Weapon && !Item->IsShield() && !(Combat && Combat->IsTwoHandGrip());
+	return FistArms && CVarAedirNewFists.GetValueOnGameThread() != 0 && (!Item || bObject || UAedirFistArms::IsOneHandBlade(Item));
 }
 
 void AAedirPlayerCharacter::HandleRightGuardPressed()
@@ -2035,6 +2037,15 @@ void AAedirPlayerCharacter::FistButton(int32 LeftButton, int32 Down)
 	else
 	{
 		Down != 0 ? HandleLeftGuardPressed() : HandleLeftGuardReleased();
+	}
+}
+
+void AAedirPlayerCharacter::TwoHand(int32 On)
+{
+	if (FistArms)
+	{
+		FistArms->SetTwoHand(On != 0);
+		UE_LOG(LogAedir, Display, TEXT("[TwoHand] both hands %d (could %d)"), FistArms->IsTwoHand() ? 1 : 0, FistArms->CanTakeBothHands() ? 1 : 0);
 	}
 }
 

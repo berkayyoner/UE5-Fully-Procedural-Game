@@ -416,6 +416,10 @@ public:
 	UFUNCTION(Exec)
 	void FistButton(int32 LeftButton, int32 Down);
 
+	// Takes the one-handed blade in the right hand in both hands (1) or back in one (0).
+	UFUNCTION(Exec)
+	void TwoHand(int32 On);
+
 	// Logs where the fists' mouse stands and how far the punch is out.
 	UFUNCTION(Exec)
 	void FistInfo(const FString& Label);

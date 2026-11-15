@@ -212,7 +212,11 @@ public:
 
 	// Drawn over to the other side, a blade goes round only this share of the arc a fist would, so it does not reach as far.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeCrossArcShare = 0.75f;
+	float BladeCrossArcShare = 0.6f;
+
+	// Over at the other side a blade's hand comes in this close to the chest (a fist SideRadiusCm), so the elbow stays bent.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeCrossRadiusCm = 26.f;
 
 	// Drawn round to the side a blade keeps this share of the middle's angle up or down, the same way (a fist turns the
 	// other way, ArcSideReverse), so the whole sweep is tipped up or down with the mouse and strikes high or low.
@@ -244,6 +248,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandGapCm = 9.f;
 
+	// Held in both hands, in the guard the hands come to the middle before the body, the right this far ahead of the
+	// shoulders, to the side (right positive) and up (below them negative), and the blade lies across, its point turned
+	// this far to the right and this far up (down negative). Moved, the blade goes as in one hand.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandGuardForwardCm = 26.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandGuardSideCm = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandGuardHeightCm = -18.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandGuardYawDegrees = 45.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandGuardPitchDegrees = -20.f;
+
 	// A knife or a one-handed sword: what these hands swing like a fist, one in a hand.
 	static bool IsOneHandBlade(const class AAedirItemActor* Item);
 
@@ -273,6 +295,8 @@ public:
 	float GetBladeWristUp(EAedirHand Hand) const { return BladeWristUp[Index(Hand)]; }
 	// Which way (world) a blade's knuckle row is to lean, turned up or down round the chest with the arm.
 	FVector GetBladeLean(EAedirHand Hand) const { return BladeLean[Index(Hand)]; }
+	// Which way (world) the wrist brings a blade's point round to while it looks ahead.
+	FVector GetBladeAimWay(EAedirHand Hand) const { return BladeAimWay[Index(Hand)]; }
 
 	// Where the pose puts each arm this frame: the fist and the elbow in the world, and how far the arm is in the guard (0..1).
 	bool GetArm(EAedirHand Hand, FVector& OutFistWorld, FVector& OutElbowWorld, float& OutAlpha) const;
@@ -319,6 +343,7 @@ private:
 	float BladeAim[2] = { 0.f, 0.f };
 	float BladeWristUp[2] = { 0.f, 0.f };
 	FVector BladeLean[2] = { FVector::UpVector, FVector::UpVector };
+	FVector BladeAimWay[2] = { FVector::ForwardVector, FVector::ForwardVector };
 	bool bTwoHand = false;
 	bool bOffHandOut = false;
 	float GripAlpha = 0.f;

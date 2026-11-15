@@ -324,3 +324,8 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - A blade held in one hand alone goes all the way across with the mouse (BladeAloneAcrossShare 1; a fist still stops half way), so the cross side's second wrist step happens in play.
 - Raised all the way, a blade's wrist bends up 35 degrees (was 50); drawn round and raised at once it takes the larger of the two bends, not both.
 - Drawn over to the other side a one-hand blade goes round a shorter arc (BladeCrossArcShare 0.75), so it does not reach as far across.
+- A one-hand blade drawn to the other side goes round less (BladeCrossArcShare 0.6) and comes in closer (BladeCrossRadiusCm 26), so the elbow stays bent as a fist's does.
+- Something held that is not a weapon or a shield (an apple, a lump of coal) is held in the fist and the arm moves as a fist.
+- The volume bars are a dark rounded groove with a brass rim, a brass fill up to the value, notches at the quarters and a round ivory knob.
+- The Bloody Sword is now called the Rusty Sword.
+- A one-hand blade in both hands guards in the middle before the body, the blade across with its point to the right and a little down (TwoHandGuard variables); moved, it goes as in one hand. Dev command TwoHand 0/1.

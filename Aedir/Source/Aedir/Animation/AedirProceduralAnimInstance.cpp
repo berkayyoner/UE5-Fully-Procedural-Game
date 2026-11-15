@@ -268,10 +268,12 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	// The right arm first: a left hand on the grip of its blade goes where the right hand has been put.
 	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1], GaitData.FistArmTurn[1],
 		GaitData.FistArmArmed[1], GaitData.FistArmBladeAhead[1], GaitData.FistArmItemInHand[1], GaitData.FistArmBladeBendDegrees,
-		FVector::ZeroVector, GaitData.FistArmBladeAim[1], GaitData.FistArmBladeWristUp[1], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[1]));
+		FVector::ZeroVector, GaitData.FistArmBladeAim[1], GaitData.FistArmBladeWristUp[1], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[1]),
+		MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeAimWay[1]));
 	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.FistArmHandWorld[0], GaitData.FistArmElbowWorld[0], GaitData.FistArmAlpha[0], GaitData.FistArmTurn[0],
 		GaitData.FistArmArmed[0], GaitData.FistArmBladeAhead[0], GaitData.FistArmItemInHand[0], GaitData.FistArmBladeBendDegrees,
-		FVector::ZeroVector, GaitData.FistArmBladeAim[0], GaitData.FistArmBladeWristUp[0], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[0]));
+		FVector::ZeroVector, GaitData.FistArmBladeAim[0], GaitData.FistArmBladeWristUp[0], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[0]),
+		MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeAimWay[0]));
 	ApplyGripOnBlade(CSPose, Bones);
 
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
@@ -757,7 +759,7 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 
 void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& FistWorld, const FVector& ElbowWorld, float Alpha, float TurnDegrees,
 	bool bArmed, float BladeAhead, const FQuat& ItemInHand, float BladeBendDegrees, const FVector& RowMesh,
-	float BladeAim, float WristUpDegrees, const FVector& BladeLeanMesh) const
+	float BladeAim, float WristUpDegrees, const FVector& BladeLeanMesh, const FVector& AimWayMesh) const
 {
 	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, HumerusName);
 	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, RadiusName);
@@ -838,7 +840,8 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 		if (bArmed && BladeAim > 0.f)
 		{
 			const FVector Blade = (HandRotation * ItemInHand).GetAxisX();
-			const FQuat Bend = FQuat::FindBetweenNormals(Blade, (Ahead + ActorToMesh.RotateVector(FVector::UpVector) * GaitData.FistArmBladeUpShare).GetSafeNormal());
+			const FVector AimWay = AimWayMesh.IsNearlyZero() ? (Ahead + ActorToMesh.RotateVector(FVector::UpVector) * GaitData.FistArmBladeUpShare).GetSafeNormal() : AimWayMesh.GetSafeNormal();
+			const FQuat Bend = FQuat::FindBetweenNormals(Blade, AimWay);
 			FVector Axis;
 			float Angle = 0.f;
 			Bend.ToAxisAndAngle(Axis, Angle);
