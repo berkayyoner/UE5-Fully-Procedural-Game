@@ -39,6 +39,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
 	float StepEffectRunChance = 0.65f;
 
+	// A footprint fades out slowly over this many days of the game's clock, and no more than this many are kept in the world
+	// (the oldest go first).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects", meta=(ClampMin=0))
+	float FootprintFadeGameDays = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects", meta=(ClampMin=1))
+	int32 MaxFootprints = 3000;
+
 	virtual void BeginPlay() override;
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 

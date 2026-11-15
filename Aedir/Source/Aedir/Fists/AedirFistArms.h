@@ -259,7 +259,7 @@ public:
 	float TwoHandRestForwardCm = 24.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandRestSideCm = -10.f;
+	float TwoHandRestSideCm = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandRestHeightCm = 6.f;

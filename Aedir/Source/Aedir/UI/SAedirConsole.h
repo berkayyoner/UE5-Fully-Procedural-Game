@@ -32,6 +32,8 @@ public:
 	void FocusInput();
 
 	virtual bool SupportsKeyboardFocus() const override { return true; }
+	// Focus given to the console as a whole goes on to its input line, so typing starts at once.
+	virtual FReply OnFocusReceived(const FGeometry& MyGeometry, const FFocusEvent& InFocusEvent) override;
 	virtual FReply OnPreviewKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 

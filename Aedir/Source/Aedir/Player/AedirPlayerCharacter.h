@@ -424,6 +424,30 @@ public:
 	UFUNCTION(Exec)
 	void TwoHand(int32 On);
 
+	// The bodies' physics on (1) or off (0, the posed bodies the game runs with for now); with nothing given, the other way.
+	UFUNCTION(Exec)
+	void Physics(int32 On = -1);
+
+	// Flies through everything: no collision, no gravity, the view's way with WASD, Space up and Ctrl down. Again to land.
+	UFUNCTION(Exec)
+	void Noclip();
+
+	UFUNCTION(Exec)
+	void Tcl();
+
+	// Logs how many footprints lie in the world and how strong the oldest still is.
+	UFUNCTION(Exec)
+	void FootprintInfo();
+
+	// How fast the player flies in noclip, and how many times that with Shift held.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Dev")
+	float NoclipSpeed = 900.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Dev")
+	float NoclipFastShare = 3.f;
+
+	bool IsNoclip() const { return bNoclip; }
+
 	// Logs where the fists' mouse stands and how far the punch is out.
 	UFUNCTION(Exec)
 	void FistInfo(const FString& Label);
@@ -611,6 +635,10 @@ private:
 	// Z: the photo camera, as Half Sword's C: the camera comes off the body and flies free (mouse to look, WASD to move, E up,
 	// Q down, Shift faster, wheel for the speed) until Z again. Playing alone time all but stops; with others it runs on.
 	bool bPhotoCamera = false;
+	bool bNoclip = false;
+	void SetNoclip(bool bOn);
+	UFUNCTION(Server, Reliable)
+	void ServerSetNoclip(bool bOn);
 	float PhotoArmLengthCm = 250.f;
 	bool bPhotoWasFirstPerson = false;
 	FVector FreeCameraLocation = FVector::ZeroVector;

@@ -115,6 +115,8 @@ public:
 	// The hour of the day, 0 to 24, and how much of full day it is (0 at night, 1 with the sun well up), for anything lit by
 	// its own fire or lamp.
 	static float GetHourOfDay(const UWorld* World);
+	// How many seconds of play one day of the game's clock takes.
+	static float GetDayRealSeconds();
 	static float GetDaylight(const UWorld* World);
 
 private:

@@ -864,6 +864,11 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 	}
 }
 
+float AAedirWeatherManager::GetDayRealSeconds()
+{
+	return static_cast<float>(WeatherDayRealSeconds);
+}
+
 float AAedirWeatherManager::GetHourOfDay(const UWorld* World)
 {
 	const float Fixed = CVarAedirHour.GetValueOnGameThread();

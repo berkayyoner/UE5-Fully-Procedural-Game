@@ -11,6 +11,8 @@
 #include "Animation/AedirGaitComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/DecalComponent.h"
+#include "Surface/AedirFootprintSubsystem.h"
+#include "Weather/AedirWeatherManager.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
@@ -38,7 +40,6 @@ namespace
 	constexpr float AedirStepHalfWidthCm = 6.f;
 	constexpr float AedirStepHalfLengthCm = 14.f;
 	constexpr float AedirStepForwardCm = 8.f;
-	constexpr float AedirStepLifeSeconds = 45.f;
 	constexpr float AedirStepRunSpeed = 380.f;
 	constexpr float AedirStepSnowShare = 0.3f;
 	constexpr float AedirStepSoundShare = 0.35f;
@@ -275,10 +276,15 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 	{
 		const FVector Forward = FVector::VectorPlaneProject(CreatureOwner->GetActorForwardVector(), PrintNormal).GetSafeNormal();
 		const float Scale = static_cast<float>(CreatureOwner->GetActorScale3D().Z);
-		if (UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(this, Base, FVector(AedirStepPrintDepthCm, AedirStepHalfWidthCm, AedirStepHalfLengthCm) * Scale, PrintPoint + Forward * (AedirStepForwardCm * Scale), FRotationMatrix::MakeFromXZ(-PrintNormal, Forward).Rotator(), AedirStepLifeSeconds))
+		if (UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(this, Base, FVector(AedirStepPrintDepthCm, AedirStepHalfWidthCm, AedirStepHalfLengthCm) * Scale, PrintPoint + Forward * (AedirStepForwardCm * Scale), FRotationMatrix::MakeFromXZ(-PrintNormal, Forward).Rotator(), 0.f))
 		{
 			Decal->SetFadeScreenSize(0.f);
-			if (UMaterialInstanceDynamic* Print = Decal->CreateDynamicMaterialInstance())
+			UMaterialInstanceDynamic* Print = Decal->CreateDynamicMaterialInstance();
+			if (UAedirFootprintSubsystem* Footprints = World->GetSubsystem<UAedirFootprintSubsystem>())
+			{
+				Footprints->Add(Decal, Print, Strength, FootprintFadeGameDays * AAedirWeatherManager::GetDayRealSeconds(), MaxFootprints);
+			}
+			if (Print)
 			{
 				Print->SetVectorParameterValue(TEXT("Color"), Color);
 				Print->SetScalarParameterValue(TEXT("Strength"), Strength);

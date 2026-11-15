@@ -4385,8 +4385,9 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 
 	if (Victim->Wounds)
 	{
-		const FVector TipMotion = ComputeArmTip(Hand, Arm) - Arm.PrevTipWorld;
-		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, bGlance ? EAedirDamageType::Blunt : Landed, Energy * DamageShare, VictimZoneProtection, TipMotion);
+		// The blood goes the way the weapon went through the hit, as the swept blade really moved there (the arm's own model
+		// of its tip lags behind a blade swung by the fists, and pointed it astray).
+		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, bGlance ? EAedirDamageType::Blunt : Landed, Energy * DamageShare, VictimZoneProtection, TipVelocity);
 	}
 
 	USkeletalMeshComponent* VictimBody = Victim->GetMesh();

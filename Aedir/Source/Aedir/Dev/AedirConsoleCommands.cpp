@@ -460,6 +460,8 @@ namespace
 		{ TEXT("tgm"), TEXT("tgm  god mode on or off") },
 		{ TEXT("setweather"), TEXT("setweather <Sunny|ExtraSunny|Cloudy|Rainy|Stormy|Thunderstorm|Snowy>  changes the weather (sw)") },
 		{ TEXT("settime"), TEXT("settime <hour> [minute]  puts the clock at that time of day, 0-23 and 0-59") },
+		{ TEXT("noclip"), TEXT("noclip  fly through everything, Space up, Ctrl down, Shift faster; again to land (tcl)") },
+		{ TEXT("physics"), TEXT("physics [0|1]  the bodies' physics on or off (off is how the game runs for now)") },
 	};
 
 	const TCHAR* const ConsoleStatNames[] = { TEXT("health"), TEXT("stamina"), TEXT("magicka"), TEXT("strength"), TEXT("athletics"), TEXT("hunger"), TEXT("thirst"), TEXT("onehanded"), TEXT("twohanded"), TEXT("ranged"), TEXT("destruction"), TEXT("regeneration"), TEXT("illusion"), TEXT("metamorphosis"), TEXT("summon"), TEXT("heavyarmor"), TEXT("lightarmor"), TEXT("smelting"), TEXT("alchemy"), TEXT("enchanting") };

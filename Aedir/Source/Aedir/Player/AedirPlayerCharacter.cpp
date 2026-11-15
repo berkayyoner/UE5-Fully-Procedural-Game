@@ -34,6 +34,7 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Dev/AedirDevTools.h"
+#include "Surface/AedirFootprintSubsystem.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/Engine.h"
 #include "Dev/AedirConsoleCommands.h"
@@ -292,7 +293,22 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		const float LeftKeyValue = PlayerController && PlayerController->IsInputKeyDown(EKeys::A) ? 1.f : 0.f;
 		// The keys fly the free camera instead of walking the body while it is up.
 		const FVector2D MoveInput = bPhotoCamera ? FVector2D::ZeroVector : FVector2D(RightKeyValue - LeftKeyValue, ForwardKeyValue - BackwardKeyValue) + DevAutoMove;
-		MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
+		if (bNoclip)
+		{
+			// Flying, forward is where the view looks, up or down too; Space rises and Ctrl sinks, Shift goes faster.
+			const FRotationMatrix View(GetControlRotation());
+			const float Rise = (PlayerController && PlayerController->IsInputKeyDown(EKeys::SpaceBar) ? 1.f : 0.f) - (PlayerController && PlayerController->IsInputKeyDown(EKeys::LeftControl) ? 1.f : 0.f);
+			const FVector Way = View.GetUnitAxis(EAxis::X) * MoveInput.Y + View.GetUnitAxis(EAxis::Y) * MoveInput.X + FVector::UpVector * Rise;
+			if (UCharacterMovementComponent* Move = GetCharacterMovement())
+			{
+				Move->MaxFlySpeed = NoclipSpeed * (PlayerController && PlayerController->IsInputKeyDown(EKeys::LeftShift) ? NoclipFastShare : 1.f);
+			}
+			AddMovementInput(Way.GetClampedToMaxSize(1.0), 1.f);
+		}
+		else
+		{
+			MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
+		}
 		// Down on the ground the same keys get the body up: W off the back, S from face down, held all the way up.
 		if (Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()) && FMath::Abs(MoveInput.Y) > 0.5)
 		{
@@ -615,6 +631,10 @@ void AAedirPlayerCharacter::HandleRunReleased()
 
 void AAedirPlayerCharacter::HandleCrouchPressed()
 {
+	if (bNoclip)
+	{
+		return;
+	}
 	SetWantsToCrouch(true);
 }
 
@@ -625,6 +645,10 @@ void AAedirPlayerCharacter::HandleCrouchReleased()
 
 void AAedirPlayerCharacter::HandleJumpPressed()
 {
+	if (bNoclip)
+	{
+		return;
+	}
 	StartJump();
 }
 
@@ -2051,6 +2075,62 @@ void AAedirPlayerCharacter::TwoHand(int32 On)
 	}
 }
 
+void AAedirPlayerCharacter::Physics(int32 On)
+{
+	IConsoleVariable* Posed = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.DirectPose"));
+	if (!Posed)
+	{
+		return;
+	}
+	const bool bPhysics = On < 0 ? Posed->GetInt() != 0 : On != 0;
+	Posed->Set(bPhysics ? 0 : 1, ECVF_SetByConsole);
+	const FString Message = bPhysics ? TEXT("Physics on: the bodies are held to their poses by their muscles.") : TEXT("Physics off: the bodies are posed directly.");
+	UE_LOG(LogAedir, Display, TEXT("[Physics] %s"), *Message);
+	UAedirDevTools::OnReported().Broadcast(Message);
+}
+
+void AAedirPlayerCharacter::Noclip()
+{
+	SetNoclip(!bNoclip);
+	if (!HasAuthority())
+	{
+		ServerSetNoclip(bNoclip);
+	}
+	const FString Message = bNoclip ? TEXT("Noclip on: fly with WASD, Space up, Ctrl down, Shift faster.") : FString::Printf(TEXT("Noclip off at %s."), *GetActorLocation().ToCompactString());
+	UE_LOG(LogAedir, Display, TEXT("[Noclip] %s"), *Message);
+	UAedirDevTools::OnReported().Broadcast(Message);
+}
+
+void AAedirPlayerCharacter::Tcl()
+{
+	Noclip();
+}
+
+void AAedirPlayerCharacter::FootprintInfo()
+{
+	if (const UAedirFootprintSubsystem* Footprints = GetWorld()->GetSubsystem<UAedirFootprintSubsystem>())
+	{
+		UE_LOG(LogAedir, Display, TEXT("[Footprints] %d in the world, the oldest at %.3f of its strength"), Footprints->GetCount(), Footprints->GetOldestShare());
+	}
+}
+
+void AAedirPlayerCharacter::ServerSetNoclip_Implementation(bool bOn)
+{
+	SetNoclip(bOn);
+}
+
+void AAedirPlayerCharacter::SetNoclip(bool bOn)
+{
+	bNoclip = bOn;
+	SetActorEnableCollision(!bOn);
+	if (UCharacterMovementComponent* Move = GetCharacterMovement())
+	{
+		Move->MaxFlySpeed = NoclipSpeed;
+		Move->BrakingDecelerationFlying = NoclipSpeed * 4.f;
+		Move->SetMovementMode(bOn ? MOVE_Flying : MOVE_Falling);
+	}
+}
+
 void AAedirPlayerCharacter::FistPose(const FString& Args)
 {
 	TArray<FString> T;
@@ -2112,9 +2192,11 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 				}
 				const FVector Palm = Hand + (At(TEXT("middle_01")) - Hand) * AAedirItemActor::HandGripPalmShare + Normal * AAedirItemActor::HandGripPalmDepthCm;
 				const FVector From = Palm - Root;
-				// And whether the first finger is towards the point (1) or the pommel (-1), and the palm's normal.
-				return FString::Printf(TEXT("off %.1f along %.1f first finger to point %.2f palm %s"), FVector::VectorPlaneProject(From, Along).Size(), FVector::DotProduct(From, Along),
-					FVector::DotProduct((At(TEXT("index_01")) - At(TEXT("pinky_01"))).GetSafeNormal(), Along), *Body.InverseTransformVectorNoScale(Normal).ToCompactString());
+				// And whether the first finger is towards the point (1) or the pommel (-1), the palm's normal, and how far the wrist
+				// is bent off the line of the forearm.
+				const float WristBend = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct((At(TEXT("middle_01")) - Hand).GetSafeNormal(), (Hand - At(TEXT("lowerarm"))).GetSafeNormal())), -1.f, 1.f)));
+				return FString::Printf(TEXT("off %.1f along %.1f first finger to point %.2f palm %s wrist bent %.0f deg"), FVector::VectorPlaneProject(From, Along).Size(), FVector::DotProduct(From, Along),
+					FVector::DotProduct((At(TEXT("index_01")) - At(TEXT("pinky_01"))).GetSafeNormal(), Along), *Body.InverseTransformVectorNoScale(Normal).ToCompactString(), WristBend);
 			};
 			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s palms: right %s, left %s | grip at %.1f span %.1f, both hands %d"), *Label, *Hollow(TEXT("_r")), *Hollow(TEXT("_l")), Blade->GripLocalCm + Blade->HeldGripShiftCm, Blade->GripSpanCm, FistArms->IsTwoHand() ? 1 : 0);
 		}

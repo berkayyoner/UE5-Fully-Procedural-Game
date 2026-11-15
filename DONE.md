@@ -336,3 +336,8 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - A one-hand blade in both hands, not raised, is carried low before the hips like the old two-handed sword (TwoHandRest variables); raised, it moves exactly as in one hand.
 - The second hand on a one-hand blade closes as the first hand's mirror: palm on the blade's line, first finger towards the point, and no further down than just past the pommel (TwoHandPastPommelCm).
 - A one-hand blade's whole arc tips with the view (BladeLookTilt variables), so looking down and drawing it back takes the blade and elbow up and back, away from the target.
+- The second hand on a one-hand blade faces the first across the grip (palms towards each other, both thumbs to the point), its forearm coming in as the first one's mirror so the wrist is bent no more than the right one; the blade is carried a little more to the right, the grip before the middle of the body.
+- Console commands: physics [0|1] turns the bodies' physics on or off (off stays the default); noclip (tcl) flies through everything, the view's way with WASD, Space up, Ctrl down, Shift faster. FootprintInfo logs the prints in the world.
+- Footprints fade out slowly over three days of the game's clock (FootprintFadeGameDays) and at most MaxFootprints are kept, the oldest going first.
+- The console key puts the typing straight on the console's input line, without a click.
+- Blood from a blow sprays the way the weapon really went through it, no longer the way the arm's own model of the tip moved.

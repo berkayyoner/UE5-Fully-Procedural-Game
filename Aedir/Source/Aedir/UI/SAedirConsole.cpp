@@ -190,6 +190,11 @@ FReply SAedirConsole::OnMouseButtonDown(const FGeometry& MyGeometry, const FPoin
 	return FReply::Handled();
 }
 
+FReply SAedirConsole::OnFocusReceived(const FGeometry& MyGeometry, const FFocusEvent& InFocusEvent)
+{
+	return InputBox.IsValid() ? FReply::Handled().SetUserFocus(InputBox.ToSharedRef(), EFocusCause::SetDirectly) : FReply::Handled();
+}
+
 void SAedirConsole::FocusInput()
 {
 	if (InputBox.IsValid())
