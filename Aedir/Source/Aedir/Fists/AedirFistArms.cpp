@@ -216,9 +216,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// With both arms up, only the arm on the side the mouse is drawn to goes round the arc and only the arm that came in
 		// punches; the other keeps its guard. One arm alone goes all the way round.
 		const bool bFollows = !bBoth || AimSide == Side;
-		const float ArmTheta = bFollows ? Theta : 0.f;
-		const float ArmPunch = (!bBoth || Slot == PunchSlot) ? Punch : 0.f;
 		const bool bBlade = bArmed[Slot];
+		// Over to the other side a blade goes round a shorter way.
+		const float ArmTheta = bFollows ? Theta * (bBlade && Theta * Side < 0.f ? BladeCrossArcShare : 1.f) : 0.f;
+		const float ArmPunch = (!bBoth || Slot == PunchSlot) ? Punch : 0.f;
 		const float Raise = FMath::Max(UpDown, 0.f);
 		// The arc: in at the sides, out at the middle as far as the punch carries it.
 		const float SinT = FMath::Sin(ArmTheta);

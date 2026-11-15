@@ -323,3 +323,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Volume bars are drawn 6 px thick in light metal with a bright ivory handle.
 - A blade held in one hand alone goes all the way across with the mouse (BladeAloneAcrossShare 1; a fist still stops half way), so the cross side's second wrist step happens in play.
 - Raised all the way, a blade's wrist bends up 35 degrees (was 50); drawn round and raised at once it takes the larger of the two bends, not both.
+- Drawn over to the other side a one-hand blade goes round a shorter arc (BladeCrossArcShare 0.75), so it does not reach as far across.

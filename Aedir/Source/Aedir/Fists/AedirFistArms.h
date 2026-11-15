@@ -210,6 +210,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeAloneAcrossShare = 1.f;
 
+	// Drawn over to the other side, a blade goes round only this share of the arc a fist would, so it does not reach as far.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeCrossArcShare = 0.75f;
+
 	// Drawn round to the side a blade keeps this share of the middle's angle up or down, the same way (a fist turns the
 	// other way, ArcSideReverse), so the whole sweep is tipped up or down with the mouse and strikes high or low.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
