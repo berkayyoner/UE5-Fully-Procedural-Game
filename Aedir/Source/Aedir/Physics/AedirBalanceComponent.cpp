@@ -613,6 +613,10 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 		BodyControl->RebindHips(BodyCapsule);
 	}
 	BodyControl->SetStrengths(Upright, LeftArm, RightArm);
+	BodyControl->SetDead(Creature && Creature->Stats && Creature->Stats->IsDead());
+	const UAedirWoundComponent* Wounds = Creature ? Creature->Wounds.Get() : nullptr;
+	BodyControl->SetBrokenLimbs(Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftArm), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightArm),
+		Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftLeg), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightLeg));
 	const bool bGettingUp = IsGettingUp();
 	BodyControl->SetRising(bGettingUp);
 

@@ -27,9 +27,6 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Camera")
 	TObjectPtr<UCameraComponent> FollowCamera;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Camera")
-	TObjectPtr<UCameraComponent> FirstPersonCamera;
-
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float ThirdPersonArmLength = 150.f;
 
@@ -145,7 +142,7 @@ public:
 	float HeadCameraFollowSpeed = 14.f;
 
 	// V held: the camera goes round the body as the mouse moves it, the body, its view and the arms left as they are; let go,
-	// it comes back. A short tap still changes between first and third person.
+	// it comes back. A tap shorter than this turns the camera back straight at once.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float ViewTapSeconds = 0.4f;
 
@@ -159,20 +156,6 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float FightViewPitchSpeed = 3.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	FVector FirstPersonEyeOffset = FVector(14.f, 0.f, 62.f);
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	FName HeadBoneToHideInFirstPerson = FName(TEXT("head"));
-
-	UFUNCTION(BlueprintCallable, Category="Aedir|Camera")
-	void SetFirstPerson(bool bNewFirstPerson);
-
-	UFUNCTION(BlueprintCallable, Category="Aedir|Camera")
-	void ToggleView();
-
-	UFUNCTION(BlueprintPure, Category="Aedir|Camera")
-	bool IsFirstPerson() const { return bFirstPerson; }
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Weather")
 	TObjectPtr<UAedirWeatherEffectsComponent> WeatherEffects;
@@ -459,6 +442,16 @@ public:
 	UFUNCTION(Exec)
 	void Wobble(float Seconds);
 
+	// Logs how far above the ground under them the player's and the nearest other body's ankles, balls of the feet and toes
+	// are, to see feet that float or sink.
+	UFUNCTION(Exec)
+	void FeetInfo(const FString& Label);
+
+	// Logs how high above the ground the hands, elbows, head and knees of the nearest other body are, to see a fallen body
+	// lie slack or stay stiff.
+	UFUNCTION(Exec)
+	void LyingInfo(const FString& Label);
+
 	// How fast the player flies in noclip, and how many times that with Shift held.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Dev")
 	float NoclipSpeed = 900.f;
@@ -676,7 +669,6 @@ private:
 	UFUNCTION(Server, Reliable)
 	void ServerSetNoclip(bool bOn);
 	float PhotoArmLengthCm = 250.f;
-	bool bPhotoWasFirstPerson = false;
 	FVector FreeCameraLocation = FVector::ZeroVector;
 	FRotator FreeCameraRotation = FRotator::ZeroRotator;
 	// Where the mouse has turned the free camera to; the camera turns after it smoothly.
@@ -705,7 +697,6 @@ private:
 	bool bTutorialRotationCaptured = false;
 	FRotator TutorialStartRotation = FRotator::ZeroRotator;
 
-	bool bFirstPerson = false;
 
 
 	void HandleMouseX(float Value);

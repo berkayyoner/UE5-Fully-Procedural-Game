@@ -66,6 +66,10 @@ class AEDIR_API AAedirNpc : public AAedirCreature
 	GENERATED_BODY()
 
 public:
+	// Fists, and a one-handed blade, moved as the player moves them: by a hand on a mouse, here the fighting mind's.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Fists")
+	TObjectPtr<class UAedirFistArms> FistArms;
+
 	AAedirNpc(const FObjectInitializer& ObjectInitializer);
 
 	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")

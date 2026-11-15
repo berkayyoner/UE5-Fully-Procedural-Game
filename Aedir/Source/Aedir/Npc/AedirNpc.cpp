@@ -1,5 +1,7 @@
 #include "Npc/AedirNpc.h"
 
+#include "Fists/AedirFistArms.h"
+
 #include "Aedir.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirStatsComponent.h"
@@ -68,6 +70,7 @@ AAedirNpc::AAedirNpc(const FObjectInitializer& ObjectInitializer)
 	: Super(ObjectInitializer)
 {
 	PrimaryActorTick.bCanEverTick = true;
+	FistArms = CreateDefaultSubobject<UAedirFistArms>(TEXT("FistArms"));
 }
 
 void AAedirNpc::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const

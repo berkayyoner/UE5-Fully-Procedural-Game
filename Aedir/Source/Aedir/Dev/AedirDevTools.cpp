@@ -469,14 +469,27 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	}
 	else if (Command == TEXT("SeverMe"))
 	{
-		// SeverMe <bone>: the player's limb at that bone is cut off at once, as by a great blow from the front.
+		// SeverMe <bone> [near]: the player's limb at that bone (or, with "near", the nearest other body's) is cut off at once,
+		// as by a great blow from the front.
 		const TArray<FString> Tokens = DevToolsTokens(Args);
 		const FName Bone = Tokens.IsValidIndex(0) ? FName(*Tokens[0]) : FName(TEXT("lowerarm_l"));
-		if (Player->Wounds && Player->GetMesh()->GetBoneIndex(Bone) != INDEX_NONE)
+		AAedirCreature* Target = Player;
+		if (Tokens.IsValidIndex(1) && DevToolsIsToken(Tokens[1], TEXT("near")))
 		{
-			const FVector At = Player->GetMesh()->GetBoneLocation(Bone);
-			const bool bCut = Player->Wounds->TrySever(Bone, At, (At - Player->GetMesh()->GetBoneLocation(Player->GetMesh()->GetParentBone(Bone))).GetSafeNormal(), Player->GetActorRightVector() * 200.f, 100000.f, 0.f);
-			UE_LOG(LogAedir, Display, TEXT("[Dev] SeverMe %s: %s"), *Bone.ToString(), bCut ? TEXT("cut off") : TEXT("not cut"));
+			Target = nullptr;
+			for (TActorIterator<AAedirCreature> It(Player->GetWorld()); It; ++It)
+			{
+				if (*It != Player && (!Target || FVector::DistSquared(It->GetActorLocation(), Player->GetActorLocation()) < FVector::DistSquared(Target->GetActorLocation(), Player->GetActorLocation())))
+				{
+					Target = *It;
+				}
+			}
+		}
+		if (Target && Target->Wounds && Target->GetMesh()->GetBoneIndex(Bone) != INDEX_NONE)
+		{
+			const FVector At = Target->GetMesh()->GetBoneLocation(Bone);
+			const bool bCut = Target->Wounds->TrySever(Bone, At, (At - Target->GetMesh()->GetBoneLocation(Target->GetMesh()->GetParentBone(Bone))).GetSafeNormal(), Target->GetActorRightVector() * 200.f, 100000.f, 0.f);
+			UE_LOG(LogAedir, Display, TEXT("[Dev] SeverMe %s on %s: %s"), *Bone.ToString(), *Target->GetName(), bCut ? TEXT("cut off") : TEXT("not cut"));
 		}
 	}
 	else if (Command == TEXT("HitMe"))

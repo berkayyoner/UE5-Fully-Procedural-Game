@@ -490,7 +490,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	// The interaction component smooths its outputs itself, so the reach values are applied directly each frame.
 	const UAedirInteractionComponent* Interaction = CreatureOwner->Interaction.Get();
-	const float ReachLowerCm = Interaction ? FMath::Max(Interaction->GetPelvisLowerZ(), 0.f) : 0.f;
+	// Reaching down for something, or striking down low with the fists.
+	const UAedirFistArms* LowFists = CreatureOwner->FindComponentByClass<UAedirFistArms>();
+	const float ReachLowerCm = (Interaction ? FMath::Max(Interaction->GetPelvisLowerZ(), 0.f) : 0.f) + (LowFists ? LowFists->GetHipDrop() * ActorScale : 0.f);
 	const float ReachLowerAlpha = FMath::Clamp(ReachLowerCm / FMath::Max(ReachLowerMaxCm, KINDA_SMALL_NUMBER), 0.f, 1.f);
 	GaitState.HipOffsetZ -= ReachLowerCm;
 	GaitState.HipForwardOffset = Interaction ? Interaction->GetReachHipForward() * ActorScale : 0.f;

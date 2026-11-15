@@ -86,6 +86,8 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	LeftArmControls.Reset();
 	RightArmControls.Reset();
 	LegControls.Reset();
+	LeftLegControls.Reset();
+	RightLegControls.Reset();
 
 	// The mesh stays where the capsule has it; its bones take where the simulated bodies are.
 	Mesh->PhysicsTransformUpdateMode = EPhysicsTransformUpdateMode::ComponentTransformIsKinematic;
@@ -175,7 +177,10 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		case EAedirBodyPart::Head: HeadControls.Add(Name); break;
 		case EAedirBodyPart::LeftArm: LeftArmControls.Add(Name); break;
 		case EAedirBodyPart::RightArm: RightArmControls.Add(Name); break;
-		case EAedirBodyPart::Leg: LegControls.Add(Name); break;
+		case EAedirBodyPart::Leg:
+			LegControls.Add(Name);
+			(BoneText.EndsWith(TEXT("_l")) ? LeftLegControls : RightLegControls).Add(Name);
+			break;
 		default: SpineControls.Add(Name); break;
 		}
 	}
@@ -232,6 +237,27 @@ void UAedirBodyControlComponent::SetLimp(bool bInLimp)
 	{
 		bLimp = bInLimp;
 		ApplyLegContacts();
+		AppliedKey = -1.f;
+		ApplyMultipliers();
+	}
+}
+
+void UAedirBodyControlComponent::SetDead(bool bInDead)
+{
+	if (bDead != bInDead)
+	{
+		bDead = bInDead;
+		AppliedKey = -1.f;
+		ApplyMultipliers();
+	}
+}
+
+void UAedirBodyControlComponent::SetBrokenLimbs(bool bLeftArm, bool bRightArm, bool bLeftLeg, bool bRightLeg)
+{
+	const bool Now[4] = { bLeftArm, bRightArm, bLeftLeg, bRightLeg };
+	if (FMemory::Memcmp(Now, bBroken, sizeof(Now)) != 0)
+	{
+		FMemory::Memcpy(bBroken, Now, sizeof(Now));
 		AppliedKey = -1.f;
 		ApplyMultipliers();
 	}
@@ -380,7 +406,9 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	AppliedTuning = Tuning;
 	const float SpineHz = CVarAedirBodySpine.GetValueOnGameThread() >= 0.f ? CVarAedirBodySpine.GetValueOnGameThread() : SpineStrength;
 
-	const float Body = bLimp ? LimpShare : FMath::Lerp(0.35f, 1.f, Upright);
+	// A dead body keeps less of its muscles than a living one that is down.
+	const float Limp = bDead ? DeadShare : LimpShare;
+	const float Body = bLimp ? Limp : FMath::Lerp(0.35f, 1.f, Upright);
 	const auto Apply = [this](const TArray<FName>& Names, float AngularHz, float LinearHz)
 	{
 		FPhysicsControlMultiplier Multiplier;
@@ -393,10 +421,12 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	};
 	Apply(SpineControls, SpineHz * Body, 0.f);
 	Apply(HeadControls, HeadStrength * Body, 0.f);
-	Apply(LegControls, LegStrength * Body, 0.f);
+	Apply(LeftLegControls, LegStrength * Body * (bBroken[2] && !bLimp ? BrokenShare : 1.f), 0.f);
+	Apply(RightLegControls, LegStrength * Body * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
-	Apply(LeftArmControls, ArmHz * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare), 0.f);
-	Apply(RightArmControls, ArmHz * (bLimp ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare), 0.f);
+	// A broken arm swings loose; a hurt one keeps at least some of its strength.
+	Apply(LeftArmControls, ArmHz * (bLimp ? Limp : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare), 0.f);
+	Apply(RightArmControls, ArmHz * (bLimp ? Limp : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare), 0.f);
 	// Down, the hips are free; carried, the pose places them and the control rests.
 	const bool bHold = !bLimp && !bHipsCarried;
 	const float Hips = CVarAedirBodyHips.GetValueOnGameThread() >= 0.f ? CVarAedirBodyHips.GetValueOnGameThread() : HipLinearStrength;

@@ -235,7 +235,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float SinT = FMath::Sin(ArmTheta);
 		const float CosT = FMath::Cos(ArmTheta);
 		// A blade is held further out, and reaches up further over the head.
-		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : SideRadiusCm, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : 0.f);
+		// In both hands, drawn to its own side, it stays nearer the chest, where the second arm reaches it.
+		const float OwnSideRadius = FMath::Lerp(SideRadiusCm, TwoHandSideRadiusCm, Slot == 1 && bBlade ? GripAlpha : 0.f);
+		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : OwnSideRadius, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : FMath::Max(-UpDown, 0.f) * FistDownReachCm);
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
 		// Round towards the side the height of the middle falls away and turns the other way, so a raised fist comes down
@@ -340,4 +342,5 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	const bool bBladeUp = (bHeld[0] && bArmed[0]) || (bHeld[1] && bArmed[1]);
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * (bBladeUp ? BladeWaistForwardDegrees : WaistForwardDegrees)) * Raised;
 	WaistYaw = Across * WaistTurnDegrees * Raised;
+	HipDrop = FMath::Max(-UpDown, 0.f) * (bBladeUp ? BladeDownHipDropCm : DownHipDropCm) * Raised;
 }

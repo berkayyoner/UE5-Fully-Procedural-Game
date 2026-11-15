@@ -96,7 +96,18 @@ public:
 	float ArcUpDegrees = 55.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float ArcDownDegrees = 50.f;
+	float ArcDownDegrees = 80.f;
+
+	// The mouse all the way down, a fist reaches this much further out, to strike one lying on the ground.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float FistDownReachCm = 15.f;
+
+	// The mouse all the way down, the hips sink this far, the knees bending, so a fist (or a blade) reaches one lying down.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float DownHipDropCm = 45.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeDownHipDropCm = 15.f;
 
 	// Drawn round to the side the fist leaves the height of the middle behind and goes the other way: from a guard raised it
 	// comes down across, from one lowered up. At the side it is this share of the middle's angle the other way.
@@ -135,7 +146,7 @@ public:
 	float WaistBackDegrees = 8.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float WaistForwardDegrees = 25.f;
+	float WaistForwardDegrees = 60.f;
 
 	// How long an arm takes to come up into the guard and to drop again, in seconds.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
@@ -261,6 +272,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandElbowFrontCm = 18.f;
 
+	// Held in both hands and drawn round to its own side, the blade comes in this close to the chest (in one hand
+	// SideRadiusCm), so the second arm still reaches it bent.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandSideRadiusCm = 28.f;
+
 	// Held in both hands and not raised, the blade is carried as a two-handed sword is: the right hand this far ahead of the
 	// middle of the body, to the side (right positive) and up from it, before the hips, the blade aslant across, its point
 	// turned this far out to the right and this far up (down negative). Raised, it goes as in one hand.
@@ -331,6 +347,8 @@ public:
 
 	// Torso pitch the guard asks for, FRotator convention (forward negative).
 	float GetWaistPitch() const { return WaistPitch; }
+	// How far the hips sink, the knees bending, to reach down low.
+	float GetHipDrop() const { return HipDrop; }
 	// Torso turn the fists ask for, FRotator convention.
 	float GetWaistYaw() const { return WaistYaw; }
 	// How far an arm's fist is turned over about its forearm from the guard's, degrees.
@@ -380,4 +398,5 @@ private:
 	float PeakPunch = 0.f;
 	FVector2D PeakAim = FVector2D::ZeroVector;
 	bool bDevFrozen = false;
+	float HipDrop = 0.f;
 };

@@ -25,16 +25,16 @@ public:
 
 	// How quickly each part is pulled back to the pose, in Hz at full strength: a higher number is a stiffer muscle.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float SpineStrength = 35.f;
+	float SpineStrength = 30.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float HeadStrength = 23.f;
+	float HeadStrength = 19.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float ArmStrength = 72.f;
+	float ArmStrength = 55.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float LegStrength = 28.f;
+	float LegStrength = 24.f;
 
 	// The hips' hold on the capsule: where they are and how they are turned.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -45,7 +45,7 @@ public:
 
 	// How strongly the trunk and head are turned upright in the world, in Hz.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float PostureStrength = 28.f;
+	float PostureStrength = 24.f;
 
 	// How strongly each foot is pulled to where the pose sets it, in Hz.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -64,9 +64,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float LimpShare = 0.04f;
 
+	// What is left of every muscle in a dead body: a little, so it slumps and folds to the ground, not so little that it
+	// flows like dough.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float DeadShare = 0.005f;
+
+	// What is left of the muscles of a limb whose bone is broken: it swings loose, still hanging together.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float BrokenShare = 0.03f;
+
 	// Damping of the muscles, 1 for no overshoot.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float DampingRatio = 1.4f;
+	float DampingRatio = 1.25f;
 
 	// Builds the controls on the body's bones; called again whenever the physics bodies are made anew.
 	void Setup(USkeletalMeshComponent* InMesh, UCapsuleComponent* InCapsule);
@@ -93,6 +102,10 @@ public:
 
 	// A body down on the ground: limp, every part loose. Back up, it is tied to the capsule again.
 	void SetLimp(bool bInLimp);
+	// Dead, the body keeps only DeadShare of its muscles.
+	void SetDead(bool bInDead);
+	// Which limbs have a broken bone: left arm, right arm, left leg, right leg.
+	void SetBrokenLimbs(bool bLeftArm, bool bRightArm, bool bLeftLeg, bool bRightLeg);
 
 	// An arm (from the upper arm down) shown as the pose has it, its bodies simulating under it, or shown where its bodies are.
 	void SetArmsPosed(bool bLeft, bool bRight);
@@ -138,6 +151,10 @@ private:
 	TArray<FName> LeftArmControls;
 	TArray<FName> RightArmControls;
 	TArray<FName> LegControls;
+	TArray<FName> LeftLegControls;
+	TArray<FName> RightLegControls;
+	bool bDead = false;
+	bool bBroken[4] = { false, false, false, false };
 	FName HipControl;
 	FName LeftFootControl;
 	FName RightFootControl;

@@ -352,3 +352,10 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - With the physics on, the left palm is pulled onto the grip of a one-hand blade held in both hands by the grip spring, and held weapons are solid to their holder's own trunk and limbs too, passing only the holder's hands.
 - Firmer muscles with the physics on (arms twice as strong, trunk, head and legs half as strong again, more damping): the hands stay within 1-2 cm of their pose instead of sagging 6-7 cm.
 - Dev command Wobble measures how far the physical body strays from its pose and how much the head moves about on the capsule; BloodCount also counts the marks on the ground.
+- No more crash cutting a limb off a dressed body: the worn layers that follow the body's pose take their bones from the body.
+- The first-person view is gone: V only takes the camera round the body while held.
+- Striking down low the fists go round further (ArcDownDegrees 80), reach further (FistDownReachCm), the waist bends more (WaistForwardDegrees 60) and the hips sink, knees bending (DownHipDropCm): a fist comes down to 33 cm above the ground, to one lying there.
+- A dead body keeps only DeadShare of its muscles and slumps to the ground; a limb with a broken bone keeps BrokenShare and swings loose; the muscles overall a little softer than before.
+- Held in both hands and drawn to its own side, a one-hand blade stays nearer the chest (TwoHandSideRadiusCm), so the second arm is not stretched straight.
+- Others fight bare-handed or with a one-handed blade with the player's own fists, holding the buttons and moving a mouse: drawn back to a side (or up, a blade) and thrown across (aedir.NpcFists).
+- Dev commands FeetInfo (soles above the ground) and LyingInfo (how bodies lie); SeverMe <bone> near cuts the nearest other body.

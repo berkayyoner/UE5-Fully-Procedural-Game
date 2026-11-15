@@ -6,6 +6,7 @@
 #include "Misc/App.h"
 #include "Travel/AedirTravelSubsystem.h"
 #include "EngineUtils.h"
+#include "Rendering/SkeletalMeshRenderData.h"
 #include "PhysicsEngine/ConstraintInstance.h"
 #include "LandscapeProxy.h"
 #include "Components/DecalComponent.h"
@@ -161,11 +162,6 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	FirstPersonCamera = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-	FirstPersonCamera->SetupAttachment(GetCapsuleComponent());
-	FirstPersonCamera->SetRelativeLocation(FirstPersonEyeOffset);
-	FirstPersonCamera->bUsePawnControlRotation = true;
-	FirstPersonCamera->SetAutoActivate(false);
 
 	WeatherEffects = CreateDefaultSubobject<UAedirWeatherEffectsComponent>(TEXT("WeatherEffects"));
 	FistArms = CreateDefaultSubobject<UAedirFistArms>(TEXT("FistArms"));
@@ -209,7 +205,6 @@ void AAedirPlayerCharacter::BeginPlay()
 	}
 
 	ApplyViewPitchLimits();
-	SetFirstPerson(false);
 
 	SendGuestCharacter();
 
@@ -1347,37 +1342,6 @@ void AAedirPlayerCharacter::HandleUseReleased(EAedirHand Hand)
 	}
 }
 
-void AAedirPlayerCharacter::SetFirstPerson(bool bNewFirstPerson)
-{
-	bFirstPerson = bNewFirstPerson;
-
-	if (FollowCamera)
-	{
-		FollowCamera->SetActive(!bFirstPerson);
-	}
-	if (FirstPersonCamera)
-	{
-		FirstPersonCamera->SetActive(bFirstPerson);
-	}
-
-	if (USkeletalMeshComponent* BodyMesh = GetMesh())
-	{
-		if (bFirstPerson)
-		{
-			BodyMesh->HideBoneByName(HeadBoneToHideInFirstPerson, PBO_None);
-		}
-		else
-		{
-			BodyMesh->UnHideBoneByName(HeadBoneToHideInFirstPerson);
-		}
-	}
-}
-
-void AAedirPlayerCharacter::ToggleView()
-{
-	SetFirstPerson(!bFirstPerson);
-}
-
 void AAedirPlayerCharacter::HandleViewTogglePressed()
 {
 	bOrbitHeld = true;
@@ -1388,12 +1352,10 @@ void AAedirPlayerCharacter::HandleViewTogglePressed()
 
 void AAedirPlayerCharacter::HandleViewToggleReleased()
 {
-	// A short tap changes the view, even if the hand on the mouse moved it a hair; a hold that took the camera round the
-	// body only lets it come back. A tap the camera turned a little for is undone, so the new view starts straight.
+	// Held, V takes the camera round the body; let go, it comes back. A tap the camera turned a little for is undone.
 	if (bOrbitHeld && !bOrbitMoved && OrbitHeldSeconds < ViewTapSeconds)
 	{
 		OrbitOffset = FRotator::ZeroRotator;
-		ToggleView();
 	}
 	bOrbitHeld = false;
 }
@@ -1410,16 +1372,11 @@ void AAedirPlayerCharacter::HandleHeadCameraPressed()
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (bPhotoCamera)
 	{
-		bPhotoWasFirstPerson = bFirstPerson;
 		const APlayerCameraManager* View = PlayerController ? PlayerController->PlayerCameraManager.Get() : nullptr;
 		FreeCameraLocation = View ? View->GetCameraLocation() : GetActorLocation();
 		FreeCameraRotation = View ? View->GetCameraRotation() : GetActorRotation();
 		FreeCameraRotation.Roll = 0.f;
 		FreeCameraTargetRotation = FreeCameraRotation;
-		if (bFirstPerson)
-		{
-			SetFirstPerson(false);
-		}
 	}
 	if (FollowCamera)
 	{
@@ -1433,10 +1390,6 @@ void AAedirPlayerCharacter::HandleHeadCameraPressed()
 		{
 			FollowCamera->SetRelativeLocationAndRotation(FVector::ZeroVector, FRotator::ZeroRotator);
 		}
-	}
-	if (!bPhotoCamera && bPhotoWasFirstPerson)
-	{
-		SetFirstPerson(true);
 	}
 	if (UAedirTravelSubsystem* Travel = PlayerController && PlayerController->GetLocalPlayer() ? PlayerController->GetLocalPlayer()->GetSubsystem<UAedirTravelSubsystem>() : nullptr)
 	{
@@ -2287,6 +2240,98 @@ void AAedirPlayerCharacter::Wobble(float Seconds)
 	}), 0.001f, true);
 }
 
+void AAedirPlayerCharacter::FeetInfo(const FString& Label)
+{
+	AAedirCreature* Nearest = nullptr;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())))
+		{
+			Nearest = *It;
+		}
+	}
+	for (AAedirCreature* Body : { static_cast<AAedirCreature*>(this), Nearest })
+	{
+		const USkeletalMeshComponent* Skin = Body ? Body->GetMesh() : nullptr;
+		if (!Skin)
+		{
+			continue;
+		}
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirFeetInfo), false, Body);
+		const auto Above = [&](const TCHAR* Bone)
+		{
+			const FVector At = Skin->GetBoneLocation(FName(Bone));
+			FHitResult Hit;
+			return GetWorld()->LineTraceSingleByChannel(Hit, At + FVector(0.f, 0.f, 50.f), At - FVector(0.f, 0.f, 150.f), ECC_Visibility, Params) ? static_cast<float>(At.Z - Hit.ImpactPoint.Z) : -999.f;
+		};
+		const float CapsuleBottom = static_cast<float>(Body->GetActorLocation().Z - Body->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+		FHitResult Under;
+		const bool bGround = GetWorld()->LineTraceSingleByChannel(Under, Body->GetActorLocation(), Body->GetActorLocation() - FVector(0.f, 0.f, 300.f), ECC_Visibility, Params);
+		// The soles themselves: the lowest point of the skin under each ankle, as it is drawn now.
+		float Sole[2] = { -999.f, -999.f };
+		USkeletalMesh* SkinAsset = Skin->GetSkeletalMeshAsset();
+		FSkeletalMeshRenderData* Render = SkinAsset ? SkinAsset->GetResourceForRendering() : nullptr;
+		if (Render && !Render->LODRenderData.IsEmpty())
+		{
+			TArray<FMatrix44f> RefToLocals;
+			const_cast<USkeletalMeshComponent*>(Skin)->CacheRefToLocalMatrices(RefToLocals);
+			TArray<FVector3f> Points;
+			USkeletalMeshComponent::ComputeSkinnedPositions(const_cast<USkeletalMeshComponent*>(Skin), Points, RefToLocals, Render->LODRenderData[0], Render->LODRenderData[0].SkinWeightVertexBuffer);
+			for (int32 Side = 0; Side < 2; ++Side)
+			{
+				const FVector Ankle = Skin->GetBoneLocation(Side == 0 ? TEXT("foot_l") : TEXT("foot_r"));
+				double Lowest = TNumericLimits<double>::Max();
+				FVector LowestAt = Ankle;
+				for (const FVector3f& Point : Points)
+				{
+					const FVector World = Skin->GetComponentTransform().TransformPosition(FVector(Point));
+					if (FVector::Dist2D(World, Ankle) < 20.0 && World.Z < Ankle.Z && World.Z < Lowest)
+					{
+						Lowest = World.Z;
+						LowestAt = World;
+					}
+				}
+				FHitResult Ground;
+				if (Lowest < TNumericLimits<double>::Max() && GetWorld()->LineTraceSingleByChannel(Ground, LowestAt + FVector(0.f, 0.f, 50.f), LowestAt - FVector(0.f, 0.f, 150.f), ECC_Visibility, Params))
+				{
+					Sole[Side] = static_cast<float>(Lowest - Ground.ImpactPoint.Z);
+				}
+			}
+		}
+		UE_LOG(LogAedir, Display, TEXT("[FeetInfo] %s %s: the lowest point of the left sole %.1f, of the right %.1f above the ground under it"), *Label, *Body->GetName(), Sole[0], Sole[1]);
+		UE_LOG(LogAedir, Display, TEXT("[FeetInfo] %s %s: above the ground, left ankle %.1f ball %.1f toe %.1f, right ankle %.1f ball %.1f toe %.1f; capsule bottom %.1f above the ground under it"),
+			*Label, *Body->GetName(), Above(TEXT("foot_l")), Above(TEXT("ball_l")), Above(TEXT("ball_l")), Above(TEXT("foot_r")), Above(TEXT("ball_r")), Above(TEXT("ball_r")),
+			bGround ? CapsuleBottom - static_cast<float>(Under.ImpactPoint.Z) : -999.f);
+	}
+}
+
+void AAedirPlayerCharacter::LyingInfo(const FString& Label)
+{
+	// Every other body within ten metres.
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		const AAedirCreature* Other = *It;
+		const USkeletalMeshComponent* Skin = Other != this ? Other->GetMesh() : nullptr;
+		if (!Skin || FVector::Dist(Other->GetActorLocation(), GetActorLocation()) > 1000.0)
+		{
+			continue;
+		}
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirLyingInfo), false, Other);
+		FString Line;
+		float Highest = 0.f;
+		for (const TCHAR* Bone : { TEXT("hand_l"), TEXT("hand_r"), TEXT("lowerarm_l"), TEXT("lowerarm_r"), TEXT("head"), TEXT("calf_l"), TEXT("calf_r") })
+		{
+			const FVector At = Skin->GetBoneLocation(FName(Bone));
+			FHitResult Hit;
+			const float Height = GetWorld()->LineTraceSingleByChannel(Hit, At + FVector(0.f, 0.f, 100.f), At - FVector(0.f, 0.f, 200.f), ECC_Visibility, Params) ? static_cast<float>(At.Z - Hit.ImpactPoint.Z) : -1.f;
+			Highest = FMath::Max(Highest, Height);
+			Line += FString::Printf(TEXT(" %s %.0f"), Bone, Height);
+		}
+		UE_LOG(LogAedir, Display, TEXT("[LyingInfo] %s %s (%s, %.0f cm away) above the ground:%s; the highest %.0f cm"), *Label, *Other->GetName(), Other->Stats && Other->Stats->IsDead() ? TEXT("dead") : TEXT("alive"),
+			FVector::Dist(Other->GetActorLocation(), GetActorLocation()), *Line, Highest);
+	}
+}
+
 void AAedirPlayerCharacter::FootprintInfo()
 {
 	if (const UAedirFootprintSubsystem* Footprints = GetWorld()->GetSubsystem<UAedirFootprintSubsystem>())
@@ -2342,6 +2387,19 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 		const float Peak = FistArms->TakePeakPunch(PeakAim);
 		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s aim %.2f %.2f punch %.2f peak %.2f at %.2f | L %.2f fist %s | R %.2f fist %s"), *Label, FistArms->GetAim().X, FistArms->GetAim().Y, FistArms->GetPunch(), Peak, PeakAim.X,
 			Alpha[0], *Body.InverseTransformPositionNoScale(Fist[0]).ToCompactString(), Alpha[1], *Body.InverseTransformPositionNoScale(Fist[1]).ToCompactString());
+		// How low the knuckles come: their height above the ground under them.
+		{
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirFistInfo), false, this);
+			const auto Above = [&](const TCHAR* Bone)
+			{
+				const FVector At = GetMesh()->GetBoneLocation(FName(Bone));
+				FHitResult Hit;
+				return GetWorld()->LineTraceSingleByChannel(Hit, At, At - FVector(0.f, 0.f, 300.f), ECC_Visibility, Params) ? static_cast<float>(At.Z - Hit.ImpactPoint.Z) : -1.f;
+			};
+			const FVector Trunk = GetActorTransform().InverseTransformVectorNoScale(GetMesh()->GetBoneLocation(TEXT("neck_01")) - GetMesh()->GetBoneLocation(TEXT("pelvis"))).GetSafeNormal();
+			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s knuckles above the ground: left %.0f cm, right %.0f cm; the trunk leans %.0f deg forward, the hips %.0f cm above the ground"), *Label, Above(TEXT("middle_01_l")), Above(TEXT("middle_01_r")),
+				FMath::RadiansToDegrees(FMath::Atan2(Trunk.X, Trunk.Z)), Above(TEXT("pelvis")));
+		}
 		// Which way the blade in the right hand points, and the hand's knuckle row (little finger to first) and thumb, in the
 		// body's frame (forward, right, up).
 		if (const AAedirItemActor* Blade = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr)
@@ -2381,7 +2439,10 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 			};
 			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s palms: right %s, left %s | grip at %.1f span %.1f, both hands %d"), *Label, *Hollow(TEXT("_r")), *Hollow(TEXT("_l")), Blade->GripLocalCm + Blade->HeldGripShiftCm, Blade->GripSpanCm, FistArms->IsTwoHand() ? 1 : 0);
 			// Where the elbows are in the body's frame (forward, right, up from the middle of the capsule).
-			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s elbows: left %s right %s"), *Label, *Body.InverseTransformPositionNoScale(GetMesh()->GetBoneLocation(TEXT("lowerarm_l"))).ToCompactString(), *Body.InverseTransformPositionNoScale(GetMesh()->GetBoneLocation(TEXT("lowerarm_r"))).ToCompactString());
+			const FVector LeftUpper = GetMesh()->GetBoneLocation(TEXT("lowerarm_l")) - GetMesh()->GetBoneLocation(TEXT("upperarm_l"));
+			const FVector LeftFore = GetMesh()->GetBoneLocation(TEXT("hand_l")) - GetMesh()->GetBoneLocation(TEXT("lowerarm_l"));
+			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s elbows: left %s right %s, the left bent %.0f deg"), *Label, *Body.InverseTransformPositionNoScale(GetMesh()->GetBoneLocation(TEXT("lowerarm_l"))).ToCompactString(), *Body.InverseTransformPositionNoScale(GetMesh()->GetBoneLocation(TEXT("lowerarm_r"))).ToCompactString(),
+				FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(LeftUpper.GetSafeNormal(), LeftFore.GetSafeNormal())), -1.f, 1.f))));
 		}
 	}
 }

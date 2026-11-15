@@ -33,8 +33,6 @@ bool FAedirPlayerDefaultsTest::RunTest(const FString& Parameters)
 	}
 
 	TestNotNull(TEXT("Third-person camera boom exists"), Player->CameraBoom.Get());
-	TestNotNull(TEXT("First-person camera exists"), Player->FirstPersonCamera.Get());
-	TestTrue(TEXT("Third-person view is the default"), !Player->IsFirstPerson());
 
 	TestTrue(TEXT("Aedir movement component is used"), Cast<UAedirCharacterMovementComponent>(Player->GetCharacterMovement()) != nullptr);
 

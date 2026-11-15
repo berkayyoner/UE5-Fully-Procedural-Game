@@ -698,6 +698,16 @@ private:
 	bool UpdateAIWeaponStrike(EAedirHand Hand, float Distance, float Reach, float DeltaTime);
 	// Bare fists thrown the way the player throws them: drawn back or out, then at the head or the body of the enemy.
 	void UpdateAIFistStrike(float Distance, float Reach, float DeltaTime);
+	// The fists' (and a one-handed blade's) fight as the player fights it: the buttons held and a hand on a mouse drawing the
+	// arm back to one side, or up, and throwing it across or down.
+	void UpdateAIFistArms(class UAedirFistArms* Fists, bool bArmed, float Distance, float Reach, float DeltaTime);
+	void ReleaseAIFistArms();
+	int32 AIMousePhase = 0;
+	float AIMouseTimer = 0.f;
+	float AIMouseWait = 0.f;
+	FVector2D AIMouseWindup = FVector2D::ZeroVector;
+	FVector2D AIMouseStrike = FVector2D::ZeroVector;
+	int32 AIMousePart = 1;
 	// The aim that points a fist from its shoulder at a point, as the player's mouse would set it.
 	FVector2D ComputeFistAimAt(EAedirHand Hand, const FVector& PointWorld) const;
 	// Where on the enemy a blow goes: 0 the head, 1 the body, 2 the legs.

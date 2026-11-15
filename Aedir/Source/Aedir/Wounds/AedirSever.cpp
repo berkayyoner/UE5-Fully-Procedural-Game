@@ -155,8 +155,25 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 	}
 
 	// The vertices as the body stands this very moment, put into the frame of the body.
+	// A layer worn over the body follows the body's own pose and keeps none of its own (asking it for one fails): its bones are
+	// put where the body's bones of the same name are, in the body's frame.
 	TArray<FMatrix44f> RefToLocals;
-	Layer->CacheRefToLocalMatrices(RefToLocals);
+	const bool bFollower = Layer != Body;
+	if (bFollower)
+	{
+		const TArray<FMatrix44f>& RefInverse = LayerAsset->GetRefBasesInvMatrix();
+		const TArray<FTransform>& BodyPose = Body->GetComponentSpaceTransforms();
+		RefToLocals.SetNum(RefInverse.Num());
+		for (int32 Bone = 0; Bone < RefInverse.Num(); ++Bone)
+		{
+			const int32 InBody = Body->GetBoneIndex(Skeleton.GetBoneName(Bone));
+			RefToLocals[Bone] = BodyPose.IsValidIndex(InBody) ? RefInverse[Bone] * FMatrix44f(BodyPose[InBody].ToMatrixWithScale()) : FMatrix44f::Identity;
+		}
+	}
+	else
+	{
+		Layer->CacheRefToLocalMatrices(RefToLocals);
+	}
 	TArray<FVector3f> Skinned;
 	USkeletalMeshComponent::ComputeSkinnedPositions(Layer, Skinned, RefToLocals, Lod, Lod.SkinWeightVertexBuffer);
 	if (Skinned.IsEmpty())
@@ -164,7 +181,7 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 		UE_LOG(LogAedir, Warning, TEXT("Sever: %s cannot be read on the CPU, run the content commandlet."), *LayerAsset->GetName());
 		continue;
 	}
-	const FTransform LayerToBody = Layer->GetComponentTransform().GetRelativeTransform(Body->GetComponentTransform());
+	const FTransform LayerToBody = bFollower ? FTransform::Identity : Layer->GetComponentTransform().GetRelativeTransform(Body->GetComponentTransform());
 	for (FVector3f& Point : Skinned)
 	{
 		Point = FVector3f(LayerToBody.TransformPosition(FVector(Point)) * BodySize);
