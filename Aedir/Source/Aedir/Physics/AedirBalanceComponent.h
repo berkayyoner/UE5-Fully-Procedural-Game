@@ -511,6 +511,10 @@ private:
 	void ReshapeBodyPhysics();
 	void PutMeshOnCapsule();
 	float PhysicsShapeScale = 0.f;
+	// The joints of the physics asset were laid for another skeleton, each a few centimetres short of where the bone it
+	// holds begins, and drew every limb and the trunk shorter once the physics held the body: each joint is put back on
+	// the child bone's own origin, as the skeleton has it.
+	void FitJointsToSkeleton();
 	void ApplyJointLimits(bool bRagdoll);
 	TArray<FConstraintProfileProperties> LooseJointLimits;
 	FString AppliedFreeJoint;

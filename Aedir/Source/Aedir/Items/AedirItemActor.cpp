@@ -1,5 +1,7 @@
 #include "AedirItemActor.h"
 
+#include "Aedir.h"
+
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Creature/AedirCreature.h"
@@ -514,6 +516,19 @@ void AAedirItemActor::SetPassesOwnBody(bool bPasses)
 	{
 		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, bPassesOwnBody || bLodged || CVarAedirHeldPassesOwnBody.GetValueOnGameThread() != 0 ? ECR_Ignore : ECR_Block);
 	}
+}
+
+void AAedirItemActor::RefreshHeldPhysics()
+{
+	const AAedirCreature* Creature = Holder.Get();
+	if (!Mesh || !bHeldCollision || !Creature)
+	{
+		return;
+	}
+	UnweldFromHand();
+	ApplyHeldCollision(Creature);
+	UE_LOG(LogAedir, Display, TEXT("[HeldPhysics] %s in %s's hand: welded %d, blocks bodies %d, simulating hand %d"), *GetName(), *Creature->GetName(), Mesh->IsWelded() ? 1 : 0,
+		Mesh->GetCollisionResponseToChannel(ECC_PhysicsBody) == ECR_Block ? 1 : 0, Mesh->GetAttachParent() && Mesh->GetAttachParent()->IsSimulatingPhysics(Mesh->GetAttachSocketName()) ? 1 : 0);
 }
 
 void AAedirItemActor::SetLodged(bool bNewLodged)

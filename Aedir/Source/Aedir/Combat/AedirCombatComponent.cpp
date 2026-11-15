@@ -4005,9 +4005,10 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 	bStrikePrevValid[Index] = true;
 	// A weapon still flying on after its button was let go strikes all the same: a blow is the steel arriving, not a key
 	// held. A loose fist, or the second hand on a weapon the first one already strikes with, does not.
-	// A blade the fists swing is up while its button is held.
+	// A fist, or a blade the fists swing, is up while its button is held.
 	const UAedirFistArms* Fists = Creature->FindComponentByClass<UAedirFistArms>();
-	const bool bLoose = !IsArmActive(Hand) && !(Item && Fists && Fists->IsArmed(Hand) && Fists->IsHeld(Hand));
+	const bool bFistUp = Fists && Fists->IsHeld(Hand) && (!Item || Fists->IsArmed(Hand));
+	const bool bLoose = !IsArmActive(Hand) && !bFistUp;
 	if (!bHadPath || (bLoose && (!Item || IsSecondaryGripHand(Hand))))
 	{
 		return;

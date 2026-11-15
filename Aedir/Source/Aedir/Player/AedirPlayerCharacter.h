@@ -439,6 +439,21 @@ public:
 	UFUNCTION(Exec)
 	void FootprintInfo();
 
+	// Logs how high the main bones of the player and of the nearest other body stand above the soles, and the lengths of
+	// the trunk and legs, to see a body squash or stretch.
+	UFUNCTION(Exec)
+	void BodyHeights(const FString& Label);
+
+	// Logs, for each joint of the player's physical body, how far its two anchors (on the parent bone and on the child bone)
+	// lie from the child bone's own origin, where the joint should be.
+	UFUNCTION(Exec)
+	void JointCheck();
+
+	// For this many seconds, logs how close the blade in the right hand comes to the chest of the nearest other body: the
+	// least it came in that time, to see a blade stopped by the body or going through it.
+	UFUNCTION(Exec)
+	void BladeNear(float Seconds);
+
 	// How fast the player flies in noclip, and how many times that with Shift held.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Dev")
 	float NoclipSpeed = 900.f;
@@ -636,6 +651,9 @@ private:
 	// Q down, Shift faster, wheel for the speed) until Z again. Playing alone time all but stops; with others it runs on.
 	bool bPhotoCamera = false;
 	bool bNoclip = false;
+	FTimerHandle BladeWatchTimer;
+	float BladeWatchLeft = 0.f;
+	float BladeWatchClosest = 0.f;
 	void SetNoclip(bool bOn);
 	UFUNCTION(Server, Reliable)
 	void ServerSetNoclip(bool bOn);

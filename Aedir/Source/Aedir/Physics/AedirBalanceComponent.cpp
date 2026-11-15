@@ -249,6 +249,7 @@ void UAedirBalanceComponent::BeginPlay()
 	BodyMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	BodyMesh->SetNotifyRigidBodyCollision(true);
 	ApplyBodyContacts(false);
+	FitJointsToSkeleton();
 	ApplyJointLimits(false);
 	ApplyLegPhysics(false);
 	BodyMesh->OnComponentHit.AddDynamic(this, &UAedirBalanceComponent::OnMeshHit);
@@ -1997,6 +1998,7 @@ void UAedirBalanceComponent::ReshapeBodyPhysics()
 	BodyMesh->SetAllBodiesPhysicsBlendWeight(1.f);
 	ApplyBodyContacts(false);
 	LooseJointLimits.Reset();
+	FitJointsToSkeleton();
 	ApplyJointLimits(false);
 	ApplyLegPhysics(false);
 	if (FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName))
@@ -2042,6 +2044,40 @@ void UAedirBalanceComponent::ApplyLegPhysics(bool bRagdoll)
 				Body->SetEnableGravity(bRagdoll);
 			});
 		}
+	}
+}
+
+void UAedirBalanceComponent::FitJointsToSkeleton()
+{
+	const USkeletalMesh* Asset = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
+	if (!Asset)
+	{
+		return;
+	}
+	const FReferenceSkeleton& Skeleton = Asset->GetRefSkeleton();
+	for (FConstraintInstance* Joint : BodyMesh->Constraints)
+	{
+		const int32 Child = Skeleton.FindBoneIndex(Joint->ConstraintBone1);
+		const int32 Parent = Skeleton.FindBoneIndex(Joint->ConstraintBone2);
+		if (Child == INDEX_NONE || Parent == INDEX_NONE)
+		{
+			continue;
+		}
+		// Only a joint up the bone's own chain; one tied across (a shin to the hips) is left as it was made.
+		int32 Up = Skeleton.GetParentIndex(Child);
+		while (Up != INDEX_NONE && Up != Parent)
+		{
+			Up = Skeleton.GetParentIndex(Up);
+		}
+		if (Up != Parent)
+		{
+			continue;
+		}
+		const FVector OnParent = Asset->GetComposedRefPoseMatrix(Parent).InverseTransformPosition(Asset->GetComposedRefPoseMatrix(Child).GetOrigin());
+		// The joint in the simulation is laid at the body's size; the stored one stays unscaled.
+		Joint->SetRefPosition(EConstraintFrame::Frame1, FVector::ZeroVector);
+		Joint->SetRefPosition(EConstraintFrame::Frame2, OnParent * Joint->GetLastKnownScale());
+		Joint->Pos2 = OnParent;
 	}
 }
 

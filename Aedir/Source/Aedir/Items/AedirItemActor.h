@@ -91,6 +91,8 @@ public:
 
 	// Held, the item passes the body of the one holding it for a while, as while it is drawn up out of the belt.
 	void SetPassesOwnBody(bool bPasses);
+	// Held, its collision and its weld into the hand are set again from the console variables, after they were changed.
+	void RefreshHeldPhysics();
 	// Stuck in a body: passes through flesh until it is pulled out.
 	void SetLodged(bool bNewLodged);
 

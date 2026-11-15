@@ -341,3 +341,8 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Footprints fade out slowly over three days of the game's clock (FootprintFadeGameDays) and at most MaxFootprints are kept, the oldest going first.
 - The console key puts the typing straight on the console's input line, without a click.
 - Blood from a blow sprays the way the weapon really went through it, no longer the way the arm's own model of the tip moved.
+- Bodies no longer squash when the physics is on: the physics asset's joints sat 2-5 cm short of the bones they hold and drew every limb and the trunk shorter; each joint is now put on its bone's own origin when the body is made.
+- Bare fists raised by the fists strike again (with the physics off as well as on): the strike sweep took a raised empty fist for a loose hand.
+- physics 1 also welds held weapons into the hand's body, leaves weapon arms to their muscles and makes held weapons solid to every other body (passing only the holder's own); physics 0 puts all of it back.
+- A one-hand blade carried in both hands at rest has its point a little up (10 degrees) and the hands a little higher.
+- Dev commands BodyHeights, JointCheck and BladeNear measure bone lengths, joint anchors and how close a blade comes to a body.

@@ -6,6 +6,7 @@
 #include "Misc/App.h"
 #include "Travel/AedirTravelSubsystem.h"
 #include "EngineUtils.h"
+#include "PhysicsEngine/ConstraintInstance.h"
 #include "LandscapeProxy.h"
 #include "Components/DecalComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -2084,7 +2085,32 @@ void AAedirPlayerCharacter::Physics(int32 On)
 	}
 	const bool bPhysics = On < 0 ? Posed->GetInt() != 0 : On != 0;
 	Posed->Set(bPhysics ? 0 : 1, ECVF_SetByConsole);
-	const FString Message = bPhysics ? TEXT("Physics on: the bodies are held to their poses by their muscles.") : TEXT("Physics off: the bodies are posed directly.");
+	// With the physics on, a held weapon is part of the hand's body and its arm is left to its muscles, so the weapon is
+	// stopped by what it meets; it is solid to every other body and weapon and passes only its holder's own body. Off, all
+	// four are as the game runs without physics.
+	const TPair<const TCHAR*, int32> Settings[] = { { TEXT("aedir.WeldHeld"), bPhysics ? 1 : 0 }, { TEXT("aedir.PosedArms"), bPhysics ? 0 : 1 },
+		{ TEXT("aedir.HeldPassesOwnBody"), bPhysics ? 0 : 1 }, { TEXT("aedir.SelfCollision"), bPhysics ? 0 : 1 } };
+	for (const TPair<const TCHAR*, int32>& Setting : Settings)
+	{
+		if (IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(Setting.Key))
+		{
+			Variable->Set(Setting.Value, ECVF_SetByConsole);
+		}
+	}
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		It->ApplyBodyMask();
+	}
+	// The hands' bodies go over to the physics on the next frames; a weapon is welded to a hand only once it simulates.
+	FTimerHandle Refresh;
+	GetWorldTimerManager().SetTimer(Refresh, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		for (TActorIterator<AAedirItemActor> It(GetWorld()); It; ++It)
+		{
+			It->RefreshHeldPhysics();
+		}
+	}), 0.25f, false);
+	const FString Message = bPhysics ? TEXT("Physics on: the bodies are held to their poses by their muscles, held weapons are solid.") : TEXT("Physics off: the bodies are posed directly.");
 	UE_LOG(LogAedir, Display, TEXT("[Physics] %s"), *Message);
 	UAedirDevTools::OnReported().Broadcast(Message);
 }
@@ -2104,6 +2130,87 @@ void AAedirPlayerCharacter::Noclip()
 void AAedirPlayerCharacter::Tcl()
 {
 	Noclip();
+}
+
+void AAedirPlayerCharacter::BodyHeights(const FString& Label)
+{
+	AAedirCreature* Nearest = nullptr;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())))
+		{
+			Nearest = *It;
+		}
+	}
+	for (const AAedirCreature* Body : { static_cast<const AAedirCreature*>(this), static_cast<const AAedirCreature*>(Nearest) })
+	{
+		const USkeletalMeshComponent* Skin = Body ? Body->GetMesh() : nullptr;
+		if (!Skin)
+		{
+			continue;
+		}
+		const auto At = [Skin](const TCHAR* Bone) { return Skin->GetBoneLocation(FName(Bone)); };
+		const float Sole = static_cast<float>(FMath::Min(At(TEXT("foot_l")).Z, At(TEXT("foot_r")).Z));
+		UE_LOG(LogAedir, Display, TEXT("[BodyHeights] %s %s: head %.0f neck %.0f chest %.0f pelvis %.0f knee %.0f above the feet | pelvis to head %.0f, thigh %.0f, shin %.0f, upper arm %.0f, forearm %.0f, mesh scale %.2f"),
+			*Label, *Body->GetName(), At(TEXT("head")).Z - Sole, At(TEXT("neck_01")).Z - Sole, At(TEXT("spine_03")).Z - Sole, At(TEXT("pelvis")).Z - Sole, At(TEXT("calf_l")).Z - Sole,
+			FVector::Dist(At(TEXT("pelvis")), At(TEXT("head"))), FVector::Dist(At(TEXT("thigh_l")), At(TEXT("calf_l"))), FVector::Dist(At(TEXT("calf_l")), At(TEXT("foot_l"))),
+			FVector::Dist(At(TEXT("upperarm_l")), At(TEXT("lowerarm_l"))), FVector::Dist(At(TEXT("lowerarm_l")), At(TEXT("hand_l"))), Skin->GetComponentScale().Z);
+	}
+}
+
+void AAedirPlayerCharacter::JointCheck()
+{
+	const USkeletalMeshComponent* Skin = GetMesh();
+	for (const FConstraintInstance* Joint : Skin->Constraints)
+	{
+		const FName Child = Joint->ConstraintBone1;
+		const FName Parent = Joint->ConstraintBone2;
+		const FTransform ChildBone = Skin->GetSocketTransform(Child);
+		const FTransform ParentBone = Skin->GetSocketTransform(Parent);
+		const FVector OnParent = ParentBone.TransformPosition(Joint->GetRefFrame(EConstraintFrame::Frame2).GetLocation());
+		const FVector OnChild = ChildBone.TransformPosition(Joint->GetRefFrame(EConstraintFrame::Frame1).GetLocation());
+		UE_LOG(LogAedir, Display, TEXT("[JointCheck] %s (%s on %s): parent's anchor %.1f cm off the child bone, child's %.1f, bone length %.1f, parent anchor along %.2f of it, scale %.2f"),
+			*Joint->JointName.ToString(), *Child.ToString(), *Parent.ToString(), FVector::Dist(OnParent, ChildBone.GetLocation()), FVector::Dist(OnChild, ChildBone.GetLocation()),
+			FVector::Dist(ChildBone.GetLocation(), ParentBone.GetLocation()),
+			FVector::DotProduct(OnParent - ParentBone.GetLocation(), (ChildBone.GetLocation() - ParentBone.GetLocation()).GetSafeNormal()) / FMath::Max(FVector::Dist(ChildBone.GetLocation(), ParentBone.GetLocation()), 0.01),
+			ParentBone.GetScale3D().X);
+	}
+}
+
+void AAedirPlayerCharacter::BladeNear(float Seconds)
+{
+	BladeWatchLeft = Seconds;
+	BladeWatchClosest = TNumericLimits<float>::Max();
+	GetWorldTimerManager().SetTimer(BladeWatchTimer, FTimerDelegate::CreateWeakLambda(this, [this]()
+	{
+		const float Step = GetWorld()->GetDeltaSeconds();
+		BladeWatchLeft -= Step;
+		const AAedirItemActor* Blade = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
+		const AAedirCreature* Nearest = nullptr;
+		for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+		{
+			if (*It != this && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())))
+			{
+				Nearest = *It;
+			}
+		}
+		if (Blade && Nearest && Nearest->GetMesh())
+		{
+			FVector Lo, Hi;
+			Blade->GetActorBounds(true, Lo, Hi);
+			const float Half = static_cast<float>((Hi - Lo).Size() * 0.5);
+			const FVector Middle = (Lo + Hi) * 0.5;
+			const FVector Along = Blade->GetActorForwardVector().GetSafeNormal();
+			const FVector Chest = Nearest->GetMesh()->GetBoneLocation(TEXT("spine_03"));
+			const float Distance = static_cast<float>(FMath::PointDistToSegment(Chest, Middle - Along * Half, Middle + Along * Half));
+			BladeWatchClosest = FMath::Min(BladeWatchClosest, Distance);
+		}
+		if (BladeWatchLeft <= 0.f)
+		{
+			GetWorldTimerManager().ClearTimer(BladeWatchTimer);
+			UE_LOG(LogAedir, Display, TEXT("[BladeWatch] the blade came within %.1f cm of the chest bone of the nearest body"), BladeWatchClosest);
+		}
+	}), 0.001f, true);
 }
 
 void AAedirPlayerCharacter::FootprintInfo()
@@ -2199,6 +2306,8 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 					FVector::DotProduct((At(TEXT("index_01")) - At(TEXT("pinky_01"))).GetSafeNormal(), Along), *Body.InverseTransformVectorNoScale(Normal).ToCompactString(), WristBend);
 			};
 			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s palms: right %s, left %s | grip at %.1f span %.1f, both hands %d"), *Label, *Hollow(TEXT("_r")), *Hollow(TEXT("_l")), Blade->GripLocalCm + Blade->HeldGripShiftCm, Blade->GripSpanCm, FistArms->IsTwoHand() ? 1 : 0);
+			// Where the elbows are in the body's frame (forward, right, up from the middle of the capsule).
+			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s elbows: left %s right %s"), *Label, *Body.InverseTransformPositionNoScale(GetMesh()->GetBoneLocation(TEXT("lowerarm_l"))).ToCompactString(), *Body.InverseTransformPositionNoScale(GetMesh()->GetBoneLocation(TEXT("lowerarm_r"))).ToCompactString());
 		}
 	}
 }

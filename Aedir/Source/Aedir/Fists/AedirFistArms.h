@@ -262,13 +262,13 @@ public:
 	float TwoHandRestSideCm = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandRestHeightCm = 6.f;
+	float TwoHandRestHeightCm = 10.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandRestYawDegrees = 45.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandRestPitchDegrees = -25.f;
+	float TwoHandRestPitchDegrees = 10.f;
 
 	// A blade's whole arc is tipped up or down with the view, this share of its pitch and no further than these, so a blow
 	// drawn across goes round the way the view looks and the arm drawn back goes back from there.
