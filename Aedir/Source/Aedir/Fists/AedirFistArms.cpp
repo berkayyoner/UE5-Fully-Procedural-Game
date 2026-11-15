@@ -129,8 +129,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float Before = static_cast<float>(Aim.X);
 		// One arm alone goes across past the middle only this share of the arc on the other side.
 		const double OtherSide = DeadZone + SingleArmAcrossShare * (1.f - DeadZone);
-		const double AcrossMin = bHeld[1] && !bHeld[0] ? -OtherSide : -1.0;
-		const double AcrossMax = bHeld[0] && !bHeld[1] ? OtherSide : 1.0;
+		// A blade alone goes further, so its wrist can turn back in and lay it round behind.
+		const double BladeOtherSide = DeadZone + BladeAloneAcrossShare * (1.f - DeadZone);
+		const double AcrossMin = bHeld[1] && !bHeld[0] ? -(bArmed[1] ? BladeOtherSide : OtherSide) : -1.0;
+		const double AcrossMax = bHeld[0] && !bHeld[1] ? (bArmed[0] ? BladeOtherSide : OtherSide) : 1.0;
 		Aim.X = FMath::Clamp(Aim.X + PendingMouse.X / FMath::Max(MouseFieldAcross, 1.f), AcrossMin, AcrossMax);
 		const FVector2D AimBefore(Before, Aim.Y);
 		Aim.Y = FMath::Clamp(Aim.Y + PendingMouse.Y / FMath::Max(MouseFieldUpDown, 1.f), -1.0, 1.0);
@@ -286,7 +288,8 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		BladeAim[Slot] = bBlade ? Ahead * (1.f - Raise) * (1.f - Lower) : 0.f;
 		// Up at either side from the middle of the way there on, up raised, down lowered.
 		const float SideShare = bFollows ? FMath::Clamp((FMath::Abs(Across) - Split) / (1.f - Split), 0.f, 1.f) : 0.f;
-		BladeWristUp[Slot] = bBlade ? SideShare * BladeSideWristUpDegrees + Raise * BladeRaiseWristUpDegrees - Lower * BladeLowerWristDownDegrees : 0.f;
+		// Drawn round and raised at once, the larger of the two, not both on top of each other.
+		BladeWristUp[Slot] = bBlade ? FMath::Max(SideShare * BladeSideWristUpDegrees, Raise * BladeRaiseWristUpDegrees) - Lower * BladeLowerWristDownDegrees : 0.f;
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
 		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm));

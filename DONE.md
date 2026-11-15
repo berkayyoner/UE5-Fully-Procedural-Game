@@ -321,3 +321,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The blade wrist's up bend is towards the thumb again at the sides and raised (the flip by forearm direction is gone, with BladeWristFlipShare).
 - Brought across, a blade's wrist turns out (90 degrees) up to half way and back in to 30 degrees at the end, the blade reaching from the left round behind the back.
 - Volume bars are drawn 6 px thick in light metal with a bright ivory handle.
+- A blade held in one hand alone goes all the way across with the mouse (BladeAloneAcrossShare 1; a fist still stops half way), so the cross side's second wrist step happens in play.
+- Raised all the way, a blade's wrist bends up 35 degrees (was 50); drawn round and raised at once it takes the larger of the two bends, not both.

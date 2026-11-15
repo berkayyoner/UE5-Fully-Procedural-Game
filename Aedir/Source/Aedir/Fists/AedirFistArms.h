@@ -196,7 +196,7 @@ public:
 	float BladeSideWristUpDegrees = 50.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeRaiseWristUpDegrees = 50.f;
+	float BladeRaiseWristUpDegrees = 35.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeLowerWristDownDegrees = 45.f;
@@ -205,6 +205,10 @@ public:
 	// on the other, then back in to BladeCrossTurnDegrees at the end, the blade reaching from the other side round back.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeCrossInDegrees = -90.f;
+
+	// A blade held in one hand alone goes this share of the way across past the middle (a fist SingleArmAcrossShare).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeAloneAcrossShare = 1.f;
 
 	// Drawn round to the side a blade keeps this share of the middle's angle up or down, the same way (a fist turns the
 	// other way, ArcSideReverse), so the whole sweep is tipped up or down with the mouse and strikes high or low.
