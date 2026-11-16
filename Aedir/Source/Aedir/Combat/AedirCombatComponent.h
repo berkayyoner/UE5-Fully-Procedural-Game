@@ -369,6 +369,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Clash")
 	float ClashSearchRadius = 300.f;
 
+	float FlinchLeft = 0.f;
+
 	UPROPERTY(Replicated, VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	bool bLeftGuard = false;
 
@@ -527,6 +529,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Combat")
 	bool IsInFightStance() const;
+
+	// Hurt just now: out of the guard for this long, a swing going is dropped, and the guard comes back after if still held.
+	void Flinch(float Seconds);
+	bool IsFlinching() const { return FlinchLeft > 0.f; }
 
 	// A dent shown where a blow landed on plate, on every machine.
 	// A puff of dust knocked off where a solid fist landed, on every machine.

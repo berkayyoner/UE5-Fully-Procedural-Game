@@ -132,6 +132,23 @@ private:
 	double NextLightningServerTime = -1.0;
 	double NextAutoChangeServerTime = -1.0;
 	double LightningFlashWorldTime = -1000.0;
+	// How much of its light the last bolt threw over the land here, by how far off it came down (0..1).
+	float LightningFlashShare = 0.f;
+	// The same for the flash in the clouds going now.
+	float CloudFlashShare = 0.f;
+	// Rain on everything round the eye: a decal from above that darkens it, one that makes it shine.
+	void StepWet();
+	UPROPERTY(Transient)
+	TObjectPtr<class UDecalComponent> WetDarken;
+	UPROPERTY(Transient)
+	TObjectPtr<class UDecalComponent> WetGloss;
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> WetDarkenMaterial;
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> WetGlossMaterial;
+	float AppliedWet = -1.f;
+	FLinearColor FogSkyColor = FLinearColor::White;
+	bool bFogColorKnown = false;
 
 	float SmoothedWetness = 0.f;
 	float SmoothedSnow = 0.f;
@@ -153,8 +170,11 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInstanceDynamic> BoltCoreMaterial;
 
-	// Thunder rolling in after a flash this far off, delayed by the distance and quieter for it.
+	// Thunder from a bolt here: heard at once with the flash when it is near enough, quieter the further off; not at all
+	// past that.
 	void QueueThunder(const FVector& From, float Loudness);
+	// Where the local view is, or this actor when there is none.
+	FVector ViewLocation() const;
 	void PlayThunder(float Loudness);
 	// Segment ends, two per segment, and each segment's width.
 	TArray<FVector> BoltPoints;

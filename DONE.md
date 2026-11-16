@@ -415,3 +415,16 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The hit log shows how an NPC's blade lies against the one it fights.
 - A body struck on the head, neck, chest, belly, groin or a shoulder puts its free hand on the other side to the place for a moment.
 - Out of the fight stance and not reaching for anything, a body holds a cut, a stab or a broken arm there with its free hand while it lasts.
+- Cloudy skies show clouds: the cloud material's cover and density are set in the range that draws them, and rain clouds come down low and grey.
+- Under an overcast the haze is grey instead of sky blue.
+- Storms strike less often: 2.5 bolts a minute in a thunderstorm, 0.8 in a storm, and about one flash in the clouds for each.
+- Most bolts come down far off and only now and then one close by, from the cloud base, thin but still visible far away.
+- A bolt lights the land only when it is close, and a flash in the clouds lights only a patch of cloud.
+- Thunder is heard at once with a close bolt and not at all from far ones.
+- The lightning and thunder numbers are editable in the weather settings.
+- Rain makes the ground, bodies and things lying about darker and shiny, as wet as the ground is.
+- A new hurt makes a body flinch for 1 to 2 seconds by how bad it is: out of the fight stance, with a free hand held to the place.
+- NPCs flinch and hold their hurts as the player does.
+- The head is held with the hand on its own side, the neck with the other one, and the sides of the trunk with the hand on that side.
+- Out of the fight stance, a body holds a wound still bleeding, the stump of a lost limb or a broken leg as well as a broken arm.
+- StrikePart strikes oneself or the nearest body on a chosen bone, and aedir.Wet and aedir.CloudTry hold the wet look and the clouds for measuring.

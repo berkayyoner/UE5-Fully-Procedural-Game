@@ -830,6 +830,15 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
 	const bool bAuthority = IsAuthoritative();
 
+	if (FlinchLeft > 0.f)
+	{
+		FlinchLeft = FMath::Max(FlinchLeft - DeltaTime, 0.f);
+		if (FlinchLeft <= 0.f)
+		{
+			Creature->SetWantsFightStance(IsInFightStance());
+		}
+	}
+
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
 		const EAedirHand Hand = static_cast<EAedirHand>(Index);
@@ -1057,12 +1066,24 @@ FVector UAedirCombatComponent::GetTipWorld(EAedirHand Hand) const
 
 bool UAedirCombatComponent::IsGuardActive(EAedirHand Hand) const
 {
-	return Hand == EAedirHand::Left ? bLeftGuard : bRightGuard;
+	return (Hand == EAedirHand::Left ? bLeftGuard : bRightGuard) && FlinchLeft <= 0.f;
 }
 
 bool UAedirCombatComponent::IsInFightStance() const
 {
-	return bLeftGuard || bRightGuard;
+	return (bLeftGuard || bRightGuard) && FlinchLeft <= 0.f;
+}
+
+void UAedirCombatComponent::Flinch(float Seconds)
+{
+	if (Seconds <= 0.f || !Creature)
+	{
+		return;
+	}
+	FlinchLeft = FMath::Max(FlinchLeft, Seconds);
+	CancelSwing(EAedirHand::Left);
+	CancelSwing(EAedirHand::Right);
+	Creature->SetWantsFightStance(false);
 }
 
 bool UAedirCombatComponent::GetGuardPose(EAedirHand Hand, float& OutAlpha) const

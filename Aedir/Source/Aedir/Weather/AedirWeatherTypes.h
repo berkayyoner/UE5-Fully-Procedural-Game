@@ -102,10 +102,10 @@ struct AEDIR_API FAedirWeatherProfile
 			Profile.CloudCoverage = 1.f;
 			Profile.RainIntensity = 0.9f;
 			Profile.FogDensity = 0.04f;
-			Profile.SunIntensityLux = 1.2f;
-			Profile.SkyLightIntensity = 0.35f;
+			Profile.SunIntensityLux = 1.8f;
+			Profile.SkyLightIntensity = 0.4f;
 			Profile.WindSpeed = 14.f;
-			Profile.LightningPerMinute = 1.5f;
+			Profile.LightningPerMinute = 0.8f;
 			Profile.WetnessTarget = 1.f;
 			Profile.SunColor = FLinearColor(0.5f, 0.55f, 0.62f);
 			break;
@@ -114,10 +114,10 @@ struct AEDIR_API FAedirWeatherProfile
 			Profile.CloudCoverage = 1.f;
 			Profile.RainIntensity = 1.f;
 			Profile.FogDensity = 0.05f;
-			Profile.SunIntensityLux = 1.f;
-			Profile.SkyLightIntensity = 0.3f;
+			Profile.SunIntensityLux = 1.6f;
+			Profile.SkyLightIntensity = 0.38f;
 			Profile.WindSpeed = 18.f;
-			Profile.LightningPerMinute = 6.f;
+			Profile.LightningPerMinute = 2.5f;
 			Profile.WetnessTarget = 1.f;
 			Profile.SunColor = FLinearColor(0.45f, 0.5f, 0.6f);
 			break;

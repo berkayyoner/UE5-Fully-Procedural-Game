@@ -35,7 +35,10 @@
 #include "Misc/PackageName.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionAppendVector.h"
+#include "Materials/MaterialExpressionCameraPositionWS.h"
 #include "Materials/MaterialExpressionComponentMask.h"
+#include "Materials/MaterialExpressionDistance.h"
+#include "Materials/MaterialExpressionDivide.h"
 #include "Materials/MaterialExpressionConstant.h"
 #include "Materials/MaterialExpressionLength.h"
 #include "Materials/MaterialExpressionLinearInterpolate.h"
@@ -48,6 +51,7 @@
 #include "Materials/MaterialExpressionTextureCoordinate.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialExpressionWorldPosition.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
 
@@ -357,6 +361,85 @@ namespace
 		UE_LOG(LogAedirEditor, Display, TEXT("Built M_AedirBolt."));
 	}
 
+	// Rain on everything round the viewer, laid as two decals from above: one darkens what it falls on as water soaks it, the
+	// other makes it shine, more in some patches than others. Both fade out towards the edge of the box round the eye.
+	UMaterialExpression* ContentWetFade(UMaterial* Material)
+	{
+		UMaterialExpressionWorldPosition* World = ContentNode<UMaterialExpressionWorldPosition>(Material, -1200, 400);
+		UMaterialExpressionCameraPositionWS* Eye = ContentNode<UMaterialExpressionCameraPositionWS>(Material, -1200, 520);
+		UMaterialExpressionDistance* Off = ContentNode<UMaterialExpressionDistance>(Material, -1000, 450);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(World, TEXT(""), Off, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Eye, TEXT(""), Off, TEXT("B"));
+		UMaterialExpressionScalarParameter* Reach = ContentNode<UMaterialExpressionScalarParameter>(Material, -1000, 600);
+		Reach->ParameterName = TEXT("ReachCm");
+		Reach->DefaultValue = 12000.f;
+		UMaterialExpressionDivide* Share = ContentNode<UMaterialExpressionDivide>(Material, -800, 500);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Off, TEXT(""), Share, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Reach, TEXT(""), Share, TEXT("B"));
+		UMaterialExpressionOneMinus* Near = ContentNode<UMaterialExpressionOneMinus>(Material, -650, 500);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Share, TEXT(""), Near, TEXT(""));
+		UMaterialExpressionMultiply* Steep = ContentNode<UMaterialExpressionMultiply>(Material, -500, 500);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Near, TEXT(""), Steep, TEXT("A"));
+		UMaterialExpressionConstant* Four = ContentNode<UMaterialExpressionConstant>(Material, -650, 620);
+		Four->R = 4.f;
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Four, TEXT(""), Steep, TEXT("B"));
+		UMaterialExpressionSaturate* Fade = ContentNode<UMaterialExpressionSaturate>(Material, -350, 500);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Steep, TEXT(""), Fade, TEXT(""));
+		UMaterialExpressionScalarParameter* Strength = ContentNode<UMaterialExpressionScalarParameter>(Material, -350, 650);
+		Strength->ParameterName = TEXT("Strength");
+		Strength->DefaultValue = 0.f;
+		UMaterialExpressionMultiply* Amount = ContentNode<UMaterialExpressionMultiply>(Material, -200, 550);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Fade, TEXT(""), Amount, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Strength, TEXT(""), Amount, TEXT("B"));
+		return Amount;
+	}
+
+	void ContentBuildWet(TArray<UPackage*>& ToSave)
+	{
+		{
+			UMaterial* Material = ContentNewMaterial(TEXT("M_AedirWetDarken"), ToSave);
+			Material->MaterialDomain = MD_DeferredDecal;
+			Material->BlendMode = BLEND_Translucent;
+			UMaterialExpressionVectorParameter* Soaked = ContentNode<UMaterialExpressionVectorParameter>(Material, -200, 0);
+			Soaked->ParameterName = TEXT("Color");
+			Soaked->DefaultValue = FLinearColor(0.f, 0.f, 0.f);
+			UMaterialEditingLibrary::ConnectMaterialProperty(Soaked, TEXT(""), MP_BaseColor);
+			UMaterialEditingLibrary::ConnectMaterialProperty(ContentWetFade(Material), TEXT(""), MP_Opacity);
+			UMaterialEditingLibrary::RecompileMaterial(Material);
+			Material->MarkPackageDirty();
+		}
+		{
+			UMaterial* Material = ContentNewMaterial(TEXT("M_AedirWetGloss"), ToSave);
+			Material->MaterialDomain = MD_DeferredDecal;
+			Material->BlendMode = BLEND_Translucent;
+			UMaterialExpressionScalarParameter* Shine = ContentNode<UMaterialExpressionScalarParameter>(Material, -200, 0);
+			Shine->ParameterName = TEXT("Roughness");
+			Shine->DefaultValue = 0.08f;
+			UMaterialEditingLibrary::ConnectMaterialProperty(Shine, TEXT(""), MP_Roughness);
+			// Patches a few metres across where the water lies thicker.
+			UMaterialExpressionNoise* Patches = ContentNode<UMaterialExpressionNoise>(Material, -500, 250);
+			Patches->Scale = 0.004f;
+			Patches->Levels = 3;
+			Patches->OutputMin = 0.f;
+			Patches->OutputMax = 1.f;
+			UMaterialExpressionConstant* Least = ContentNode<UMaterialExpressionConstant>(Material, -500, 150);
+			Least->R = 0.55f;
+			UMaterialExpressionConstant* Most = ContentNode<UMaterialExpressionConstant>(Material, -500, 200);
+			Most->R = 1.f;
+			UMaterialExpressionLinearInterpolate* Lying = ContentNode<UMaterialExpressionLinearInterpolate>(Material, -300, 200);
+			UMaterialEditingLibrary::ConnectMaterialExpressions(Least, TEXT(""), Lying, TEXT("A"));
+			UMaterialEditingLibrary::ConnectMaterialExpressions(Most, TEXT(""), Lying, TEXT("B"));
+			UMaterialEditingLibrary::ConnectMaterialExpressions(Patches, TEXT(""), Lying, TEXT("Alpha"));
+			UMaterialExpressionMultiply* Opacity = ContentNode<UMaterialExpressionMultiply>(Material, 0, 300);
+			UMaterialEditingLibrary::ConnectMaterialExpressions(Lying, TEXT(""), Opacity, TEXT("A"));
+			UMaterialEditingLibrary::ConnectMaterialExpressions(ContentWetFade(Material), TEXT(""), Opacity, TEXT("B"));
+			UMaterialEditingLibrary::ConnectMaterialProperty(Opacity, TEXT(""), MP_Opacity);
+			UMaterialEditingLibrary::RecompileMaterial(Material);
+			Material->MarkPackageDirty();
+		}
+		UE_LOG(LogAedirEditor, Display, TEXT("Built M_AedirWetDarken and M_AedirWetGloss."));
+	}
+
 	// The inside of a cut.
 	void ContentBuildFlesh(TArray<UPackage*>& ToSave)
 	{
@@ -660,6 +743,11 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 		ContentBuildBolt(ToSave);
 		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
 	}
+	if (Only == TEXT("Wet"))
+	{
+		ContentBuildWet(ToSave);
+		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
 	if (Only == TEXT("Pauldrons"))
 	{
 		ContentSplitPauldrons(ToSave);
@@ -705,6 +793,7 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 	ContentBuildPropCollision(ToSave);
 	ContentBuildPrecip(ToSave);
 	ContentBuildBolt(ToSave);
+	ContentBuildWet(ToSave);
 	ContentBuildScanned(ToSave);
 	ContentBuildFootprint(ToSave);
 	ContentBuildFlesh(ToSave);

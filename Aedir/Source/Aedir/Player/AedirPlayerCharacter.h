@@ -289,6 +289,11 @@ public:
 	UFUNCTION(Exec)
 	void StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec, int32 FromBehind = 0);
 
+	// A blow from the front on one bone, this far to the body's right (cm, left negative): to oneself, or with Nearest 1 to
+	// the nearest other body.
+	UFUNCTION(Exec)
+	void StrikePart(const FString& Bone, float EnergyJoules, float SideCm = 0.f, int32 Nearest = 0);
+
 	// The same blow on the nearest other creature, from the front or from behind.
 	UFUNCTION(Exec)
 	void StrikeNearest(float EnergyJoules, int32 FromBehind = 0);

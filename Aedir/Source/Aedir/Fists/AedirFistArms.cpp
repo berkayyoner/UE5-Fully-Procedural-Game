@@ -112,6 +112,7 @@ bool UAedirFistArms::GetArm(EAedirHand Hand, FVector& OutFistWorld, FVector& Out
 void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	FlinchLeft = FMath::Max(FlinchLeft - DeltaTime, 0.f);
 	const ACharacter* Owner = Cast<ACharacter>(GetOwner());
 	if (!Owner || DeltaTime <= 0.f)
 	{
@@ -146,15 +147,15 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const double OtherSide = DeadZone + SingleArmAcrossShare * (1.f - DeadZone);
 		// A blade alone goes further, so its wrist can turn back in and lay it round behind.
 		const double BladeOtherSide = DeadZone + BladeAloneAcrossShare * (1.f - DeadZone);
-		const double AcrossMin = bHeld[1] && !bHeld[0] ? -(bArmed[1] ? BladeOtherSide : OtherSide) : -1.0;
-		const double AcrossMax = bHeld[0] && !bHeld[1] ? (bArmed[0] ? BladeOtherSide : OtherSide) : 1.0;
+		const double AcrossMin = HeldNow(1) && !HeldNow(0) ? -(bArmed[1] ? BladeOtherSide : OtherSide) : -1.0;
+		const double AcrossMax = HeldNow(0) && !HeldNow(1) ? (bArmed[0] ? BladeOtherSide : OtherSide) : 1.0;
 		MouseAim.X = FMath::Clamp(MouseAim.X + MouseNow.X / FMath::Max(MouseFieldAcross, 1.f), AcrossMin, AcrossMax);
 		const FVector2D AimBefore(Before, MouseAim.Y);
 		MouseAim.Y = FMath::Clamp(MouseAim.Y + MouseNow.Y / FMath::Max(MouseFieldUpDown, 1.f), -1.0, 1.0);
 		const float After = static_cast<float>(MouseAim.X);
 		// A blade moved quickly, any way, takes breath.
 		const float Travel = static_cast<float>(FVector2D::Distance(AimBefore, MouseAim));
-		if (((bHeld[0] && bArmed[0]) || (bHeld[1] && bArmed[1])) && Travel / DeltaTime > PunchSlowSpeed)
+		if (((HeldNow(0) && bArmed[0]) || (HeldNow(1) && bArmed[1])) && Travel / DeltaTime > PunchSlowSpeed)
 		{
 			SpendStamina(Travel * 0.5f * BladeFastMoveStaminaPerField);
 		}
@@ -172,7 +173,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 
 		// The arms go after the mouse as a weight on a spring, in small steps so a long frame does not throw them off.
 		const AAedirItemActor* Blade = AedirFistsHeldItem(Owner, bArmed[1] ? 1 : 0);
-		const bool bBladeHeld = (bHeld[0] && bArmed[0]) || (bHeld[1] && bArmed[1]);
+		const bool bBladeHeld = (HeldNow(0) && bArmed[0]) || (HeldNow(1) && bArmed[1]);
 		float Hz = FistAimHz;
 		float Damping = FistAimDamping;
 		if (bBladeHeld && Blade)
@@ -214,7 +215,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float Tired = Breath && TiredFrom > KINDA_SMALL_NUMBER ? FMath::Clamp((TiredFrom - Breath->GetStaminaFraction()) / TiredFrom, 0.f, 1.f) : 0.f;
 		float Next = FMath::FInterpConstantTo(Punch, PunchWanted, DeltaTime, (PunchWanted > Punch ? PunchOutRate : PunchBackRate) * FMath::Lerp(1.f, TiredSpeedShare, Tired));
 		// Going out costs breath: as far as what is left pays for, and no further. A blade costs more than a fist.
-		const float Cost = bArmed[PunchSlot] && bHeld[PunchSlot] ? BladeSwingStaminaCost : PunchStaminaCost;
+		const float Cost = bArmed[PunchSlot] && HeldNow(PunchSlot) ? BladeSwingStaminaCost : PunchStaminaCost;
 		if (Next > Before && Cost > 0.f)
 		{
 			const UAedirStatsComponent* Stats = Owner->FindComponentByClass<UAedirStatsComponent>();
@@ -255,7 +256,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	const float Lift = FMath::SmoothStep(ElbowLiftFrom, ElbowLiftTo, AcrossAbs);
 	const float HalfSpread = FMath::DegreesToRadians(ElbowSpreadDegrees * 0.5f);
 	const float AimSide = FMath::Sign(static_cast<float>(Aim.X));
-	const bool bBoth = bHeld[0] && bHeld[1];
+	const bool bBoth = HeldNow(0) && HeldNow(1);
 	// A blade's arc tipped with the view, about the axis across the body through the chest.
 	const float ViewPitch = static_cast<float>(FRotator::NormalizeAxis(Owner->GetControlRotation().Pitch));
 	const float LookTilt = FMath::DegreesToRadians(FMath::Clamp(ViewPitch * BladeLookTiltShare, -BladeLookTiltDownMaxDegrees, BladeLookTiltUpMaxDegrees));
@@ -263,11 +264,11 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	for (int32 Slot = 0; Slot < 2; ++Slot)
 	{
 		const float Side = Slot == 1 ? 1.f : -1.f;
-		Alpha[Slot] = FMath::FInterpConstantTo(Alpha[Slot], bHeld[Slot] ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(RaiseSeconds, KINDA_SMALL_NUMBER));
+		Alpha[Slot] = FMath::FInterpConstantTo(Alpha[Slot], HeldNow(Slot) ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(RaiseSeconds, KINDA_SMALL_NUMBER));
 		// In both hands the left one stays on the grip, whether the blade is up or not, until it is let go.
 		if (Slot == 0)
 		{
-			GripAlpha = FMath::FInterpConstantTo(GripAlpha, bTwoHand && !bOffHandOut ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(RaiseSeconds, KINDA_SMALL_NUMBER));
+			GripAlpha = FMath::FInterpConstantTo(GripAlpha, bTwoHand && !bOffHandOut && FlinchLeft <= 0.f ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(RaiseSeconds, KINDA_SMALL_NUMBER));
 		}
 		Raised = FMath::Max(Raised, Alpha[Slot]);
 		// With both arms up, only the arm on the side the mouse is drawn to goes round the arc and only the arm that came in
@@ -406,7 +407,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			ShownAlpha[Slot] = 1.f - (1.f - Alpha[Slot]) * (1.f - GripAlpha);
 		}
 	}
-	const bool bBladeUp = (bHeld[0] && bArmed[0]) || (bHeld[1] && bArmed[1]);
+	const bool bBladeUp = (HeldNow(0) && bArmed[0]) || (HeldNow(1) && bArmed[1]);
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * (bBladeUp ? BladeWaistForwardDegrees : WaistForwardDegrees)) * Raised;
 	WaistYaw = Across * WaistTurnDegrees * Raised;
 	HipDrop = FMath::Max(-UpDown, 0.f) * (bBladeUp ? BladeDownHipDropCm : DownHipDropCm) * Raised;

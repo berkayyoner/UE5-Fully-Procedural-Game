@@ -404,8 +404,14 @@ public:
 	// the game.
 	// The first button down starts the fists where the view looks: up or down by its pitch (degrees, up positive).
 	void SetHeld(EAedirHand Hand, bool bHeld, float ViewPitchDegrees = 0.f);
-	bool IsHeld(EAedirHand Hand) const { return bHeld[Index(Hand)]; }
-	bool IsSteering() const { return bHeld[0] || bHeld[1]; }
+	// Whether an arm is up: its button held, and the body not flinching from a blow just now.
+	bool IsHeld(EAedirHand Hand) const { return HeldNow(Index(Hand)); }
+	bool IsSteering() const { return HeldNow(0) || HeldNow(1); }
+
+	// Hurt just now: both arms come down out of the guard for this long, whatever the buttons say, and go back up after if
+	// they are still held. A longer one already going is kept.
+	void Flinch(float Seconds) { FlinchLeft = FMath::Max(FlinchLeft, Seconds); }
+	bool IsFlinching() const { return FlinchLeft > 0.f; }
 
 	// The mouse moved while a button is held (mouse axis units, up positive).
 	void AddMouse(const FVector2D& Delta);
@@ -466,6 +472,8 @@ private:
 	static int32 Index(EAedirHand Hand) { return Hand == EAedirHand::Left ? 0 : 1; }
 
 	bool bHeld[2] = { false, false };
+	float FlinchLeft = 0.f;
+	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft <= 0.f; }
 	float Alpha[2] = { 0.f, 0.f };
 	// How far each arm is the fists' to pose: up, or carried in both hands.
 	float ShownAlpha[2] = { 0.f, 0.f };

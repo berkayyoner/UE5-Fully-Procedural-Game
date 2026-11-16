@@ -520,20 +520,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
 	float ReadyHandShare = 0.8f;
 
-	// A body struck on the head, the neck, the chest, the belly, the groin or a shoulder puts a hand to the place for a moment:
-	// the hand on the other side from it, and only one with nothing in it. A blow pushing at least ClutchBlowMinPush brings
-	// the hand there for ClutchBlowSeconds, as far as ClutchBlowShare.
+	// A body hurt on the head, the neck, the chest, the belly, a side, the groin, a shoulder or a thigh flinches: it drops
+	// out of the fight stance and a free hand goes to the place for ClutchFlinchMinSeconds to ClutchFlinchMaxSeconds, the
+	// longer the worse, as far as ClutchBlowShare, over whatever that arm was doing. A blow counts from ClutchBlowMinPush
+	// and is at its worst at ClutchBlowFullPush; a new wound counts by how bad it is. The head is held by the hand on its own
+	// side, the neck, a shoulder and the middle of the trunk by the other one, a side of the trunk past ClutchFlankDegrees
+	// round from the front by the one on that side; never by a hand holding something.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchBlowMinPush = 120.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
-	float ClutchBlowSeconds = 0.55f;
+	float ClutchBlowFullPush = 600.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchFlinchMinSeconds = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchFlinchMaxSeconds = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
-	float ClutchBlowShare = 0.85f;
+	float ClutchBlowShare = 0.9f;
 
-	// Out of the fight stance and not reaching for anything, a hand holds a cut, a stab or a broken arm there for as long as
-	// it lasts, from a wound of ClutchWoundMinSeverity up, as far as ClutchWoundShare.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchFlankDegrees = 45.f;
+
+	// Out of the fight stance and not reaching for anything, a hand holds a wound still bleeding (from ClutchWoundMinSeverity
+	// up), the stump of a lost arm or thigh, or a broken limb, the worst of them, as far as ClutchWoundShare.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
 	float ClutchWoundMinSeverity = 0.15f;
 
@@ -830,6 +842,18 @@ private:
 	// Where each hand holds a hurt place and how far it is there (left, right).
 	FVector ClutchTarget[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	float ClutchAlpha[2] = { 0.f, 0.f };
+	// Whether the hand's hold is a flinch, over the swing and the fists' guard too.
+	bool bClutchFlinch[2] = { false, false };
+	// The flinch going: which hand, where on which bone, and how long it still lasts.
+	int32 FlinchSlot = INDEX_NONE;
+	FName FlinchBone;
+	FVector FlinchLocal = FVector::ZeroVector;
+	float FlinchLeft = 0.f;
+	float FlinchSeconds = 0.f;
+	float FlinchSeverity = 0.f;
+	double FlinchBlowSeen = -1.0;
+	TSet<uint8> FlinchWoundsSeen;
+	bool bFlinchWoundsKnown = false;
 	void UpdateClutch(float DeltaTime, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);
 
 	UPROPERTY(Transient)

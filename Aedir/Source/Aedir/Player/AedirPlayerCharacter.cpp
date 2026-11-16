@@ -1728,6 +1728,39 @@ void AAedirPlayerCharacter::StrikeSelf(float EnergyJoules, float MassKg, float S
 	StrikeCreature(this, EnergyJoules, MassKg, SpeedCmPerSec, FromBehind != 0);
 }
 
+void AAedirPlayerCharacter::StrikePart(const FString& Bone, float EnergyJoules, float SideCm, int32 Nearest)
+{
+	AAedirCreature* Victim = this;
+	if (Nearest != 0)
+	{
+		Victim = nullptr;
+		for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+		{
+			if (*It != this && (!Victim || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Victim->GetActorLocation(), GetActorLocation())))
+			{
+				Victim = *It;
+			}
+		}
+	}
+	if (!Victim || !Victim->Balance || !Victim->GetMesh() || Victim->GetMesh()->GetBoneIndex(FName(*Bone)) == INDEX_NONE)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[Dev] StrikePart: no body or no bone %s"), *Bone);
+		return;
+	}
+	const FVector Ahead = Victim->GetActorForwardVector();
+	const FVector Place = Victim->GetMesh()->GetBoneLocation(FName(*Bone)) + Victim->GetActorRightVector() * SideCm;
+	FAedirImpactInfo Impact;
+	Impact.Bone = FName(*Bone);
+	Impact.Zone = Bone.StartsWith(TEXT("head")) || Bone.StartsWith(TEXT("neck")) ? EAedirBodyZone::Head : EAedirBodyZone::Torso;
+	Impact.EnergyJoules = EnergyJoules;
+	Impact.Direction = -Ahead;
+	Impact.Location = Place + Ahead * 12.f;
+	Impact.MassKg = 3.f;
+	Impact.RelativeSpeed = 900.f;
+	Victim->Balance->ApplyHitReaction(Impact);
+	UE_LOG(LogTemp, Display, TEXT("[Dev] %s struck on %s, %.0f cm to the right, with %.0f J"), *Victim->GetName(), *Bone, SideCm, EnergyJoules);
+}
+
 void AAedirPlayerCharacter::StrikeNearest(float EnergyJoules, int32 FromBehind)
 {
 	AAedirCreature* Nearest = nullptr;

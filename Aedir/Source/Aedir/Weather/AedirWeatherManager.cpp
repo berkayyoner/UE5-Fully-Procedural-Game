@@ -3,6 +3,7 @@
 #include "Settings/AedirSettingsSubsystem.h"
 #include "Aedir.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/DecalComponent.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/VolumetricCloudComponent.h"
@@ -39,6 +40,8 @@ namespace
 	// full day once it is this high and night once it is this far below the horizon. The moon stands this high, gives this
 	// many lux in this blue, and at night the sky gives this share of its daylight.
 	TAutoConsoleVariable<float> CVarAedirHour(TEXT("aedir.Hour"), -1.f, TEXT("Holds the time of day at this hour (0 to 24); below 0 the day goes round."));
+	TAutoConsoleVariable<FString> CVarAedirCloudTry(TEXT("aedir.CloudTry"), TEXT(""), TEXT("For measuring: cover and density for the clouds, over the weather's (\"0.2_0.05_0\"); empty for the weather's own."));
+	TAutoConsoleVariable<float> CVarAedirWet(TEXT("aedir.Wet"), -1.f, TEXT("For measuring: holds how wet everything looks (0 to 1); below 0 the weather decides."));
 	constexpr double WeatherStartHour = 9.0;
 	constexpr double WeatherDayRealSeconds = 72.0 * 60.0;
 	constexpr float WeatherSunHighestDegrees = 55.f;
@@ -50,21 +53,29 @@ namespace
 	constexpr float WeatherNightSkyShare = 0.06f;
 	constexpr float WeatherManagerSceneSearchInterval = 5.f;
 	constexpr float WeatherManagerSkyLightApplyInterval = 0.25f;
-	// The engine's cloud material and how the weather's cover maps onto its controls: negative coverage thins the sky to
-	// wisps, positive closes it.
+	// The engine's cloud material and how the weather's cover maps onto its controls, as measured: about -0.4 leaves a few
+	// wisps, -0.2 fair-weather clouds, 0.1 a sky mostly covered, and with the layer brought down low 0.2 to 0.4 a grey
+	// overcast (0.3 at its heaviest). Denser than a few hundredths, or with its storm switch on, the material thins the clouds away instead, and
+	// a darker cloud colour only tints the sky blue; a storm's sky is darkened by its weaker light.
 	const TCHAR* const WeatherManagerCloudMaterial = TEXT("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst.m_SimpleVolumetricCloud_Inst");
-	constexpr float WeatherManagerCloudClearCover = -0.55f;
-	constexpr float WeatherManagerCloudFullCover = 0.85f;
-	constexpr float WeatherManagerCloudThinDensity = 0.7f;
-	constexpr float WeatherManagerCloudThickDensity = 1.6f;
-	constexpr float WeatherManagerCloudStormFrom = 0.7f;
+	constexpr float WeatherManagerCloudCoverAt[] = { -0.4f, -0.2f, 0.1f, 0.25f, 0.3f };
+	constexpr float WeatherManagerCloudCoverKeys[] = { 0.f, 0.1f, 0.7f, 0.9f, 1.f };
+	constexpr float WeatherManagerCloudThinDensity = 0.01f;
+	constexpr float WeatherManagerCloudThickDensity = 0.015f;
+	// Fair clouds sit high; past this much cover the layer comes down to rain clouds' height and thickness (km).
+	constexpr float WeatherManagerCloudLowFrom = 0.6f;
+	constexpr float WeatherManagerCloudLowTo = 0.9f;
+	constexpr float WeatherManagerCloudHighBottomKm = 5.f;
+	constexpr float WeatherManagerCloudHighDepthKm = 10.f;
+	constexpr float WeatherManagerCloudLowBottomKm = 1.5f;
+	constexpr float WeatherManagerCloudLowDepthKm = 3.f;
 	constexpr float WeatherManagerCloudChange = 0.01f;
-	const FLinearColor WeatherManagerCloudStormAlbedo(0.42f, 0.44f, 0.48f);
+	const FLinearColor WeatherManagerCloudStormAlbedo(0.8f, 0.8f, 0.82f);
+	// The sky's blue in the haze is taken out under an overcast, leaving it grey.
+	const FLinearColor WeatherManagerOvercastFogTint(1.f, 0.62f, 0.34f);
 	constexpr float WeatherManagerSkyLightChangeFraction = 0.03f;
 	constexpr float WeatherManagerLightningFlashDuration = 0.35f;
-	constexpr float WeatherManagerLightningFlashLux = 30.f;
-	constexpr float WeatherManagerLightningStrikeRange = 8000.f;
-	constexpr float WeatherManagerLightningSkyOffset = 6000.f;
+	constexpr float WeatherManagerLightningSkyOffset = 30000.f;
 	// The drawn bolt: the glowing shape it is drawn with, how wide its main channel is, how bright, how long it lasts and how
 	// far its light reaches.
 	const TCHAR* const WeatherManagerBoltPlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
@@ -75,29 +86,25 @@ namespace
 	constexpr float WeatherManagerBoltCoreWidthCm = 40.f;
 	const FLinearColor WeatherManagerBoltColor(2.5f, 3.2f, 7.f);
 	const FLinearColor WeatherManagerBoltCoreColor(60.f, 62.f, 75.f);
-	// Thunder: the loudest from a strike close by, falling off with distance down to this share; a flash in the clouds
-	// rumbles at this share of a strike.
-	constexpr float WeatherManagerThunderNearCm = 3000.f;
-	constexpr float WeatherManagerThunderFarCm = 900000.f;
-	constexpr float WeatherManagerThunderFarShare = 0.25f;
-	constexpr float WeatherManagerCloudThunderShare = 0.7f;
+	// Seen from far off a bolt is still a line a pixel or two wide: its width grows with the distance past this, and its glow
+	// is drawn this many times the core's width near by, this many far off.
+	constexpr float WeatherManagerBoltWidthFromCm = 33000.f;
+	constexpr float WeatherManagerBoltNearGlowShare = 8.f;
+	constexpr float WeatherManagerBoltFarGlowShare = 3.f;
+	// The channel comes out of the cloud base, though never lower than this over where it strikes (cm).
+	constexpr float WeatherManagerBoltMinHeightCm = 60000.f;
 	constexpr float WeatherManagerBoltLife = 0.45f;
-	constexpr float WeatherManagerBoltLightCandelas = 50000.f;
+	constexpr float WeatherManagerBoltLightCandelas = 6000.f;
 	constexpr float WeatherManagerBoltLightRadius = 12000.f;
 	constexpr float WeatherManagerLightningBalanceImpact = 0.6f;
-	// Flashes inside the clouds: how bright and how far their light reaches, how long one lasts, where they happen around
-	// the viewer, how many for every bolt to the ground, and the cloud layer when none is found.
-	constexpr float WeatherManagerCloudFlashCandelas = 2.5e9f;
-	constexpr float WeatherManagerCloudFlashRadiusCm = 900000.f;
+	// Flashes inside the clouds: how long one lasts, where they happen around the viewer, and the cloud layer when none is
+	// found.
 	constexpr float WeatherManagerCloudFlashLife = 0.7f;
 	constexpr float WeatherManagerCloudFlashNearCm = 150000.f;
 	constexpr float WeatherManagerCloudFlashFarCm = 900000.f;
-	constexpr float WeatherManagerCloudFlashesPerStrike = 5.f;
-	constexpr float WeatherManagerCloudFlashDefaultBottomCm = 500000.f;
-	constexpr float WeatherManagerCloudFlashDefaultThicknessCm = 1000000.f;
+	constexpr float WeatherManagerCloudFlashDefaultBottomCm = 150000.f;
+	constexpr float WeatherManagerCloudFlashDefaultThicknessCm = 300000.f;
 	constexpr int32 WeatherManagerCloudFlashShadowSamples = 4;
-	constexpr float WeatherManagerCloudFlashSkyShare = 0.45f;
-	constexpr float WeatherManagerSoundSpeedCmPerSecond = 34300.f;
 	constexpr float WeatherManagerFullSunLux = 14.f;
 	// The level exposure made the profile values glare, so the applied light is toned down.
 	constexpr float WeatherManagerSunBrightnessScale = 0.55f;
@@ -108,7 +115,6 @@ namespace
 	constexpr float WeatherManagerSnowRiseBase = 0.01f;
 	constexpr float WeatherManagerSnowRiseSnow = 0.03f;
 	constexpr float WeatherManagerSnowMeltRate = 0.003f;
-	constexpr float WeatherManagerMinThunderDelay = 0.01f;
 	constexpr float WeatherManagerMinAutoInterval = 1.f;
 
 	float WeatherManagerSmoothStep(float Alpha)
@@ -256,6 +262,65 @@ void AAedirWeatherManager::Tick(float DeltaSeconds)
 	if (GetNetMode() != NM_DedicatedServer)
 	{
 		ApplySceneLighting(Profile);
+		StepWet();
+	}
+}
+
+void AAedirWeatherManager::StepWet()
+{
+	const UAedirWeatherSettings* Settings = GetDefault<UAedirWeatherSettings>();
+	const float Held = CVarAedirWet.GetValueOnGameThread();
+	const float Wet = FMath::Clamp(Held >= 0.f ? Held : SmoothedWetness, 0.f, 1.f);
+	if (!WetDarken)
+	{
+		if (Wet <= 0.01f)
+		{
+			return;
+		}
+		// A box round the eye pointing down, as deep as the land goes up and down near by.
+		const FVector Size(3000.f, Settings->WetReachCm, Settings->WetReachCm);
+		const auto Make = [this, &Size](const TCHAR* Path, TObjectPtr<UMaterialInstanceDynamic>& OutMaterial, int32 Order) -> UDecalComponent*
+		{
+			UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+			if (!Base)
+			{
+				UE_LOG(LogAedir, Warning, TEXT("[Weather] No wet material at %s"), Path);
+				return nullptr;
+			}
+			OutMaterial = UMaterialInstanceDynamic::Create(Base, this);
+			UDecalComponent* Decal = NewObject<UDecalComponent>(this);
+			Decal->SetAbsolute(true, true, true);
+			Decal->SetupAttachment(GetRootComponent());
+			Decal->SetDecalMaterial(OutMaterial);
+			Decal->SortOrder = Order;
+			Decal->DecalSize = Size;
+			Decal->RegisterComponent();
+			return Decal;
+		};
+		WetDarken = Make(TEXT("/Game/Aedir/Materials/M_AedirWetDarken.M_AedirWetDarken"), WetDarkenMaterial, -20);
+		WetGloss = Make(TEXT("/Game/Aedir/Materials/M_AedirWetGloss.M_AedirWetGloss"), WetGlossMaterial, -19);
+		if (!WetDarken || !WetGloss)
+		{
+			return;
+		}
+	}
+	const FVector Eye = ViewLocation();
+	for (UDecalComponent* Decal : { WetDarken.Get(), WetGloss.Get() })
+	{
+		if (Decal)
+		{
+			Decal->SetWorldLocationAndRotation(Eye, FRotator(-90.f, 0.f, 0.f));
+			Decal->SetVisibility(Wet > 0.01f);
+		}
+	}
+	if (FMath::Abs(Wet - AppliedWet) > 0.005f)
+	{
+		AppliedWet = Wet;
+		WetDarkenMaterial->SetScalarParameterValue(TEXT("Strength"), Wet * Settings->WetDarkenShare);
+		WetDarkenMaterial->SetScalarParameterValue(TEXT("ReachCm"), Settings->WetReachCm);
+		WetGlossMaterial->SetScalarParameterValue(TEXT("Strength"), Wet * Settings->WetGlossShare);
+		WetGlossMaterial->SetScalarParameterValue(TEXT("Roughness"), Settings->WetRoughness);
+		WetGlossMaterial->SetScalarParameterValue(TEXT("ReachCm"), Settings->WetReachCm);
 	}
 }
 
@@ -373,6 +438,7 @@ void AAedirWeatherManager::BuildBolt(const FVector& StrikeLocation, float Seed)
 		BoltLight->SetAttenuationRadius(WeatherManagerBoltLightRadius);
 		BoltLight->SetLightColor(FLinearColor(0.75f, 0.82f, 1.f));
 		BoltLight->SetCastShadows(false);
+		BoltLight->SetVolumetricScatteringIntensity(0.2f);
 		BoltLight->RegisterComponent();
 	}
 
@@ -400,7 +466,13 @@ void AAedirWeatherManager::BuildBolt(const FVector& StrikeLocation, float Seed)
 			OutPath = MoveTemp(Finer);
 		}
 	};
-	const FVector Top = StrikeLocation + FVector(Stream.FRandRange(-1800.f, 1800.f), Stream.FRandRange(-1800.f, 1800.f), Stream.FRandRange(5500.f, 7500.f));
+	float CloudBaseCm = WeatherManagerCloudFlashDefaultBottomCm;
+	if (const UVolumetricCloudComponent* Clouds = CloudComponent.Get())
+	{
+		CloudBaseCm = Clouds->LayerBottomAltitude * 100000.f;
+	}
+	const float Height = FMath::Max(CloudBaseCm - static_cast<float>(StrikeLocation.Z), WeatherManagerBoltMinHeightCm) * Stream.FRandRange(1.f, 1.15f);
+	const FVector Top = StrikeLocation + FVector(Stream.FRandRange(-0.25f, 0.25f) * Height, Stream.FRandRange(-0.25f, 0.25f) * Height, Height);
 	TArray<FVector> Main;
 	Crooked(Top, StrikeLocation, 8, Main);
 	for (int32 Index = 0; Index + 1 < Main.Num(); ++Index)
@@ -489,8 +561,10 @@ void AAedirWeatherManager::StepBolt(float DeltaSeconds)
 		const FVector B = BoltPoints[Segment * 2 + 1];
 		const FVector Middle = (A + B) * 0.5;
 		const FVector Along = (B - A).GetSafeNormal();
-		const float Width = BoltWidths[Segment];
-		const float CoreWidth = Width * (WeatherManagerBoltCoreWidthCm / WeatherManagerBoltWidthCm);
+		// Far off the line keeps to a pixel or two and its glow grows less round it.
+		const float Far = FMath::Max(static_cast<float>(FVector::Dist(Eye, Middle)) / WeatherManagerBoltWidthFromCm, 1.f);
+		const float CoreWidth = BoltWidths[Segment] * (WeatherManagerBoltCoreWidthCm / WeatherManagerBoltWidthCm) * Far;
+		const float Width = CoreWidth * FMath::Lerp(WeatherManagerBoltNearGlowShare, WeatherManagerBoltFarGlowShare, FMath::Clamp((Far - 1.f) / 8.f, 0.f, 1.f));
 		// Turned to face the eye; only a little longer than the segment, so the joints neither gap nor glow twice over.
 		const FQuat Facing = FRotationMatrix::MakeFromXZ(Along, (Eye - Middle).GetSafeNormal()).ToQuat();
 		const float Length = static_cast<float>(FVector::Dist(A, B));
@@ -520,10 +594,11 @@ void AAedirWeatherManager::FlashClouds(const FVector& Below)
 		CloudFlashLight->SetAbsolute(true, true, true);
 		CloudFlashLight->SetupAttachment(GetRootComponent());
 		CloudFlashLight->SetIntensityUnits(ELightUnits::Candelas);
-		CloudFlashLight->SetAttenuationRadius(WeatherManagerCloudFlashRadiusCm);
+		CloudFlashLight->SetAttenuationRadius(GetDefault<UAedirWeatherSettings>()->CloudFlashRadiusCm);
 		CloudFlashLight->SetLightColor(FLinearColor(0.78f, 0.84f, 1.f));
 		CloudFlashLight->SetCastShadows(false);
-		CloudFlashLight->SetVolumetricScatteringIntensity(1.f);
+		// Lit in the clouds only: in the haze below it would hang as a ball of light.
+		CloudFlashLight->SetVolumetricScatteringIntensity(0.f);
 		CloudFlashLight->RegisterComponent();
 	}
 	// The flash sits in the lower part of the cloud layer, above where it is seen from.
@@ -537,6 +612,8 @@ void AAedirWeatherManager::FlashClouds(const FVector& Below)
 	CloudFlashSeed = FMath::FRand();
 	CloudFlashLight->SetWorldLocation(FVector(Below.X, Below.Y, BottomCm + ThicknessCm * FMath::FRandRange(0.1f, 0.35f)));
 	CloudFlashAge = 0.f;
+	// It lights the land below a little, the less the further off it is.
+	CloudFlashShare = FMath::Clamp(WeatherManagerCloudFlashNearCm / FMath::Max(static_cast<float>(FVector::Dist2D(Below, ViewLocation())), 1.f), 0.f, 1.f);
 	UE_LOG(LogAedir, Log, TEXT("[Weather] Lightning flashes in the clouds at %s"), *CloudFlashLight->GetComponentLocation().ToCompactString());
 }
 
@@ -574,13 +651,10 @@ void AAedirWeatherManager::StepCloudFlashes(float DeltaSeconds, float LightningP
 				Eye = LocalController->PlayerCameraManager->GetCameraLocation();
 			}
 			const FVector Away = FRotator(0.f, FMath::FRandRange(0.f, 360.f), 0.f).Vector() * FMath::FRandRange(WeatherManagerCloudFlashNearCm, WeatherManagerCloudFlashFarCm);
+			// Too far off to be heard.
 			FlashClouds(Eye + Away);
-			if (CloudFlashLight)
-			{
-				QueueThunder(CloudFlashLight->GetComponentLocation(), WeatherManagerCloudThunderShare);
-			}
 		}
-		const float PerMinute = LightningPerMinute * WeatherManagerCloudFlashesPerStrike;
+		const float PerMinute = LightningPerMinute * GetDefault<UAedirWeatherSettings>()->CloudFlashesPerStrike;
 		// The first one comes soon after the storm breaks.
 		NextCloudFlashTime = Now + (NextCloudFlashTime < 0.0 ? FMath::FRandRange(1.f, 4.f) : FMath::FRandRange(0.4f, 1.6f) * 60.f / FMath::Max(PerMinute, 0.1f));
 	}
@@ -600,7 +674,7 @@ void AAedirWeatherManager::StepCloudFlashes(float DeltaSeconds, float LightningP
 	const float Pulses = CloudFlashSeed < 0.5f ? 3.f : 2.f;
 	const float Flicker = T >= 1.f ? 0.f : FMath::Max(0.f, FMath::Sin(T * UE_PI * Pulses * 2.f)) * (1.f - T) * (0.6f + 0.4f * CloudFlashSeed);
 	CloudFlashGlow = Flicker;
-	CloudFlashLight->SetIntensity(WeatherManagerCloudFlashCandelas * Flicker);
+	CloudFlashLight->SetIntensity(GetDefault<UAedirWeatherSettings>()->CloudFlashCandelas * Flicker);
 	CloudFlashLight->SetVisibility(Flicker > 0.f);
 }
 
@@ -615,6 +689,9 @@ void AAedirWeatherManager::MulticastLightning_Implementation(FVector StrikeLocat
 	LightningFlashWorldTime = World->GetTimeSeconds();
 
 	const UAedirWeatherSettings* Settings = GetDefault<UAedirWeatherSettings>();
+	const float Off = static_cast<float>(FVector::Dist(ViewLocation(), StrikeLocation));
+	LightningFlashShare = FMath::Min(FMath::Square(Settings->LightningFlashFullWithinCm / FMath::Max(Off, 1.f)), 1.f);
+	UE_LOG(LogAedir, Log, TEXT("[Weather] Lightning strikes %.0f m off"), Off / 100.f);
 
 	if (UNiagaraSystem* BoltSystem = Settings->LightningBoltSystem.LoadSynchronous())
 	{
@@ -639,18 +716,25 @@ void AAedirWeatherManager::QueueThunder(const FVector& From, float Loudness)
 	{
 		return;
 	}
-	FVector ListenerLocation = From;
-	if (const APlayerController* LocalController = World->GetFirstPlayerController(); LocalController && LocalController->PlayerCameraManager)
+	// Near by the crack comes with the flash; past the hearing distance there is nothing to hear over the rain.
+	const UAedirWeatherSettings* Settings = GetDefault<UAedirWeatherSettings>();
+	const float Distance = static_cast<float>(FVector::Dist(ViewLocation(), From));
+	if (Distance > Settings->ThunderHeardWithinCm)
 	{
-		ListenerLocation = LocalController->PlayerCameraManager->GetCameraLocation();
+		return;
 	}
-	// Heard as far off as it is: later and softer the further it struck.
-	const float Distance = static_cast<float>(FVector::Dist(ListenerLocation, From));
-	const float Near = 1.f - FMath::Clamp((Distance - WeatherManagerThunderNearCm) / (WeatherManagerThunderFarCm - WeatherManagerThunderNearCm), 0.f, 1.f);
-	const float Volume = Loudness * FMath::Lerp(WeatherManagerThunderFarShare, 1.f, FMath::Square(Near));
-	FTimerHandle ThunderTimer;
-	World->GetTimerManager().SetTimer(ThunderTimer, FTimerDelegate::CreateUObject(this, &AAedirWeatherManager::PlayThunder, Volume),
-		FMath::Max(Distance / WeatherManagerSoundSpeedCmPerSecond, WeatherManagerMinThunderDelay), false);
+	const float Far = FMath::Clamp((Distance - Settings->ThunderFullWithinCm) / FMath::Max(Settings->ThunderHeardWithinCm - Settings->ThunderFullWithinCm, 1.f), 0.f, 1.f);
+	PlayThunder(Loudness * FMath::Lerp(1.f, Settings->ThunderFarShare, Far));
+}
+
+FVector AAedirWeatherManager::ViewLocation() const
+{
+	const UWorld* World = GetWorld();
+	if (const APlayerController* LocalController = World ? World->GetFirstPlayerController() : nullptr; LocalController && LocalController->PlayerCameraManager)
+	{
+		return LocalController->PlayerCameraManager->GetCameraLocation();
+	}
+	return GetActorLocation();
 }
 
 void AAedirWeatherManager::PlayThunder(float Loudness)
@@ -777,7 +861,11 @@ bool AAedirWeatherManager::FindLightningStrikeLocation(FVector& OutLocation) con
 
 	const APawn* Target = TargetPawns[FMath::RandRange(0, TargetPawns.Num() - 1)];
 	const float Angle = FMath::FRandRange(0.f, TWO_PI);
-	const float Radius = WeatherManagerLightningStrikeRange * FMath::Sqrt(FMath::FRand());
+	// Spread out by the scale of the distance, leaning far: most come down a long way off, now and then one close by.
+	const UAedirWeatherSettings* Settings = GetDefault<UAedirWeatherSettings>();
+	const float Near = FMath::Max(FMath::Min(Settings->LightningStrikeDistanceMinMaxCm.X, Settings->LightningStrikeDistanceMinMaxCm.Y), 100.f);
+	const float Far = FMath::Max(Settings->LightningStrikeDistanceMinMaxCm.X, Settings->LightningStrikeDistanceMinMaxCm.Y);
+	const float Radius = Near * FMath::Pow(Far / Near, FMath::Pow(FMath::FRand(), FMath::Clamp(Settings->LightningNearness, 0.05f, 1.f)));
 	const FVector Center = Target->GetActorLocation();
 	const FVector Start(
 		Center.X + FMath::Cos(Angle) * Radius,
@@ -787,12 +875,8 @@ bool AAedirWeatherManager::FindLightningStrikeLocation(FVector& OutLocation) con
 
 	FHitResult Hit;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirWeatherLightningTrace), false);
-	if (!World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
-	{
-		return false;
-	}
-
-	OutLocation = Hit.ImpactPoint;
+	// Past the land that is there it comes down at the height of the one it was chosen round.
+	OutLocation = World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params) ? FVector(Hit.ImpactPoint) : FVector(Start.X, Start.Y, Center.Z - 90.f);
 	return true;
 }
 
@@ -894,7 +978,9 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 	}
 
 	// A bolt lights the whole sky for a moment; a flash inside the clouds lights it less, through the clouds and the haze.
-	const float FlashBoost = (WeatherManagerFlashCurve(static_cast<float>(WorldTime - LightningFlashWorldTime)) + CloudFlashGlow * WeatherManagerCloudFlashSkyShare) * WeatherManagerLightningFlashLux;
+	const UAedirWeatherSettings* Settings = GetDefault<UAedirWeatherSettings>();
+	const float FlashBoost = WeatherManagerFlashCurve(static_cast<float>(WorldTime - LightningFlashWorldTime)) * LightningFlashShare * Settings->LightningFlashLux
+		+ CloudFlashGlow * CloudFlashShare * Settings->CloudFlashLandLux;
 
 	if (ADirectionalLight* Sun = SunLight.Get())
 	{
@@ -917,6 +1003,18 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 		if (UExponentialHeightFogComponent* FogComponent = Fog->GetComponent())
 		{
 			FogComponent->SetFogDensity(Profile.FogDensity);
+			// Under a low grey cover the haze is grey too, not the blue of a clear sky.
+			if (!bFogColorKnown)
+			{
+				FogSkyColor = FogComponent->SkyAtmosphereAmbientContributionColorScale;
+				bFogColorKnown = true;
+			}
+			const float Grey = FMath::SmoothStep(WeatherManagerCloudLowFrom, WeatherManagerCloudLowTo, Profile.CloudCoverage);
+			const FLinearColor FogColor = FMath::Lerp(FogSkyColor, FogSkyColor * WeatherManagerOvercastFogTint, Grey);
+			if (!FogColor.Equals(FogComponent->SkyAtmosphereAmbientContributionColorScale, 0.002f))
+			{
+				FogComponent->SetSkyAtmosphereAmbientContributionColorScale(FogColor);
+			}
 		}
 	}
 
@@ -1045,19 +1143,63 @@ void AAedirWeatherManager::ApplyClouds(const FAedirWeatherProfile& Profile)
 		}
 		CloudMaterial = UMaterialInstanceDynamic::Create(Base, this);
 		Clouds->SetMaterial(CloudMaterial);
+		TArray<FMaterialParameterInfo> Infos;
+		TArray<FGuid> Ids;
+		CloudMaterial->GetAllScalarParameterInfo(Infos, Ids);
+		FString Names;
+		for (const FMaterialParameterInfo& Info : Infos)
+		{
+			float Value = 0.f;
+			CloudMaterial->GetScalarParameterValue(Info, Value);
+			Names += FString::Printf(TEXT("%s=%.2f "), *Info.Name.ToString(), Value);
+		}
+		UE_LOG(LogAedir, Log, TEXT("[Weather] Clouds %s, layer %.1f km up, %.1f km deep: %s"), *Base->GetPathName(), Clouds->LayerBottomAltitude, Clouds->LayerHeight, *Names);
 	}
 
 	// Clear skies thin the cover out to a few wisps, an overcast one closes it, and a storm darkens and thickens it into
 	// rain clouds. The sky changes as slowly as the weather does.
-	const float Cover = FMath::Lerp(WeatherManagerCloudClearCover, WeatherManagerCloudFullCover, Profile.CloudCoverage);
-	const float Storm = FMath::Clamp((Profile.CloudCoverage - WeatherManagerCloudStormFrom) / (1.f - WeatherManagerCloudStormFrom), 0.f, 1.f) * FMath::Max(Profile.RainIntensity, Profile.SnowIntensity * 0.5f);
-	const float Density = FMath::Lerp(WeatherManagerCloudThinDensity, WeatherManagerCloudThickDensity, Profile.CloudCoverage);
-	if (FMath::Abs(Cover - AppliedCloudCover) > WeatherManagerCloudChange || FMath::Abs(Storm - AppliedCloudStorm) > WeatherManagerCloudChange)
+	const float Coverage = FMath::Clamp(Profile.CloudCoverage, 0.f, 1.f);
+	float Cover = WeatherManagerCloudCoverAt[0];
+	for (int32 Key = 1; Key < static_cast<int32>(UE_ARRAY_COUNT(WeatherManagerCloudCoverKeys)); ++Key)
+	{
+		if (Coverage <= WeatherManagerCloudCoverKeys[Key])
+		{
+			Cover = FMath::GetMappedRangeValueClamped(FVector2f(WeatherManagerCloudCoverKeys[Key - 1], WeatherManagerCloudCoverKeys[Key]), FVector2f(WeatherManagerCloudCoverAt[Key - 1], WeatherManagerCloudCoverAt[Key]), Coverage);
+			break;
+		}
+	}
+	const float Storm = FMath::Clamp(FMath::Max(Profile.RainIntensity, Profile.SnowIntensity * 0.5f), 0.f, 1.f);
+	const float Density = FMath::Lerp(WeatherManagerCloudThinDensity, WeatherManagerCloudThickDensity, Storm);
+	const float Low = FMath::SmoothStep(WeatherManagerCloudLowFrom, WeatherManagerCloudLowTo, Coverage);
+	const FString Try = CVarAedirCloudTry.GetValueOnGameThread();
+	if (!Try.IsEmpty())
+	{
+		TArray<FString> Parts;
+		Try.ParseIntoArray(Parts, TEXT("_"));
+		CloudMaterial->SetScalarParameterValue(TEXT("Cloud_GlobalCoverage"), Parts.IsValidIndex(0) ? FCString::Atof(*Parts[0]) : Cover);
+		CloudMaterial->SetScalarParameterValue(TEXT("Cloud_GlobalDensity"), Parts.IsValidIndex(1) ? FCString::Atof(*Parts[1]) : Density);
+		CloudMaterial->SetScalarParameterValue(TEXT("StormClouds"), Parts.IsValidIndex(2) ? FCString::Atof(*Parts[2]) : Storm);
+		if (Parts.IsValidIndex(4))
+		{
+			Clouds->SetLayerBottomAltitude(FCString::Atof(*Parts[3]));
+			Clouds->SetLayerHeight(FCString::Atof(*Parts[4]));
+		}
+		if (Parts.IsValidIndex(5))
+		{
+			const float Grey = FCString::Atof(*Parts[5]);
+			CloudMaterial->SetVectorParameterValue(TEXT("Cloud_AlbedoColor"), FLinearColor(Grey, Grey, Grey * 1.05f));
+		}
+		AppliedCloudCover = -100.f;
+		return;
+	}
+	if (FMath::Abs(Cover - AppliedCloudCover) > WeatherManagerCloudChange * 0.3f || FMath::Abs(Storm - AppliedCloudStorm) > WeatherManagerCloudChange)
 	{
 		CloudMaterial->SetScalarParameterValue(TEXT("Cloud_GlobalCoverage"), Cover);
 		CloudMaterial->SetScalarParameterValue(TEXT("Cloud_GlobalDensity"), Density);
-		CloudMaterial->SetScalarParameterValue(TEXT("StormClouds"), Storm);
+		CloudMaterial->SetScalarParameterValue(TEXT("StormClouds"), 0.f);
 		CloudMaterial->SetVectorParameterValue(TEXT("Cloud_AlbedoColor"), FMath::Lerp(FLinearColor::White, WeatherManagerCloudStormAlbedo, Storm));
+		Clouds->SetLayerBottomAltitude(FMath::Lerp(WeatherManagerCloudHighBottomKm, WeatherManagerCloudLowBottomKm, Low));
+		Clouds->SetLayerHeight(FMath::Lerp(WeatherManagerCloudHighDepthKm, WeatherManagerCloudLowDepthKm, Low));
 		AppliedCloudCover = Cover;
 		AppliedCloudStorm = Storm;
 	}
