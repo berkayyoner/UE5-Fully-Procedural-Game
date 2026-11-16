@@ -13,6 +13,7 @@
 #include "Items/AedirItemTypes.h"
 #include "Movement/AedirCharacterMovementComponent.h"
 #include "Physics/AedirBalanceComponent.h"
+#include "Wounds/AedirWoundComponent.h"
 
 namespace
 {
@@ -360,11 +361,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	StairFactor = FMath::FInterpTo(StairFactor, StairTarget, DeltaTime, StairFactorInterpSpeed);
 
 	const float SpeedStepHeight = BaseStepHeightCm + StepHeightSpeedBonusCm * SpeedAlpha + RunStepHeightBonusCm * RunMix;
-	const float AnkleRestCm = (AnkleRefHeightCm > 0.f ? AnkleRefHeightCm : AnkleHeightCm) * ActorScale;
+	const float AnkleRestCm = (AnkleRefHeightCm > 0.f ? AnkleRefHeightCm : AnkleHeightCm) * ActorScale + FootGroundLiftCm;
 	FVector Contact[2];
 	FVector AnkleWorld[2];
 	float Lift[2] = { 0.f, 0.f };
 	FVector TargetNormal[2];
+	// A broken leg is limped on: which one (-1 none).
+	const UAedirWoundComponent* Wounds = CreatureOwner->Wounds.Get();
+	const int32 BrokenLeg = !Wounds ? -1 : Wounds->IsLimbBroken(EAedirLimb::LeftLeg) ? 0 : Wounds->IsLimbBroken(EAedirLimb::RightLeg) ? 1 : -1;
 
 	for (int32 Foot = 0; Foot < 2; ++Foot)
 	{
@@ -394,11 +398,13 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			const FVector& Target = bSwingFixedTarget[Foot] ? FixedLandingWorld[Foot] : LandingLocation[Foot];
 			const FVector& TargetUp = bSwingFixedTarget[Foot] ? FixedLandingNormal[Foot] : LandingNormal[Foot];
 			const float Rise = bSwingFixedTarget[Foot] ? static_cast<float>(FMath::Abs(Target.Z - SwingStartContact[Foot].Z)) : RiseCm[Foot];
-			const float StepHeight = FMath::Clamp(FMath::Max(SpeedStepHeight, Rise + AedirStepHeightClearance), 0.f, MaxStepHeightCm);
+			// A broken leg is swung through low, the knee hardly bent.
+			const float LimpLift = Foot == BrokenLeg ? LimpLiftShare : 1.f;
+			const float StepHeight = FMath::Clamp(FMath::Max(SpeedStepHeight * LimpLift, Rise + AedirStepHeightClearance), 0.f, MaxStepHeightCm);
 
 			Contact[Foot] = FMath::Lerp(SwingStartContact[Foot], Target, Smooth);
 			FootPosition = Contact[Foot] + FVector::UpVector * (StepHeight * Arc);
-			Lift[Foot] = Arc;
+			Lift[Foot] = Arc * LimpLift;
 			TargetNormal[Foot] = TargetUp;
 
 			if (T >= 1.f)
@@ -487,6 +493,10 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	// The pelvis only ever sinks below its standing height, deepest while both feet are down, so no foot is lifted off the ground by it.
 	const float Bounce = -HipBounceCm * FMath::Lerp(1.f, HipBounceRunScale, RunBlend) * (0.5f + 0.5f * FMath::Cos(2.f * UE_PI * Phase * AedirMovingBounceFrequency)) * GaitIntensity;
 	GaitState.HipOffsetZ = DynamicHipOffset + RunLowering + Bounce;
+	// Limping: while the sound foot is in the air the broken leg alone bears the weight, and gives under it.
+	const float LimpBearing = BrokenLeg >= 0 && !bAirborne ? Lift[1 - BrokenLeg] : 0.f;
+	const float BrokenSide = BrokenLeg == 1 ? 1.f : -1.f;
+	GaitState.HipOffsetZ -= LimpDipCm * ActorScale * LimpBearing;
 
 	// The interaction component smooths its outputs itself, so the reach values are applied directly each frame.
 	const UAedirInteractionComponent* Interaction = CreatureOwner->Interaction.Get();
@@ -800,6 +810,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		GaitState.SpineTwistYaw += Fists->GetWaistYaw();
 	}
 	GaitState.SpineLeanRoll = InertiaRoll + LocalDirection.Y * SpeedAlpha * MoveDirectionLeanRollDegrees;
+	// The trunk leans off the broken leg while it bears, sparing it.
+	if (BrokenLeg >= 0)
+	{
+		GaitState.SpineLeanRoll += BrokenSide * LimpTrunkRollDegrees * LimpBearing;
+	}
 	// Blows bend the trunk and it springs back.
 	if (BalanceComponent)
 	{
@@ -832,6 +847,12 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	GaitState.HipLateralOffset = IdleLateral + GaitLateral + (Interaction ? Interaction->GetReachHipSide() * ActorScale : 0.f);
 	GaitState.PelvisRollDegrees = IdleRoll + GaitRoll;
+	if (BrokenLeg >= 0 && !bAirborne)
+	{
+		// Standing, the hips are kept over the sound leg; stepping, they drop and roll onto the broken one while it bears.
+		GaitState.HipLateralOffset += -BrokenSide * LimpStandSideCm * ActorScale * (1.f - LimpBearing);
+		GaitState.PelvisRollDegrees += -BrokenSide * LimpRollDegrees * LimpBearing;
+	}
 	GaitState.SpineCounterRollDegrees = -SpineCounterRollShare * GaitState.PelvisRollDegrees;
 	GaitState.HeadStabilizeRollDegrees = -HeadStabilizeRollShare * GaitState.PelvisRollDegrees;
 

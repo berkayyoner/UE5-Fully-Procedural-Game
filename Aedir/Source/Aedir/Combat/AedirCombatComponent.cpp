@@ -49,7 +49,9 @@ namespace
 	constexpr float AedirAIMouseWaitMax = 1.f;
 	constexpr float AedirAIMouseHoldSeconds = 0.08f;
 	constexpr float AedirAIMouseWindupMaxSeconds = 0.6f;
-	constexpr float AedirAIMouseStrikeMaxSeconds = 0.35f;
+	constexpr float AedirAIMouseStrikeMaxSeconds = 0.45f;
+	// How near the arm has to have come to where the mouse put it before the blow counts as thrown.
+	constexpr float AedirAIMouseArrivedShare = 0.08f;
 	constexpr float AedirAIMouseRecoverSeconds = 0.4f;
 	constexpr float AedirAIMouseOverheadChance = 0.3f;
 	TAutoConsoleVariable<int32> CVarAedirNpcFists(TEXT("aedir.NpcFists"), 1, TEXT("Others fight bare-handed or with a one-handed blade as the player does, moving a mouse (1), or the older way (0)."));
@@ -84,6 +86,52 @@ namespace
 	// Against the body below this share of the blow speed, a fist or blade is resting there; driven in again from that, it lands anew.
 	constexpr float AedirRestingIntoShare = 0.4f;
 	TAutoConsoleVariable<int32> CVarAedirHitLog(TEXT("aedir.HitLog"), 0, TEXT("Log every quick touch on a body that did not count as a blow, and why (1)."));
+	// How hard each kind of blow pushes the one it lands on, against its own (1 as it is, 2 twice as hard, 0 not at all):
+	// its share of the balance it takes, of the knock to the body and of the knockdown.
+	TAutoConsoleVariable<float> CVarAedirKnockbackFist(TEXT("aedir.KnockbackFist"), 1.f, TEXT("How hard a bare fist pushes the one it lands on (1 as it is)."));
+	TAutoConsoleVariable<float> CVarAedirKnockbackSlash(TEXT("aedir.KnockbackSlash"), 1.f, TEXT("How hard an edge (sword, axe) pushes the one it lands on (1 as it is)."));
+	TAutoConsoleVariable<float> CVarAedirKnockbackPierce(TEXT("aedir.KnockbackPierce"), 1.f, TEXT("How hard a point (dagger, spear) pushes the one it lands on (1 as it is)."));
+	TAutoConsoleVariable<float> CVarAedirKnockbackBlunt(TEXT("aedir.KnockbackBlunt"), 1.f, TEXT("How hard a blunt weapon (mace, club) pushes the one it lands on (1 as it is)."));
+	TAutoConsoleVariable<float> CVarAedirKnockbackKick(TEXT("aedir.KnockbackKick"), 1.f, TEXT("How hard a kick pushes the one it lands on (1 as it is)."));
+	FAutoConsoleCommand CmdAedirKnockback(TEXT("aedir.Knockback"), TEXT("Show or set how hard each kind of blow pushes: aedir.Knockback <Fist|Slash|Pierce|Blunt|Kick|All> <scale>, or with nothing to list them."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			TAutoConsoleVariable<float>* const Kinds[] = { &CVarAedirKnockbackFist, &CVarAedirKnockbackSlash, &CVarAedirKnockbackPierce, &CVarAedirKnockbackBlunt, &CVarAedirKnockbackKick };
+			const TCHAR* const Names[] = { TEXT("Fist"), TEXT("Slash"), TEXT("Pierce"), TEXT("Blunt"), TEXT("Kick") };
+			if (Args.Num() >= 2)
+			{
+				const float Scale = FMath::Max(FCString::Atof(*Args[1]), 0.f);
+				for (int32 Index = 0; Index < UE_ARRAY_COUNT(Names); ++Index)
+				{
+					if (Args[0].Equals(Names[Index], ESearchCase::IgnoreCase) || Args[0].Equals(TEXT("All"), ESearchCase::IgnoreCase))
+					{
+						(*Kinds[Index])->Set(Scale, ECVF_SetByConsole);
+					}
+				}
+			}
+			for (int32 Index = 0; Index < UE_ARRAY_COUNT(Names); ++Index)
+			{
+				UE_LOG(LogAedir, Display, TEXT("[Knockback] %s %.2f"), Names[Index], (*Kinds[Index])->GetFloat());
+			}
+		}));
+
+	float CombatKnockbackScale(const AAedirItemActor* Item, bool bKick)
+	{
+		if (bKick)
+		{
+			return CVarAedirKnockbackKick.GetValueOnGameThread();
+		}
+		if (!Item)
+		{
+			return CVarAedirKnockbackFist.GetValueOnGameThread();
+		}
+		switch (Item->GetDamageType())
+		{
+		case EAedirDamageType::Slash: return CVarAedirKnockbackSlash.GetValueOnGameThread();
+		case EAedirDamageType::Pierce: return CVarAedirKnockbackPierce.GetValueOnGameThread();
+		default: return CVarAedirKnockbackBlunt.GetValueOnGameThread();
+		}
+	}
 	constexpr float AedirArmRampInSeconds = 0.1f;
 	constexpr float AedirArmRampOutSeconds = 0.2f;
 	constexpr float AedirMinSwingDuration = 0.05f;
@@ -660,7 +708,7 @@ namespace
 	constexpr float AedirAIBackOffInput = 0.85f;
 	// Room kept between the bodies, armed and bare-handed, and how wide the band is in which it neither closes nor gives way.
 	constexpr float AedirAIArmedRoomCm = 30.f;
-	constexpr float AedirAIUnarmedRoomCm = 8.f;
+	constexpr float AedirAIUnarmedRoomCm = 14.f;
 	constexpr float AedirAIKeepBandCm = 15.f;
 	// A bare fist: how long a hook or an uppercut is drawn, a jab barely; how long the throw lasts and the fist comes back.
 	constexpr float AedirAIFistWindupSeconds = 0.22f;
@@ -4353,13 +4401,24 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	}
 	// Only a real blow hurts: a touch, blades resting on each other or bodies rubbing shake the balance and do no harm; from
 	// there the harm grows smoothly to the full of a hard blow.
-	const float Harm = FMath::SmoothStep(AedirImpactNoHarmJoules, AedirImpactFullFlatJoules, Energy * ArmorFactor);
-	const float FlatDamage = (HeldItem ? HeldItem->GetDamage() : FistDamage) * Harm;
+	const float Harm = HeldItem ? FMath::SmoothStep(WeaponNoHarmJoules, FMath::Max(WeaponFullHarmJoules, WeaponNoHarmJoules + 1.f), Energy * ArmorFactor)
+		: FMath::SmoothStep(FistNoHarmJoules, FMath::Max(FistFullHarmJoules, FistNoHarmJoules + 1.f), Energy * ArmorFactor);
+	// A fist hurts the head; on the body it takes the wind more than the life.
+	float FistShare = 1.f;
+	if (!HeldItem)
+	{
+		FistShare = Zone == EAedirBodyZone::Head ? FistHeadShare : Zone == EAedirBodyZone::Arm ? FistArmShare : Zone == EAedirBodyZone::Leg ? FistLegShare : FistTrunkShare;
+		if (Zone == EAedirBodyZone::Torso && Victim->Stats && IsAuthoritative())
+		{
+			Victim->Stats->ConsumeStamina(FMath::Min(Energy * ArmorFactor * FistBodyStaminaPerJoule, Victim->Stats->GetStamina()));
+		}
+	}
+	const float FlatDamage = (HeldItem ? HeldItem->GetDamage() : FistDamage) * Harm * FistShare;
 
 	// One blow to the body or a limb leaves the victim alive however hard it was; only the head can be finished at once.
 	// The weapon's own share has already been weighed by how hard the blow was; weighing it again would leave a solid blow
 	// short of full strength next to nothing.
-	const float RawDamage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(Landed, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor * Harm + FlatDamage;
+	const float RawDamage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(Landed, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor * Harm * FistShare + FlatDamage;
 	// How far an edge or a point gets depends on how fast it came: short of enough it glances off, between it bites and
 	// sticks, past it it goes on through.
 	float CutJoules = AedirCutTorsoJoules;
@@ -4405,14 +4464,16 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 
 	if (Victim->Balance)
 	{
+		// How hard this kind of blow pushes, as set at the console.
+		const float Knock = CombatKnockbackScale(HeldItem, false);
 		FAedirImpactInfo Impact;
 		Impact.Bone = Bone;
 		Impact.Zone = Zone;
-		Impact.EnergyJoules = Energy * AedirImpactBodyEnergyShare;
+		Impact.EnergyJoules = Energy * AedirImpactBodyEnergyShare * Knock;
 		Impact.Direction = TipVelocity.GetSafeNormal();
 		Impact.Location = Hit.ImpactPoint;
 		Impact.MassKg = MassEff;
-		Impact.RelativeSpeed = RelativeSpeed;
+		Impact.RelativeSpeed = RelativeSpeed * Knock;
 		Victim->Balance->ApplyHitReaction(Impact);
 	}
 	if (AAedirNpc* VictimNpc = Cast<AAedirNpc>(Victim))
@@ -4771,8 +4832,9 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		const float Range = Pitch > 0.f ? (bArmed ? Fists->BladeArcUpDegrees : Fists->ArcUpDegrees) : (bArmed ? Fists->BladeArcDownDegrees : Fists->ArcDownDegrees);
 		return FMath::Clamp(Pitch / FMath::Max(Range, 1.f), -1.f, 1.f);
 	};
-	// The hand on the mouse moves it towards a place at a speed, in shares of its whole way a second.
-	const FVector2D Aim = Fists->GetAim();
+	// The hand on the mouse moves it towards a place at a speed, in shares of its whole way a second; the arms follow it
+	// with their weight, as the player's do.
+	const FVector2D Aim = Fists->GetMouseAim();
 	const auto MoveTo = [&](const FVector2D& Goal, float Speed)
 	{
 		const FVector2D Way = Goal - Aim;
@@ -4829,7 +4891,8 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		}
 		break;
 	case 3:
-		if (MoveTo(AIMouseStrike, AedirAIMouseStrikeSpeed) || AIMouseTimer > AedirAIMouseStrikeMaxSeconds)
+		// Thrown, and followed through until the arm itself, with its weight, has got there.
+		if ((MoveTo(AIMouseStrike, AedirAIMouseStrikeSpeed) && FVector2D::Distance(Fists->GetAim(), Fists->GetMouseAim()) < AedirAIMouseArrivedShare) || AIMouseTimer > AedirAIMouseStrikeMaxSeconds)
 		{
 			FVector2D Then;
 			UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s threw: the punch went out %.2f, the aim now %s"), *Creature->GetName(), Fists->TakePeakPunch(Then), *Fists->GetAim().ToString());
@@ -4857,6 +4920,14 @@ FVector UAedirCombatComponent::GetAITargetPoint(int32 Part) const
 	if (!Body)
 	{
 		return Target ? Target->GetActorLocation() : FVector::ZeroVector;
+	}
+	// The head is aimed at the skull itself, the middle of its body, not the bone at the top of the neck.
+	if (Part == 0)
+	{
+		if (const FBodyInstance* Skull = Body->GetBodyInstance(TEXT("head")))
+		{
+			return Skull->GetBodyBounds().GetCenter();
+		}
 	}
 	const TCHAR* Bone = Part == 0 ? TEXT("head") : Part == 1 ? TEXT("spine_03") : (FMath::RandBool() ? TEXT("thigh_l") : TEXT("thigh_r"));
 	return Body->GetBoneLocation(FName(Bone));
@@ -5741,11 +5812,12 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 		FAedirImpactInfo Impact;
 		Impact.Bone = Bone;
 		Impact.Zone = Zone;
-		Impact.EnergyJoules = Energy;
+		const float Knock = CombatKnockbackScale(nullptr, true);
+		Impact.EnergyJoules = Energy * Knock;
 		Impact.Direction = FootMotion.GetSafeNormal();
 		Impact.Location = Hit.ImpactPoint;
 		Impact.MassKg = AedirKickMassKg;
-		Impact.RelativeSpeed = FootSpeed;
+		Impact.RelativeSpeed = FootSpeed * Knock;
 		Victim->Balance->ApplyHitReaction(Impact);
 	}
 

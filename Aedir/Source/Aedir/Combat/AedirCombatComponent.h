@@ -199,6 +199,37 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float ImpactDamageScale = 0.1f;
 
+	// A weapon's blow does no harm below WeaponNoHarmJoules and its full harm from WeaponFullHarmJoules: a touch or a light
+	// tap of the steel only marks, a real swing wounds. A fist's from FistNoHarmJoules to FistFullHarmJoules.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float WeaponNoHarmJoules = 15.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float WeaponFullHarmJoules = 200.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float FistNoHarmJoules = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float FistFullHarmJoules = 35.f;
+
+	// What share of its harm a fist does where it lands: the head takes it all; the trunk, the arms and the legs much less,
+	// a blow to the body taking the wind (stamina, FistBodyStaminaPerJoule for each joule) rather than the life.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float FistHeadShare = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float FistTrunkShare = 0.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float FistArmShare = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float FistLegShare = 0.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float FistBodyStaminaPerJoule = 0.3f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingStaminaCost = 5.f;
 

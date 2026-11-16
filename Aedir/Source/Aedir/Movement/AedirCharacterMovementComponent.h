@@ -19,6 +19,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float WalkSpeed = 100.f;
 
+	// On a broken leg the body hobbles: this share of its speed, and no faster than a walk.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
+	float BrokenLegSpeedShare = 0.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
 	float RunSpeedMultiplier = 3.f;
 

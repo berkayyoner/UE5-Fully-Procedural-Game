@@ -59,6 +59,32 @@ public:
 	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
 	int32 PunctureDropsMax = 34;
 
+	// Blood dripping on blood pools: a drop that lands within PoolRadiusCm of drops already lying there joins them. On a
+	// slope the pool runs downhill: each drop lands further down, by PoolRunCmPerDrop for every drop under it on a slope of
+	// PoolRunSlopeDegrees (more on a steeper one, less on a gentler one), at most PoolRunMaxCm, drawn out along the way it
+	// runs. On level ground it spreads instead, each drop under it making it PoolSpreadPerDrop larger, at most
+	// PoolSpreadMax times.
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float PoolRadiusCm = 5.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float PoolRunCmPerDrop = 1.5f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float PoolRunSlopeDegrees = 10.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float PoolRunMaxCm = 45.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float PoolLevelDegrees = 3.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float PoolSpreadPerDrop = 0.08f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float PoolSpreadMax = 2.2f;
+
 	static constexpr int32 MaxSplats = 700;
 	int32 GetSplatCount() const { return Splats.Num(); }
 	// Three game days at Skyrim's pace, where a day passes in 72 real minutes.

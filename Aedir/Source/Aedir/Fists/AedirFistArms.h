@@ -152,6 +152,38 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float RaiseSeconds = 0.15f;
 
+	// The mouse is eased in a little, over about this long (seconds): a jolt of the hand is spread over a few frames.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float MouseSmoothSeconds = 0.03f;
+
+	// The arms follow the mouse as a weight on a spring: bare fists quickly (this many times a second), a blade more slowly,
+	// the heavier the slower, and with a little give past where the mouse stopped (damping below 1). A blade of
+	// BladeAimRefKg follows at BladeAimHz; one twice as heavy at about 0.7 of it, kept within BladeAimMin/MaxShare of it.
+	// Held in both hands, it follows TwoHandAimShare times faster.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float FistAimHz = 14.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float FistAimDamping = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeAimHz = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeAimDamping = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeAimRefKg = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeAimMinShare = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeAimMaxShare = 1.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandAimShare = 1.25f;
+
 	// A blade in the hand: held up still, its point looks ahead at the other; drawn round to its own side the wrist turns
 	// out the opposite way a fist's does.
 	// A blade is held up lower and further out than a fist, before the chest rather than the face: this much lower and this
@@ -178,13 +210,13 @@ public:
 	// The mouse all the way down takes a blade this far round down (a fist goes ArcDownDegrees), the arm reaching this much
 	// further out and the waist bending this far forward (a fist's bends WaistForwardDegrees), to strike low.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeArcDownDegrees = 65.f;
+	float BladeArcDownDegrees = 50.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeDownReachCm = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeWaistForwardDegrees = 38.f;
+	float BladeWaistForwardDegrees = 42.f;
 
 	// Drawn to its own side, a blade's wrist turns in two steps. Up to this share of the way from the middle it turns in, as
 	// far as BladeSideInDegrees, the wrist still bending the point round ahead, so it keeps looking at the other; from
@@ -194,10 +226,15 @@ public:
 	float BladeSideTurnSplit = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeSideInDegrees = 90.f;
+	float BladeSideInDegrees = 50.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeSideOutDegrees = 55.f;
+	float BladeSideOutDegrees = 40.f;
+
+	// Past the middle of the way to its own side the wrist leaves its turn in quickly at first (1 evenly, 2 at twice the
+	// speed at the start), so the point swings out and away from the head before the arm comes up beside it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeSideOutEase = 3.f;
 
 	// The wrist bends up (towards the thumb, the point going back over the forearm) or down (towards the little finger,
 	// the point going on along the forearm), in degrees, up positive, without turning the hand about the forearm: up
@@ -210,7 +247,7 @@ public:
 	float BladeRaiseWristUpDegrees = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeLowerWristDownDegrees = 45.f;
+	float BladeLowerWristDownDegrees = 30.f;
 
 	// Brought across to the other side a blade's wrist turns out this far by BladeSideTurnSplit of the way, the point kept
 	// on the other, then back in to BladeCrossTurnDegrees at the end, the blade reaching from the other side round back.
@@ -291,7 +328,7 @@ public:
 
 	// Carried low in both hands, the second elbow stays at least this far below its shoulder, in cm, however the view turns.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandRestElbowBelowShoulderCm = 24.f;
+	float TwoHandRestElbowBelowShoulderCm = 29.f;
 
 	// The furthest the second hand turns at the wrist off the line its forearm gives it to close on the grip, in degrees:
 	// past it the hand would turn into the blade.
@@ -320,6 +357,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandRestPitchDegrees = 10.f;
+
+	// Carried low in both hands, the blade and the arms turn with the chest this share of the way the view turns it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandRestFollowTwist = 1.f;
 
 	// A blade's whole arc is tipped up or down with the view, this share of its pitch and no further than these, so a blow
 	// drawn across goes round the way the view looks and the arm drawn back goes back from there.
@@ -380,8 +421,10 @@ public:
 	// How far an arm's fist is turned over about its forearm from the guard's, degrees.
 	float GetFistTurn(EAedirHand Hand) const { return FistTurn[Index(Hand)]; }
 
-	// For tests and measuring: where the mouse stands across and up (-1..1) and how far out the punch is (0..1).
+	// For tests and measuring: where the arms stand across and up (-1..1) and how far out the punch is (0..1).
 	FVector2D GetAim() const { return Aim; }
+	// Where the mouse itself stands; the arms follow it with their weight.
+	FVector2D GetMouseAim() const { return MouseAim; }
 	// How far a blade now cuts in one turn rather than two (0..1).
 	float GetOneTurn() const { return OneTurn; }
 	// How far an arm is up in the guard, apart from the second hand holding on.
@@ -390,7 +433,7 @@ public:
 	// The furthest the punch went out since this was last asked, and where the mouse stood then.
 	float TakePeakPunch(FVector2D& OutAimThen) { const float Peak = PeakPunch; OutAimThen = PeakAim; PeakPunch = 0.f; return Peak; }
 	// For pictures: holds the mouse and the punch where they are put (bFrozen), until let go.
-	void DevSetPose(const FVector2D& InAim, float InPunch, bool bFrozen) { Aim = InAim; Punch = InPunch; bDevFrozen = bFrozen; }
+	void DevSetPose(const FVector2D& InAim, float InPunch, bool bFrozen) { Aim = InAim; MouseAim = InAim; AimSpeed = FVector2D::ZeroVector; Punch = InPunch; bDevFrozen = bFrozen; }
 
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -409,7 +452,12 @@ private:
 	FVector FistWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector ElbowWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector2D Aim = FVector2D::ZeroVector;
+	// Where the mouse has put the arms to go, and how fast they are on their way there.
+	FVector2D MouseAim = FVector2D::ZeroVector;
+	FVector2D AimSpeed = FVector2D::ZeroVector;
 	FVector2D PendingMouse = FVector2D::ZeroVector;
+	// Mouse movement not yet let through the easing.
+	FVector2D MouseCarry = FVector2D::ZeroVector;
 	float Punch = 0.f;
 	// How far the blade cuts in one turn now, from how fast it was last drawn across.
 	float OneTurn = 0.f;

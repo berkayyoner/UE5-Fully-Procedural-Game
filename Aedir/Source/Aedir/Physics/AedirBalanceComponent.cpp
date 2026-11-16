@@ -617,7 +617,8 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 		BodyControl->RebindHips(BodyCapsule);
 	}
 	BodyControl->SetStrengths(Upright, LeftArm, RightArm);
-	BodyControl->SetDead(Creature && Creature->Stats && Creature->Stats->IsDead());
+	// Dying, the body goes down as the dead do: what muscle it has left only holds its shape a while longer.
+	BodyControl->SetDead(Creature && Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying()));
 	const UAedirWoundComponent* Wounds = Creature ? Creature->Wounds.Get() : nullptr;
 	BodyControl->SetBrokenLimbs(Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftArm), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightArm),
 		Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftLeg), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightLeg));
@@ -941,12 +942,14 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	const float Athletism = StatsComponent ? StatsComponent->Athletism : HitReactionDefaultAthletism;
 	const float StaminaFraction = StatsComponent ? StatsComponent->GetStaminaFraction() : 1.f;
 
-	const float Loss = ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction);
+	// Worn down, the same blow throws the body further and costs it more of its balance.
+	const float Weak = 1.f + LowHealthHitGain * GetHurtShare();
+	const float Loss = FMath::Min(ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction) * Weak, 1.f);
 	ApplyBalanceImpact(Impact.Direction, Loss);
 
 	if (Impact.Bone != NAME_None && BodyMesh)
 	{
-		const float ImpulseSize = FMath::Min(Impact.MassKg * Impact.RelativeSpeed * HitReactionBoneImpulseScale, HitReactionBoneImpulseMax);
+		const float ImpulseSize = FMath::Min(Impact.MassKg * Impact.RelativeSpeed * HitReactionBoneImpulseScale, HitReactionBoneImpulseMax) * Weak;
 		MulticastBoneImpulse(Impact.Bone, Impact.Direction * (ImpulseSize * (Impact.Zone == EAedirBodyZone::Head ? HitReactionHeadShare : 1.f)), Impact.Location);
 		// A blow to the head snaps it aside and takes the neck and the top of the chest along: the head is light and held
 		// by little, so the same blow moves it much further than it would a limb.
@@ -974,7 +977,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 
 	const UWorld* World = GetWorld();
 	const double Now = World ? World->GetTimeSeconds() : 0.0;
-	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone);
+	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone) * FMath::Lerp(1.f, LowHealthKnockdownShare, GetHurtShare());
 	bool bStaggered = false;
 
 	if (bKnockedDown)
@@ -1005,7 +1008,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 		UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
 		if (!PlanarDirection.IsNearlyZero() && Movement)
 		{
-			const float Speed = ComputeStaggerSpeed(Impact.EnergyJoules);
+			const float Speed = ComputeStaggerSpeed(Impact.EnergyJoules) * Weak;
 			Movement->AddImpulse(PlanarDirection * (Speed * StaggerFeetShare), true);
 			if (bHipsInitialized)
 			{
@@ -1021,6 +1024,16 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	DazeSeconds = FMath::Max(DazeSeconds, ComputeDazeSeconds(Impact.Zone, Impact.EnergyJoules));
 
 	OnHitReaction.Broadcast(Impact.Zone, Impact.EnergyJoules, bStaggered, bKnockedDown);
+}
+
+float UAedirBalanceComponent::GetHurtShare() const
+{
+	const UAedirStatsComponent* StatsComponent = FindStats();
+	if (!StatsComponent || LowHealthFrom <= KINDA_SMALL_NUMBER)
+	{
+		return 0.f;
+	}
+	return FMath::Clamp((LowHealthFrom - StatsComponent->GetHealthFraction()) / LowHealthFrom, 0.f, 1.f);
 }
 
 float UAedirBalanceComponent::ComputeBalanceLoss(EAedirBodyZone Zone, float EnergyJoules, float Athletism, float StaminaFraction)
@@ -1554,13 +1567,20 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	const bool bSenseless = StatsComponent && StatsComponent->IsKnockedOut();
 
 	const AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
+	// A dying hand lets go of what it held: the weapon falls where the body falls.
+	if (bDead && !bDroppedOnDeath && Creature && Creature->Interaction)
+	{
+		bDroppedOnDeath = true;
+		Creature->Interaction->DropHeld(EAedirHand::Right);
+		Creature->Interaction->DropHeld(EAedirHand::Left);
+	}
 	const float MaxLegInjury = Creature && Creature->Combat
 		? FMath::Max(Creature->Combat->GetLimbInjury(EAedirLimb::LeftLeg), Creature->Combat->GetLimbInjury(EAedirLimb::RightLeg))
 		: 0.f;
 
 	const float DazeRecoveryScale = IsDazed() ? HitReactionDazeRecoveryScale : 1.f;
 	const float StaggerRecoveryScale = IsStaggering() ? HitReactionStaggerRecoveryScale : 1.f;
-	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * DeltaTime;
+	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * FMath::Lerp(1.f, LowHealthRecoveryShare, GetHurtShare()) * DeltaTime;
 	// Once the legs have given way there is no catching it any more, only getting up again afterwards.
 	if (bIsRagdoll || bDead || Balance >= FallBalanceThreshold)
 	{

@@ -2416,7 +2416,8 @@ void AAedirPlayerCharacter::LyingInfo(const FString& Label)
 	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
 	{
 		const AAedirCreature* Other = *It;
-		const USkeletalMeshComponent* Skin = Other != this ? Other->GetMesh() : nullptr;
+		// The own body too, when the label asks for it ("self" in it).
+		const USkeletalMeshComponent* Skin = Other != this || Label.Contains(TEXT("self")) ? Other->GetMesh() : nullptr;
 		if (!Skin || FVector::Dist(Other->GetActorLocation(), GetActorLocation()) > 1000.0)
 		{
 			continue;
@@ -2582,8 +2583,11 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 					Reach = FMath::Max(Reach, FVector::DotProduct(At - Root, Along));
 				}
 				const FVector Head = GetMesh()->GetBoneLocation(TEXT("head"));
-				UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s blade from the head %.0f cm, its point %s"), *Label, FMath::PointDistToSegment(Head, Root, Root + Along * Reach),
-					*Body.InverseTransformPositionNoScale(Root + Along * Reach).ToCompactString());
+				// The skull itself: the middle of the head's body, well above the bone at the top of the neck.
+				const FBodyInstance* Skull = GetMesh()->GetBodyInstance(TEXT("head"));
+				const FVector SkullMiddle = Skull ? Skull->GetBodyBounds().GetCenter() : Head;
+				UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s blade from the head %.0f cm, from the skull %.0f cm, its point %s"), *Label, FMath::PointDistToSegment(Head, Root, Root + Along * Reach),
+					FMath::PointDistToSegment(SkullMiddle, Root, Root + Along * Reach), *Body.InverseTransformPositionNoScale(Root + Along * Reach).ToCompactString());
 			}
 			// Where the elbows are in the body's frame (forward, right, up from the middle of the capsule).
 			const FVector LeftUpper = GetMesh()->GetBoneLocation(TEXT("lowerarm_l")) - GetMesh()->GetBoneLocation(TEXT("upperarm_l"));

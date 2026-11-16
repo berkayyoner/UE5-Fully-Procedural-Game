@@ -84,6 +84,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float RecoveryPerSecond = 0.35f;
 
+	// A body worn down weakens: below LowHealthFrom of its health, the lower it gets the harder each blow throws it (up to
+	// 1 + LowHealthHitGain times, at none left), the less it takes to knock it down (down to LowHealthKnockdownShare of a
+	// whole body's), and the slower it gets its balance back (down to LowHealthRecoveryShare).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float LowHealthFrom = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float LowHealthHitGain = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float LowHealthKnockdownShare = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float LowHealthRecoveryShare = 0.4f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float FallBalanceThreshold = 0.25f;
 
@@ -425,6 +440,8 @@ public:
 
 	// How far the trunk is bent by the blows it took, in degrees: back (pitch), aside (roll) and turned (yaw).
 	FRotator GetHitSway() const { return FRotator(HitSway.X, HitSway.Z, HitSway.Y); }
+	// How worn down the body is, for its balance: 0 above LowHealthFrom of its health, 1 at none left.
+	float GetHurtShare() const;
 
 	// A blow bends the trunk the way it drove, at the place it struck, and the trunk springs back: how fast it springs, in
 	// Hz, and how much the spring is damped (1 for no overshoot).
@@ -469,6 +486,9 @@ public:
 private:
 	bool IsAuthoritative() const;
 	UAedirStatsComponent* FindStats() const;
+
+	// Whether a dying body has already let go of what it held.
+	bool bDroppedOnDeath = false;
 	void SetBalance(float NewBalance);
 	void AddLeanDirection(const FVector& WorldDirection, float Magnitude);
 public:

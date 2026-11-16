@@ -28,8 +28,8 @@ bool FAedirWoundShouldCreateTest::RunTest(const FString& Parameters)
 	TestTrue(TEXT("Strong blunt hit through light armor bruises"), UAedirWoundComponent::ShouldCreateWound(EAedirDamageType::Blunt, 20.f, 0.3f));
 	TestFalse(TEXT("Blunt hit through very heavy armor leaves no bruise"), UAedirWoundComponent::ShouldCreateWound(EAedirDamageType::Blunt, 20.f, 0.9f));
 
-	TestFalse(TEXT("Weak pierce makes no puncture"), UAedirWoundComponent::ShouldCreateWound(EAedirDamageType::Pierce, 7.f, 0.f));
-	TestTrue(TEXT("Pierce through light armor punctures"), UAedirWoundComponent::ShouldCreateWound(EAedirDamageType::Pierce, 9.f, 0.5f));
+	TestFalse(TEXT("Weak pierce makes no puncture"), UAedirWoundComponent::ShouldCreateWound(EAedirDamageType::Pierce, 15.f, 0.f));
+	TestTrue(TEXT("Pierce through light armor punctures"), UAedirWoundComponent::ShouldCreateWound(EAedirDamageType::Pierce, 20.f, 0.5f));
 	TestFalse(TEXT("Pierce through heavy armor does not puncture"), UAedirWoundComponent::ShouldCreateWound(EAedirDamageType::Pierce, 20.f, 0.75f));
 
 	return true;

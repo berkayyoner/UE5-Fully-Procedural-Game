@@ -64,14 +64,29 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float LimpShare = 0.04f;
 
-	// What is left of every muscle in a dead body: a little, so it slumps and folds to the ground, not so little that it
-	// flows like dough.
+	// What is left of every muscle in a dead body. At the moment of death the muscles still hold the shape the body had
+	// then with DeadStartShare of their strength, and give way to DeadShare over DeadFadeSeconds: the body goes down as a
+	// whole and settles, its joints still resisting being folded, rather than flowing to the ground like dough.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float DeadShare = 0.005f;
+	float DeadStartShare = 0.06f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float DeadShare = 0.02f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float DeadFadeSeconds = 3.f;
 
 	// What is left of the muscles of a limb whose bone is broken: it swings loose, still hanging together.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float BrokenShare = 0.006f;
+	float BrokenShare = 0.02f;
+
+	// A broken arm's shoulder keeps this much of its strength and holds the arm hanging down at the side, a little out, so
+	// the arm swings from it as a weight and does not flap about the shoulder like an empty sleeve.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float BrokenShoulderShare = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float BrokenArmOutDegrees = 12.f;
 
 	// Damping of the muscles, 1 for no overshoot.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -152,6 +167,14 @@ private:
 	void ApplyLegContacts();
 	// A broken arm hangs from the shoulder by its own weight, whether the rest is posed or held by its muscles.
 	void ApplyBrokenArms();
+	// Muscles that hold the shape the body has now (the parent and child bones' turn to each other as they are), not
+	// the pose the animation asks; or back to the animation's pose.
+	void HoldShapeNow(const TArray<FName>& Names);
+	void FollowAnimation(const TArray<FName>& Names);
+	// The shoulder muscle of a broken arm holds it hanging at the side.
+	void HangBrokenArm(int32 Side);
+	// What is left of a dead body's muscles now, fading from the moment of death.
+	float GetDeadShareNow() const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPhysicsControlComponent> Control;
@@ -174,7 +197,11 @@ private:
 	TArray<FName> LeftLegControls;
 	TArray<FName> RightLegControls;
 	bool bDead = false;
+	double DeadTime = 0.0;
 	bool bBroken[4] = { false, false, false, false };
+	// For each muscle, the bone it pulls from and the one it pulls on; and each arm's shoulder muscle.
+	TMap<FName, TPair<FName, FName>> MuscleBones;
+	FName ShoulderControls[2];
 	FName HipControl;
 	FName LeftFootControl;
 	FName RightFootControl;

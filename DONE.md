@@ -372,3 +372,19 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The pauldrons are cut into one piece per shoulder (content commandlet's Pauldrons step), each worn on its upper arm; lying, the two are pushed together side by side.
 - The iron helmet sits lower, a little forward and slightly larger, over the brow and the back of the head.
 - Dev commands ArmourFit (how worn armour sits on the head and arms) and BreakLimb <limb> [near]; LyingInfo also shows what holds a body up and how far blows bend the trunk.
+- One-hand blade drawn to its own side turns the wrist out less at the end (40 deg) and leaves its turn in quickly past the middle, so the point swings away from the head: the blade passes at least 37 cm from the skull in one hand, 27 cm in both (was under 20).
+- A blade lowered all the way goes round 50 deg instead of 65 and its wrist bends 30 deg down instead of 45: the hand stays before the body and the point 17 cm above the ground instead of 16 cm into it; the waist bends a little more (42 deg).
+- The arms follow the mouse as a weight on a spring, a blade more slowly the heavier it is, with a little give past where the mouse stopped; the mouse is eased in over 0.03 s (FistAimHz, BladeAimHz, MouseSmoothSeconds).
+- A weapon's blow harms from 15 J and fully from 200 J (was 6 to 60), and light cuts bleed less: a light touch of the steel only marks, a real swing wounds.
+- A fist does its full harm to the head and 40% to the trunk (30% arms, 40% legs); a blow to the trunk takes the wind (stamina) instead; a fist's harm runs from 3 to 35 J.
+- Console: aedir.Knockback lists and sets how hard fists, edges, points, blunt weapons and kicks push the one they land on (aedir.Knockback Fist 2), also as aedir.KnockbackFist etc.
+- A body below 85% of its health takes blows ever harder: up to 2.2 times the push and balance lost, knocked down by half the energy and slower to regain its balance (a fifth of its health: the same blow bends the trunk 15 deg instead of 8).
+- A broken arm's shoulder still holds it hanging at the side, the arm below it weakly keeping its bend, instead of flapping from the shoulder.
+- The dead and the dying hold the shape they fell in with their last muscle, fading over 3 s to a little, so they go down as a body and lie spread, not folded like dough.
+- On a broken leg the body limps: it hobbles at half a walk, the broken foot swung low, the hips dropping and rolling onto it and the trunk leaning off it while it bears.
+- NPCs throwing fists keep a little more room, follow the throw through until the arm has got there and aim at the skull: their blows land at 7 to 11 m/s instead of 2 to 3.
+- The dying let go of what they held: the weapon falls where the body falls.
+- Blood dripping on blood pools: down a slope it runs on downhill, drawn out along it; on the level it spreads.
+- The ground's heights are 8 cm in all with the collision a quarter of the way up, and the feet are set 1 cm higher, so feet and things no longer look sunk in.
+- Carried low in both hands, the blade and arms turn with the chest as the view turns it, and the second elbow stays lower: it no longer lifts when looking right.
+- The helmet is a little smaller (44 cm).

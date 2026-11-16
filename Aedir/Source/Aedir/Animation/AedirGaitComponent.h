@@ -345,6 +345,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
 	FName RightFootBoneName = FName(TEXT("foot_r"));
 
+	// On a broken leg the body limps: while that leg takes the weight the hips sink this far and roll towards it, the trunk
+	// leans the other way to spare it, and the broken foot is lifted only this share as high and set down short.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpDipCm = 7.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpRollDegrees = 7.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpTrunkRollDegrees = 9.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpLiftShare = 0.45f;
+
+	// Standing still, this much of the weight is kept off the broken leg: the hips stand over the sound one.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpStandSideCm = 5.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float StrideWalkCm = 105.f;
 
@@ -402,6 +420,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float AnkleHeightCm = 8.f;
+
+	// The ground's surface stands a little over its collision on average (its pebbles and clods): the feet are set down
+	// this much higher, so they stand on it rather than in it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float FootGroundLiftCm = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float GroundTraceUpCm = 60.f;

@@ -85,6 +85,8 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	HeadControls.Reset();
 	LeftArmControls.Reset();
 	RightArmControls.Reset();
+	MuscleBones.Reset();
+	ShoulderControls[0] = ShoulderControls[1] = NAME_None;
 	LeftHandControls.Reset();
 	RightHandControls.Reset();
 	LegControls.Reset();
@@ -163,6 +165,11 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		ArmMuscle.AngularDampingRatio = ArmDampingRatio;
 		ArmMuscle.LinearDampingRatio = ArmDampingRatio;
 		const FName Name = Control->CreateControl(Mesh, Parent, Mesh, Bone, bArmPart ? ArmMuscle : Muscle, FPhysicsControlTarget(), TEXT("Muscles"));
+		MuscleBones.Add(Name, TPair<FName, FName>(Parent, Bone));
+		if (BoneText == TEXT("upperarm_l") || BoneText == TEXT("upperarm_r"))
+		{
+			ShoulderControls[BoneText.EndsWith(TEXT("_l")) ? 0 : 1] = Name;
+		}
 		const bool bWrist = bArmPart && !BoneText.StartsWith(TEXT("clavicle")) && !BoneText.StartsWith(TEXT("upperarm")) && !BoneText.StartsWith(TEXT("lowerarm"));
 		if (BoneText == TEXT("foot_l") || BoneText == TEXT("foot_r"))
 		{
@@ -265,9 +272,95 @@ void UAedirBodyControlComponent::SetDead(bool bInDead)
 	if (bDead != bInDead)
 	{
 		bDead = bInDead;
+		DeadTime = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+		// Dead, the muscles hold what shape the body had, more and more weakly; not the pose the living one was asked.
+		TArray<FName> All;
+		All.Append(SpineControls);
+		All.Append(HeadControls);
+		All.Append(LeftArmControls);
+		All.Append(RightArmControls);
+		All.Append(LeftHandControls);
+		All.Append(RightHandControls);
+		All.Append(LegControls);
+		if (bDead)
+		{
+			HoldShapeNow(All);
+		}
+		else
+		{
+			FollowAnimation(All);
+			bArmLoose[0] = bArmLoose[1] = false;
+			ApplyBrokenArms();
+		}
 		AppliedKey = -1.f;
 		ApplyMultipliers();
 	}
+}
+
+float UAedirBodyControlComponent::GetDeadShareNow() const
+{
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : DeadTime;
+	const float Share = DeadFadeSeconds > KINDA_SMALL_NUMBER ? FMath::Clamp(static_cast<float>(Now - DeadTime) / DeadFadeSeconds, 0.f, 1.f) : 1.f;
+	return FMath::Lerp(DeadStartShare, DeadShare, Share);
+}
+
+void UAedirBodyControlComponent::HoldShapeNow(const TArray<FName>& Names)
+{
+	if (!Control || !Mesh)
+	{
+		return;
+	}
+	for (const FName& Name : Names)
+	{
+		const TPair<FName, FName>* Bones = MuscleBones.Find(Name);
+		if (!Bones)
+		{
+			continue;
+		}
+		const FQuat Parent = Mesh->GetBoneQuaternion(Bones->Key);
+		const FQuat Child = Mesh->GetBoneQuaternion(Bones->Value);
+		Control->SetControlUseSkeletalAnimation(Name, false);
+		Control->SetControlTargetOrientation(Name, (Parent.Inverse() * Child).Rotator(), 0.f, true, false);
+	}
+}
+
+void UAedirBodyControlComponent::FollowAnimation(const TArray<FName>& Names)
+{
+	if (!Control)
+	{
+		return;
+	}
+	for (const FName& Name : Names)
+	{
+		Control->SetControlUseSkeletalAnimation(Name, true);
+		Control->SetControlTargetOrientation(Name, FRotator::ZeroRotator, 0.f, true, false);
+	}
+}
+
+void UAedirBodyControlComponent::HangBrokenArm(int32 Side)
+{
+	const FName Shoulder = ShoulderControls[Side];
+	const TPair<FName, FName>* Bones = MuscleBones.Find(Shoulder);
+	if (!Control || !Mesh || !Bones)
+	{
+		return;
+	}
+	const FName Elbow = Side == 0 ? FName(TEXT("lowerarm_l")) : FName(TEXT("lowerarm_r"));
+	const FVector From = Mesh->GetBoneLocation(Bones->Value);
+	const FVector Along = (Mesh->GetBoneLocation(Elbow) - From).GetSafeNormal();
+	// Down the side of the trunk, a little out from it.
+	const AActor* Owner = GetOwner();
+	const FVector Out = (Owner ? Owner->GetActorRightVector() : FVector::RightVector) * (Side == 0 ? -1.f : 1.f);
+	const float OutRadians = FMath::DegreesToRadians(BrokenArmOutDegrees);
+	const FVector Down = (FVector::DownVector * FMath::Cos(OutRadians) + Out * FMath::Sin(OutRadians)).GetSafeNormal();
+	const FQuat Hanging = FQuat::FindBetweenNormals(Along, Down) * Mesh->GetBoneQuaternion(Bones->Value);
+	Control->SetControlUseSkeletalAnimation(Shoulder, false);
+	Control->SetControlTargetOrientation(Shoulder, (Mesh->GetBoneQuaternion(Bones->Key).Inverse() * Hanging).Rotator(), 0.f, true, false);
+	// Below the shoulder the arm keeps the bend it had, weakly.
+	TArray<FName> Below = Side == 0 ? LeftArmControls : RightArmControls;
+	Below.Remove(Shoulder);
+	Below.Append(Side == 0 ? LeftHandControls : RightHandControls);
+	HoldShapeNow(Below);
 }
 
 void UAedirBodyControlComponent::SetBrokenLimbs(bool bLeftArm, bool bRightArm, bool bLeftLeg, bool bRightLeg)
@@ -296,6 +389,19 @@ void UAedirBodyControlComponent::ApplyBrokenArms()
 			continue;
 		}
 		bArmLoose[Side] = bLoose;
+		if (!bDead)
+		{
+			if (bLoose)
+			{
+				HangBrokenArm(Side);
+			}
+			else
+			{
+				TArray<FName> Arm = Side == 0 ? LeftArmControls : RightArmControls;
+				Arm.Append(Side == 0 ? LeftHandControls : RightHandControls);
+				FollowAnimation(Arm);
+			}
+		}
 		for (const FName& Modifier : ArmModifiers[Side])
 		{
 			const bool bKinematic = !bLoose && bWholePosed;
@@ -440,8 +546,9 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	}
 	// Only when something changed enough to matter.
 	const auto Step = [](float Share) { return static_cast<double>(FMath::RoundToInt(Share * 50.f)); };
+	const float DeadNow = bDead ? GetDeadShareNow() : 0.f;
 	const double Key = (bLimp ? 1.0 : 0.0) + (bHipsCarried ? 2.0 : 0.0) + (bAirborne ? 4.0 : 0.0) + (bRising ? 8.0 : 0.0)
-		+ 16.0 * (Step(Upright) + 64.0 * (Step(LeftArmShare) + 64.0 * (Step(RightArmShare) + 64.0 * (Step(LeftLoadShare) + 64.0 * Step(RightLoadShare)))));
+		+ 16.0 * (Step(Upright) + 64.0 * (Step(LeftArmShare) + 64.0 * (Step(RightArmShare) + 64.0 * (Step(LeftLoadShare) + 64.0 * (Step(RightLoadShare) + 64.0 * Step(DeadNow * 10.f))))));
 	// A tuning console variable changed counts as a change too.
 	const float Tuning = CVarAedirBodyPosture.GetValueOnGameThread() + 3.f * CVarAedirBodyGravity.GetValueOnGameThread() + 7.f * CVarAedirBodyFoot.GetValueOnGameThread()
 		+ 13.f * CVarAedirBodyHips.GetValueOnGameThread() + 17.f * CVarAedirBodyRise.GetValueOnGameThread() + 19.f * CVarAedirBodySpine.GetValueOnGameThread();
@@ -454,7 +561,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float SpineHz = CVarAedirBodySpine.GetValueOnGameThread() >= 0.f ? CVarAedirBodySpine.GetValueOnGameThread() : SpineStrength;
 
 	// A dead body keeps less of its muscles than a living one that is down.
-	const float Limp = bDead ? DeadShare : LimpShare;
+	const float Limp = bDead ? DeadNow : LimpShare;
 	const float Body = bLimp ? Limp : FMath::Lerp(0.35f, 1.f, Upright);
 	const auto Apply = [this](const TArray<FName>& Names, float AngularHz, float LinearHz)
 	{
@@ -476,6 +583,14 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float RightArmHz = ArmHz * (bLimp ? Limp : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare);
 	Apply(LeftArmControls, LeftArmHz, 0.f);
 	Apply(RightArmControls, RightArmHz, 0.f);
+	// A broken arm's shoulder still holds it hanging.
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		if (bBroken[Side] && !bLimp && !ShoulderControls[Side].IsNone())
+		{
+			Apply({ ShoulderControls[Side] }, ArmHz * BrokenShoulderShare, 0.f);
+		}
+	}
 	// The wrists are looser than the arm above them, less so with both hands on one thing.
 	const float Wrist = FMath::Lerp(WristShare, TwoHandWristShare, TwoHandGrip);
 	Apply(LeftHandControls, LeftArmHz * Wrist, 0.f);

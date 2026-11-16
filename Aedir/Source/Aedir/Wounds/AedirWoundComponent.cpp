@@ -45,13 +45,13 @@ namespace
 	constexpr float WoundMergeDistance = 8.f;
 	constexpr float WoundArmorSeverityFactor = 0.7f;
 	constexpr float WoundBluntReferenceEnergy = 90.f;
-	constexpr float WoundSlashReferenceEnergy = 70.f;
-	constexpr float WoundPierceReferenceEnergy = 60.f;
+	constexpr float WoundSlashReferenceEnergy = 150.f;
+	constexpr float WoundPierceReferenceEnergy = 130.f;
 	constexpr float WoundBluntMinEnergy = 6.f;
 	constexpr float WoundBluntMaxArmor = 0.85f;
-	constexpr float WoundSlashMinEnergy = 10.f;
+	constexpr float WoundSlashMinEnergy = 20.f;
 	constexpr float WoundSlashMaxArmor = 0.6f;
-	constexpr float WoundPierceMinEnergy = 8.f;
+	constexpr float WoundPierceMinEnergy = 18.f;
 	constexpr float WoundPierceMaxArmor = 0.7f;
 	constexpr float WoundDecalDepth = 6.f;
 	constexpr float WoundDripMinInterval = 0.15f;

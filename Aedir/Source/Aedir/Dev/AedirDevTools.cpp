@@ -1109,9 +1109,9 @@ void UAedirDevTools::GaitInfo(AAedirPlayerCharacter* Player, const FString& Args
 		// the pelvis and the chest are ahead of the capsule, against what the pose asks.
 		const FVector Trunk = Mesh->GetBoneLocation(FName(TEXT("neck_01"))) - Mesh->GetBoneLocation(FName(TEXT("pelvis")));
 		const float TrunkLean = FMath::RadiansToDegrees(FMath::Atan2(static_cast<float>(FVector::DotProduct(Trunk, Forward)), static_cast<float>(Trunk.Z)));
-		UE_LOG(LogAedir, Display, TEXT("[GaitInfo]   trunkLean=%.1f pelvisAhead=%.1f chestAhead=%.1f pelvisZ=%.1f | pose pelvisPitch=%.1f spinePitch=%.1f hipZ=%.1f"),
+		UE_LOG(LogAedir, Display, TEXT("[GaitInfo]   trunkLean=%.1f pelvisAhead=%.1f chestAhead=%.1f pelvisZ=%.1f | pose pelvisPitch=%.1f spinePitch=%.1f hipZ=%.1f pelvisRoll=%.1f spineRoll=%.1f hipSide=%.1f"),
 			TrunkLean, Ahead(TEXT("pelvis")), Ahead(TEXT("spine_05")), Height(TEXT("pelvis")),
-			State.PelvisRotation.Pitch, State.SpineLeanPitch, State.HipOffsetZ);
+			State.PelvisRotation.Pitch, State.SpineLeanPitch, State.HipOffsetZ, State.PelvisRollDegrees, State.SpineLeanRoll, State.HipLateralOffset);
 		// The hips against the capsule: where they are, and where the pose holds them.
 		if (const UAedirBodyControlComponent* Body = Player->FindComponentByClass<UAedirBodyControlComponent>(); Body && Body->IsReady())
 		{

@@ -288,12 +288,46 @@ void UAedirBloodSubsystem::SpawnSplat(const FVector& Location, const FVector& No
 	Rotation.Roll = static_cast<float>(Random.FRandRange(0.0, 360.0));
 
 	const float SplatScale = FMath::Max(Scale, BloodSplatMinScale);
-	const FVector SplatSize(BloodSplatDepth, BloodSplatRadiusPerScale * SplatScale, BloodSplatRadiusPerScale * SplatScale);
+	FVector SplatSize(BloodSplatDepth, BloodSplatRadiusPerScale * SplatScale, BloodSplatRadiusPerScale * SplatScale);
+
+	// Landing on blood already lying on the ground it pools: down a slope it runs on downhill, on the level it spreads.
+	FVector Where = Location;
+	if (SurfaceNormal.Z > 0.5)
+	{
+		int32 Under = 0;
+		for (const TWeakObjectPtr<UDecalComponent>& Splat : Splats)
+		{
+			if (const UDecalComponent* Lying = Splat.Get(); Lying && FVector::DistSquared(Lying->GetComponentLocation(), Location) < FMath::Square(PoolRadiusCm + Lying->DecalSize.Y * 0.5))
+			{
+				++Under;
+			}
+		}
+		if (Under > 0)
+		{
+			const float Slope = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(SurfaceNormal.Z), -1.f, 1.f)));
+			const FVector Downhill = FVector::VectorPlaneProject(FVector::DownVector, SurfaceNormal).GetSafeNormal();
+			if (Slope > PoolLevelDegrees && !Downhill.IsNearlyZero())
+			{
+				const float Steep = FMath::Sin(FMath::DegreesToRadians(Slope)) / FMath::Max(FMath::Sin(FMath::DegreesToRadians(PoolRunSlopeDegrees)), 0.01f);
+				const float Run = FMath::Min(PoolRunCmPerDrop * Under * Steep, PoolRunMaxCm) * static_cast<float>(Random.FRandRange(0.6, 1.0));
+				Where += Downhill * Run;
+				// Drawn out along the way it runs: the decal's Z side lies downhill.
+				Rotation = FRotationMatrix::MakeFromXZ(-SurfaceNormal, Downhill).Rotator();
+				SplatSize.Z *= 1.f + FMath::Min(Run / FMath::Max(SplatSize.Z * 2.f, 1.f), 2.f);
+				SplatSize.Y *= 0.75f;
+			}
+			else
+			{
+				SplatSize.Y *= FMath::Min(1.f + PoolSpreadPerDrop * Under, PoolSpreadMax);
+				SplatSize.Z *= FMath::Min(1.f + PoolSpreadPerDrop * Under, PoolSpreadMax);
+			}
+		}
+	}
 
 	UMaterialInstanceDynamic* Material = UMaterialInstanceDynamic::Create(Base, this);
 	Material->SetScalarParameterValue(FName(TEXT("Fade")), 1.f);
 
-	UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(World, Material, SplatSize, Location, Rotation, 0.f);
+	UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(World, Material, SplatSize, Where, Rotation, 0.f);
 	if (!Decal)
 	{
 		return;

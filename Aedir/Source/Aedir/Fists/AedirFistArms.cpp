@@ -1,5 +1,6 @@
 #include "Fists/AedirFistArms.h"
 
+#include "Animation/AedirGaitComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
@@ -82,7 +83,10 @@ void UAedirFistArms::SetHeld(EAedirHand Hand, bool bInHeld, float ViewPitchDegre
 		// A blade's arc is tipped with the view itself, so its mouse starts in the middle.
 		const bool bBladeArc = bArmed[0] || bArmed[1];
 		Aim = FVector2D(0.0, bBladeArc ? 0.f : FMath::Clamp(ViewPitchDegrees / FMath::Max(Range, 1.f), -1.f, 1.f));
+		MouseAim = Aim;
+		AimSpeed = FVector2D::ZeroVector;
 		PendingMouse = FVector2D::ZeroVector;
+		MouseCarry = FVector2D::ZeroVector;
 		Punch = 0.f;
 	}
 	bHeld[Slot] = bInHeld;
@@ -128,24 +132,28 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	// A blade has no still middle: it answers the mouse from the first move.
 	const float DeadZone = bArmed[0] || bArmed[1] ? 0.f : CenterDeadZone;
 
-	// Where the mouse stands, as shares of its travel, and how fast it came in towards the middle across.
+	// Where the mouse stands, as shares of its travel, and how fast it came in towards the middle across. The mouse is
+	// eased in over a moment, and the arms follow where it stands as a weight does: fists quickly, a blade more slowly.
 	const bool bSteering = IsSteering();
 	float Inward = 0.f;
+	MouseCarry += PendingMouse;
+	const FVector2D MouseNow = MouseSmoothSeconds > KINDA_SMALL_NUMBER ? MouseCarry * (1.f - FMath::Exp(-DeltaTime / MouseSmoothSeconds)) : MouseCarry;
+	MouseCarry -= MouseNow;
 	if (bSteering && !bDevFrozen)
 	{
-		const float Before = static_cast<float>(Aim.X);
+		const float Before = static_cast<float>(MouseAim.X);
 		// One arm alone goes across past the middle only this share of the arc on the other side.
 		const double OtherSide = DeadZone + SingleArmAcrossShare * (1.f - DeadZone);
 		// A blade alone goes further, so its wrist can turn back in and lay it round behind.
 		const double BladeOtherSide = DeadZone + BladeAloneAcrossShare * (1.f - DeadZone);
 		const double AcrossMin = bHeld[1] && !bHeld[0] ? -(bArmed[1] ? BladeOtherSide : OtherSide) : -1.0;
 		const double AcrossMax = bHeld[0] && !bHeld[1] ? (bArmed[0] ? BladeOtherSide : OtherSide) : 1.0;
-		Aim.X = FMath::Clamp(Aim.X + PendingMouse.X / FMath::Max(MouseFieldAcross, 1.f), AcrossMin, AcrossMax);
-		const FVector2D AimBefore(Before, Aim.Y);
-		Aim.Y = FMath::Clamp(Aim.Y + PendingMouse.Y / FMath::Max(MouseFieldUpDown, 1.f), -1.0, 1.0);
-		const float After = static_cast<float>(Aim.X);
+		MouseAim.X = FMath::Clamp(MouseAim.X + MouseNow.X / FMath::Max(MouseFieldAcross, 1.f), AcrossMin, AcrossMax);
+		const FVector2D AimBefore(Before, MouseAim.Y);
+		MouseAim.Y = FMath::Clamp(MouseAim.Y + MouseNow.Y / FMath::Max(MouseFieldUpDown, 1.f), -1.0, 1.0);
+		const float After = static_cast<float>(MouseAim.X);
 		// A blade moved quickly, any way, takes breath.
-		const float Travel = static_cast<float>(FVector2D::Distance(AimBefore, Aim));
+		const float Travel = static_cast<float>(FVector2D::Distance(AimBefore, MouseAim));
 		if (((bHeld[0] && bArmed[0]) || (bHeld[1] && bArmed[1])) && Travel / DeltaTime > PunchSlowSpeed)
 		{
 			SpendStamina(Travel * 0.5f * BladeFastMoveStaminaPerField);
@@ -161,11 +169,36 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		{
 			PunchSlot = Before > 0.f ? 1 : 0;
 		}
+
+		// The arms go after the mouse as a weight on a spring, in small steps so a long frame does not throw them off.
+		const AAedirItemActor* Blade = AedirFistsHeldItem(Owner, bArmed[1] ? 1 : 0);
+		const bool bBladeHeld = (bHeld[0] && bArmed[0]) || (bHeld[1] && bArmed[1]);
+		float Hz = FistAimHz;
+		float Damping = FistAimDamping;
+		if (bBladeHeld && Blade)
+		{
+			const float Heavier = FMath::Sqrt(BladeAimRefKg / FMath::Max(Blade->Weight, 0.1f));
+			Hz = BladeAimHz * FMath::Clamp(Heavier, BladeAimMinShare, BladeAimMaxShare) * (bTwoHand ? TwoHandAimShare : 1.f);
+			Damping = BladeAimDamping;
+		}
+		const float W = UE_TWO_PI * FMath::Max(Hz, 0.5f);
+		const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime * W / 0.25f), 1, 32);
+		const float Step = DeltaTime / Steps;
+		for (int32 Index = 0; Index < Steps; ++Index)
+		{
+			AimSpeed += ((MouseAim - Aim) * (W * W) - AimSpeed * (2.f * Damping * W)) * Step;
+			Aim += AimSpeed * Step;
+		}
+		Aim.X = FMath::Clamp(Aim.X, -1.0, 1.0);
+		Aim.Y = FMath::Clamp(Aim.Y, -1.0, 1.0);
 	}
 	PendingMouse = FVector2D::ZeroVector;
 	if (!bSteering)
 	{
 		OneTurn = FMath::FInterpConstantTo(OneTurn, 0.f, DeltaTime, BladeOneTurnFadeRate);
+		MouseCarry = FVector2D::ZeroVector;
+		MouseAim = Aim;
+		AimSpeed = FVector2D::ZeroVector;
 	}
 
 	// Fast in towards the middle the arc reaches out; slow, still or let go, it comes back in to the guard.
@@ -302,9 +335,12 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float Share = bFollows && AimSide != 0.f ? FMath::Abs(Across) : 0.f;
 		if (bBlade)
 		{
+			// Past the middle of the way to its own side the turn in is left quickly, so the point swings out from the head.
+			const float Past = (Share - Split) / (1.f - Split);
+			const float OutShare = bOwnSide ? 1.f - FMath::Pow(1.f - FMath::Clamp(Past, 0.f, 1.f), FMath::Max(BladeSideOutEase, 1.f)) : Past;
 			const float TwoTurns = Share <= Split
 				? FMath::Lerp(0.f, bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, Share / Split)
-				: FMath::Lerp(bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, bOwnSide ? -BladeSideOutDegrees : BladeCrossTurnDegrees, (Share - Split) / (1.f - Split));
+				: FMath::Lerp(bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, bOwnSide ? -BladeSideOutDegrees : BladeCrossTurnDegrees, OutShare);
 			// Fast, the wrist goes the one way all along, the edge leading.
 			const float OneWay = FMath::Lerp(0.f, bOwnSide ? -BladeSideOutDegrees : BladeCrossTurnDegrees, Share);
 			FistTurn[Slot] = FMath::Lerp(TwoTurns, OneWay, OneTurn) * Side;
@@ -335,10 +371,16 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float Rest = Slot == 1 && bBlade ? GripAlpha * (1.f - Alpha[Slot]) : 0.f;
 		if (Rest > 0.f)
 		{
+			// Carried low it turns with the chest as the view turns it, arms and blade together, so turning to look does not
+			// lift the second elbow off the side.
+			const UAedirGaitComponent* Gait = Owner->FindComponentByClass<UAedirGaitComponent>();
+			const FRotator ChestYaw(0.f, Owner->GetActorRotation().Yaw + (Gait ? Gait->GetGaitState().SpineTwistYaw * TwoHandRestFollowTwist : 0.f), 0.f);
+			const FVector RestForward = ChestYaw.RotateVector(FVector::ForwardVector);
+			const FVector RestRight = ChestYaw.RotateVector(FVector::RightVector);
 			const FVector Lay = FRotator(TwoHandRestPitchDegrees, TwoHandRestYawDegrees, 0.f).RotateVector(FVector::ForwardVector);
-			const FVector Way = Forward * Lay.X + Right * Lay.Y + Up * Lay.Z;
-			const FVector RestPlace = Owner->GetActorLocation() + Forward * TwoHandRestForwardCm + Right * TwoHandRestSideCm + Up * TwoHandRestHeightCm;
-			const FVector RestPole = (-Up * 0.8f + Right * 0.6f - Forward * 0.2f).GetSafeNormal();
+			const FVector Way = RestForward * Lay.X + RestRight * Lay.Y + Up * Lay.Z;
+			const FVector RestPlace = Owner->GetActorLocation() + RestForward * TwoHandRestForwardCm + RestRight * TwoHandRestSideCm + Up * TwoHandRestHeightCm;
+			const FVector RestPole = (-Up * 0.8f + RestRight * 0.6f - RestForward * 0.2f).GetSafeNormal();
 			FistWorld[Slot] = FMath::Lerp(FistWorld[Slot], RestPlace, Rest);
 			ElbowWorld[Slot] = FMath::Lerp(ElbowWorld[Slot], (Shoulder + RestPlace) * 0.5 + RestPole * 40.f, Rest);
 			BladeAimWay[Slot] = FMath::Lerp(BladeAimWay[Slot], Way, Rest).GetSafeNormal();

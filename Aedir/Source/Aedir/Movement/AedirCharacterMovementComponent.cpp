@@ -6,6 +6,7 @@
 #include "GameFramework/Character.h"
 #include "Physics/AedirBalanceComponent.h"
 #include "Surface/AedirFootstepComponent.h"
+#include "Wounds/AedirWoundComponent.h"
 
 namespace
 {
@@ -319,6 +320,11 @@ float UAedirCharacterMovementComponent::GetMaxSpeed() const
 			Creature->Combat->GetLimbInjury(EAedirLimb::LeftLeg),
 			Creature->Combat->GetLimbInjury(EAedirLimb::RightLeg));
 		Speed *= 1.f - AedirLegInjurySpeedPenalty * LegInjury;
+	}
+	if (const AAedirCreature* Creature = Cast<AAedirCreature>(GetCharacterOwner()); Creature && Creature->Wounds
+		&& (Creature->Wounds->IsLimbBroken(EAedirLimb::LeftLeg) || Creature->Wounds->IsLimbBroken(EAedirLimb::RightLeg)))
+	{
+		Speed = FMath::Min(Speed, WalkSpeed) * BrokenLegSpeedShare;
 	}
 
 	if (const AAedirCreature* Creature = Cast<AAedirCreature>(GetCharacterOwner()); Creature && Creature->Balance)
