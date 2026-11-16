@@ -299,6 +299,64 @@ namespace
 		UE_LOG(LogAedirEditor, Display, TEXT("Built M_AedirPrecip."));
 	}
 
+	// A lightning channel: light added to the sky, bright down the middle of a strip and fading out to either side, whole along
+	// its length so strips laid end to end read as one line. Colour and strength are set by the game.
+	void ContentBuildBolt(TArray<UPackage*>& ToSave)
+	{
+		UMaterial* Material = ContentNewMaterial(TEXT("M_AedirBolt"), ToSave);
+		Material->BlendMode = BLEND_Additive;
+		Material->SetShadingModel(MSM_Unlit);
+		Material->TwoSided = true;
+		Material->bUsedWithInstancedStaticMeshes = true;
+
+		UMaterialExpressionTextureCoordinate* Coord = ContentNode<UMaterialExpressionTextureCoordinate>(Material, -1200, 0);
+		UMaterialExpressionComponentMask* Across = ContentNode<UMaterialExpressionComponentMask>(Material, -1000, 0);
+		Across->R = false;
+		Across->G = true;
+		Across->B = false;
+		Across->A = false;
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Coord, TEXT(""), Across, TEXT(""));
+		UMaterialExpressionConstant* Half = ContentNode<UMaterialExpressionConstant>(Material, -1000, 200);
+		Half->R = 0.5f;
+		UMaterialExpressionSubtract* Centered = ContentNode<UMaterialExpressionSubtract>(Material, -800, 100);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Across, TEXT(""), Centered, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Half, TEXT(""), Centered, TEXT("B"));
+		UMaterialExpressionConstant* Grow = ContentNode<UMaterialExpressionConstant>(Material, -800, 300);
+		Grow->R = 2.f;
+		UMaterialExpressionMultiply* Scaled = ContentNode<UMaterialExpressionMultiply>(Material, -600, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Centered, TEXT(""), Scaled, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Grow, TEXT(""), Scaled, TEXT("B"));
+		UMaterialExpressionLength* Off = ContentNode<UMaterialExpressionLength>(Material, -400, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Scaled, TEXT(""), Off, TEXT(""));
+		UMaterialExpressionOneMinus* Inside = ContentNode<UMaterialExpressionOneMinus>(Material, -250, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Off, TEXT(""), Inside, TEXT(""));
+		UMaterialExpressionSaturate* Shape = ContentNode<UMaterialExpressionSaturate>(Material, -100, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Inside, TEXT(""), Shape, TEXT(""));
+		// Cubed: a thin hot core and a soft glow round it.
+		UMaterialExpressionMultiply* Square = ContentNode<UMaterialExpressionMultiply>(Material, 50, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Shape, TEXT(""), Square, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Shape, TEXT(""), Square, TEXT("B"));
+		UMaterialExpressionMultiply* Cube = ContentNode<UMaterialExpressionMultiply>(Material, 200, 200);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Square, TEXT(""), Cube, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Shape, TEXT(""), Cube, TEXT("B"));
+		UMaterialExpressionScalarParameter* Strength = ContentNode<UMaterialExpressionScalarParameter>(Material, 200, 350);
+		Strength->ParameterName = TEXT("Strength");
+		Strength->DefaultValue = 1.f;
+		UMaterialExpressionMultiply* Lit = ContentNode<UMaterialExpressionMultiply>(Material, 350, 250);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Cube, TEXT(""), Lit, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Strength, TEXT(""), Lit, TEXT("B"));
+		UMaterialExpressionVectorParameter* Color = ContentNode<UMaterialExpressionVectorParameter>(Material, 350, 0);
+		Color->ParameterName = TEXT("Color");
+		Color->DefaultValue = FLinearColor(20.f, 22.f, 30.f);
+		UMaterialExpressionMultiply* Glow = ContentNode<UMaterialExpressionMultiply>(Material, 500, 100);
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Color, TEXT(""), Glow, TEXT("A"));
+		UMaterialEditingLibrary::ConnectMaterialExpressions(Lit, TEXT(""), Glow, TEXT("B"));
+		UMaterialEditingLibrary::ConnectMaterialProperty(Glow, TEXT(""), MP_EmissiveColor);
+		UMaterialEditingLibrary::RecompileMaterial(Material);
+		Material->MarkPackageDirty();
+		UE_LOG(LogAedirEditor, Display, TEXT("Built M_AedirBolt."));
+	}
+
 	// The inside of a cut.
 	void ContentBuildFlesh(TArray<UPackage*>& ToSave)
 	{
@@ -597,6 +655,11 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 		ContentBuildPrecip(ToSave);
 		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
 	}
+	if (Only == TEXT("Bolt"))
+	{
+		ContentBuildBolt(ToSave);
+		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
 	if (Only == TEXT("Pauldrons"))
 	{
 		ContentSplitPauldrons(ToSave);
@@ -641,6 +704,7 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 	}
 	ContentBuildPropCollision(ToSave);
 	ContentBuildPrecip(ToSave);
+	ContentBuildBolt(ToSave);
 	ContentBuildScanned(ToSave);
 	ContentBuildFootprint(ToSave);
 	ContentBuildFlesh(ToSave);

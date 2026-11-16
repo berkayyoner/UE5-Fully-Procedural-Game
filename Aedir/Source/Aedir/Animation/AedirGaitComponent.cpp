@@ -576,6 +576,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const FVector ProtectiveLeftTarget = ProtectiveGround - ActorRight2D * (ProtectiveArmSpreadCm * ActorScale);
 	const FVector ProtectiveRightTarget = ProtectiveGround + ActorRight2D * (ProtectiveArmSpreadCm * ActorScale);
 
+	UpdateClutch(DeltaTime, Combat, Interaction, ActorTransform);
 	ResolveArmReach(EAedirHand::Left, Combat, Interaction, ActorTransform, ProtectiveLeftTarget, ProtectiveAlpha, LeftReachTarget, LeftReachAlpha);
 	ResolveArmReach(EAedirHand::Right, Combat, Interaction, ActorTransform, ProtectiveRightTarget, ProtectiveAlpha, RightReachTarget, RightReachAlpha);
 
@@ -1232,6 +1233,9 @@ void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatCom
 		}
 	}
 
+	// A hand held to a hurt place, over the guard; reaching for something and swinging come over it.
+	Blend.Apply(ClutchTarget[Hand == EAedirHand::Left ? 0 : 1], ClutchAlpha[Hand == EAedirHand::Left ? 0 : 1]);
+
 	FVector ReachTarget = FVector::ZeroVector;
 	float ReachAlpha = 0.f;
 	QueryReachPose(Interaction, Hand, ReachTarget, ReachAlpha);
@@ -1258,6 +1262,142 @@ void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatCom
 
 	OutTargetWorld = Blend.Target;
 	OutAlpha = Blend.Alpha;
+}
+
+namespace
+{
+	// Whether a hand can be put to this part of the body, and on which side of it the part is: -1 the left, 1 the right, 0 the
+	// middle (then the side the place itself is on decides).
+	bool AedirClutchablePart(FName Bone, int32& OutSide)
+	{
+		const FString Name = Bone.ToString();
+		OutSide = 0;
+		if (Name.StartsWith(TEXT("clavicle")) || Name.StartsWith(TEXT("upperarm")))
+		{
+			OutSide = Name.EndsWith(TEXT("_l")) ? -1 : 1;
+			return true;
+		}
+		return Name.StartsWith(TEXT("head")) || Name.StartsWith(TEXT("neck")) || Name.StartsWith(TEXT("spine")) || Name == TEXT("pelvis");
+	}
+}
+
+void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform)
+{
+	const USkeletalMeshComponent* Body = CreatureOwner ? CreatureOwner->GetMesh() : nullptr;
+	const UAedirWoundComponent* WoundComponent = CreatureOwner ? CreatureOwner->Wounds.Get() : nullptr;
+	const UWorld* World = GetWorld();
+	float Wanted[2] = { 0.f, 0.f };
+	FVector Goal[2] = { ClutchTarget[0], ClutchTarget[1] };
+	const bool bDown = !Body || !World || (BalanceComponent && BalanceComponent->IsRagdoll()) || (CreatureOwner->Stats && CreatureOwner->Stats->IsDead());
+
+	// The hand on the other side from the place: the right for the left shoulder or the left of the belly, and the other one
+	// only when that one is busy and the place is in the middle. Never one that holds something or cannot be used.
+	const auto PickHand = [&](int32 PartSide, const FVector& PointWorld) -> int32
+	{
+		const float Across = static_cast<float>(ActorTransform.InverseTransformPositionNoScale(PointWorld).Y);
+		const int32 Side = PartSide != 0 ? PartSide : (Across < 0.f ? -1 : 1);
+		const auto Free = [&](int32 Slot)
+		{
+			const EAedirHand Hand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
+			return !(Interaction && Interaction->GetHeldItem(Hand)) && !(WoundComponent && WoundComponent->HasUselessArm(Slot == 0));
+		};
+		const int32 Opposite = Side < 0 ? 1 : 0;
+		if (Free(Opposite))
+		{
+			return Opposite;
+		}
+		return PartSide == 0 && Free(1 - Opposite) ? 1 - Opposite : INDEX_NONE;
+	};
+	// The wrist a little off the skin and back towards the hand's own shoulder, so the palm and fingers lie over the place.
+	const auto WristAt = [&](int32 Slot, const FVector& PointWorld, const FVector& OutwardWorld)
+	{
+		const FVector Shoulder = Body->GetBoneLocation(Slot == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r"));
+		const FVector Back = FVector::VectorPlaneProject(Shoulder - PointWorld, OutwardWorld).GetSafeNormal();
+		const float Scale = static_cast<float>(ActorTransform.GetScale3D().X);
+		return PointWorld + (OutwardWorld * ClutchSkinCm + Back * ClutchPalmCm) * Scale;
+	};
+
+	if (!bDown)
+	{
+		const bool bBusy = (Combat && Combat->IsInFightStance()) || (Interaction && Interaction->GetReachLeanDegrees() > 1.f);
+		// A cut, a stab or a broken arm held while it lasts, out of the fight: the worst of them.
+		if (WoundComponent && !bBusy)
+		{
+			float Worst = ClutchWoundMinSeverity;
+			int32 Slot = INDEX_NONE;
+			FVector Point = FVector::ZeroVector;
+			FVector Outward = FVector::ZeroVector;
+			for (const FAedirWound& Wound : WoundComponent->ActiveWounds)
+			{
+				int32 PartSide = 0;
+				if (Wound.Type == EAedirWoundType::Bruise || Wound.GetSeverity() < Worst || !AedirClutchablePart(Wound.Bone, PartSide) || Body->GetBoneIndex(Wound.Bone) == INDEX_NONE)
+				{
+					continue;
+				}
+				const FTransform Frame = Body->GetBoneTransform(Wound.Bone);
+				const FVector At = Frame.TransformPosition(Wound.Offset);
+				const int32 Hand = PickHand(PartSide, At);
+				if (Hand != INDEX_NONE)
+				{
+					Worst = Wound.GetSeverity();
+					Slot = Hand;
+					Point = At;
+					Outward = Frame.TransformVectorNoScale(Wound.Normal).GetSafeNormal();
+				}
+			}
+			// A broken arm is held at its upper arm by the other hand.
+			for (int32 Broken = 0; Broken < 2 && Slot == INDEX_NONE; ++Broken)
+			{
+				if (WoundComponent->IsLimbBroken(Broken == 0 ? EAedirLimb::LeftArm : EAedirLimb::RightArm) && !WoundComponent->HasLostArm(Broken == 0))
+				{
+					const FVector Upper = Body->GetBoneLocation(Broken == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r"));
+					const FVector Lower = Body->GetBoneLocation(Broken == 0 ? TEXT("lowerarm_l") : TEXT("lowerarm_r"));
+					const int32 Hand = PickHand(Broken == 0 ? -1 : 1, Upper);
+					if (Hand != INDEX_NONE)
+					{
+						Slot = Hand;
+						Point = FMath::Lerp(Upper, Lower, 0.5f);
+						Outward = ActorTransform.GetUnitAxis(EAxis::X);
+					}
+				}
+			}
+			if (Slot != INDEX_NONE)
+			{
+				Wanted[Slot] = ClutchWoundShare;
+				Goal[Slot] = WristAt(Slot, Point, Outward);
+			}
+		}
+		// A hard blow just now: a hand to it for a moment, whatever else it was doing, if it is free.
+		FName Bone;
+		FVector Local;
+		double When = 0.0;
+		float Push = 0.f;
+		int32 PartSide = 0;
+		if (BalanceComponent && BalanceComponent->GetLastBlow(Bone, Local, When, Push) && Push >= ClutchBlowMinPush
+			&& World->GetTimeSeconds() - When < ClutchBlowSeconds && AedirClutchablePart(Bone, PartSide) && Body->GetBoneIndex(Bone) != INDEX_NONE)
+		{
+			const FTransform Frame = Body->GetBoneTransform(Bone);
+			const FVector At = Frame.TransformPosition(Local);
+			const int32 Slot = PickHand(PartSide, At);
+			const EAedirHand Hand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
+			float Guarding = 0.f;
+			if (Slot != INDEX_NONE && !(Combat && Combat->GetGuardPose(Hand, Guarding) && Guarding > 0.5f))
+			{
+				const FVector Middle = Frame.GetLocation();
+				Wanted[Slot] = FMath::Max(Wanted[Slot], ClutchBlowShare);
+				Goal[Slot] = WristAt(Slot, At, (At - Middle).GetSafeNormal());
+			}
+		}
+	}
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		// The place moves with the body: the hand keeps to it while it is there, and lets go where it was.
+		if (Wanted[Slot] > 0.f || ClutchAlpha[Slot] <= KINDA_SMALL_NUMBER)
+		{
+			ClutchTarget[Slot] = Goal[Slot];
+		}
+		ClutchAlpha[Slot] = FMath::FInterpConstantTo(ClutchAlpha[Slot], Wanted[Slot], DeltaTime, Wanted[Slot] > ClutchAlpha[Slot] ? ClutchInSpeed : ClutchOutSpeed);
+	}
 }
 
 void UAedirGaitComponent::UpdateTrunkInertia(float DeltaTime, const FTransform& ActorTransform)

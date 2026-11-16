@@ -220,6 +220,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
 	float WeaponArmMassShare = 0.35f;
 
+	// How hard a weapon's blow pushes and throws the body it lands on, of what its weight and speed would give: steel cuts and
+	// bruises more than it shoves.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float WeaponPushShare = 0.45f;
+
+	// A blow to the head shakes the senses: the first SensesFreeJoules of what gets through do nothing, each joule past them
+	// takes SensesPerJoule of the hundred.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float SensesFreeJoules = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float SensesPerJoule = 0.22f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
 	float FistNoHarmJoules = 3.f;
 
@@ -229,10 +242,10 @@ public:
 	// What share of its harm a fist does where it lands: the head takes it all; the trunk, the arms and the legs much less,
 	// a blow to the body taking the wind (stamina, FistBodyStaminaPerJoule for each joule) rather than the life.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
-	float FistHeadShare = 1.f;
+	float FistHeadShare = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
-	float FistTrunkShare = 0.4f;
+	float FistTrunkShare = 0.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
 	float FistArmShare = 0.5f;
@@ -242,6 +255,14 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
 	float FistBodyStaminaPerJoule = 0.3f;
+
+	// A solid fist knocks a little dust off the body: none below FistDustFromJoules, the most at FistDustFullJoules (the
+	// puff's own look is set on AAedirDustPuff).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Fx")
+	float FistDustFromJoules = 40.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Fx")
+	float FistDustFullJoules = 130.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingStaminaCost = 5.f;
@@ -508,6 +529,10 @@ public:
 	bool IsInFightStance() const;
 
 	// A dent shown where a blow landed on plate, on every machine.
+	// A puff of dust knocked off where a solid fist landed, on every machine.
+	UFUNCTION(NetMulticast, Unreliable)
+	void MulticastFistDust(FVector_NetQuantize Point, FVector_NetQuantizeNormal Normal, float Strength);
+
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastArmourDent(class AAedirCreature* Victim, FName Bone, FVector_NetQuantize Point, FVector_NetQuantizeNormal Normal, float EnergyJoules);
 

@@ -87,17 +87,29 @@ public:
 	// A body worn down weakens: below LowHealthFrom of its health, the lower it gets the harder each blow throws it (up to
 	// 1 + LowHealthHitGain times, at none left), the less it takes to knock it down (down to LowHealthKnockdownShare of a
 	// whole body's), and the slower it gets its balance back (down to LowHealthRecoveryShare).
+	// A whole body already gives this much to blows: they throw it HealthyHitShare times as hard, knock it down from
+	// HealthyKnockdownShare of the energy and let its balance come back at HealthyRecoveryShare. Worn down, it goes on from
+	// there to the LowHealth values at none left.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float HealthyHitShare = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float HealthyKnockdownShare = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float HealthyRecoveryShare = 0.75f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float LowHealthFrom = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float LowHealthHitGain = 1.2f;
+	float LowHealthHitGain = 1.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float LowHealthKnockdownShare = 0.5f;
+	float LowHealthKnockdownShare = 0.45f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float LowHealthRecoveryShare = 0.4f;
+	float LowHealthRecoveryShare = 0.35f;
 
 	// Out of breath the body weakens too, but only so far: below TiredFrom of its stamina, the lower it gets the harder
 	// blows throw it (up to 1 + TiredHitGain times at none left), the less it takes to knock it down (down to
@@ -518,6 +530,10 @@ public:
 	// How far the head is knocked on its neck by the blows it took: back (pitch), aside (roll) and turned (yaw).
 	FRotator GetHeadSway() const { return FRotator(HeadSway.X, HeadSway.Z, HeadSway.Y); }
 
+	// The last blow that landed on this body: the bone, where on it (in the bone's frame), when (world seconds) and how hard
+	// it pushed. False if none has yet.
+	bool GetLastBlow(FName& OutBone, FVector& OutLocalPoint, double& OutWorldTime, float& OutPush) const;
+
 	// Mass-weighted centre of mass of the body, sampled every 0.1 s. Zero until the first sample.
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	FVector GetCenterOfMassWorld() const;
@@ -571,6 +587,10 @@ private:
 		float Left = 0.f;
 	};
 	TArray<FPendingPush> PendingPushes;
+	FName LastBlowBone = NAME_None;
+	FVector LastBlowLocal = FVector::ZeroVector;
+	double LastBlowTime = -1000.0;
+	float LastBlowPush = 0.f;
 	// One part of a blow's push landing: on the physical body, the trunk's and head's sway and the hips.
 	void LandPush(FName Bone, const FVector& Impulse, const FVector& Location);
 	void UpdatePendingPushes(float DeltaTime);

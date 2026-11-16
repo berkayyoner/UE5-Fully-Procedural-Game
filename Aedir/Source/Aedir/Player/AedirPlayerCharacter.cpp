@@ -27,6 +27,7 @@
 #include "Camera/CameraComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Combat/AedirCombatComponent.h"
+#include "Combat/AedirDustPuff.h"
 #include "Fists/AedirFistArms.h"
 #include "Animation/AedirGaitComponent.h"
 #include "Creature/AedirStatsComponent.h"
@@ -1771,11 +1772,19 @@ void AAedirPlayerCharacter::RecordFrames(int32 On)
 	UE_LOG(LogAedir, Display, TEXT("[Dev] RecordFrames %d at frame %llu"), GIsDumpingMovie, GFrameCounter);
 }
 
-void AAedirPlayerCharacter::LightningNow()
+void AAedirPlayerCharacter::LightningNow(float AheadCm)
 {
+	const FVector Ahead = GetActorLocation() + GetControlRotation().Vector().GetSafeNormal2D() * AheadCm;
 	for (TActorIterator<AAedirWeatherManager> It(GetWorld()); It; ++It)
 	{
-		It->StrikeLightningNow();
+		if (AheadCm > 0.f)
+		{
+			It->MulticastLightning(FVector(Ahead.X, Ahead.Y, GetActorLocation().Z - 90.f), FMath::FRand());
+		}
+		else
+		{
+			It->StrikeLightningNow();
+		}
 	}
 }
 
@@ -3346,6 +3355,12 @@ void AAedirPlayerCharacter::FoliageInfo()
 void AAedirPlayerCharacter::FxTest(const FString& Path, float Scale)
 {
 	UNiagaraSystem* System = LoadObject<UNiagaraSystem>(nullptr, *Path);
+	// The fist's own dust puff, at that strength.
+	if (Path == TEXT("dust"))
+	{
+		AAedirDustPuff::Spawn(GetWorld(), GetActorLocation() + GetActorForwardVector() * 60.f + FVector(0.f, 0.f, 50.f), -GetActorForwardVector(), Scale);
+		return;
+	}
 	UE_LOG(LogTemp, Display, TEXT("[Fx] %s: %d"), *Path, System ? 1 : 0);
 	if (System)
 	{

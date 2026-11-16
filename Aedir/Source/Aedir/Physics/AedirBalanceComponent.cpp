@@ -946,7 +946,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	const float StaminaFraction = StatsComponent ? StatsComponent->GetStaminaFraction() : 1.f;
 
 	// Worn down, the same blow throws the body further and costs it more of its balance.
-	const float Weak = 1.f + LowHealthHitGain * GetHurtShare() + TiredHitGain * GetTiredShare();
+	const float Weak = FMath::Lerp(HealthyHitShare, 1.f + LowHealthHitGain, GetHurtShare()) + TiredHitGain * GetTiredShare();
 	const float Loss = FMath::Min(ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction) * Weak, 1.f);
 	ApplyBalanceImpact(Impact.Direction, Loss);
 
@@ -980,7 +980,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 
 	const UWorld* World = GetWorld();
 	const double Now = World ? World->GetTimeSeconds() : 0.0;
-	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone) * FMath::Lerp(1.f, LowHealthKnockdownShare, GetHurtShare()) * FMath::Lerp(1.f, TiredKnockdownShare, GetTiredShare());
+	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone) * FMath::Lerp(HealthyKnockdownShare, LowHealthKnockdownShare, GetHurtShare()) * FMath::Lerp(1.f, TiredKnockdownShare, GetTiredShare());
 	bool bStaggered = false;
 
 	if (bKnockedDown)
@@ -1593,7 +1593,7 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 
 	const float DazeRecoveryScale = IsDazed() ? HitReactionDazeRecoveryScale : 1.f;
 	const float StaggerRecoveryScale = IsStaggering() ? HitReactionStaggerRecoveryScale : 1.f;
-	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * FMath::Lerp(1.f, LowHealthRecoveryShare, GetHurtShare()) * FMath::Lerp(1.f, TiredRecoveryShare, GetTiredShare()) * DeltaTime;
+	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * FMath::Lerp(HealthyRecoveryShare, LowHealthRecoveryShare, GetHurtShare()) * FMath::Lerp(1.f, TiredRecoveryShare, GetTiredShare()) * DeltaTime;
 	// Once the legs have given way there is no catching it any more, only getting up again afterwards.
 	if (bIsRagdoll || bDead || Balance >= FallBalanceThreshold)
 	{
@@ -1713,6 +1713,18 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 {
 	// Part of the push lands at once, the rest keeps pushing over a moment after it.
 	const FVector Push = Impulse * HitPushScale;
+	// The blow itself comes first; the pushes on the chest and the trunk sent with it at the same moment are not new blows.
+	if (const UWorld* World = GetWorld(); World && BodyMesh && Bone != NAME_None && BodyMesh->GetBoneIndex(Bone) != INDEX_NONE)
+	{
+		const double Now = World->GetTimeSeconds();
+		if (Now - LastBlowTime > 0.05)
+		{
+			LastBlowBone = Bone;
+			LastBlowLocal = BodyMesh->GetBoneTransform(Bone).InverseTransformPosition(Location);
+			LastBlowTime = Now;
+			LastBlowPush = static_cast<float>(Push.Size());
+		}
+	}
 	const float Now = HitPushSpreadSeconds > KINDA_SMALL_NUMBER ? FMath::Clamp(HitPushNowShare, 0.f, 1.f) : 1.f;
 	LandPush(Bone, Push * Now, Location);
 	if (Now < 1.f)
@@ -1736,6 +1748,19 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 	}
 	Flinch = FMath::Max(Flinch, FMath::Clamp(static_cast<float>(Push.Size()) / HitFlinchFullImpulse, 0.f, 1.f));
 	MotorUpdateTimer = 0.f;
+}
+
+bool UAedirBalanceComponent::GetLastBlow(FName& OutBone, FVector& OutLocalPoint, double& OutWorldTime, float& OutPush) const
+{
+	if (LastBlowBone == NAME_None)
+	{
+		return false;
+	}
+	OutBone = LastBlowBone;
+	OutLocalPoint = LastBlowLocal;
+	OutWorldTime = LastBlowTime;
+	OutPush = LastBlowPush;
+	return true;
 }
 
 void UAedirBalanceComponent::LandPush(FName Bone, const FVector& Impulse, const FVector& Location)

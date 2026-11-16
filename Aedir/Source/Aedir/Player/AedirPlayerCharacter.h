@@ -277,9 +277,9 @@ public:
 	UFUNCTION(Exec)
 	void RecordFrames(int32 On);
 
-	// A lightning bolt strikes nearby now.
+	// A lightning bolt strikes nearby now; given a distance, that far straight ahead of the view instead.
 	UFUNCTION(Exec)
-	void LightningNow();
+	void LightningNow(float AheadCm = 0.f);
 
 	// Logs the collision filter of every physical shape of the hands, welded weapons included.
 	UFUNCTION(Exec)

@@ -145,6 +145,17 @@ private:
 	TObjectPtr<class UMaterialInstanceDynamic> BoltMaterial;
 	UPROPERTY(Transient)
 	TObjectPtr<class UPointLightComponent> BoltLight;
+
+	// The white-hot core of the channel, drawn over its glow.
+	UPROPERTY(Transient)
+	TObjectPtr<class UInstancedStaticMeshComponent> BoltCore;
+
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> BoltCoreMaterial;
+
+	// Thunder rolling in after a flash this far off, delayed by the distance and quieter for it.
+	void QueueThunder(const FVector& From, float Loudness);
+	void PlayThunder(float Loudness);
 	// Segment ends, two per segment, and each segment's width.
 	TArray<FVector> BoltPoints;
 	TArray<float> BoltWidths;

@@ -403,3 +403,15 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - NPCs throw faster, and against a raised guard go for the body under it; a fist on a guarding arm does half its harm (was 0.3).
 - Out of breath, below half the stamina, the body weakens so far and no further: blows throw it up to 1.5 times harder, it is knocked down by 0.8 of the energy, gets its balance back at 0.7 of the speed, its arms hold at 0.75 and swing and punch at 0.7 of their speed.
 - LyingInfo also shows the head's knock and how loose things lie on the ground.
+- A weapon's blow pushes and throws the body it lands on at 0.45 of what its weight and speed give (WeaponPushShare).
+- A fist does 0.6 of its harm on the body (was 0.4) and 0.85 on the head (was 1).
+- A blow to the head takes the senses less: the first 20 J of it nothing (was 12), then 0.22 for each joule (was 0.32).
+- A whole body already gives to blows as one at half health did: thrown 1.5 times as hard, knocked down by 0.8 of the energy, its balance back at 0.75 of the speed; worn down it goes on from there.
+- A solid fist, from 40 J, knocks a small puff of dust off the body it lands on.
+- Lightning is drawn as a thin white-hot core inside a soft blue glow, its line zigzagging without folding back, on a material of its own.
+- Thunder is heard after every strike and every flash in the clouds, later and softer the further off, one of five rolls.
+- LightningNow takes a distance to strike that far ahead of the view.
+- An NPC brings its blade back to point at the one it fights twice as fast after each blow.
+- The hit log shows how an NPC's blade lies against the one it fights.
+- A body struck on the head, neck, chest, belly, groin or a shoulder puts its free hand on the other side to the place for a moment.
+- Out of the fight stance and not reaching for anything, a body holds a cut, a stab or a broken arm there with its free hand while it lasts.

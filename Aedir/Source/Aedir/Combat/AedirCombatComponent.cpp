@@ -21,6 +21,7 @@
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemActor.h"
 #include "Net/UnrealNetwork.h"
+#include "Combat/AedirDustPuff.h"
 #include "Npc/AedirNpc.h"
 #include "Npc/AedirTrainingDummy.h"
 #include "Physics/AedirBalanceComponent.h"
@@ -39,7 +40,7 @@ namespace
 	// slowly about the guard, quicker drawing back (not fast enough to throw), and fast across in the blow. It draws this
 	// far to the side and throws this far past the middle, a fist or a blade; it waits this long between blows, pauses at
 	// the end of the draw, gives each part its time at most, and now and then raises a blade overhead instead.
-	constexpr float AedirAIMouseGuardSpeed = 2.f;
+	constexpr float AedirAIMouseGuardSpeed = 4.f;
 	constexpr float AedirAIMouseWindupSpeed = 3.5f;
 	constexpr float AedirAIMouseStrikeSpeed = 24.f;
 	// How often a blow goes for the head when the one fought holds a guard up.
@@ -611,8 +612,6 @@ namespace
 	constexpr float AedirLodgeThrustAlignment = 0.75f;
 	// What a blow to the head takes of the senses: nothing below a tap, then a point for every few joules that get through, so
 	// a hard bare-headed blow takes most of them and a second one knocks a man down senseless.
-	constexpr float AedirSensesFreeJoules = 12.f;
-	constexpr float AedirSensesPerJoule = 0.32f;
 	// A dent shows on plate from a blow this hard; a helmet is knocked off by one harder than this, the more likely the harder,
 	// up to this chance, and flies off at this speed and lift.
 	// What gets through to the bone breaks an arm from this many joules and a leg from this many, for a body of middling
@@ -4399,7 +4398,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	if (Zone == EAedirBodyZone::Head && Victim->Stats)
 	{
 		const float Jolt = Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f;
-		const float Lost = FMath::Max(Energy * (1.f - Jolt) - AedirSensesFreeJoules, 0.f) * AedirSensesPerJoule;
+		const float Lost = FMath::Max(Energy * (1.f - Jolt) - SensesFreeJoules, 0.f) * SensesPerJoule;
 		Victim->Stats->LoseConsciousness(Lost);
 		UE_CLOG(Lost > 1.f, LogAedir, Log, TEXT("[Senses] %s took %.0f to the head, senses %.0f"), *Victim->GetName(), Lost, Victim->Stats->Consciousness);
 	}
@@ -4471,7 +4470,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	if (Victim->Balance)
 	{
 		// How hard this kind of blow pushes, as set at the console.
-		const float Knock = CombatKnockbackScale(HeldItem, false);
+		const float Knock = CombatKnockbackScale(HeldItem, false) * (HeldItem ? WeaponPushShare : 1.f);
 		FAedirImpactInfo Impact;
 		Impact.Bone = Bone;
 		Impact.Zone = Zone;
@@ -4481,6 +4480,11 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		Impact.MassKg = MassEff;
 		Impact.RelativeSpeed = RelativeSpeed * Knock;
 		Victim->Balance->ApplyHitReaction(Impact);
+	}
+	// A solid fist knocks a little dust off the body, back the way it came.
+	if (!HeldItem && Energy >= FistDustFromJoules && IsAuthoritative())
+	{
+		MulticastFistDust(Hit.ImpactPoint, -TipVelocity.GetSafeNormal(), FMath::Clamp((Energy - FistDustFromJoules) / FMath::Max(FistDustFullJoules - FistDustFromJoules, 1.f), 0.f, 1.f));
 	}
 	if (AAedirNpc* VictimNpc = Cast<AAedirNpc>(Victim))
 	{
@@ -4850,6 +4854,16 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		return Way.Size() <= Step;
 	};
 	AIMouseTimer += DeltaTime;
+	// For the hit log: how the blade lies against the one fought, a few times a second.
+	if (CVarAedirHitLog.GetValueOnGameThread() != 0 && bArmed && GFrameCounter % 15 == 0)
+	{
+		if (const AAedirItemActor* Blade = GetHeldItem(EAedirHand::Right))
+		{
+			const FVector Toward = (GetAITargetPoint(1) - Blade->GetActorLocation()).GetSafeNormal();
+			UE_LOG(LogAedir, Log, TEXT("[NpcReady] %s phase %d, %.0f cm off, mouse %s, blade toward the foe %.2f, up %.2f"), *Creature->GetName(), AIMousePhase, Distance,
+				*Fists->GetMouseAim().ToString(), FVector::DotProduct(Blade->GetActorForwardVector(), Toward), Blade->GetActorForwardVector().Z);
+		}
+	}
 	switch (AIMousePhase)
 	{
 	case 0:
@@ -5917,6 +5931,15 @@ void UAedirCombatComponent::ServerUpdateArmAim_Implementation(EAedirHand Hand, F
 		FMath::Clamp(Aim.X, -AedirArmAimYawLimit, AedirArmAimYawLimit),
 		FMath::Clamp(Aim.Y, AedirArmAimPitchMin, AedirArmAimPitchMax));
 	Arm.Extension = FMath::Clamp(Extension, 0.f, 1.f);
+}
+
+void UAedirCombatComponent::MulticastFistDust_Implementation(FVector_NetQuantize Point, FVector_NetQuantizeNormal Normal, float Strength)
+{
+	if (GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	AAedirDustPuff::Spawn(GetWorld(), Point, Normal, Strength);
 }
 
 void UAedirCombatComponent::MulticastArmourDent_Implementation(AAedirCreature* Victim, FName Bone, FVector_NetQuantize Point, FVector_NetQuantizeNormal Normal, float EnergyJoules)

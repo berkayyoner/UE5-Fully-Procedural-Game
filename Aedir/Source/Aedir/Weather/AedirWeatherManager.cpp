@@ -68,10 +68,19 @@ namespace
 	// The drawn bolt: the glowing shape it is drawn with, how wide its main channel is, how bright, how long it lasts and how
 	// far its light reaches.
 	const TCHAR* const WeatherManagerBoltPlanePath = TEXT("/Engine/BasicShapes/Plane.Plane");
-	const TCHAR* const WeatherManagerBoltMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirPrecip.M_AedirPrecip");
+	const TCHAR* const WeatherManagerBoltMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirBolt.M_AedirBolt");
 	constexpr float WeatherManagerBoltPlaneCm = 100.f;
-	constexpr float WeatherManagerBoltWidthCm = 90.f;
-	const FLinearColor WeatherManagerBoltColor(30.f, 34.f, 48.f);
+	// The glow round the channel and the white-hot core inside it.
+	constexpr float WeatherManagerBoltWidthCm = 320.f;
+	constexpr float WeatherManagerBoltCoreWidthCm = 40.f;
+	const FLinearColor WeatherManagerBoltColor(2.5f, 3.2f, 7.f);
+	const FLinearColor WeatherManagerBoltCoreColor(60.f, 62.f, 75.f);
+	// Thunder: the loudest from a strike close by, falling off with distance down to this share; a flash in the clouds
+	// rumbles at this share of a strike.
+	constexpr float WeatherManagerThunderNearCm = 3000.f;
+	constexpr float WeatherManagerThunderFarCm = 900000.f;
+	constexpr float WeatherManagerThunderFarShare = 0.25f;
+	constexpr float WeatherManagerCloudThunderShare = 0.7f;
 	constexpr float WeatherManagerBoltLife = 0.45f;
 	constexpr float WeatherManagerBoltLightCandelas = 50000.f;
 	constexpr float WeatherManagerBoltLightRadius = 12000.f;
@@ -346,6 +355,17 @@ void AAedirWeatherManager::BuildBolt(const FVector& StrikeLocation, float Seed)
 		BoltMesh->SetAbsolute(true, true, true);
 		BoltMesh->SetupAttachment(GetRootComponent());
 		BoltMesh->RegisterComponent();
+		BoltCoreMaterial = UMaterialInstanceDynamic::Create(Base, this);
+		BoltCoreMaterial->SetVectorParameterValue(TEXT("Color"), WeatherManagerBoltCoreColor);
+		BoltCore = NewObject<UInstancedStaticMeshComponent>(this);
+		BoltCore->SetStaticMesh(Plane);
+		BoltCore->SetMaterial(0, BoltCoreMaterial);
+		BoltCore->SetMobility(EComponentMobility::Movable);
+		BoltCore->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		BoltCore->SetCastShadow(false);
+		BoltCore->SetAbsolute(true, true, true);
+		BoltCore->SetupAttachment(GetRootComponent());
+		BoltCore->RegisterComponent();
 		BoltLight = NewObject<UPointLightComponent>(this);
 		BoltLight->SetAbsolute(true, true, true);
 		BoltLight->SetupAttachment(GetRootComponent());
@@ -372,7 +392,9 @@ void AAedirWeatherManager::BuildBolt(const FVector& StrikeLocation, float Seed)
 				const FVector B = OutPath[Index + 1];
 				const float Length = static_cast<float>(FVector::Dist(A, B));
 				Finer.Add(A);
-				Finer.Add((A + B) * 0.5 + Stream.VRand() * (Length * 0.22f));
+				// Bent off to the side, not along the line, so it zigzags without folding back on itself.
+				const FVector Line = (B - A).GetSafeNormal();
+				Finer.Add((A + B) * 0.5 + FVector::VectorPlaneProject(Stream.VRand(), Line) * (Length * (Level < 3 ? 0.18f : 0.28f)));
 			}
 			Finer.Add(OutPath.Last());
 			OutPath = MoveTemp(Finer);
@@ -380,7 +402,7 @@ void AAedirWeatherManager::BuildBolt(const FVector& StrikeLocation, float Seed)
 	};
 	const FVector Top = StrikeLocation + FVector(Stream.FRandRange(-1800.f, 1800.f), Stream.FRandRange(-1800.f, 1800.f), Stream.FRandRange(5500.f, 7500.f));
 	TArray<FVector> Main;
-	Crooked(Top, StrikeLocation, 7, Main);
+	Crooked(Top, StrikeLocation, 8, Main);
 	for (int32 Index = 0; Index + 1 < Main.Num(); ++Index)
 	{
 		BoltPoints.Add(Main[Index]);
@@ -411,6 +433,12 @@ void AAedirWeatherManager::BuildBolt(const FVector& StrikeLocation, float Seed)
 		More.Init(FTransform(FQuat::Identity, FVector::ZeroVector, FVector(0.f)), Segments - BoltMesh->GetInstanceCount());
 		BoltMesh->AddInstances(More, false, true);
 	}
+	if (BoltCore && BoltCore->GetInstanceCount() < Segments)
+	{
+		TArray<FTransform> More;
+		More.Init(FTransform(FQuat::Identity, FVector::ZeroVector, FVector(0.f)), Segments - BoltCore->GetInstanceCount());
+		BoltCore->AddInstances(More, false, true);
+	}
 	BoltLight->SetWorldLocation(StrikeLocation + FVector(0.f, 0.f, 800.f));
 	BoltAge = 0.f;
 }
@@ -426,6 +454,10 @@ void AAedirWeatherManager::StepBolt(float DeltaSeconds)
 	const float Flicker = BoltAge < 0.06f ? 1.f : BoltAge < 0.14f ? 0.25f : BoltAge < 0.22f ? 0.9f : BoltAge < WeatherManagerBoltLife ? FMath::Max(0.f, 0.6f * (1.f - (BoltAge - 0.22f) / (WeatherManagerBoltLife - 0.22f))) : 0.f;
 	const bool bShown = Flicker > 0.f;
 	BoltMesh->SetVisibility(bShown);
+	if (BoltCore)
+	{
+		BoltCore->SetVisibility(bShown);
+	}
 	BoltLight->SetIntensity(WeatherManagerBoltLightCandelas * Flicker);
 	BoltLight->SetVisibility(bShown);
 	if (!bShown)
@@ -434,6 +466,10 @@ void AAedirWeatherManager::StepBolt(float DeltaSeconds)
 		return;
 	}
 	BoltMaterial->SetScalarParameterValue(TEXT("Strength"), Flicker);
+	if (BoltCoreMaterial)
+	{
+		BoltCoreMaterial->SetScalarParameterValue(TEXT("Strength"), Flicker);
+	}
 
 	FVector Eye = BoltPoints.Num() > 0 ? BoltPoints[0] : FVector::ZeroVector;
 	if (const APlayerController* LocalController = GetWorld()->GetFirstPlayerController())
@@ -444,19 +480,31 @@ void AAedirWeatherManager::StepBolt(float DeltaSeconds)
 		}
 	}
 	TArray<FTransform> Transforms;
+	TArray<FTransform> Cores;
 	Transforms.Init(FTransform(FQuat::Identity, FVector::ZeroVector, FVector(0.f)), BoltMesh->GetInstanceCount());
+	Cores.Init(FTransform(FQuat::Identity, FVector::ZeroVector, FVector(0.f)), BoltCore ? BoltCore->GetInstanceCount() : 0);
 	for (int32 Segment = 0; Segment < BoltWidths.Num(); ++Segment)
 	{
 		const FVector A = BoltPoints[Segment * 2];
 		const FVector B = BoltPoints[Segment * 2 + 1];
 		const FVector Middle = (A + B) * 0.5;
 		const FVector Along = (B - A).GetSafeNormal();
-		// A little longer than the segment so the joints between them do not show.
-		const float Length = static_cast<float>(FVector::Dist(A, B)) * 1.3f + BoltWidths[Segment];
-		Transforms[Segment] = FTransform(FRotationMatrix::MakeFromXZ(Along, (Eye - Middle).GetSafeNormal()).ToQuat(), Middle,
-			FVector(Length / WeatherManagerBoltPlaneCm, BoltWidths[Segment] / WeatherManagerBoltPlaneCm, 1.f));
+		const float Width = BoltWidths[Segment];
+		const float CoreWidth = Width * (WeatherManagerBoltCoreWidthCm / WeatherManagerBoltWidthCm);
+		// Turned to face the eye; only a little longer than the segment, so the joints neither gap nor glow twice over.
+		const FQuat Facing = FRotationMatrix::MakeFromXZ(Along, (Eye - Middle).GetSafeNormal()).ToQuat();
+		const float Length = static_cast<float>(FVector::Dist(A, B));
+		Transforms[Segment] = FTransform(Facing, Middle, FVector((Length + Width * 0.15f) / WeatherManagerBoltPlaneCm, Width / WeatherManagerBoltPlaneCm, 1.f));
+		if (Cores.IsValidIndex(Segment))
+		{
+			Cores[Segment] = FTransform(Facing, Middle, FVector((Length + CoreWidth * 0.5f) / WeatherManagerBoltPlaneCm, CoreWidth / WeatherManagerBoltPlaneCm, 1.f));
+		}
 	}
 	BoltMesh->BatchUpdateInstancesTransforms(0, Transforms, true, true, true);
+	if (BoltCore)
+	{
+		BoltCore->BatchUpdateInstancesTransforms(0, Cores, true, true, true);
+	}
 }
 
 void AAedirWeatherManager::FlashClouds(const FVector& Below)
@@ -527,6 +575,10 @@ void AAedirWeatherManager::StepCloudFlashes(float DeltaSeconds, float LightningP
 			}
 			const FVector Away = FRotator(0.f, FMath::FRandRange(0.f, 360.f), 0.f).Vector() * FMath::FRandRange(WeatherManagerCloudFlashNearCm, WeatherManagerCloudFlashFarCm);
 			FlashClouds(Eye + Away);
+			if (CloudFlashLight)
+			{
+				QueueThunder(CloudFlashLight->GetComponentLocation(), WeatherManagerCloudThunderShare);
+			}
 		}
 		const float PerMinute = LightningPerMinute * WeatherManagerCloudFlashesPerStrike;
 		// The first one comes soon after the storm breaks.
@@ -577,24 +629,53 @@ void AAedirWeatherManager::MulticastLightning_Implementation(FVector StrikeLocat
 	// The channel lights up the cloud it came out of.
 	FlashClouds(StrikeLocation);
 
-	if (!Settings->ThunderSound.IsNull())
-	{
-		FVector ListenerLocation = StrikeLocation;
-		if (const APlayerController* LocalController = World->GetFirstPlayerController())
-		{
-			if (LocalController->PlayerCameraManager)
-			{
-				ListenerLocation = LocalController->PlayerCameraManager->GetCameraLocation();
-			}
-		}
+	QueueThunder(StrikeLocation, 1.f);
+}
 
-		const float DelaySeconds = FVector::Dist(ListenerLocation, StrikeLocation) / WeatherManagerSoundSpeedCmPerSecond;
-		FTimerHandle ThunderTimer;
-		World->GetTimerManager().SetTimer(
-			ThunderTimer,
-			FTimerDelegate::CreateUObject(this, &AAedirWeatherManager::PlayThunderAt, StrikeLocation),
-			FMath::Max(DelaySeconds, WeatherManagerMinThunderDelay),
-			false);
+void AAedirWeatherManager::QueueThunder(const FVector& From, float Loudness)
+{
+	UWorld* World = GetWorld();
+	if (!World || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	FVector ListenerLocation = From;
+	if (const APlayerController* LocalController = World->GetFirstPlayerController(); LocalController && LocalController->PlayerCameraManager)
+	{
+		ListenerLocation = LocalController->PlayerCameraManager->GetCameraLocation();
+	}
+	// Heard as far off as it is: later and softer the further it struck.
+	const float Distance = static_cast<float>(FVector::Dist(ListenerLocation, From));
+	const float Near = 1.f - FMath::Clamp((Distance - WeatherManagerThunderNearCm) / (WeatherManagerThunderFarCm - WeatherManagerThunderNearCm), 0.f, 1.f);
+	const float Volume = Loudness * FMath::Lerp(WeatherManagerThunderFarShare, 1.f, FMath::Square(Near));
+	FTimerHandle ThunderTimer;
+	World->GetTimerManager().SetTimer(ThunderTimer, FTimerDelegate::CreateUObject(this, &AAedirWeatherManager::PlayThunder, Volume),
+		FMath::Max(Distance / WeatherManagerSoundSpeedCmPerSecond, WeatherManagerMinThunderDelay), false);
+}
+
+void AAedirWeatherManager::PlayThunder(float Loudness)
+{
+	// Thunder fills the whole sky rather than coming from a point, so it is heard all round, one of several rolls of it.
+	const UAedirWeatherSettings* Settings = GetDefault<UAedirWeatherSettings>();
+	USoundBase* Thunder = nullptr;
+	const FString Base = Settings->ThunderSound.ToSoftObjectPath().GetLongPackageName();
+	if (Base.Len() > 2)
+	{
+		const FString Path = FString::Printf(TEXT("%s%d"), *Base.LeftChop(1), FMath::RandRange(1, 5));
+		Thunder = LoadObject<USoundBase>(nullptr, *(Path + TEXT(".") + FPackageName::GetShortName(Path)), nullptr, LOAD_NoWarn | LOAD_Quiet);
+	}
+	if (!Thunder)
+	{
+		Thunder = Settings->ThunderSound.LoadSynchronous();
+	}
+	if (Thunder)
+	{
+		UGameplayStatics::PlaySound2D(this, Thunder, Loudness * UAedirSettingsSubsystem::GetValues().WeatherVolume, FMath::FRandRange(0.9f, 1.05f));
+		UE_LOG(LogAedir, Log, TEXT("[Weather] Thunder %s at %.2f"), *Thunder->GetName(), Loudness);
+	}
+	else
+	{
+		UE_LOG(LogAedir, Warning, TEXT("[Weather] No thunder sound found at %s"), *Settings->ThunderSound.ToString());
 	}
 }
 
@@ -758,10 +839,7 @@ void AAedirWeatherManager::ApplyLightningDamage(const FVector& StrikeLocation) c
 
 void AAedirWeatherManager::PlayThunderAt(FVector StrikeLocation)
 {
-	if (USoundBase* Thunder = GetDefault<UAedirWeatherSettings>()->ThunderSound.LoadSynchronous())
-	{
-		UGameplayStatics::PlaySoundAtLocation(this, Thunder, StrikeLocation, UAedirSettingsSubsystem::GetValues().WeatherVolume);
-	}
+	QueueThunder(StrikeLocation, 1.f);
 }
 
 void AAedirWeatherManager::RefreshSceneActors()

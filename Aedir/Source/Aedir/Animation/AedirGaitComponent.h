@@ -520,6 +520,40 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
 	float ReadyHandShare = 0.8f;
 
+	// A body struck on the head, the neck, the chest, the belly, the groin or a shoulder puts a hand to the place for a moment:
+	// the hand on the other side from it, and only one with nothing in it. A blow pushing at least ClutchBlowMinPush brings
+	// the hand there for ClutchBlowSeconds, as far as ClutchBlowShare.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchBlowMinPush = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchBlowSeconds = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchBlowShare = 0.85f;
+
+	// Out of the fight stance and not reaching for anything, a hand holds a cut, a stab or a broken arm there for as long as
+	// it lasts, from a wound of ClutchWoundMinSeverity up, as far as ClutchWoundShare.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchWoundMinSeverity = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchWoundShare = 0.9f;
+
+	// How fast the hand goes there and comes away again, in shares a second.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchInSpeed = 7.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchOutSpeed = 2.5f;
+
+	// The wrist sits this far off the skin and this far back towards the hand's own side, so the palm lies on the place.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchSkinCm = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchPalmCm = 7.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MaxArmSwingWalkDegrees = 9.f;
 
@@ -792,6 +826,11 @@ private:
 	void BeginRecoverySwing(int32 Foot, const FVector& CatchWorld, float MaxStepCm, float Urgency, float BottomZ);
 	void CacheLegGeometry();
 	void ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, const FVector& ProtectiveTargetWorld, float ProtectiveAlpha, FVector& OutTargetWorld, float& OutAlpha) const;
+
+	// Where each hand holds a hurt place and how far it is there (left, right).
+	FVector ClutchTarget[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float ClutchAlpha[2] = { 0.f, 0.f };
+	void UpdateClutch(float DeltaTime, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirCreature> CreatureOwner;
