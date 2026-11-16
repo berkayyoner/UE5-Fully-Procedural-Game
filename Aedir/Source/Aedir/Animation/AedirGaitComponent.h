@@ -197,6 +197,10 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	FRotator HeadLookRotation = FRotator::ZeroRotator;
 
+	// How far blows have knocked the head on its neck, on top of where it looks.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	FRotator HeadHitSway = FRotator::ZeroRotator;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	FRotator NeckLookRotation = FRotator::ZeroRotator;
 

@@ -818,6 +818,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	// Blows bend the trunk and it springs back.
 	if (BalanceComponent)
 	{
+		GaitState.HeadHitSway = BalanceComponent->GetHeadSway();
 		const FRotator HitSway = BalanceComponent->GetHitSway();
 		GaitState.SpineLeanPitch += HitSway.Pitch;
 		GaitState.SpineLeanRoll += HitSway.Roll;

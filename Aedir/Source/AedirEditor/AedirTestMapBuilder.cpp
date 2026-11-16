@@ -90,11 +90,11 @@ namespace
 	constexpr float TestScaleZ = 100.f;
 	constexpr float TestClearingRadiusM = 55.f;
 	constexpr float TestClearingEdgeM = 140.f;
-	// How far the ground's scanned height moves the surface, in cm, and where on it the collision ground lies: a quarter of
+	// How far the ground's scanned height moves the surface, in cm, and where on it the collision ground lies: a third of
 	// the way up, so pits sink a little below what feet and things stand on and pebbles and clods rise a little over it,
 	// and nothing standing on it seems sunk in.
-	constexpr float TestDisplacementCm = 8.f;
-	constexpr float TestDisplacementCenter = 0.25f;
+	constexpr float TestDisplacementCm = 5.f;
+	constexpr float TestDisplacementCenter = 0.3f;
 
 	template <typename TExpression>
 	TExpression* TestNode(UMaterial* Material, int32 X, int32 Y)

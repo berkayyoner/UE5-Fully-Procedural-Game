@@ -25,6 +25,16 @@ public:
 	UPROPERTY(Transient)
 	TObjectPtr<UStaticMeshComponent> Sheath;
 
+	// Lying loose, a thing rests on the whole of its shown model, not only on the slim box it is swung and held by: a mace's
+	// head or a sword's guard keeps it off the ground instead of sinking into it. Solid to the world alone, and only while
+	// the thing lies loose.
+	UPROPERTY(Transient)
+	TObjectPtr<class UBoxComponent> RestBox;
+
+	// Fits the resting box round a model shown for this thing.
+	void FitRestBox(const UStaticMeshComponent* Model);
+	void SetRestBoxSolid(bool bSolid);
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	FText ItemName;
 

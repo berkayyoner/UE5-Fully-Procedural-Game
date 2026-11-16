@@ -384,6 +384,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
+	UpdatePendingPushes(DeltaTime);
 	UpdateHitSway(DeltaTime);
 	UpdateMotors(DeltaTime, false);
 	UpdatePosedArms();
@@ -616,7 +617,9 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 		BoundCapsuleHalfHeight = CapsuleHalfHeight;
 		BodyControl->RebindHips(BodyCapsule);
 	}
-	BodyControl->SetStrengths(Upright, LeftArm, RightArm);
+	// Out of breath, the arms hold their pose less firmly.
+	const float Breath = FMath::Lerp(1.f, TiredStrengthShare, GetTiredShare());
+	BodyControl->SetStrengths(Upright, LeftArm * Breath, RightArm * Breath);
 	// Dying, the body goes down as the dead do: what muscle it has left only holds its shape a while longer.
 	BodyControl->SetDead(Creature && Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying()));
 	const UAedirWoundComponent* Wounds = Creature ? Creature->Wounds.Get() : nullptr;
@@ -943,7 +946,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	const float StaminaFraction = StatsComponent ? StatsComponent->GetStaminaFraction() : 1.f;
 
 	// Worn down, the same blow throws the body further and costs it more of its balance.
-	const float Weak = 1.f + LowHealthHitGain * GetHurtShare();
+	const float Weak = 1.f + LowHealthHitGain * GetHurtShare() + TiredHitGain * GetTiredShare();
 	const float Loss = FMath::Min(ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction) * Weak, 1.f);
 	ApplyBalanceImpact(Impact.Direction, Loss);
 
@@ -977,7 +980,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 
 	const UWorld* World = GetWorld();
 	const double Now = World ? World->GetTimeSeconds() : 0.0;
-	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone) * FMath::Lerp(1.f, LowHealthKnockdownShare, GetHurtShare());
+	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone) * FMath::Lerp(1.f, LowHealthKnockdownShare, GetHurtShare()) * FMath::Lerp(1.f, TiredKnockdownShare, GetTiredShare());
 	bool bStaggered = false;
 
 	if (bKnockedDown)
@@ -1024,6 +1027,16 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	DazeSeconds = FMath::Max(DazeSeconds, ComputeDazeSeconds(Impact.Zone, Impact.EnergyJoules));
 
 	OnHitReaction.Broadcast(Impact.Zone, Impact.EnergyJoules, bStaggered, bKnockedDown);
+}
+
+float UAedirBalanceComponent::GetTiredShare() const
+{
+	const UAedirStatsComponent* StatsComponent = FindStats();
+	if (!StatsComponent || TiredFrom <= KINDA_SMALL_NUMBER)
+	{
+		return 0.f;
+	}
+	return FMath::Clamp((TiredFrom - StatsComponent->GetStaminaFraction()) / TiredFrom, 0.f, 1.f);
 }
 
 float UAedirBalanceComponent::GetHurtShare() const
@@ -1580,7 +1593,7 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 
 	const float DazeRecoveryScale = IsDazed() ? HitReactionDazeRecoveryScale : 1.f;
 	const float StaggerRecoveryScale = IsStaggering() ? HitReactionStaggerRecoveryScale : 1.f;
-	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * FMath::Lerp(1.f, LowHealthRecoveryShare, GetHurtShare()) * DeltaTime;
+	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * FMath::Lerp(1.f, LowHealthRecoveryShare, GetHurtShare()) * FMath::Lerp(1.f, TiredRecoveryShare, GetTiredShare()) * DeltaTime;
 	// Once the legs have given way there is no catching it any more, only getting up again afterwards.
 	if (bIsRagdoll || bDead || Balance >= FallBalanceThreshold)
 	{
@@ -1698,6 +1711,35 @@ void UAedirBalanceComponent::ApplyTopple(const FVector& TopVelocity)
 
 void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVector Impulse, FVector Location)
 {
+	// Part of the push lands at once, the rest keeps pushing over a moment after it.
+	const FVector Push = Impulse * HitPushScale;
+	const float Now = HitPushSpreadSeconds > KINDA_SMALL_NUMBER ? FMath::Clamp(HitPushNowShare, 0.f, 1.f) : 1.f;
+	LandPush(Bone, Push * Now, Location);
+	if (Now < 1.f)
+	{
+		FPendingPush& Pending = PendingPushes.AddDefaulted_GetRef();
+		Pending.Bone = Bone;
+		Pending.Impulse = Push * (1.f - Now);
+		Pending.Location = Location;
+		Pending.Left = HitPushSpreadSeconds;
+	}
+	// The head is light and held by little: struck, it is knocked back on its neck the way the blow went, all of the push.
+	const FString Name = Bone.ToString();
+	if (CharacterOwner && !bIsRagdoll && BodyMesh && (Name.StartsWith(TEXT("head")) || Name.StartsWith(TEXT("neck"))))
+	{
+		const FTransform& Frame = CharacterOwner->GetActorTransform();
+		const FVector Local = Frame.InverseTransformVectorNoScale(Push);
+		const FVector Off = Frame.InverseTransformVectorNoScale(Location - BodyMesh->GetBoneLocation(TEXT("head")));
+		HeadSwayVelocity.X -= static_cast<float>(Local.X) * HeadSwayDegreesPerSecondPerPush;
+		HeadSwayVelocity.Y += static_cast<float>(Local.Y) * HeadSwayDegreesPerSecondPerPush;
+		HeadSwayVelocity.Z += static_cast<float>(Off.X * Local.Y - Off.Y * Local.X) * HitSwayTwistPerPushCm * 4.f;
+	}
+	Flinch = FMath::Max(Flinch, FMath::Clamp(static_cast<float>(Push.Size()) / HitFlinchFullImpulse, 0.f, 1.f));
+	MotorUpdateTimer = 0.f;
+}
+
+void UAedirBalanceComponent::LandPush(FName Bone, const FVector& Impulse, const FVector& Location)
+{
 	if (BodyMesh && BodyMesh->IsAnySimulatingPhysics())
 	{
 		BodyMesh->AddImpulseAtLocation(Impulse, Location, Bone);
@@ -1713,8 +1755,26 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 		HitSwayVelocity.Z += static_cast<float>(Off.X * Push.Y - Off.Y * Push.X) * HitSwayTwistPerPushCm;
 	}
 	PushHips(Impulse);
-	Flinch = FMath::Max(Flinch, FMath::Clamp(static_cast<float>(Impulse.Size()) / HitFlinchFullImpulse, 0.f, 1.f));
-	MotorUpdateTimer = 0.f;
+}
+
+void UAedirBalanceComponent::UpdatePendingPushes(float DeltaTime)
+{
+	// Each blow still pushing gives what is left of it, more at first and less as it runs out.
+	for (int32 Index = PendingPushes.Num() - 1; Index >= 0; --Index)
+	{
+		FPendingPush& Pending = PendingPushes[Index];
+		const float Total = FMath::Max(HitPushSpreadSeconds, KINDA_SMALL_NUMBER);
+		const float Before = Pending.Left / Total;
+		Pending.Left = FMath::Max(Pending.Left - DeltaTime, 0.f);
+		const float After = Pending.Left / Total;
+		// Falling off: the share given so far is 1 - (left share) squared.
+		const float Share = Before * Before - After * After;
+		LandPush(Pending.Bone, Pending.Impulse * Share, Pending.Location);
+		if (Pending.Left <= 0.f)
+		{
+			PendingPushes.RemoveAtSwap(Index);
+		}
+	}
 }
 
 void UAedirBalanceComponent::UpdateHitSway(float DeltaTime)
@@ -1722,6 +1782,7 @@ void UAedirBalanceComponent::UpdateHitSway(float DeltaTime)
 	if (bIsRagdoll || DeltaTime <= 0.f)
 	{
 		HitSway = HitSwayVelocity = FVector::ZeroVector;
+		HeadSway = HeadSwayVelocity = FVector::ZeroVector;
 		return;
 	}
 	// A damped spring back to straight, stepped in small steps so a long frame does not throw it.
@@ -1734,6 +1795,13 @@ void UAedirBalanceComponent::UpdateHitSway(float DeltaTime)
 		HitSway += HitSwayVelocity * Step;
 	}
 	HitSway = HitSway.BoundToCube(HitSwayMaxDegrees);
+	const float HeadOmega = 2.f * UE_PI * FMath::Max(HeadSwayHz, 0.1f);
+	for (int32 Index = 0; Index < Steps; ++Index)
+	{
+		HeadSwayVelocity += (-HeadSway * (HeadOmega * HeadOmega) - HeadSwayVelocity * (2.f * HeadSwayDampingRatio * HeadOmega)) * Step;
+		HeadSway += HeadSwayVelocity * Step;
+	}
+	HeadSway = HeadSway.BoundToCube(HeadSwayMaxDegrees);
 }
 
 void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
@@ -2497,6 +2565,7 @@ void UAedirBalanceComponent::LimitArmSpin()
 
 void UAedirBalanceComponent::UpdateArmTraps(float DeltaTime)
 {
+	UpdateArmFree(DeltaTime);
 	// A hand turned far round against its joint limits can come to rest there, the wrong way over, and the muscles that
 	// should bring it back only press it harder into the limit. A living arm does not stay caught like that: an arm held
 	// that far off its pose for a moment is put back where the pose has it, upper arm, forearm and hand together.
@@ -2556,19 +2625,46 @@ void UAedirBalanceComponent::UpdateArmTraps(float DeltaTime)
 		}
 		ArmTrapSeconds[Side] = 0.f;
 		ArmTrapCooldown[Side] = AedirArmTrapCooldownSeconds;
-		const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
-		const TCHAR* const ArmBones[] = { TEXT("upperarm"), TEXT("lowerarm"), TEXT("hand") };
-		for (int32 Part = 0; Part < 3; ++Part)
+		// Not put back at once, which is seen as a jump: the arm passes through what caught it for a moment and its muscles,
+		// harder for that moment, pull it back to its pose on the way there.
+		SetArmFree(Side, true);
+		ArmFreeLeft[Side] = ArmFreeSeconds;
+		UE_LOG(LogTemp, Log, TEXT("[ArmTrap] %s arm of %s let go to pull itself back"), Side == 0 ? TEXT("left") : TEXT("right"), *GetNameSafe(CharacterOwner));
+	}
+}
+
+void UAedirBalanceComponent::SetArmFree(int32 Side, bool bFree)
+{
+	const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
+	const TCHAR* const ArmBones[] = { TEXT("upperarm"), TEXT("lowerarm"), TEXT("hand") };
+	const ECollisionResponse Response = bFree ? ECR_Ignore : ECR_Block;
+	for (const TCHAR* Part : ArmBones)
+	{
+		if (FBodyInstance* Body = BodyMesh ? BodyMesh->GetBodyInstance(FName(*FString::Printf(TEXT("%s%s"), Part, Suffix))) : nullptr)
 		{
-			const FName BoneName(*FString::Printf(TEXT("%s%s"), ArmBones[Part], Suffix));
-			if (FBodyInstance* Body = BodyMesh->GetBodyInstance(BoneName))
+			Body->SetResponseToChannel(ECC_WorldStatic, Response);
+			Body->SetResponseToChannel(ECC_WorldDynamic, Response);
+			Body->SetResponseToChannel(ECC_PhysicsBody, Response);
+		}
+	}
+	if (BodyControl)
+	{
+		BodyControl->SetArmBoost(Side == 1, bFree);
+	}
+}
+
+void UAedirBalanceComponent::UpdateArmFree(float DeltaTime)
+{
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		if (ArmFreeLeft[Side] > 0.f)
+		{
+			ArmFreeLeft[Side] -= DeltaTime;
+			if (ArmFreeLeft[Side] <= 0.f)
 			{
-				Body->SetBodyTransform(Pose->GetPoseArmWorld(Side, Part), ETeleportType::TeleportPhysics);
-				Body->SetLinearVelocity(FVector::ZeroVector, false);
-				Body->SetAngularVelocityInRadians(FVector::ZeroVector, false);
+				SetArmFree(Side, false);
 			}
 		}
-		UE_LOG(LogTemp, Log, TEXT("[ArmTrap] %s arm of %s put back on its pose"), Side == 0 ? TEXT("left") : TEXT("right"), *GetNameSafe(CharacterOwner));
 	}
 }
 

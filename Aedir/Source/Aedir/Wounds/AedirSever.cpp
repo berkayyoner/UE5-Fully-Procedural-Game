@@ -1,4 +1,5 @@
 #include "Wounds/AedirSever.h"
+#include "TimerManager.h"
 
 #include "Aedir.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -19,7 +20,12 @@ namespace
 	// A severed part's collision is at least this thick every way.
 	constexpr double SeverMinThicknessCm = 4.0;
 	constexpr float SeverPieceLifeSeconds = 240.f;
-	constexpr float SeverPushShare = 0.5f;
+	// The cut part takes this share of the blade's speed through the cut, at most this fast: a cut limb drops and tumbles,
+	// it is not thrown.
+	constexpr float SeverPushShare = 0.3f;
+	constexpr double SeverPushMaxCmPerSec = 300.0;
+	constexpr float SeverMaxDepenetrationCmPerSec = 80.f;
+	constexpr float SeverClearSeconds = 0.4f;
 	constexpr int32 SeverSpurtDrops = 14;
 	constexpr int32 SeverHullPoints = 48;
 	const TCHAR* const SeverFleshPath = TEXT("/Game/Aedir/Materials/M_AedirFlesh.M_AedirFlesh");
@@ -296,8 +302,21 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 	Mesh->SetMassOverrideInKg(NAME_None, PartKg, true);
 	Mesh->SetLinearDamping(0.1f);
 	Mesh->SetAngularDamping(0.6f);
+	// Cut off where it overlaps the body it came from: it does not collide with bodies until it has dropped clear, and is never
+	// thrown out of whatever it is pushed into faster than a limb falls, so it drops away rather than flying off.
+	Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Ignore);
+	Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+	if (FBodyInstance* PieceBody = Mesh->GetBodyInstance())
+	{
+		PieceBody->SetMaxDepenetrationVelocity(SeverMaxDepenetrationCmPerSec);
+	}
 	Mesh->SetSimulatePhysics(true);
-	Mesh->AddImpulseAtLocation(Push.GetClampedToMaxSize(600.0) * SeverPushShare * Mesh->GetMass(), JointWorld);
+	Mesh->AddImpulseAtLocation(Push.GetClampedToMaxSize(SeverPushMaxCmPerSec) * SeverPushShare * Mesh->GetMass(), JointWorld);
+	FTimerHandle Clear;
+	World->GetTimerManager().SetTimer(Clear, FTimerDelegate::CreateWeakLambda(Mesh, [Mesh]()
+	{
+		Mesh->SetCollisionResponseToChannel(ECC_PhysicsBody, ECR_Block);
+	}), SeverClearSeconds, false);
 	Piece->SetLifeSpan(SeverPieceLifeSeconds);
 
 	// What stays on the body ends in flesh too, where the bone was.

@@ -2,6 +2,7 @@
 
 #include "Aedir.h"
 
+#include "Components/BoxComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Creature/AedirCreature.h"
@@ -863,6 +864,63 @@ void AAedirItemActor::TakeOff()
 	ClearWornLook();
 }
 
+void AAedirItemActor::FitRestBox(const UStaticMeshComponent* Model)
+{
+	const UStaticMesh* Shown = Model ? Model->GetStaticMesh() : nullptr;
+	if (!Mesh || !Shown)
+	{
+		return;
+	}
+	// The model's corners in the item's own frame, without the root's scale (the size of the slim box).
+	const FBox Local = Shown->GetBoundingBox();
+	const FTransform Root(Mesh->GetComponentQuat(), Mesh->GetComponentLocation());
+	FBox InItem(ForceInit);
+	for (int32 Corner = 0; Corner < 8; ++Corner)
+	{
+		const FVector At(Corner & 1 ? Local.Max.X : Local.Min.X, Corner & 2 ? Local.Max.Y : Local.Min.Y, Corner & 4 ? Local.Max.Z : Local.Min.Z);
+		InItem += Root.InverseTransformPosition(Model->GetComponentTransform().TransformPosition(At));
+	}
+	if (!RestBox)
+	{
+		RestBox = NewObject<UBoxComponent>(this, TEXT("RestBox"), RF_Transient);
+		RestBox->SetupAttachment(Mesh);
+		RestBox->SetAbsolute(false, false, true);
+		RestBox->SetCollisionObjectType(ECC_WorldDynamic);
+		RestBox->SetCollisionResponseToAllChannels(ECR_Ignore);
+		RestBox->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+		RestBox->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+		RestBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		RestBox->SetGenerateOverlapEvents(false);
+		RestBox->SetCanEverAffectNavigation(false);
+		RestBox->RegisterComponent();
+	}
+	// A little inside the model, so it never seems to float.
+	RestBox->SetBoxExtent(InItem.GetExtent() * 0.95);
+	const FVector Scale = Mesh->GetRelativeScale3D();
+	const FVector Middle = InItem.GetCenter();
+	RestBox->SetRelativeLocation(FVector(Middle.X / FMath::Max(Scale.X, 0.001), Middle.Y / FMath::Max(Scale.Y, 0.001), Middle.Z / FMath::Max(Scale.Z, 0.001)));
+	RestBox->SetRelativeRotation(FQuat::Identity);
+	SetRestBoxSolid(Mesh->IsSimulatingPhysics() && !IsHeld() && !bWorn && !bHolstered && !bStowed);
+}
+
+void AAedirItemActor::SetRestBoxSolid(bool bSolid)
+{
+	if (!RestBox || !Mesh)
+	{
+		return;
+	}
+	// It is part of the thing's own body, welded to it, its weight still the thing's alone; solid only while it lies loose.
+	if (bSolid && !RestBox->IsWelded())
+	{
+		RestBox->WeldTo(Mesh);
+	}
+	RestBox->SetCollisionEnabled(bSolid ? ECollisionEnabled::PhysicsOnly : ECollisionEnabled::NoCollision);
+	if (bSolid)
+	{
+		ApplyItemMass();
+	}
+}
+
 void AAedirItemActor::SetFreePhysics(bool bFree)
 {
 	if (!Mesh)
@@ -878,6 +936,7 @@ void AAedirItemActor::SetFreePhysics(bool bFree)
 	}
 	Mesh->SetCollisionEnabled(bFree ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
 	Mesh->SetSimulatePhysics(bFree);
+	SetRestBoxSolid(bFree && !bWorn && !bHolstered && !bStowed);
 	if (bHeldCollision)
 	{
 		bHeldCollision = false;
@@ -901,6 +960,7 @@ void AAedirItemActor::ApplyHeldCollision(const AAedirCreature* Creature)
 		FreePawnResponse = Mesh->GetCollisionResponseToChannel(ECC_Pawn);
 	}
 	bHeldCollision = true;
+	SetRestBoxSolid(false);
 	Mesh->SetSimulatePhysics(false);
 	Mesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 	Mesh->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);

@@ -41,7 +41,9 @@ namespace
 	// the end of the draw, gives each part its time at most, and now and then raises a blade overhead instead.
 	constexpr float AedirAIMouseGuardSpeed = 2.f;
 	constexpr float AedirAIMouseWindupSpeed = 3.5f;
-	constexpr float AedirAIMouseStrikeSpeed = 18.f;
+	constexpr float AedirAIMouseStrikeSpeed = 24.f;
+	// How often a blow goes for the head when the one fought holds a guard up.
+	constexpr float AedirAIHeadChanceGuarded = 0.3f;
 	constexpr float AedirAIMouseWindupAcross = 0.9f;
 	constexpr float AedirAIMouseFistThrough = 0.25f;
 	constexpr float AedirAIMouseBladeThrough = 0.7f;
@@ -82,7 +84,7 @@ namespace
 	constexpr float AedirHeadHeavyTurnMass = 1.8f;
 	constexpr float AedirHeadHeavyDamping = 0.7f;
 	// A blade moving across itself more than this share along its flat strikes with the flat.
-	constexpr float AedirFlatStrikeShare = 0.7f;
+	constexpr float AedirFlatStrikeShare = 0.8f;
 	// Against the body below this share of the blow speed, a fist or blade is resting there; driven in again from that, it lands anew.
 	constexpr float AedirRestingIntoShare = 0.4f;
 	TAutoConsoleVariable<int32> CVarAedirHitLog(TEXT("aedir.HitLog"), 0, TEXT("Log every quick touch on a body that did not count as a blow, and why (1)."));
@@ -4286,7 +4288,7 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 			const float HandSpeed = static_cast<float>(FromVelocity.Size());
 			const float PointSpeed = FMath::Max(static_cast<float>(TipVelocity.Size()), 1.f);
 			const float WeaponKg = HeldItem ? HeldItem->Weight : 0.f;
-			const float MassAtPoint = FMath::Min(WeaponKg + (MassEff - WeaponKg) * FMath::Square(FMath::Min(HandSpeed / PointSpeed, 1.f)), MassEff);
+			const float MassAtPoint = FMath::Min(WeaponKg + (MassEff - WeaponKg) * WeaponArmMassShare * FMath::Square(FMath::Min(HandSpeed / PointSpeed, 1.f)), MassEff);
 			const float StruckSpeed = FMath::Min(CameInSpeed, AedirImpactCountedMaxSpeed);
 			ApplyCreatureImpact(Hand, Arm, Victim, Hit, TipVelocity, StruckSpeed, HeldItem ? MassAtPoint : MassEff, AxialAlignment);
 			continue;
@@ -4346,6 +4348,8 @@ void UAedirCombatComponent::PushFriend(AAedirCreature* Victim, FName Bone, EAedi
 void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, const FVector& TipVelocity, float RelativeSpeed, float MassEff, float AxialAlignment)
 {
 	AAedirItemActor* HeldItem = GetHeldItem(Hand);
+	// The way the weapon itself lies, as it is held now: the arm's own model of it lags behind a blade the fists swing.
+	const FVector BladeAxis = HeldItem ? HeldItem->GetActorForwardVector() : Arm.WeaponDir;
 	// A blow that met the body's capsule still lands on whatever part of the body is closest to where it struck.
 	const FName Bone = !Hit.BoneName.IsNone() || !Victim->GetMesh() ? Hit.BoneName : Victim->GetMesh()->FindClosestBone(Hit.ImpactPoint);
 	const EAedirBodyZone Zone = ClassifyBodyZone(Bone);
@@ -4365,7 +4369,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	if (HeldItem && DamageType != EAedirDamageType::Blunt && !bPointFirst)
 	{
 		const FVector FlatNormal = HeldItem->GetFlatNormalWorld();
-		const FVector Across = FVector::VectorPlaneProject(TipVelocity, Arm.WeaponDir).GetSafeNormal();
+		const FVector Across = FVector::VectorPlaneProject(TipVelocity, BladeAxis).GetSafeNormal();
 		bFlat = !FlatNormal.IsNearlyZero() && !Across.IsNearlyZero() && FMath::Abs(FVector::DotProduct(Across, FlatNormal)) > AedirFlatStrikeShare;
 	}
 	const EAedirDamageType Landed = bFlat ? EAedirDamageType::Blunt : DamageType;
@@ -4418,7 +4422,8 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	// One blow to the body or a limb leaves the victim alive however hard it was; only the head can be finished at once.
 	// The weapon's own share has already been weighed by how hard the blow was; weighing it again would leave a solid blow
 	// short of full strength next to nothing.
-	const float RawDamage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(Landed, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor * Harm * FistShare + FlatDamage;
+	const float RawDamage = (Energy * (HeldItem ? WeaponEnergyDamageScale : ImpactDamageScale) * ComputeDamageTypeFactor(Landed, AxialAlignment) * GetZoneDamageMultiplier(Zone) * ArmorFactor * Harm * FistShare + FlatDamage)
+		* (HeldItem ? WeaponDamageShare : 1.f);
 	// How far an edge or a point gets depends on how fast it came: short of enough it glances off, between it bites and
 	// sticks, past it it goes on through.
 	float CutJoules = AedirCutTorsoJoules;
@@ -4446,7 +4451,8 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		// spends half of itself on the small bones there. A strong body's bones take more.
 		// Only a blunt blow breaks: a mace, a fist, the back of an axe or a blade that struck flat or glanced. An edge that
 		// bites cuts instead.
-		const bool bCrushing = StruckAs == EAedirDamageType::Blunt || CutShare < AedirCutGlanceShare;
+		// Only what is blunt itself breaks: a fist, a mace, a club. A blade, on its edge, its flat or glancing, does not.
+		const bool bCrushing = !HeldItem || HeldItem->GetDamageType() == EAedirDamageType::Blunt;
 		if (bCrushing && Victim->Wounds && IsAuthoritative() && !(Victim->Stats && Victim->Stats->bInvulnerable))
 		{
 			const bool bLeg = Limb == EAedirLimb::LeftLeg || Limb == EAedirLimb::RightLeg;
@@ -4486,7 +4492,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	bool bSevered = false;
 	if (Victim->Wounds && Landed == EAedirDamageType::Slash && !bGlance)
 	{
-		const FVector CutNormal = FVector::CrossProduct(TipVelocity.GetSafeNormal(), Arm.WeaponDir).GetSafeNormal();
+		const FVector CutNormal = FVector::CrossProduct(TipVelocity.GetSafeNormal(), BladeAxis).GetSafeNormal();
 		// Only the edge chops: a blade drawn along its own length, or pushed in point first, opens a wound but takes nothing off.
 		const float EdgeShare = FMath::Clamp(1.f - FMath::Abs(AxialAlignment), 0.f, 1.f);
 		bSevered = Victim->Wounds->TrySever(Bone, Hit.ImpactPoint, CutNormal, TipVelocity, Energy * EdgeShare, VictimZoneProtection);
@@ -4853,7 +4859,11 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		const bool bTired = Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare;
 		if (!bTired && Distance <= Reach + AedirAIContactRange * 0.25f && AIMouseTimer >= AIMouseWait)
 		{
-			AIMousePart = bAITargetDown ? 1 : (FMath::FRand() < 0.5f ? 0 : 1);
+			// Against a guard held up before the face, mostly into the body under it.
+			const AAedirCreature* Foe = AITarget.Get();
+			const UAedirFistArms* FoeFists = Foe ? Foe->FindComponentByClass<UAedirFistArms>() : nullptr;
+			const float HeadChance = FoeFists && FoeFists->IsSteering() ? AedirAIHeadChanceGuarded : 0.5f;
+			AIMousePart = bAITargetDown ? 1 : (FMath::FRand() < HeadChance ? 0 : 1);
 			const float Height = HeightFor(AIMousePart);
 			// Drawn back to one side and thrown across, or for a blade now and then raised and brought down.
 			const float Side = bArmed ? (FMath::RandBool() ? 1.f : -1.f) : (bAINextLeft ? -1.f : 1.f);

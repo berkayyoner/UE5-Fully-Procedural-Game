@@ -439,6 +439,7 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 				Model->RegisterComponent();
 				AedirScannedMaterial::Apply(Model, AedirScannedMaterial::FolderOfPath(Def.MeshPath));
 				DetailMeshes.Add(Model);
+				FitRestBox(Model);
 				BuildSplitParts(Def, Model, Scale3D);
 				for (const FString& PartPath : Def.ExtraMeshPaths)
 				{

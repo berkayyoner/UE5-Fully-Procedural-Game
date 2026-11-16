@@ -443,7 +443,7 @@ void FAedirProceduralAnimProxy::ApplyNeckAndHead(FCSPose<FCompactPose>& CSPose, 
 	const FCompactPoseBoneIndex Head = ResolveCompactBone(Bones, BoneNameSet.Head);
 	if (Head.IsValid())
 	{
-		FRotator HeadRotation = GaitData.HeadLookRotation;
+		FRotator HeadRotation = GaitData.HeadLookRotation + GaitData.HeadHitSway;
 		HeadRotation.Roll += GaitData.HeadStabilizeRollDegrees;
 		RotateBone(CSPose, Head, ActorRotationToMesh(HeadRotation.Quaternion()));
 	}
@@ -826,6 +826,36 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	}
 	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, MeshToWorld.TransformPosition(Wrist), MeshToWorld.TransformPosition(Elbow), Alpha, 0.f, false, 0.f, FQuat::Identity, 0.f, Blade);
 	FTransform Left = CSPose.GetComponentSpaceTransform(LeftHand);
+	// First the hand is turned about its forearm until its palm faces as its hold on the grip has it. Turning it to lay its
+	// knuckles along the grip alone is not enough: with the forearm come round along the grip the knuckles' way across it
+	// all but vanishes and flips over, and the hand with it, the wrong way round.
+	{
+		const FCompactPoseBoneIndex LeftRadius = ResolveCompactBone(Bones, BoneNameSet.LeftRadius);
+		const FCompactPoseBoneIndex LeftMiddle = ResolveCompactBone(Bones, TEXT("middle_01_l"));
+		const FCompactPoseBoneIndex LeftFirst = ResolveCompactBone(Bones, TEXT("index_01_l"));
+		const FCompactPoseBoneIndex LeftLittle = ResolveCompactBone(Bones, TEXT("pinky_01_l"));
+		if (LeftRadius.IsValid() && LeftMiddle.IsValid() && LeftFirst.IsValid() && LeftLittle.IsValid())
+		{
+			const auto InLeft = [&CSPose, &LeftHand](FCompactPoseBoneIndex Bone)
+			{
+				FTransform Place = CSPose.GetPose()[Bone];
+				for (FCompactPoseBoneIndex Parent = CSPose.GetPose().GetParentBoneIndex(Bone); Parent.IsValid() && Parent != LeftHand; Parent = CSPose.GetPose().GetParentBoneIndex(Parent))
+				{
+					Place = Place * CSPose.GetPose()[Parent];
+				}
+				return Place.GetLocation();
+			};
+			const FVector PalmInHand = FVector::CrossProduct(InLeft(LeftMiddle), InLeft(LeftFirst) - InLeft(LeftLittle)).GetSafeNormal();
+			const FVector Forearm = (Left.GetLocation() - CSPose.GetComponentSpaceTransform(LeftRadius).GetLocation()).GetSafeNormal();
+			const FVector PalmNow = FVector::VectorPlaneProject(Left.GetRotation().RotateVector(PalmInHand), Forearm).GetSafeNormal();
+			const FVector PalmWanted = FVector::VectorPlaneProject(LeftRotation.RotateVector(PalmInHand), Forearm).GetSafeNormal();
+			if (!PalmNow.IsNearlyZero() && !PalmWanted.IsNearlyZero() && !Forearm.IsNearlyZero())
+			{
+				const double Turn = FMath::Atan2(FVector::DotProduct(FVector::CrossProduct(PalmNow, PalmWanted), Forearm), FVector::DotProduct(PalmNow, PalmWanted));
+				Left.SetRotation((FQuat(Forearm, Turn * FMath::Clamp(Alpha, 0.f, 1.f)) * Left.GetRotation()).GetNormalized());
+			}
+		}
+	}
 	// The hand turns at the wrist towards its hold on the grip only so far: past that it would turn into the blade.
 	const float Off = FMath::RadiansToDegrees(static_cast<float>(Left.GetRotation().AngularDistance(LeftRotation)));
 	const float Turned = Off > GaitData.FistArmGripWristMaxDegrees ? GaitData.FistArmGripWristMaxDegrees / Off : 1.f;

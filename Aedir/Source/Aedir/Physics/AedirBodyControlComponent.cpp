@@ -1,4 +1,6 @@
 #include "Physics/AedirBodyControlComponent.h"
+#include "Engine/SkinnedAsset.h"
+#include "ReferenceSkeleton.h"
 
 #include "Aedir.h"
 #include "Components/CapsuleComponent.h"
@@ -346,21 +348,62 @@ void UAedirBodyControlComponent::HangBrokenArm(int32 Side)
 		return;
 	}
 	const FName Elbow = Side == 0 ? FName(TEXT("lowerarm_l")) : FName(TEXT("lowerarm_r"));
-	const FVector From = Mesh->GetBoneLocation(Bones->Value);
-	const FVector Along = (Mesh->GetBoneLocation(Elbow) - From).GetSafeNormal();
-	// Down the side of the trunk, a little out from it.
-	const AActor* Owner = GetOwner();
-	const FVector Out = (Owner ? Owner->GetActorRightVector() : FVector::RightVector) * (Side == 0 ? -1.f : 1.f);
+	// Worked out on the body standing as it was made, not as it lies or rises now: hanging down the side of an upright
+	// trunk, a little out, whatever way the trunk is turned when the bone breaks or the body gets up.
+	const USkinnedAsset* Asset = Mesh->GetSkinnedAsset();
+	if (!Asset)
+	{
+		return;
+	}
+	const FReferenceSkeleton& Skeleton = Asset->GetRefSkeleton();
+	const auto Standing = [&Skeleton](FName Bone)
+	{
+		FTransform Pose = FTransform::Identity;
+		for (int32 Index = Skeleton.FindBoneIndex(Bone); Index != INDEX_NONE; Index = Skeleton.GetParentIndex(Index))
+		{
+			Pose = Pose * Skeleton.GetRefBonePose()[Index];
+		}
+		return Pose;
+	};
+	const FTransform Clavicle = Standing(Bones->Key);
+	const FTransform Upper = Standing(Bones->Value);
+	const FVector Along = (Standing(Elbow).GetLocation() - Upper.GetLocation()).GetSafeNormal();
+	// In the model's own frame up is +Z, and the left side +X.
+	const FVector Out = FVector(Side == 0 ? 1.f : -1.f, 0.f, 0.f);
 	const float OutRadians = FMath::DegreesToRadians(BrokenArmOutDegrees);
-	const FVector Down = (FVector::DownVector * FMath::Cos(OutRadians) + Out * FMath::Sin(OutRadians)).GetSafeNormal();
-	const FQuat Hanging = FQuat::FindBetweenNormals(Along, Down) * Mesh->GetBoneQuaternion(Bones->Value);
+	const FVector Down = (FVector(0.f, 0.f, -1.f) * FMath::Cos(OutRadians) + Out * FMath::Sin(OutRadians)).GetSafeNormal();
+	const FQuat Hanging = FQuat::FindBetweenNormals(Along, Down) * Upper.GetRotation();
 	Control->SetControlUseSkeletalAnimation(Shoulder, false);
-	Control->SetControlTargetOrientation(Shoulder, (Mesh->GetBoneQuaternion(Bones->Key).Inverse() * Hanging).Rotator(), 0.f, true, false);
-	// Below the shoulder the arm keeps the bend it had, weakly.
+	Control->SetControlTargetOrientation(Shoulder, (Clavicle.GetRotation().Inverse() * Hanging).Rotator(), 0.f, true, false);
+	// Below the shoulder the arm is held weakly as it hangs at rest, nearly straight, not in whatever bend it had.
 	TArray<FName> Below = Side == 0 ? LeftArmControls : RightArmControls;
 	Below.Remove(Shoulder);
 	Below.Append(Side == 0 ? LeftHandControls : RightHandControls);
-	HoldShapeNow(Below);
+	for (const FName& Name : Below)
+	{
+		if (const TPair<FName, FName>* Joint = MuscleBones.Find(Name))
+		{
+			Control->SetControlUseSkeletalAnimation(Name, false);
+			Control->SetControlTargetOrientation(Name, (Standing(Joint->Key).GetRotation().Inverse() * Standing(Joint->Value).GetRotation()).Rotator(), 0.f, true, false);
+		}
+	}
+	// Every joint of it is dragged on by the body it hangs from, so running it is carried along and does not stream out
+	// behind like a flag.
+	Below.Add(Shoulder);
+	for (const FName& Name : Below)
+	{
+		Control->SetControlAngularData(Name, 1.f, ArmDampingRatio * BrokenArmDampingShare, BrokenArmDrag, 0.f, true);
+	}
+}
+
+void UAedirBodyControlComponent::SetArmBoost(bool bRight, bool bBoost)
+{
+	if (bArmBoost[bRight ? 1 : 0] != bBoost)
+	{
+		bArmBoost[bRight ? 1 : 0] = bBoost;
+		AppliedKey = -1.f;
+		ApplyMultipliers();
+	}
 }
 
 void UAedirBodyControlComponent::SetBrokenLimbs(bool bLeftArm, bool bRightArm, bool bLeftLeg, bool bRightLeg)
@@ -400,6 +443,10 @@ void UAedirBodyControlComponent::ApplyBrokenArms()
 				TArray<FName> Arm = Side == 0 ? LeftArmControls : RightArmControls;
 				Arm.Append(Side == 0 ? LeftHandControls : RightHandControls);
 				FollowAnimation(Arm);
+				for (const FName& Name : Arm)
+				{
+					Control->SetControlAngularData(Name, 1.f, ArmDampingRatio, 0.f, 0.f, true);
+				}
 			}
 		}
 		for (const FName& Modifier : ArmModifiers[Side])
@@ -579,8 +626,8 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	Apply(RightLegControls, LegStrength * Body * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
 	// A broken arm swings loose; a hurt one keeps at least some of its strength.
-	const float LeftArmHz = ArmHz * (bLimp ? Limp : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare);
-	const float RightArmHz = ArmHz * (bLimp ? Limp : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare);
+	const float LeftArmHz = ArmHz * (bLimp ? Limp : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
+	const float RightArmHz = ArmHz * (bLimp ? Limp : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
 	Apply(LeftArmControls, LeftArmHz, 0.f);
 	Apply(RightArmControls, RightArmHz, 0.f);
 	// A broken arm's shoulder still holds it hanging.

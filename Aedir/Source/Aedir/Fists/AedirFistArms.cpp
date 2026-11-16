@@ -181,6 +181,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			Hz = BladeAimHz * FMath::Clamp(Heavier, BladeAimMinShare, BladeAimMaxShare) * (bTwoHand ? TwoHandAimShare : 1.f);
 			Damping = BladeAimDamping;
 		}
+		// Out of breath, slower.
+		const UAedirStatsComponent* Breath = Owner->FindComponentByClass<UAedirStatsComponent>();
+		const float Tired = Breath && TiredFrom > KINDA_SMALL_NUMBER ? FMath::Clamp((TiredFrom - Breath->GetStaminaFraction()) / TiredFrom, 0.f, 1.f) : 0.f;
+		Hz *= FMath::Lerp(1.f, TiredSpeedShare, Tired);
 		const float W = UE_TWO_PI * FMath::Max(Hz, 0.5f);
 		const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime * W / 0.25f), 1, 32);
 		const float Step = DeltaTime / Steps;
@@ -206,7 +210,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	if (!bDevFrozen)
 	{
 		const float Before = Punch;
-		float Next = FMath::FInterpConstantTo(Punch, PunchWanted, DeltaTime, PunchWanted > Punch ? PunchOutRate : PunchBackRate);
+		const UAedirStatsComponent* Breath = Owner->FindComponentByClass<UAedirStatsComponent>();
+		const float Tired = Breath && TiredFrom > KINDA_SMALL_NUMBER ? FMath::Clamp((TiredFrom - Breath->GetStaminaFraction()) / TiredFrom, 0.f, 1.f) : 0.f;
+		float Next = FMath::FInterpConstantTo(Punch, PunchWanted, DeltaTime, (PunchWanted > Punch ? PunchOutRate : PunchBackRate) * FMath::Lerp(1.f, TiredSpeedShare, Tired));
 		// Going out costs breath: as far as what is left pays for, and no further. A blade costs more than a fist.
 		const float Cost = bArmed[PunchSlot] && bHeld[PunchSlot] ? BladeSwingStaminaCost : PunchStaminaCost;
 		if (Next > Before && Cost > 0.f)
@@ -278,7 +284,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// A blade is held further out, and reaches up further over the head.
 		// In both hands, drawn to its own side, it stays nearer the chest, where the second arm reaches it.
 		const float OwnSideRadius = FMath::Lerp(SideRadiusCm, TwoHandSideRadiusCm, Slot == 1 && bBlade ? GripAlpha : 0.f);
-		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : OwnSideRadius, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : FMath::Max(-UpDown, 0.f) * FistDownReachCm);
+		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : OwnSideRadius, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * (bBlade && Slot == 1 ? FMath::Lerp(1.f, TwoHandPunchReachShare, GripAlpha) : 1.f) * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : FMath::Max(-UpDown, 0.f) * FistDownReachCm);
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
 		// Round towards the side the height of the middle falls away and turns the other way, so a raised fist comes down
@@ -305,7 +311,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// Lifted, the elbow goes back and out behind the fist, about level.
 		const FVector LiftPole = (-Forward + Right * Side).GetSafeNormal() * FMath::Cos(LiftAngle) + Up * FMath::Sin(LiftAngle);
 		// Only the arm drawn back to its own side lifts its elbow; the one brought across keeps it down.
-		const float OwnLift = FMath::Max(AimSide == Side ? Lift : 0.f, ArmPunch * PunchElbowLift);
+		// Held in both hands the blade is thrust out by both arms together, the elbows staying down.
+		const float PunchLift = PunchElbowLift * (bBlade ? FMath::Lerp(1.f, TwoHandPunchElbowLiftShare, GripAlpha) : 1.f);
+		const float OwnLift = FMath::Max(AimSide == Side ? Lift : 0.f, ArmPunch * PunchLift);
 		FVector PoleLevel = FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal();
 		// One arm alone brought across past the middle turns its elbow out from the shoulder, so the arm goes round the body
 		// and not into it.
@@ -324,6 +332,12 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			return V - Forward * A - Up * B + Forward * (A * CosL - B * SinL) + Up * (A * SinL + B * CosL);
 		};
 		FistWorld[Slot] = Chest + Look(FistFromChest);
+		// Thrust out in both hands, the blade goes out and a little down, so the arms reach on below the shoulders and the
+		// elbows are not drawn up with them.
+		if (bBlade)
+		{
+			FistWorld[Slot] -= Up * (ArmPunch * TwoHandPunchDropCm * (Slot == 1 ? GripAlpha : 0.f));
+		}
 		const FVector Pole = Look(Tip(PoleLevel));
 		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright. A blade's wrist
 		// turns out the other way there, and the nearer the middle, the more its point is brought round ahead.

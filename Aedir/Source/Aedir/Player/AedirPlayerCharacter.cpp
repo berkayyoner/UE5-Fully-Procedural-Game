@@ -63,6 +63,7 @@
 #include "Game/AedirGameMode.h"
 #include "Items/AedirCatalogItem.h"
 #include "Items/AedirItemActor.h"
+#include "Components/BoxComponent.h"
 #include "TimerManager.h"
 #include "UI/AedirJournalSubsystem.h"
 #include "UI/AedirMenuSubsystem.h"
@@ -2410,7 +2411,24 @@ void AAedirPlayerCharacter::LyingInfo(const FString& Label)
 {
 	if (Balance)
 	{
-		UE_LOG(LogAedir, Display, TEXT("[LyingInfo] %s own trunk bent by blows %s"), *Label, *Balance->GetHitSway().ToCompactString());
+		UE_LOG(LogAedir, Display, TEXT("[LyingInfo] %s own trunk bent by blows %s, head %s"), *Label, *Balance->GetHitSway().ToCompactString(), *Balance->GetHeadSway().ToCompactString());
+	}
+	// Every loose thing within three metres: how far its lowest point is above the ground under it (below zero, sunk in).
+	for (TActorIterator<AAedirItemActor> It(GetWorld()); It; ++It)
+	{
+		const AAedirItemActor* Item = *It;
+		if (Item->IsHeld() || FVector::Dist(Item->GetActorLocation(), GetActorLocation()) > 300.0)
+		{
+			continue;
+		}
+		const FBox Box = Item->GetComponentsBoundingBox(true);
+		FCollisionQueryParams ItemParams(SCENE_QUERY_STAT(AedirLyingItem), false, Item);
+		FHitResult Ground;
+		const FVector Middle = Box.GetCenter();
+		const bool bGround = GetWorld()->LineTraceSingleByChannel(Ground, Middle + FVector(0.f, 0.f, 50.f), Middle - FVector(0.f, 0.f, 300.f), ECC_WorldStatic, ItemParams);
+		UE_LOG(LogAedir, Display, TEXT("[LyingInfo] %s item %s lowest %.1f cm above the ground, %.1f cm thick, awake %d, rest box %s welded %d solid %d"), *Label, *Item->ItemName.ToString(),
+			bGround ? Box.Min.Z - Ground.ImpactPoint.Z : -999.0, Box.GetSize().Z, Item->GetRootComponent() && Cast<UPrimitiveComponent>(Item->GetRootComponent()) && Cast<UPrimitiveComponent>(Item->GetRootComponent())->RigidBodyIsAwake() ? 1 : 0,
+			Item->RestBox ? *Item->RestBox->GetScaledBoxExtent().ToCompactString() : TEXT("none"), Item->RestBox && Item->RestBox->IsWelded() ? 1 : 0, Item->RestBox ? static_cast<int32>(Item->RestBox->GetCollisionEnabled()) : -1);
 	}
 	// Every other body within ten metres.
 	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)

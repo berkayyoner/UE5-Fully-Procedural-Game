@@ -388,3 +388,18 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The ground's heights are 8 cm in all with the collision a quarter of the way up, and the feet are set 1 cm higher, so feet and things no longer look sunk in.
 - Carried low in both hands, the blade and arms turn with the chest as the view turns it, and the second elbow stays lower: it no longer lifts when looking right.
 - The helmet is a little smaller (44 cm).
+- Two hands on one blade: the second hand is first turned about its forearm until its palm faces as its hold on the grip has it, so it no longer flips over the wrong way round where the forearm comes along the grip (near the right end and just left of the middle).
+- Two hands on one blade thrust out fast in the middle: the blade goes out a little lower and less far, and the elbows lift less (TwoHandPunchDropCm, TwoHandPunchReachShare, TwoHandPunchElbowLiftShare).
+- A blade's blow lands with its own weight and only a third of the arm's (was nearly all of it), harms with half the energy share and is weighed by 0.6: a full cut takes about a sixth of a body's health, a touch a few points.
+- Only blunt things break bones (fists, maces, clubs, kicks); an edge, its flat or a glancing blade does not. Whether a blade struck with its flat is judged by the blade as it is really held.
+- A limb takes a better cut and more of them to come off (0.85 of what parts it for a cut to count, 3.5 times its worth worn, 4 times at once).
+- A cut-off limb drops and tumbles: it takes less of the blade's speed, at most 3 m/s, and does not collide with bodies until it has dropped clear, so it is not thrown out of the body it came from.
+- A blow's push lands over a moment: a third at once and the rest over 0.15 s, the whole 0.7 of before; a blow to the head knocks the head back on its neck as a weight on a spring (an 80 J blow 19 deg, back in 0.15 s).
+- An arm caught somewhere for a while is no longer put back on its pose at once: it passes through things for half a second and its muscles pull it home three times as hard.
+- A broken arm hangs as it would at rest down the side of an upright trunk, whatever way the body lay when it broke or got up, its joints damped and dragged on by the body, so it neither sticks out nor streams out behind.
+- Things lying loose rest on the whole of their shown model, not only on their slim handling box: a mace no longer sinks 7 cm into the ground (now under 2), a sword 2 cm.
+- The ground's heights are 5 cm in all with the collision a third of the way up.
+- The face shows blood and bruises as the body does.
+- NPCs throw faster, and against a raised guard go for the body under it; a fist on a guarding arm does half its harm (was 0.3).
+- Out of breath, below half the stamina, the body weakens so far and no further: blows throw it up to 1.5 times harder, it is knocked down by 0.8 of the energy, gets its balance back at 0.7 of the speed, its arms hold at 0.75 and swing and punch at 0.7 of their speed.
+- LyingInfo also shows the head's knock and how loose things lie on the ground.

@@ -30,9 +30,9 @@ namespace
 	// How much more than its cutting energy a single blow needs to take off a limb that has not been hurt yet.
 	// A cut counts towards taking a limb off from this share of what parts it; the limb gives once its cuts add up to this
 	// share, or at once to a single blow of this share; an injured limb needs this share of it.
-	constexpr float AedirSeverGoodCutShare = 0.6f;
-	constexpr float AedirSeverWearShare = 2.2f;
-	constexpr float AedirSeverOneBlowShare = 3.f;
+	constexpr float AedirSeverGoodCutShare = 0.85f;
+	constexpr float AedirSeverWearShare = 3.5f;
+	constexpr float AedirSeverOneBlowShare = 4.f;
 	constexpr float AedirSeverInjuredShare = 0.7f;
 	constexpr int32 AedirWoundPulseDrops = 5;
 	// A game day passes in 72 real minutes; a bruise is gone in a week of them.
@@ -845,6 +845,11 @@ bool UAedirWoundComponent::UsesSkinBlood()
 		{
 			SkinBlood = UMaterialInstanceDynamic::Create(Parent, this);
 			Mesh->SetOverlayMaterial(SkinBlood);
+			// The face is a model of its own over the head, moved by the same bones: it shows the same blood and bruises.
+			if (const AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner()); Creature && Creature->Face)
+			{
+				Creature->Face->SetOverlayMaterial(SkinBlood);
+			}
 		}
 	}
 	return SkinBlood != nullptr;

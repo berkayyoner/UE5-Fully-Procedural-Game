@@ -99,6 +99,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float LowHealthRecoveryShare = 0.4f;
 
+	// Out of breath the body weakens too, but only so far: below TiredFrom of its stamina, the lower it gets the harder
+	// blows throw it (up to 1 + TiredHitGain times at none left), the less it takes to knock it down (down to
+	// TiredKnockdownShare), the slower its balance comes back (TiredRecoveryShare) and the weaker its muscles hold
+	// (TiredStrengthShare).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float TiredFrom = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float TiredHitGain = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float TiredKnockdownShare = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float TiredRecoveryShare = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float TiredStrengthShare = 0.75f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float FallBalanceThreshold = 0.25f;
 
@@ -442,6 +461,8 @@ public:
 	FRotator GetHitSway() const { return FRotator(HitSway.X, HitSway.Z, HitSway.Y); }
 	// How worn down the body is, for its balance: 0 above LowHealthFrom of its health, 1 at none left.
 	float GetHurtShare() const;
+	// How out of breath the body is, for its balance and strength: 0 above TiredFrom of its stamina, 1 at none left.
+	float GetTiredShare() const;
 
 	// A blow bends the trunk the way it drove, at the place it struck, and the trunk springs back: how fast it springs, in
 	// Hz, and how much the spring is damped (1 for no overshoot).
@@ -462,6 +483,40 @@ public:
 	// The furthest the trunk is bent by blows, in degrees.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
 	float HitSwayMaxDegrees = 28.f;
+
+	// A blow does not push all at once: HitPushNowShare of it lands at once and the rest keeps pushing over
+	// HitPushSpreadSeconds after it, falling off, so the body is seen carried on by it. The whole push is HitPushScale of
+	// what the blow's weight and speed give.
+	// An arm caught somewhere for a while is let pass through things this long, its muscles pulling it home harder, rather
+	// than being put back on its pose at once.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float ArmFreeSeconds = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HitPushScale = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HitPushNowShare = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HitPushSpreadSeconds = 0.15f;
+
+	// A blow to the head knocks the head on its neck as a weight on a spring: it is left behind the way the blow drove it
+	// and comes back. How fast it springs (Hz), how damped, degrees a second for each unit of push, at most so far.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HeadSwayHz = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HeadSwayDampingRatio = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HeadSwayDegreesPerSecondPerPush = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HeadSwayMaxDegrees = 35.f;
+
+	// How far the head is knocked on its neck by the blows it took: back (pitch), aside (roll) and turned (yaw).
+	FRotator GetHeadSway() const { return FRotator(HeadSway.X, HeadSway.Z, HeadSway.Y); }
 
 	// Mass-weighted centre of mass of the body, sampled every 0.1 s. Zero until the first sample.
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
@@ -505,6 +560,20 @@ private:
 	// Back, aside and turned, in degrees, and how fast each is changing.
 	FVector HitSway = FVector::ZeroVector;
 	FVector HitSwayVelocity = FVector::ZeroVector;
+	FVector HeadSway = FVector::ZeroVector;
+	FVector HeadSwayVelocity = FVector::ZeroVector;
+	// What is left of blows still pushing.
+	struct FPendingPush
+	{
+		FName Bone;
+		FVector Impulse;
+		FVector Location;
+		float Left = 0.f;
+	};
+	TArray<FPendingPush> PendingPushes;
+	// One part of a blow's push landing: on the physical body, the trunk's and head's sway and the hips.
+	void LandPush(FName Bone, const FVector& Impulse, const FVector& Location);
+	void UpdatePendingPushes(float DeltaTime);
 	void DrivePelvis();
 	void SetRagdollPresentation(bool bRagdoll);
 	void ApplyRagdollPhysics(bool bRagdoll);
@@ -583,6 +652,10 @@ private:
 	void UpdatePosedArms();
 	float ArmTrapSeconds[2] = { 0.f, 0.f };
 	float ArmTrapCooldown[2] = { 0.f, 0.f };
+	// An arm let go of what caught it: how long it still passes through things and pulls harder to its pose.
+	float ArmFreeLeft[2] = { 0.f, 0.f };
+	void SetArmFree(int32 Side, bool bFree);
+	void UpdateArmFree(float DeltaTime);
 	void UpdateLegBlend(float DeltaTime);
 	float ArmPhysicsBlend = 1.f;
 	float LegPhysicsBlend = 0.f;

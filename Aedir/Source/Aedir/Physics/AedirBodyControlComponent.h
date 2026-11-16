@@ -83,10 +83,18 @@ public:
 	// A broken arm's shoulder keeps this much of its strength and holds the arm hanging down at the side, a little out, so
 	// the arm swings from it as a weight and does not flap about the shoulder like an empty sleeve.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float BrokenShoulderShare = 0.5f;
+	float BrokenShoulderShare = 0.7f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float BrokenArmOutDegrees = 12.f;
+
+	// A broken arm's joints are damped this many times more than a whole arm's, and dragged on by the body it hangs from
+	// (extra damping), so it swings as a weight and does not stream out behind a running body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float BrokenArmDampingShare = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float BrokenArmDrag = 8.f;
 
 	// Damping of the muscles, 1 for no overshoot.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -136,6 +144,12 @@ public:
 	void SetDead(bool bInDead);
 	// Which limbs have a broken bone: left arm, right arm, left leg, right leg.
 	void SetBrokenLimbs(bool bLeftArm, bool bRightArm, bool bLeftLeg, bool bRightLeg);
+
+	// An arm freed from where it was caught pulls back to its pose ArmFreeBoost times as hard for a moment.
+	void SetArmBoost(bool bRight, bool bBoost);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float ArmFreeBoost = 3.f;
 
 	// An arm (from the upper arm down) shown as the pose has it, its bodies simulating under it, or shown where its bodies are.
 	void SetArmsPosed(bool bLeft, bool bRight);
@@ -213,6 +227,7 @@ private:
 	TArray<FName> ArmModifiers[2];
 	bool bArmPosed[2] = { false, false };
 	bool bArmLoose[2] = { false, false };
+	bool bArmBoost[2] = { false, false };
 	bool bWholePosed = false;
 
 	bool bReady = false;

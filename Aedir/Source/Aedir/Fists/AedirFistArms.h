@@ -184,6 +184,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandAimShare = 1.25f;
 
+	// Out of breath, below TiredFrom of the stamina, the arms swing and punch slower, down to TiredSpeedShare of their speed
+	// with none left.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float TiredFrom = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float TiredSpeedShare = 0.7f;
+
 	// A blade in the hand: held up still, its point looks ahead at the other; drawn round to its own side the wrist turns
 	// out the opposite way a fist's does.
 	// A blade is held up lower and further out than a fist, before the chest rather than the face: this much lower and this
@@ -357,6 +365,18 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandRestPitchDegrees = 10.f;
+
+	// Held in both hands and thrust out fast, the elbows lift only this share of what one arm's punch lifts them.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandPunchElbowLiftShare = 0.15f;
+
+	// ...and the blade is thrust out this much lower at full reach, in cm.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandPunchDropCm = 20.f;
+
+	// ...and goes out only this share as far, the elbows kept a little bent at their sides.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandPunchReachShare = 0.7f;
 
 	// Carried low in both hands, the blade and the arms turn with the chest this share of the way the view turns it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")

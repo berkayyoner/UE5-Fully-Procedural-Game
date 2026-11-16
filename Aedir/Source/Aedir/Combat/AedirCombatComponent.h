@@ -207,6 +207,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
 	float WeaponFullHarmJoules = 200.f;
 
+	// A weapon's harm: each joule of the blow counts WeaponEnergyDamageScale (a fist ImpactDamageScale) besides the
+	// weapon's own damage, and all of it is weighed by WeaponDamageShare.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float WeaponEnergyDamageScale = 0.05f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float WeaponDamageShare = 0.6f;
+
+	// How much of the arm's own weight comes behind a weapon's point: a blade turned by the wrist carries little of the arm
+	// with it, so the steel lands with its own weight and this share of the arm's.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float WeaponArmMassShare = 0.35f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
 	float FistNoHarmJoules = 3.f;
 
@@ -222,7 +235,7 @@ public:
 	float FistTrunkShare = 0.4f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
-	float FistArmShare = 0.3f;
+	float FistArmShare = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
 	float FistLegShare = 0.4f;
