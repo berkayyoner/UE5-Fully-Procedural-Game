@@ -280,11 +280,20 @@ namespace
 		};
 		const auto Axes = [](const FVector& X, const FVector& Y, const FVector& Z) { return FMatrix(X, Y, Z, FVector::ZeroVector).Rotator(); };
 		AddWornModel(TEXT("IronSouthernHelmet"), TEXT("Iron Southern Helmet"), 2.2f, EAedirBodyZone::Head, 0.6f, TEXT("head"), FVector(0.24, 0.26, 0.3),
-			TEXT("/Game/Aedir/Fab/IronSouthernHelmet/helmet.helmet"), 41.f, Axes(FVector(0, 0, -1), FVector(0, 1, 0), FVector(1, 0, 0)), FVector(-7.f, 2.f, 0.f));
+			TEXT("/Game/Aedir/Fab/IronSouthernHelmet/helmet.helmet"), 47.f, Axes(FVector(0, 0, -1), FVector(0, 1, 0), FVector(1, 0, 0)), FVector(-9.5f, 3.5f, 0.f));
 		AddWornModel(TEXT("RustyIronShield"), TEXT("Rusty Iron Shield"), 4.5f, EAedirBodyZone::Arm, 0.7f, TEXT("lowerarm_l"), FVector(0.6, 0.6, 0.08),
 			TEXT("/Game/Aedir/Fab/RustyIronShield/Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High.Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High"), 62.f, FRotator::ZeroRotator, FVector(13.f, 0.f, 9.f));
 		AddWornModel(TEXT("RustyShoulders"), TEXT("Rusty Layered Pauldrons"), 3.f, EAedirBodyZone::Arm, 0.35f, TEXT("spine_05"), FVector(0.2, 0.5, 0.2),
 			TEXT("/Game/Aedir/Fab/RustyShoulders/shoulder.shoulder"), 68.f, Axes(FVector(0, 1, 0), FVector(0, 0, 1), FVector(1, 0, 0)), FVector(6.f, -1.f, 0.f));
+		// One for each shoulder, on its upper arm.
+		for (FAedirItemDef& Item : Definitions)
+		{
+			if (Item.Id == FName(TEXT("RustyShoulders")))
+			{
+				Item.PartMeshPaths = { TEXT("/Game/Aedir/Fab/RustyShoulders/shoulder_a.shoulder_a"), TEXT("/Game/Aedir/Fab/RustyShoulders/shoulder_b.shoulder_b") };
+				Item.PartBones = { TEXT("upperarm_l"), TEXT("upperarm_r") };
+			}
+		}
 
 		// The steel longsword came as a blade with its guard and grip in separate parts.
 		AddModelWeapon(TEXT("SteelLongsword"), TEXT("Steel Longsword"), 1.6f, 96.8f, 0.f, 96.8f, EAedirDamageType::Slash, 15.f, true, FVector(0.968, 0.05, 0.01),

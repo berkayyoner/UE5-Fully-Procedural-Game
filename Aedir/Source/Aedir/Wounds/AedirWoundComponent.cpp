@@ -472,9 +472,8 @@ bool UAedirWoundComponent::BreakLimb(EAedirLimb Limb)
 	}
 	else if (!bArm && Creature->Balance)
 	{
-		// A broken leg buckles under the body and will not carry it up again.
-		Creature->Balance->ApplyBalanceImpact(FVector::DownVector, 1.f);
-		Creature->Balance->SetLegLost();
+		// A broken leg buckles under the body, which goes down, but it can still get up on it: only a leg cut off is gone.
+		Creature->Balance->BuckleLeg();
 	}
 	static const TCHAR* const Names[] = { TEXT("left arm"), TEXT("right arm"), TEXT("left leg"), TEXT("right leg") };
 	UE_LOG(LogAedir, Log, TEXT("[Bone] %s's %s breaks."), *Creature->GetName(), Names[static_cast<int32>(Limb)]);

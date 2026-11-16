@@ -278,6 +278,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Balance|Motors")
 	float RagdollMotorShare = 0.04f;
 
+	// How hard each joint resists turning at all, as a rate per second: a joint's own drag, with no pose it is pulled to. The
+	// physics asset's joints came with stiff drives to its reference pose, which held a dead body's arms and legs up in it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Motors")
+	float JointDragPerSecond = 2.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float WallImpactSpeedThreshold = 230.f;
 
@@ -362,6 +367,8 @@ public:
 
 	// A leg is gone: this body does not get up again.
 	void SetLegLost() { bLegLost = true; }
+	// A leg's bone broke under the body: it goes down now, and gets up again in its time.
+	void BuckleLeg() { if (IsAuthoritative() && !bIsRagdoll) { EnterRagdoll(MinRagdollSeconds); } }
 
 	// A head thrown round past where a neck turns is set back on it.
 	void KeepHeadOnNeck(float DeltaTime);
@@ -416,6 +423,29 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	FRotator GetPelvisLean() const;
 
+	// How far the trunk is bent by the blows it took, in degrees: back (pitch), aside (roll) and turned (yaw).
+	FRotator GetHitSway() const { return FRotator(HitSway.X, HitSway.Z, HitSway.Y); }
+
+	// A blow bends the trunk the way it drove, at the place it struck, and the trunk springs back: how fast it springs, in
+	// Hz, and how much the spring is damped (1 for no overshoot).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HitSwayHz = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HitSwayDampingRatio = 0.45f;
+
+	// How fast a blow sets the trunk bending, in degrees a second for each unit of the blow's push (kg cm/s, scaled).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HitSwayDegreesPerSecondPerPush = 0.9f;
+
+	// A blow off the middle turns the trunk too: degrees a second for each unit of push and cm off the middle.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HitSwayTwistPerPushCm = 0.02f;
+
+	// The furthest the trunk is bent by blows, in degrees.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float HitSwayMaxDegrees = 28.f;
+
 	// Mass-weighted centre of mass of the body, sampled every 0.1 s. Zero until the first sample.
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
 	FVector GetCenterOfMassWorld() const;
@@ -451,6 +481,10 @@ private:
 	void ApplyCenterOfMassLoss(float DeltaTime);
 	void EnterRagdoll(float MinimumSeconds);
 	void UpdatePelvisLean(float DeltaTime);
+	void UpdateHitSway(float DeltaTime);
+	// Back, aside and turned, in degrees, and how fast each is changing.
+	FVector HitSway = FVector::ZeroVector;
+	FVector HitSwayVelocity = FVector::ZeroVector;
 	void DrivePelvis();
 	void SetRagdollPresentation(bool bRagdoll);
 	void ApplyRagdollPhysics(bool bRagdoll);

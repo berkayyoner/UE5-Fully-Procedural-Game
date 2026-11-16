@@ -138,9 +138,120 @@ void AAedirCatalogItem::Use_Implementation(AAedirCreature* User)
 	}
 }
 
+void AAedirCatalogItem::BuildSplitParts(const FAedirItemDef& Def, UStaticMeshComponent* Model, const FVector& Scale3D)
+{
+	SplitParts.Reset();
+	SplitPartHomes.Reset();
+	const UStaticMesh* Whole = Model ? Model->GetStaticMesh() : nullptr;
+	if (!Whole || Def.PartMeshPaths.IsEmpty())
+	{
+		return;
+	}
+	// The pieces share the whole model's frame: each is set where the whole was, and the whole is no longer shown.
+	const FBox WholeBox = Whole->GetBoundingBox();
+	const FVector WholeSize = WholeBox.GetSize();
+	const int32 Across = WholeSize.X >= WholeSize.Y && WholeSize.X >= WholeSize.Z ? 0 : WholeSize.Y >= WholeSize.Z ? 1 : 2;
+	const double Middle = WholeBox.GetCenter()[Across];
+	for (const FString& Path : Def.PartMeshPaths)
+	{
+		UStaticMesh* PartMesh = LoadObject<UStaticMesh>(nullptr, *Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		UStaticMeshComponent* Part = PartMesh ? NewObject<UStaticMeshComponent>(this, NAME_None, RF_Transient) : nullptr;
+		if (!Part)
+		{
+			continue;
+		}
+		Part->SetupAttachment(Mesh);
+		Part->SetAbsolute(false, false, true);
+		Part->SetStaticMesh(PartMesh);
+		Part->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Part->SetWorldScale3D(Scale3D);
+		Part->SetRelativeRotation(Model->GetRelativeRotation());
+		Part->SetRelativeLocation(Model->GetRelativeLocation());
+		SplitPartHomes.Add(Part->GetRelativeTransform());
+		// Lying, the pieces are pushed together across the gap the body filled, so they lie side by side.
+		if (!bWorn)
+		{
+			const FBox PartBox = PartMesh->GetBoundingBox();
+			const double Inner = PartBox.GetCenter()[Across] < Middle ? PartBox.Max[Across] : PartBox.Min[Across];
+			FVector Shift = FVector::ZeroVector;
+			Shift[Across] = Middle - Inner;
+			const FVector InItem = Model->GetRelativeRotation().RotateVector(Shift * Scale3D) / BodyScale;
+			Part->SetRelativeLocation(Model->GetRelativeLocation() + InItem);
+		}
+		Part->RegisterComponent();
+		AedirScannedMaterial::Apply(Part, AedirScannedMaterial::FolderOfPath(Def.MeshPath));
+		DetailMeshes.Add(Part);
+		SplitParts.Add(Part);
+	}
+	if (!SplitParts.IsEmpty())
+	{
+		Model->SetVisibility(false);
+	}
+	if (bWorn)
+	{
+		WearSplitParts(Def);
+	}
+}
+
+void AAedirCatalogItem::WearSplitParts(const FAedirItemDef& Def)
+{
+	USkeletalMeshComponent* Body = Holder ? Holder->GetMesh() : nullptr;
+	const USkeletalMesh* Asset = Body ? Body->GetSkeletalMeshAsset() : nullptr;
+	const FName Carrier = GetAttachParentSocketName();
+	if (!Asset || SplitParts.IsEmpty() || Def.PartBones.IsEmpty() || Asset->GetRefSkeleton().FindBoneIndex(Carrier) == INDEX_NONE)
+	{
+		return;
+	}
+	// Each piece is put on its bone where it sits on the body standing at rest, worn by the bone the item hangs from, so it
+	// moves with that bone from then on, whatever pose the body is in now.
+	const FTransform CarrierWorld = Body->GetSocketTransform(Carrier, RTS_World);
+	const FTransform CarrierRest(Asset->GetComposedRefPoseMatrix(Carrier));
+	TArray<FName> Free = Def.PartBones;
+	for (int32 Index = 0; Index < SplitParts.Num(); ++Index)
+	{
+		UStaticMeshComponent* Part = SplitParts[Index];
+		if (!Part || Free.IsEmpty() || Part->GetAttachParent() == Body)
+		{
+			continue;
+		}
+		const FVector Scale = Part->GetComponentScale();
+		Part->SetRelativeTransform(SplitPartHomes.IsValidIndex(Index) ? SplitPartHomes[Index] : Part->GetRelativeTransform());
+		Part->SetWorldScale3D(Scale);
+		FTransform OnCarrier = Part->GetComponentTransform().GetRelativeTransform(CarrierWorld);
+		OnCarrier.SetScale3D(FVector::OneVector);
+		const FTransform AtRest = OnCarrier * CarrierRest;
+		const FVector Centre = AtRest.TransformPosition(Part->GetStaticMesh() ? Part->GetStaticMesh()->GetBoundingBox().GetCenter() * (Scale / Body->GetComponentScale()) : FVector::ZeroVector);
+		int32 Nearest = 0;
+		double Best = TNumericLimits<double>::Max();
+		for (int32 Bone = 0; Bone < Free.Num(); ++Bone)
+		{
+			const double Distance = FVector::DistSquared(Centre, FTransform(Asset->GetComposedRefPoseMatrix(Free[Bone])).GetLocation());
+			if (Distance < Best)
+			{
+				Best = Distance;
+				Nearest = Bone;
+			}
+		}
+		const FName Bone = Free[Nearest];
+		Free.RemoveAt(Nearest);
+		FTransform OnBone = AtRest.GetRelativeTransform(FTransform(Asset->GetComposedRefPoseMatrix(Bone)));
+		Part->AttachToComponent(Body, FAttachmentTransformRules::KeepRelativeTransform, Bone);
+		OnBone.SetScale3D(FVector::OneVector);
+		Part->SetRelativeTransform(OnBone);
+		Part->SetWorldScale3D(Scale);
+		Part->SetVisibility(true);
+		UE_LOG(LogTemp, Verbose, TEXT("Item %s: piece %d worn on %s."), *CatalogId.ToString(), Index, *Bone.ToString());
+	}
+}
+
 void AAedirCatalogItem::ApplyWornLook()
 {
 	const FAedirItemDef* Def = UAedirItemCatalog::Find(CatalogId);
+	if (Def && !Def->PartMeshPaths.IsEmpty())
+	{
+		WearSplitParts(*Def);
+		return;
+	}
 	USkeletalMeshComponent* Body = Holder ? Holder->GetMesh() : nullptr;
 	if (!Def || Def->WornMeshPath.IsEmpty() || !Body || WornMesh)
 	{
@@ -328,6 +439,7 @@ void AAedirCatalogItem::BuildVisual(const FAedirItemDef& Def)
 				Model->RegisterComponent();
 				AedirScannedMaterial::Apply(Model, AedirScannedMaterial::FolderOfPath(Def.MeshPath));
 				DetailMeshes.Add(Model);
+				BuildSplitParts(Def, Model, Scale3D);
 				for (const FString& PartPath : Def.ExtraMeshPaths)
 				{
 					UStaticMesh* PartMesh = LoadObject<UStaticMesh>(nullptr, *PartPath, nullptr, LOAD_NoWarn | LOAD_Quiet);

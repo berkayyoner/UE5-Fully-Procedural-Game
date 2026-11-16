@@ -739,6 +739,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const AAedirItemActor* RightBlade = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
 		GaitState.FistArmGripElbowOutShare = Fists->TwoHandElbowOutShare;
 		GaitState.FistArmGripElbowFrontCm = Fists->TwoHandElbowFrontCm;
+		GaitState.FistArmGripRaised = Fists->GetRaised(EAedirHand::Right);
+		GaitState.FistArmGripRight = FMath::Clamp(static_cast<float>(Fists->GetAim().X), 0.f, 1.f) * GaitState.FistArmGripRaised;
+		GaitState.FistArmGripElbowRiseCm = Fists->TwoHandElbowRiseCm;
+		GaitState.FistArmGripRestElbowBelowCm = Fists->TwoHandRestElbowBelowShoulderCm;
+		GaitState.FistArmGripWristMaxDegrees = Fists->TwoHandWristMaxDegrees;
 		GaitState.FistArmGripGapCm = Fists->GetGripGapCm(RightBlade);
 		GaitState.FistArmBladeUpShare = Fists->BladeGuardUpShare;
 		GaitState.FistArmBladeBendDegrees = Fists->BladeWristBendDegrees;
@@ -795,6 +800,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		GaitState.SpineTwistYaw += Fists->GetWaistYaw();
 	}
 	GaitState.SpineLeanRoll = InertiaRoll + LocalDirection.Y * SpeedAlpha * MoveDirectionLeanRollDegrees;
+	// Blows bend the trunk and it springs back.
+	if (BalanceComponent)
+	{
+		const FRotator HitSway = BalanceComponent->GetHitSway();
+		GaitState.SpineLeanPitch += HitSway.Pitch;
+		GaitState.SpineLeanRoll += HitSway.Roll;
+		GaitState.SpineTwistYaw += HitSway.Yaw;
+	}
 
 	// Idle sway and weight shift only while standing still and out of the fighting stance.
 	const float IdleTarget = bStepping ? 0.f : 1.f - StanceAlpha;

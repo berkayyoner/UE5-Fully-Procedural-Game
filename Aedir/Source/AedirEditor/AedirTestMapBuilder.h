@@ -10,6 +10,9 @@ namespace AedirTestMap
 	// ambient occlusion and metallic maps as parameters, blended by their heights where painted, with Nanite displacement.
 	void BuildLandscapeMaterial(TArray<UPackage*>& ToSave);
 
+	// Sets how far the ground's heights lift it in the saved landscape material, leaving the rest of it as it is.
+	void FixLandscapeDisplacement(TArray<UPackage*>& ToSave);
+
 	// The test level: rolling land around a flat clearing and a stream bed, painted with a first pass of the layers, the sky
 	// and light, and everything that stands on it saved in the level so it can be edited there.
 	void BuildLevel();

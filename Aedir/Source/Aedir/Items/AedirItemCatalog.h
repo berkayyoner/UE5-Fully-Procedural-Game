@@ -89,6 +89,12 @@ struct AEDIR_API FAedirItemDef
 	FRotator WornRotation = FRotator::ZeroRotator;
 	FVector WornOffsetCm = FVector::ZeroVector;
 
+	// A pair worn apart (a pauldron for each shoulder): the model of each piece, cut out of the main model in its frame, shown
+	// instead of it. Lying, the pieces are pushed together side by side; worn, each goes on the nearest of PartBones and
+	// moves with it.
+	TArray<FString> PartMeshPaths;
+	TArray<FName> PartBones;
+
 	// A blade that comes with a scabbard: the scabbard's model and length. Put away, the blade sits in it on the belt; drawn,
 	// the scabbard stays on the belt.
 	FString ScabbardMeshPath;

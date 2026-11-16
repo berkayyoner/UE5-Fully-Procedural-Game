@@ -152,6 +152,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		}
 		// Through the middle, only the way in to it counts as coming in.
 		const float InwardShare = FMath::Sign(Before) == FMath::Sign(After) ? FMath::Abs(Before) - FMath::Abs(After) : FMath::Abs(Before);
+		// A blade drawn fast either way cuts in one turn; it keeps to that while the stroke lasts and lets go of it slowly.
+		const float AcrossSpeed = FMath::Abs(After - Before) / DeltaTime;
+		const float Fast = FMath::Clamp((AcrossSpeed - BladeOneTurnSpeedMin) / FMath::Max(BladeOneTurnSpeedMax - BladeOneTurnSpeedMin, KINDA_SMALL_NUMBER), 0.f, 1.f);
+		OneTurn = FMath::Max(Fast, FMath::FInterpConstantTo(OneTurn, 0.f, DeltaTime, BladeOneTurnFadeRate));
 		Inward = FMath::Max(InwardShare, 0.f) / DeltaTime;
 		if (InwardShare > 0.f)
 		{
@@ -159,6 +163,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		}
 	}
 	PendingMouse = FVector2D::ZeroVector;
+	if (!bSteering)
+	{
+		OneTurn = FMath::FInterpConstantTo(OneTurn, 0.f, DeltaTime, BladeOneTurnFadeRate);
+	}
 
 	// Fast in towards the middle the arc reaches out; slow, still or let go, it comes back in to the guard.
 	const float PunchWanted = bSteering ? FMath::Clamp((Inward - PunchSlowSpeed) / FMath::Max(PunchFastSpeed - PunchSlowSpeed, KINDA_SMALL_NUMBER), 0.f, 1.f) : 0.f;
@@ -294,14 +302,17 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float Share = bFollows && AimSide != 0.f ? FMath::Abs(Across) : 0.f;
 		if (bBlade)
 		{
-			const float Turn = Share <= Split
+			const float TwoTurns = Share <= Split
 				? FMath::Lerp(0.f, bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, Share / Split)
 				: FMath::Lerp(bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, bOwnSide ? -BladeSideOutDegrees : BladeCrossTurnDegrees, (Share - Split) / (1.f - Split));
-			FistTurn[Slot] = Turn * Side;
+			// Fast, the wrist goes the one way all along, the edge leading.
+			const float OneWay = FMath::Lerp(0.f, bOwnSide ? -BladeSideOutDegrees : BladeCrossTurnDegrees, Share);
+			FistTurn[Slot] = FMath::Lerp(TwoTurns, OneWay, OneTurn) * Side;
 		}
 		// Either way it keeps looking ahead while the wrist turns in, and lets go of that from there on. Raised or lowered the
-		// hand is not turned about the forearm: only the wrist bends, so a blow comes straight down.
-		const float Ahead = Share <= Split ? 1.f : 1.f - (Share - Split) / (1.f - Split);
+		// hand is not turned about the forearm: only the wrist bends, so a blow comes straight down. Cut in one turn, it lets
+		// go of looking ahead all along the way.
+		const float Ahead = FMath::Lerp(Share <= Split ? 1.f : 1.f - (Share - Split) / (1.f - Split), 1.f - Share, OneTurn);
 		BladeAhead[Slot] = bBlade ? Ahead : 0.f;
 		// The way the knuckles (and so the blade) lean, tipped up or down round the chest with the arm.
 		BladeLean[Slot] = Look(Tip(FMath::Lerp((Up - Forward).GetSafeNormal(), Up, Ahead).GetSafeNormal())).GetSafeNormal();

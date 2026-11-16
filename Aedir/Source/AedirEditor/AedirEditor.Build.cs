@@ -25,6 +25,8 @@ public class AedirEditor : ModuleRules
 			"StaticMeshEditor",
 			"AudioEditor",
 			"Landscape",
+			"MeshDescription",
+			"StaticMeshDescription",
 			"Aedir"
 		});
 	}

@@ -3,6 +3,7 @@
 #include "AnimationRuntime.h"
 #include "Animation/AedirGaitComponent.h"
 #include "Animation/AedirProceduralAnimInstance.h"
+#include "Fists/AedirFistArms.h"
 #include "Engine/SkeletalMesh.h"
 
 #include "GameFramework/PlayerController.h"
@@ -383,6 +384,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
+	UpdateHitSway(DeltaTime);
 	UpdateMotors(DeltaTime, false);
 	UpdatePosedArms();
 	UpdateArmTraps(DeltaTime);
@@ -597,6 +599,8 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 		return FMath::Sqrt(AedirArmKilos / (AedirArmKilos + Kilos));
 	};
 	BodyControl->SetArmLoads(LoadShare(EAedirHand::Left), LoadShare(EAedirHand::Right));
+	const UAedirFistArms* FistArms = CharacterOwner->FindComponentByClass<UAedirFistArms>();
+	BodyControl->SetTwoHandGrip(FistArms ? FistArms->GetGripAlpha() : 0.f);
 	{
 		bool bKickLeft = false;
 		FVector KickFoot = FVector::ZeroVector;
@@ -940,7 +944,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	const float Loss = ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction);
 	ApplyBalanceImpact(Impact.Direction, Loss);
 
-	if (Impact.Bone != NAME_None && BodyMesh && BodyMesh->IsAnySimulatingPhysics())
+	if (Impact.Bone != NAME_None && BodyMesh)
 	{
 		const float ImpulseSize = FMath::Min(Impact.MassKg * Impact.RelativeSpeed * HitReactionBoneImpulseScale, HitReactionBoneImpulseMax);
 		MulticastBoneImpulse(Impact.Bone, Impact.Direction * (ImpulseSize * (Impact.Zone == EAedirBodyZone::Head ? HitReactionHeadShare : 1.f)), Impact.Location);
@@ -1678,9 +1682,38 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 	{
 		BodyMesh->AddImpulseAtLocation(Impulse, Location, Bone);
 	}
+	// The trunk is bent the way the blow drove, and turned by one that struck off its middle, physics or not.
+	if (CharacterOwner && !bIsRagdoll)
+	{
+		const FTransform& Frame = CharacterOwner->GetActorTransform();
+		const FVector Push = Frame.InverseTransformVectorNoScale(Impulse);
+		const FVector Off = Frame.InverseTransformPositionNoScale(Location);
+		HitSwayVelocity.X -= static_cast<float>(Push.X) * HitSwayDegreesPerSecondPerPush;
+		HitSwayVelocity.Y += static_cast<float>(Push.Y) * HitSwayDegreesPerSecondPerPush;
+		HitSwayVelocity.Z += static_cast<float>(Off.X * Push.Y - Off.Y * Push.X) * HitSwayTwistPerPushCm;
+	}
 	PushHips(Impulse);
 	Flinch = FMath::Max(Flinch, FMath::Clamp(static_cast<float>(Impulse.Size()) / HitFlinchFullImpulse, 0.f, 1.f));
 	MotorUpdateTimer = 0.f;
+}
+
+void UAedirBalanceComponent::UpdateHitSway(float DeltaTime)
+{
+	if (bIsRagdoll || DeltaTime <= 0.f)
+	{
+		HitSway = HitSwayVelocity = FVector::ZeroVector;
+		return;
+	}
+	// A damped spring back to straight, stepped in small steps so a long frame does not throw it.
+	const float Omega = 2.f * UE_PI * FMath::Max(HitSwayHz, 0.1f);
+	const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaTime / 0.008f), 1, 8);
+	const float Step = DeltaTime / Steps;
+	for (int32 Index = 0; Index < Steps; ++Index)
+	{
+		HitSwayVelocity += (-HitSway * (Omega * Omega) - HitSwayVelocity * (2.f * HitSwayDampingRatio * Omega)) * Step;
+		HitSway += HitSwayVelocity * Step;
+	}
+	HitSway = HitSway.BoundToCube(HitSwayMaxDegrees);
 }
 
 void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
@@ -1694,8 +1727,9 @@ void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
 	const float Hurt = Stats ? 1.f - FMath::Clamp(Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
 	const float Sway = bIsRagdoll ? 0.f : BalanceSwayDegrees + Tired * BalanceSwayTiredDegrees + Hurt * BalanceSwayHurtDegrees;
 	SwayClock += DeltaTime * BalanceSwayRate;
-	const double Pitch = LeanDirection.X * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock + SwaySeed);
-	const double Roll = -LeanDirection.Y * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock * 1.3f + SwaySeed + 17.f);
+	// The hips tip the way the balance is lost, so the body is seen going over that way as the feet hurry to catch it.
+	const double Pitch = -LeanDirection.X * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock + SwaySeed);
+	const double Roll = LeanDirection.Y * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock * 1.3f + SwaySeed + 17.f);
 
 	CurrentLean = FMath::RInterpTo(CurrentLean, FRotator(Pitch, 0.0, Roll), DeltaTime, AedirLeanInterpSpeed);
 }
@@ -2154,6 +2188,14 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll)
 		Joint->SetAngularSwing1Limit(bFree ? ACM_Free : Swing1Motion, Swing1);
 		Joint->SetAngularSwing2Limit(bFree ? ACM_Free : Swing2Motion, Swing2);
 		Joint->SetAngularTwistLimit(bFree ? ACM_Free : TwistMotion, Twist);
+		// No joint pulls towards a pose of its own: the muscles alone hold the living pose, and a dead or broken limb falls
+		// where its weight takes it, only dragged a little.
+		Joint->SetAngularDriveMode(EAngularDriveMode::SLERP);
+		Joint->SetOrientationDriveSLERP(false);
+		Joint->SetOrientationDriveTwistAndSwing(false, false);
+		Joint->SetAngularVelocityDriveSLERP(JointDragPerSecond > 0.f);
+		Joint->SetAngularVelocityDriveTwistAndSwing(false, false);
+		Joint->SetAngularDriveParams(0.f, JointDragPerSecond, 0.f);
 	}
 }
 

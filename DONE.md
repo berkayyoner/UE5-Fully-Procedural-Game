@@ -359,3 +359,16 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Held in both hands and drawn to its own side, a one-hand blade stays nearer the chest (TwoHandSideRadiusCm), so the second arm is not stretched straight.
 - Others fight bare-handed or with a one-handed blade with the player's own fists, holding the buttons and moving a mouse: drawn back to a side (or up, a blade) and thrown across (aedir.NpcFists).
 - Dev commands FeetInfo (soles above the ground) and LyingInfo (how bodies lie); SeverMe <bone> near cuts the nearest other body.
+- The ground's scanned heights only lift it from the collision ground (centre 0, up to 10 cm), set in the saved landscape material by the content commandlet's GroundHeight step.
+- The physics asset's joints no longer pull to its reference pose (5000-10000 strong drives): a dead body lies flat, a broken limb hangs, and only the muscles hold the living pose; each joint keeps a little drag (JointDragPerSecond).
+- A broken arm hangs and swings by its own weight even with the body posed (BrokenShare 0.006); a broken leg drops the body, which gets up on it again; only a leg cut off keeps it down.
+- The arms' muscles are damped well past wobbling (ArmDampingRatio), the wrists are looser than the arms (WristShare), and firmer with both hands on one blade (TwoHandWristShare).
+- A blow bends the trunk the way it drove and turns it if it struck off the middle, springing back (HitSway*), physics or not; the hips tip the way the balance is lost.
+- A kick aimed to one side is thrown by the leg on that side (KickSideDeadDegrees).
+- A blade drawn fast cuts in one turn, edge leading, instead of turning in and then out (BladeOneTurnSpeedMin/Max); reaching out needs a faster mouse (PunchSlowSpeed 2.6, PunchFastSpeed 7) and comes back a little slower (PunchBackRate 2.2).
+- A swing is heard only when its tip moves fast against the body over a moment (WhooshMinSpeed, WhooshFullSpeed, WhooshAverageSeconds).
+- A one-hand blade's point is held further forward (BladeGuardUpShare 0.35); the waist bends less striking low (38 degrees).
+- In both hands the second wrist turns at most TwoHandWristMaxDegrees towards the grip, the second elbow rises drawn to the right (TwoHandElbowRiseCm) and stays below the shoulder carried low (TwoHandRestElbowBelowShoulderCm).
+- The pauldrons are cut into one piece per shoulder (content commandlet's Pauldrons step), each worn on its upper arm; lying, the two are pushed together side by side.
+- The iron helmet sits lower, a little forward and slightly larger, over the brow and the back of the head.
+- Dev commands ArmourFit (how worn armour sits on the head and arms) and BreakLimb <limb> [near]; LyingInfo also shows what holds a body up and how far blows bend the trunk.

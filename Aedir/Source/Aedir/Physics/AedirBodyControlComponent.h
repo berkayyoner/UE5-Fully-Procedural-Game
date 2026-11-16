@@ -71,11 +71,26 @@ public:
 
 	// What is left of the muscles of a limb whose bone is broken: it swings loose, still hanging together.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float BrokenShare = 0.03f;
+	float BrokenShare = 0.006f;
 
 	// Damping of the muscles, 1 for no overshoot.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float DampingRatio = 1.25f;
+
+	// Damping of the arms' muscles: well past 1, so a swung or struck arm gives and comes back without wobbling.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float ArmDampingRatio = 2.2f;
+
+	// The wrist and fingers against the rest of the arm: looser, so a blow and the weight of what the hand holds show in it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float WristShare = 0.4f;
+
+	// The same with one thing held in both hands, which steady each other.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float TwoHandWristShare = 0.8f;
+
+	// Every frame: how far one thing is held in both hands (0..1).
+	void SetTwoHandGrip(float Alpha);
 
 	// Builds the controls on the body's bones; called again whenever the physics bodies are made anew.
 	void Setup(USkeletalMeshComponent* InMesh, UCapsuleComponent* InCapsule);
@@ -135,6 +150,8 @@ public:
 private:
 	void ApplyMultipliers();
 	void ApplyLegContacts();
+	// A broken arm hangs from the shoulder by its own weight, whether the rest is posed or held by its muscles.
+	void ApplyBrokenArms();
 
 	UPROPERTY(Transient)
 	TObjectPtr<UPhysicsControlComponent> Control;
@@ -150,6 +167,9 @@ private:
 	TArray<FName> HeadControls;
 	TArray<FName> LeftArmControls;
 	TArray<FName> RightArmControls;
+	TArray<FName> LeftHandControls;
+	TArray<FName> RightHandControls;
+	float TwoHandGrip = 0.f;
 	TArray<FName> LegControls;
 	TArray<FName> LeftLegControls;
 	TArray<FName> RightLegControls;
@@ -165,6 +185,7 @@ private:
 	FName RightFootModifiers[2];
 	TArray<FName> ArmModifiers[2];
 	bool bArmPosed[2] = { false, false };
+	bool bArmLoose[2] = { false, false };
 	bool bWholePosed = false;
 
 	bool bReady = false;

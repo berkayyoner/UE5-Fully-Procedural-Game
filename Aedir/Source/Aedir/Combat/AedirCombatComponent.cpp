@@ -596,8 +596,6 @@ namespace
 	constexpr float AedirSfxHitMinSpeed = 250.f;
 	constexpr float AedirSfxHitFullSpeed = 1500.f;
 	// The point of a swing hissing through the air: from this speed, at most once in this long.
-	constexpr float AedirSfxWhooshSpeed = 1100.f;
-	constexpr float AedirSfxWhooshFullSpeed = 2600.f;
 	constexpr double AedirSfxWhooshSeconds = 0.3;
 	constexpr float AedirImpactInjuryPerDamage = 0.012f;
 	constexpr float AedirImpactLimbHealPerSecond = 0.002f;
@@ -4050,11 +4048,27 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 		Recent.RemoveAll([Time](const TPair<double, FVector>& Entry) { return Time - Entry.Key > AedirStrikeSpeedMemorySeconds; });
 	}
 	const double FastestEnd = FMath::Max(FromVelocity.Size(), ToVelocity.Size());
-	// A fast swing is heard cutting the air, the faster the louder.
-	if (FastestEnd > AedirSfxWhooshSpeed && World->GetTimeSeconds() - LastWhooshTime[Index] > AedirSfxWhooshSeconds)
+	// A fast swing is heard cutting the air, the faster the louder: the tip's own speed against the body, held over a moment,
+	// so a small move of the mouse, a step or a turn of the body is not heard.
 	{
-		LastWhooshTime[Index] = World->GetTimeSeconds();
-		UAedirSfxSubsystem::Play(this, EAedirSfx::Whoosh, To, FMath::GetRangePct(AedirSfxWhooshSpeed, AedirSfxWhooshFullSpeed, static_cast<float>(FastestEnd)));
+		const double Time = World->GetTimeSeconds();
+		const FVector BodyVelocity = Creature->GetVelocity();
+		FVector Sum = FVector::ZeroVector;
+		int32 Count = 0;
+		for (const TPair<double, FVector>& Entry : RecentStrikeVelocity[Index])
+		{
+			if (Time - Entry.Key <= WhooshAverageSeconds)
+			{
+				Sum += Entry.Value - BodyVelocity;
+				++Count;
+			}
+		}
+		const float Swing = Count > 0 ? static_cast<float>((Sum / Count).Size()) : 0.f;
+		if (Swing > WhooshMinSpeed && Time - LastWhooshTime[Index] > AedirSfxWhooshSeconds)
+		{
+			LastWhooshTime[Index] = Time;
+			UAedirSfxSubsystem::Play(this, EAedirSfx::Whoosh, To, FMath::GetRangePct(WhooshMinSpeed, WhooshFullSpeed, Swing));
+		}
 	}
 	if (FastestEnd <= AedirArmMinSpeed || (bLoose && FastestEnd < AedirLooseStrikeMinSpeed))
 	{
@@ -5611,14 +5625,15 @@ bool UAedirCombatComponent::TryStartKick()
 
 void UAedirCombatComponent::BeginKick()
 {
-	const bool bLeftLeg = IsLeadFootRight();
+	// The leg goes where the camera looks, as far as a leg can turn from the body.
+	const FRotator View = Creature->Controller ? Creature->GetControlRotation() : Creature->GetActorRotation();
+	const double YawFromBody = FMath::Clamp(FRotator::NormalizeAxis(View.Yaw - Creature->GetActorRotation().Yaw), -AedirKickMaxYawDegrees, AedirKickMaxYawDegrees);
+	// The leg on the side the kick goes kicks: the nearer one. Straight ahead, the foot further back swings through.
+	const bool bLeftLeg = FMath::Abs(YawFromBody) > KickSideDeadDegrees ? YawFromBody < 0.0 : IsLeadFootRight();
 	KickNet.bActive = true;
 	KickNet.bLeftLeg = bLeftLeg;
 	KickNet.Elapsed = 0.f;
 	KickNet.StartWorld = GetFootBoneWorld(bLeftLeg);
-	// The leg goes where the camera looks, as far as a leg can turn from the body.
-	const FRotator View = Creature->Controller ? Creature->GetControlRotation() : Creature->GetActorRotation();
-	const double YawFromBody = FMath::Clamp(FRotator::NormalizeAxis(View.Yaw - Creature->GetActorRotation().Yaw), -AedirKickMaxYawDegrees, AedirKickMaxYawDegrees);
 	KickNet.Direction = FRotator(0.0, Creature->GetActorRotation().Yaw + YawFromBody, 0.0).Vector();
 	KickNet.LiftCm = FMath::Clamp(AedirKickExtendCm * FMath::Sin(FMath::DegreesToRadians(static_cast<float>(FRotator::NormalizeAxis(View.Pitch)))), AedirKickMinLiftCm, AedirKickMaxLiftCm);
 	KickPrevFootWorld = KickNet.StartWorld;

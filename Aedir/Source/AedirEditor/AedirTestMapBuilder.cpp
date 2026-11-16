@@ -90,8 +90,10 @@ namespace
 	constexpr float TestScaleZ = 100.f;
 	constexpr float TestClearingRadiusM = 55.f;
 	constexpr float TestClearingEdgeM = 140.f;
-	// How far the ground's scanned height pushes the surface in and out, in cm.
-	constexpr float TestDisplacementCm = 25.f;
+	// How far the ground's scanned height lifts the surface, in cm. The lowest of the heights is the collision ground, so
+	// pits sit at the ground and pebbles and clods rise from it.
+	constexpr float TestDisplacementCm = 10.f;
+	constexpr float TestDisplacementCenter = 0.f;
 
 	template <typename TExpression>
 	TExpression* TestNode(UMaterial* Material, int32 X, int32 Y)
@@ -288,7 +290,7 @@ float2 uvA, uvB, dxA, dyA, dxB, dyB;
 		col[I] = lerp(d, saturate(dot(d, float3(0.3, 0.59, 0.11)) * TINT * 2.4), saturate(TAMT)); \
 		float2 nn = AEDIR_SMP(TN).rg * 2.0 - 1.0; nrm[I] = float3(nn, sqrt(saturate(1.0 - dot(nn, nn)))); \
 		rough[I] = saturate(pow(saturate(AEDIR_SMP(TR).r), 0.4545) * RSC); \
-		h[I] = saturate(0.5 + (pow(saturate(AEDIR_SMP(TD).r), 0.4545) - 0.5) * DSC); \
+		h[I] = saturate(0.5 + (saturate(AEDIR_SMP(TD).r) - 0.5) * DSC); \
 		ao[I] = AEDIR_SMP(TO).r; metal[I] = AEDIR_SMP(TM).r; }
 )");
 	for (int32 Layer = 0; Layer < TestLayerCount; ++Layer)
@@ -338,7 +340,7 @@ return outColor;
 	Material->bEnableTessellation = true;
 	// Displacement is in the landscape's own space, which its actor scales up a hundredfold.
 	Material->DisplacementScaling.Magnitude = TestDisplacementCm / TestScaleZ;
-	Material->DisplacementScaling.Center = 0.5f;
+	Material->DisplacementScaling.Center = TestDisplacementCenter;
 	Material->bUsedWithNanite = true;
 	UMaterialEditingLibrary::RecompileMaterial(Material);
 	Material->MarkPackageDirty();
@@ -351,6 +353,22 @@ return outColor;
 		}
 	}
 	UE_LOG(LogAedirEditor, Display, TEXT("Built %s with %d expressions and %d paint layers."), *Material->GetPathName(), Material->GetExpressions().Num(), TestLayerCount);
+}
+
+void AedirTestMap::FixLandscapeDisplacement(TArray<UPackage*>& ToSave)
+{
+	UMaterial* Material = LoadObject<UMaterial>(nullptr, *FString::Printf(TEXT("%s.M_AedirLandscape"), TestMaterialPath));
+	if (!Material)
+	{
+		UE_LOG(LogAedirEditor, Error, TEXT("No M_AedirLandscape to fix."));
+		return;
+	}
+	Material->DisplacementScaling.Magnitude = TestDisplacementCm / TestScaleZ;
+	Material->DisplacementScaling.Center = TestDisplacementCenter;
+	UMaterialEditingLibrary::RecompileMaterial(Material);
+	Material->MarkPackageDirty();
+	ToSave.Add(Material->GetPackage());
+	UE_LOG(LogAedirEditor, Display, TEXT("Ground heights: %.1f cm up from the ground, centre %.2f."), TestDisplacementCm, TestDisplacementCenter);
 }
 
 namespace

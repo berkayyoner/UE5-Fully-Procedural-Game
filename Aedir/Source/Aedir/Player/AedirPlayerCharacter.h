@@ -447,6 +447,16 @@ public:
 	UFUNCTION(Exec)
 	void FeetInfo(const FString& Label);
 
+	// Logs how the worn armour sits: the box of the skin of the head as it is drawn now and the box of each worn piece, in the
+	// body's frame (forward, right, up) from the head bone, and the bone each piece hangs from.
+	UFUNCTION(Exec)
+	void ArmourFit(const FString& Label);
+
+	// Breaks a limb's bone (0 left arm, 1 right arm, 2 left leg, 3 right leg), the player's own or, with Near 1, the nearest
+	// other body's.
+	UFUNCTION(Exec)
+	void BreakLimb(int32 Limb, int32 Near = 0);
+
 	// Logs how high above the ground the hands, elbows, head and knees of the nearest other body are, to see a fallen body
 	// lie slack or stay stiff.
 	UFUNCTION(Exec)

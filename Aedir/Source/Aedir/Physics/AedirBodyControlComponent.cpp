@@ -80,11 +80,13 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	ArmModifiers[0].Reset();
 	ArmModifiers[1].Reset();
 	bArmPosed[0] = bArmPosed[1] = false;
-	bArmPosed[0] = bArmPosed[1] = false;
+	bArmLoose[0] = bArmLoose[1] = false;
 	LegBones.Reset();
 	HeadControls.Reset();
 	LeftArmControls.Reset();
 	RightArmControls.Reset();
+	LeftHandControls.Reset();
+	RightHandControls.Reset();
 	LegControls.Reset();
 	LeftLegControls.Reset();
 	RightLegControls.Reset();
@@ -156,7 +158,12 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		{
 			continue;
 		}
-		const FName Name = Control->CreateControl(Mesh, Parent, Mesh, Bone, Muscle, FPhysicsControlTarget(), TEXT("Muscles"));
+		const bool bArmPart = Part == EAedirBodyPart::LeftArm || Part == EAedirBodyPart::RightArm;
+		FPhysicsControlData ArmMuscle = Muscle;
+		ArmMuscle.AngularDampingRatio = ArmDampingRatio;
+		ArmMuscle.LinearDampingRatio = ArmDampingRatio;
+		const FName Name = Control->CreateControl(Mesh, Parent, Mesh, Bone, bArmPart ? ArmMuscle : Muscle, FPhysicsControlTarget(), TEXT("Muscles"));
+		const bool bWrist = bArmPart && !BoneText.StartsWith(TEXT("clavicle")) && !BoneText.StartsWith(TEXT("upperarm")) && !BoneText.StartsWith(TEXT("lowerarm"));
 		if (BoneText == TEXT("foot_l") || BoneText == TEXT("foot_r"))
 		{
 			// A foot finds where the pose sets it down, in the world: the leg's joints alone carry it too late.
@@ -175,8 +182,8 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		switch (Part)
 		{
 		case EAedirBodyPart::Head: HeadControls.Add(Name); break;
-		case EAedirBodyPart::LeftArm: LeftArmControls.Add(Name); break;
-		case EAedirBodyPart::RightArm: RightArmControls.Add(Name); break;
+		case EAedirBodyPart::LeftArm: (bWrist ? LeftHandControls : LeftArmControls).Add(Name); break;
+		case EAedirBodyPart::RightArm: (bWrist ? RightHandControls : RightArmControls).Add(Name); break;
 		case EAedirBodyPart::Leg:
 			LegControls.Add(Name);
 			(BoneText.EndsWith(TEXT("_l")) ? LeftLegControls : RightLegControls).Add(Name);
@@ -193,8 +200,8 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	RebindHips(InCapsule);
 	AppliedKey = -1.f;
 	ApplyMultipliers();
-	UE_LOG(LogAedir, Log, TEXT("%s: physical body with %d spine, %d head, %d+%d arm and %d leg muscles."), *GetNameSafe(GetOwner()),
-		SpineControls.Num(), HeadControls.Num(), LeftArmControls.Num(), RightArmControls.Num(), LegControls.Num());
+	UE_LOG(LogAedir, Log, TEXT("%s: physical body with %d spine, %d head, %d+%d arm, %d+%d wrist and %d leg muscles."), *GetNameSafe(GetOwner()),
+		SpineControls.Num(), HeadControls.Num(), LeftArmControls.Num(), RightArmControls.Num(), LeftHandControls.Num(), RightHandControls.Num(), LegControls.Num());
 }
 
 void UAedirBodyControlComponent::SetStrengths(float InUpright, float LeftArm, float RightArm)
@@ -203,6 +210,17 @@ void UAedirBodyControlComponent::SetStrengths(float InUpright, float LeftArm, fl
 	LeftArmShare = FMath::Clamp(LeftArm, 0.f, 1.f);
 	RightArmShare = FMath::Clamp(RightArm, 0.f, 1.f);
 	ApplyMultipliers();
+}
+
+void UAedirBodyControlComponent::SetTwoHandGrip(float Alpha)
+{
+	const float Clamped = FMath::Clamp(Alpha, 0.f, 1.f);
+	if (FMath::Abs(Clamped - TwoHandGrip) > 0.05f || (Clamped != TwoHandGrip && (Clamped == 0.f || Clamped == 1.f)))
+	{
+		TwoHandGrip = Clamped;
+		AppliedKey = -1.f;
+		ApplyMultipliers();
+	}
 }
 
 void UAedirBodyControlComponent::SetArmLoads(float Left, float Right)
@@ -260,6 +278,35 @@ void UAedirBodyControlComponent::SetBrokenLimbs(bool bLeftArm, bool bRightArm, b
 		FMemory::Memcpy(bBroken, Now, sizeof(Now));
 		AppliedKey = -1.f;
 		ApplyMultipliers();
+		ApplyBrokenArms();
+	}
+}
+
+void UAedirBodyControlComponent::ApplyBrokenArms()
+{
+	if (!Control)
+	{
+		return;
+	}
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		const bool bLoose = bBroken[Side];
+		if (!bLoose && !bArmLoose[Side])
+		{
+			continue;
+		}
+		bArmLoose[Side] = bLoose;
+		for (const FName& Modifier : ArmModifiers[Side])
+		{
+			const bool bKinematic = !bLoose && bWholePosed;
+			Control->SetBodyModifierMovementType(Modifier, bKinematic ? EPhysicsMovementType::Kinematic : EPhysicsMovementType::Simulated);
+			Control->SetBodyModifierPhysicsBlendWeight(Modifier, bLoose ? 1.f : bWholePosed || bArmPosed[Side] ? 0.f : 1.f);
+			// It carries all its weight: no foot under it takes any of it.
+			if (bLoose)
+			{
+				Control->SetBodyModifierGravityMultiplier(Modifier, 1.f);
+			}
+		}
 	}
 }
 
@@ -425,8 +472,14 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	Apply(RightLegControls, LegStrength * Body * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
 	// A broken arm swings loose; a hurt one keeps at least some of its strength.
-	Apply(LeftArmControls, ArmHz * (bLimp ? Limp : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare), 0.f);
-	Apply(RightArmControls, ArmHz * (bLimp ? Limp : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare), 0.f);
+	const float LeftArmHz = ArmHz * (bLimp ? Limp : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare);
+	const float RightArmHz = ArmHz * (bLimp ? Limp : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare);
+	Apply(LeftArmControls, LeftArmHz, 0.f);
+	Apply(RightArmControls, RightArmHz, 0.f);
+	// The wrists are looser than the arm above them, less so with both hands on one thing.
+	const float Wrist = FMath::Lerp(WristShare, TwoHandWristShare, TwoHandGrip);
+	Apply(LeftHandControls, LeftArmHz * Wrist, 0.f);
+	Apply(RightHandControls, RightArmHz * Wrist, 0.f);
 	// Down, the hips are free; carried, the pose places them and the control rests.
 	const bool bHold = !bLimp && !bHipsCarried;
 	const float Hips = CVarAedirBodyHips.GetValueOnGameThread() >= 0.f ? CVarAedirBodyHips.GetValueOnGameThread() : HipLinearStrength;
@@ -457,6 +510,13 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float Weight = CVarAedirBodyGravity.GetValueOnGameThread() >= 0.f ? CVarAedirBodyGravity.GetValueOnGameThread() : StandingGravity;
 	// The feet carry part of the weight only while they stand on something; in the air it all falls alike.
 	Control->SetBodyModifiersInSetGravityMultiplier(TEXT("Body"), bLimp || bAirborne ? 1.f : FMath::Lerp(1.f, Weight, Upright));
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		if (bArmLoose[Side])
+		{
+			Control->SetBodyModifiersGravityMultiplier(ArmModifiers[Side], 1.f);
+		}
+	}
 }
 
 void UAedirBodyControlComponent::SetArmsPosed(bool bLeft, bool bRight)
@@ -464,7 +524,7 @@ void UAedirBodyControlComponent::SetArmsPosed(bool bLeft, bool bRight)
 	const bool Wanted[2] = { bLeft, bRight };
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
-		if (!Control || bWholePosed || bArmPosed[Side] == Wanted[Side])
+		if (!Control || bWholePosed || bArmPosed[Side] == Wanted[Side] || bArmLoose[Side])
 		{
 			continue;
 		}
@@ -502,4 +562,7 @@ void UAedirBodyControlComponent::SetWholePosed(bool bPosed)
 	}
 	// Back to physics, the arms take up their own posing again.
 	bArmPosed[0] = bArmPosed[1] = false;
+	// A broken arm still hangs loose.
+	bArmLoose[0] = bArmLoose[1] = false;
+	ApplyBrokenArms();
 }

@@ -172,6 +172,12 @@ struct AEDIR_API FAedirGaitState
 	float FistArmGripGapCm = 9.f;
 	float FistArmGripElbowOutShare = 0.5f;
 	float FistArmGripElbowFrontCm = 18.f;
+	// How far the blade in both hands is drawn round to the right (0..1), how far it is raised, and the second arm's limits.
+	float FistArmGripRight = 0.f;
+	float FistArmGripRaised = 0.f;
+	float FistArmGripElbowRiseCm = 14.f;
+	float FistArmGripRestElbowBelowCm = 24.f;
+	float FistArmGripWristMaxDegrees = 32.f;
 	// How far up the point of a blade held up looks (share of up to ahead), and how far its wrist bends to bring it there.
 	float FistArmBladeUpShare = 0.7f;
 	float FistArmBladeBendDegrees = 45.f;

@@ -78,17 +78,17 @@ public:
 	float PunchReachCm = 28.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float PunchSlowSpeed = 1.5f;
+	float PunchSlowSpeed = 2.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float PunchFastSpeed = 5.f;
+	float PunchFastSpeed = 7.f;
 
 	// How quickly the arc reaches out for a punch and comes back in after it, in shares a second.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float PunchOutRate = 25.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float PunchBackRate = 3.f;
+	float PunchBackRate = 2.2f;
 
 	// The mouse all the way up or down takes the whole guard round an arc about the chest this many degrees up or down, the
 	// fists keeping their shape and distance, and bends the waist back or forward this much.
@@ -146,7 +146,7 @@ public:
 	float WaistBackDegrees = 8.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float WaistForwardDegrees = 60.f;
+	float WaistForwardDegrees = 38.f;
 
 	// How long an arm takes to come up into the guard and to drop again, in seconds.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
@@ -184,7 +184,7 @@ public:
 	float BladeDownReachCm = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeWaistForwardDegrees = 55.f;
+	float BladeWaistForwardDegrees = 38.f;
 
 	// Drawn to its own side, a blade's wrist turns in two steps. Up to this share of the way from the middle it turns in, as
 	// far as BladeSideInDegrees, the wrist still bending the point round ahead, so it keeps looking at the other; from
@@ -237,10 +237,22 @@ public:
 	// Held up still, the point looks ahead and this much up (share of up to ahead), the wrist bending the blade on from
 	// upright at most this far, as far as a wrist bends.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeGuardUpShare = 0.7f;
+	float BladeGuardUpShare = 0.35f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeWristBendDegrees = 45.f;
+
+	// Drawn across this fast (shares of the mouse's travel a second) the blade starts to cut in one turn, edge on along the
+	// way it goes, instead of first turning in and then out; from the second speed on it is all one turn.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeOneTurnSpeedMin = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeOneTurnSpeedMax = 5.f;
+
+	// How quickly a fast cut goes back to the slow two-turn way once the mouse slows, a share a second.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeOneTurnFadeRate = 2.5f;
 
 	// A blade swung out costs this much stamina where a fist's punch costs PunchStaminaCost, and every quick move of it
 	// (faster than PunchSlowSpeed) this much more for each whole width of the mouse's field it goes.
@@ -271,6 +283,20 @@ public:
 	// Brought across past its own shoulder, the second elbow stays this far before the shoulder, out of the chest.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandElbowFrontCm = 18.f;
+
+	// Drawn round to the right in both hands, the second elbow rises this much more at the end, in cm, so its forearm comes
+	// to the grip along it and the wrist is not bent over.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandElbowRiseCm = 14.f;
+
+	// Carried low in both hands, the second elbow stays at least this far below its shoulder, in cm, however the view turns.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandRestElbowBelowShoulderCm = 24.f;
+
+	// The furthest the second hand turns at the wrist off the line its forearm gives it to close on the grip, in degrees:
+	// past it the hand would turn into the blade.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float TwoHandWristMaxDegrees = 32.f;
 
 	// Held in both hands and drawn round to its own side, the blade comes in this close to the chest (in one hand
 	// SideRadiusCm), so the second arm still reaches it bent.
@@ -356,6 +382,10 @@ public:
 
 	// For tests and measuring: where the mouse stands across and up (-1..1) and how far out the punch is (0..1).
 	FVector2D GetAim() const { return Aim; }
+	// How far a blade now cuts in one turn rather than two (0..1).
+	float GetOneTurn() const { return OneTurn; }
+	// How far an arm is up in the guard, apart from the second hand holding on.
+	float GetRaised(EAedirHand Hand) const { return Alpha[Index(Hand)]; }
 	float GetPunch() const { return Punch; }
 	// The furthest the punch went out since this was last asked, and where the mouse stood then.
 	float TakePeakPunch(FVector2D& OutAimThen) { const float Peak = PeakPunch; OutAimThen = PeakAim; PeakPunch = 0.f; return Peak; }
@@ -381,6 +411,8 @@ private:
 	FVector2D Aim = FVector2D::ZeroVector;
 	FVector2D PendingMouse = FVector2D::ZeroVector;
 	float Punch = 0.f;
+	// How far the blade cuts in one turn now, from how fast it was last drawn across.
+	float OneTurn = 0.f;
 	// The arm the punch belongs to: the one that was drawn back on the side the mouse last came in from.
 	int32 PunchSlot = 1;
 	float WaistPitch = 0.f;

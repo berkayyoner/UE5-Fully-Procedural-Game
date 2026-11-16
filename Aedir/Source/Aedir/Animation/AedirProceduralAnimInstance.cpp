@@ -814,9 +814,22 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	{
 		Elbow += Ahead * (GaitData.FistArmGripElbowFrontCm - InFront);
 	}
+	// Drawn round to the right the elbow rises, so the forearm comes along the grip; carried low it stays down, below the
+	// shoulder, whichever way the right arm has turned with the view.
+	const FVector Up = -Down;
+	Elbow += Up * (GaitData.FistArmGripRight * GaitData.FistArmGripElbowRiseCm);
+	const float Lowered = 1.f - FMath::Clamp(GaitData.FistArmGripRaised, 0.f, 1.f);
+	const double Over = FVector::DotProduct(Elbow - Shoulder, Up) + GaitData.FistArmGripRestElbowBelowCm;
+	if (Lowered > 0.f && Over > 0.0)
+	{
+		Elbow -= Up * (Over * Lowered);
+	}
 	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, MeshToWorld.TransformPosition(Wrist), MeshToWorld.TransformPosition(Elbow), Alpha, 0.f, false, 0.f, FQuat::Identity, 0.f, Blade);
 	FTransform Left = CSPose.GetComponentSpaceTransform(LeftHand);
-	Left.SetRotation(FQuat::Slerp(Left.GetRotation(), LeftRotation, FMath::Clamp(Alpha, 0.f, 1.f)).GetNormalized());
+	// The hand turns at the wrist towards its hold on the grip only so far: past that it would turn into the blade.
+	const float Off = FMath::RadiansToDegrees(static_cast<float>(Left.GetRotation().AngularDistance(LeftRotation)));
+	const float Turned = Off > GaitData.FistArmGripWristMaxDegrees ? GaitData.FistArmGripWristMaxDegrees / Off : 1.f;
+	Left.SetRotation(FQuat::Slerp(Left.GetRotation(), LeftRotation, FMath::Clamp(Alpha, 0.f, 1.f) * Turned).GetNormalized());
 	CSPose.SetComponentSpaceTransform(LeftHand, Left);
 }
 

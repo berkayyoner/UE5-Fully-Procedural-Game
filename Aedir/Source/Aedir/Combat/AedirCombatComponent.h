@@ -177,6 +177,21 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Aedir|Combat")
 	FAedirKick OnKick;
 
+	// A kick aimed further than this to one side, in degrees from straight ahead, is thrown by the leg on that side.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float KickSideDeadDegrees = 8.f;
+
+	// A swing is heard cutting the air from this speed of its tip against the body that swings it, in cm/s, averaged over
+	// WhooshAverageSeconds; at the full speed it is heard at its loudest.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Sound")
+	float WhooshMinSpeed = 1900.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Sound")
+	float WhooshFullSpeed = 4000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Sound")
+	float WhooshAverageSeconds = 0.06f;
+
 	// Flat bonus for a bare-handed hit. Held items add their own Damage instead.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float FistDamage = 6.f;

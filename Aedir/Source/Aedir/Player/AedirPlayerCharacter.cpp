@@ -2240,6 +2240,107 @@ void AAedirPlayerCharacter::Wobble(float Seconds)
 	}), 0.001f, true);
 }
 
+void AAedirPlayerCharacter::BreakLimb(int32 Limb, int32 Near)
+{
+	AAedirCreature* Target = this;
+	if (Near != 0)
+	{
+		Target = nullptr;
+		for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+		{
+			if (*It != this && (!Target || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Target->GetActorLocation(), GetActorLocation())))
+			{
+				Target = *It;
+			}
+		}
+	}
+	const bool bBroken = Target && Target->Wounds && Limb >= 0 && Limb < 4 && Target->Wounds->BreakLimb(static_cast<EAedirLimb>(Limb));
+	UE_LOG(LogAedir, Display, TEXT("[Dev] Limb %d of %s %s"), Limb, *GetNameSafe(Target), bBroken ? TEXT("broken") : TEXT("not broken"));
+}
+
+void AAedirPlayerCharacter::ArmourFit(const FString& Label)
+{
+	USkeletalMeshComponent* Skin = GetMesh();
+	USkeletalMesh* SkinAsset = Skin ? Skin->GetSkeletalMeshAsset() : nullptr;
+	FSkeletalMeshRenderData* Render = SkinAsset ? SkinAsset->GetResourceForRendering() : nullptr;
+	if (!Render || Render->LODRenderData.IsEmpty())
+	{
+		return;
+	}
+	const FVector Head = Skin->GetBoneLocation(TEXT("head"));
+	const FQuat Frame = GetActorQuat();
+	const auto InFrame = [&](const FVector& World) { return Frame.UnrotateVector(World - Head); };
+	// The skin of the head: what lies above the bottom of the neck bone's child, near the head bone.
+	TArray<FMatrix44f> RefToLocals;
+	Skin->CacheRefToLocalMatrices(RefToLocals);
+	TArray<FVector3f> Points;
+	USkeletalMeshComponent::ComputeSkinnedPositions(Skin, Points, RefToLocals, Render->LODRenderData[0], Render->LODRenderData[0].SkinWeightVertexBuffer);
+	FBox Skull(ForceInit);
+	for (const FVector3f& Point : Points)
+	{
+		const FVector World = Skin->GetComponentTransform().TransformPosition(FVector(Point));
+		const FVector Local = InFrame(World);
+		if (Local.Size() < 30.0 && Local.Z > -3.0)
+		{
+			Skull += Local;
+		}
+	}
+	UE_LOG(LogAedir, Display, TEXT("[ArmourFit] %s skull from the head bone: min %s max %s centre %s"), *Label, *Skull.Min.ToCompactString(), *Skull.Max.ToCompactString(), *Skull.GetCenter().ToCompactString());
+	// The head bone's own axes in the body's frame, to know which way an offset on it goes.
+	{
+		const FQuat Bone = Skin->GetBoneQuaternion(TEXT("head"));
+		UE_LOG(LogAedir, Display, TEXT("[ArmourFit] %s head bone axes: X %s Y %s Z %s"), *Label, *Frame.UnrotateVector(Bone.GetAxisX()).ToCompactString(),
+			*Frame.UnrotateVector(Bone.GetAxisY()).ToCompactString(), *Frame.UnrotateVector(Bone.GetAxisZ()).ToCompactString());
+	}
+	// And the head's physical body, the shape the skull is given for blows.
+	if (const FBodyInstance* HeadBody = Skin->GetBodyInstance(TEXT("head")))
+	{
+		const FBox Bounds = HeadBody->GetBodyBounds();
+		FBox Shape(ForceInit);
+		for (int32 Corner = 0; Corner < 8; ++Corner)
+		{
+			Shape += InFrame(FVector((Corner & 1) ? Bounds.Max.X : Bounds.Min.X, (Corner & 2) ? Bounds.Max.Y : Bounds.Min.Y, (Corner & 4) ? Bounds.Max.Z : Bounds.Min.Z));
+		}
+		UE_LOG(LogAedir, Display, TEXT("[ArmourFit] %s head body from the head bone: min %s max %s centre %s"), *Label, *Shape.Min.ToCompactString(), *Shape.Max.ToCompactString(), *Shape.GetCenter().ToCompactString());
+	}
+	for (TActorIterator<AAedirItemActor> It(GetWorld()); It; ++It)
+	{
+		if (It->Holder != this || !It->bWorn)
+		{
+			continue;
+		}
+		TArray<UStaticMeshComponent*> Parts;
+		It->GetComponents(Parts);
+		// Pieces worn apart hang from the body itself.
+		for (USceneComponent* Attached : Skin->GetAttachChildren())
+		{
+			if (UStaticMeshComponent* Part = Cast<UStaticMeshComponent>(Attached))
+			{
+				if (Part->GetOwner() == *It)
+				{
+					Parts.AddUnique(Part);
+				}
+			}
+		}
+		for (const UStaticMeshComponent* Part : Parts)
+		{
+			if (!Part->IsVisible() || !Part->GetStaticMesh())
+			{
+				continue;
+			}
+			const FBox Box = Part->GetStaticMesh()->GetBoundingBox();
+			FBox Placed(ForceInit);
+			for (int32 Corner = 0; Corner < 8; ++Corner)
+			{
+				const FVector At((Corner & 1) ? Box.Max.X : Box.Min.X, (Corner & 2) ? Box.Max.Y : Box.Min.Y, (Corner & 4) ? Box.Max.Z : Box.Min.Z);
+				Placed += InFrame(Part->GetComponentTransform().TransformPosition(At));
+			}
+			UE_LOG(LogAedir, Display, TEXT("[ArmourFit] %s %s %s on %s: min %s max %s centre %s"), *Label, *It->GetName(), *Part->GetStaticMesh()->GetName(),
+				*Part->GetAttachSocketName().ToString(), *Placed.Min.ToCompactString(), *Placed.Max.ToCompactString(), *Placed.GetCenter().ToCompactString());
+		}
+	}
+}
+
 void AAedirPlayerCharacter::FeetInfo(const FString& Label)
 {
 	AAedirCreature* Nearest = nullptr;
@@ -2307,6 +2408,10 @@ void AAedirPlayerCharacter::FeetInfo(const FString& Label)
 
 void AAedirPlayerCharacter::LyingInfo(const FString& Label)
 {
+	if (Balance)
+	{
+		UE_LOG(LogAedir, Display, TEXT("[LyingInfo] %s own trunk bent by blows %s"), *Label, *Balance->GetHitSway().ToCompactString());
+	}
 	// Every other body within ten metres.
 	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
 	{
@@ -2327,8 +2432,37 @@ void AAedirPlayerCharacter::LyingInfo(const FString& Label)
 			Highest = FMath::Max(Highest, Height);
 			Line += FString::Printf(TEXT(" %s %.0f"), Bone, Height);
 		}
-		UE_LOG(LogAedir, Display, TEXT("[LyingInfo] %s %s (%s, %.0f cm away) above the ground:%s; the highest %.0f cm"), *Label, *Other->GetName(), Other->Stats && Other->Stats->IsDead() ? TEXT("dead") : TEXT("alive"),
-			FVector::Dist(Other->GetActorLocation(), GetActorLocation()), *Line, Highest);
+		// What may hold it up: bodies asleep, the fastest part, the joints' own drives and the bodies' damping.
+		int32 Asleep = 0;
+		int32 Simulating = 0;
+		float Fastest = 0.f;
+		float AngularDamping = 0.f;
+		for (const FBodyInstance* Body : Skin->Bodies)
+		{
+			if (Body && Body->IsInstanceSimulatingPhysics())
+			{
+				++Simulating;
+				Asleep += Body->IsInstanceAwake() ? 0 : 1;
+				Fastest = FMath::Max(Fastest, static_cast<float>(Body->GetUnrealWorldVelocity().Size()));
+				AngularDamping = FMath::Max(AngularDamping, Body->AngularDamping);
+			}
+		}
+		float Drive = 0.f;
+		for (const FConstraintInstance* Joint : Skin->Constraints)
+		{
+			const FAngularDriveConstraint& Angular = Joint->ProfileInstance.AngularDrive;
+			Drive = FMath::Max(Drive, FMath::Max(Angular.SlerpDrive.Stiffness * (Angular.SlerpDrive.bEnablePositionDrive ? 1.f : 0.f),
+				FMath::Max(Angular.SwingDrive.Stiffness * (Angular.SwingDrive.bEnablePositionDrive ? 1.f : 0.f), Angular.TwistDrive.Stiffness * (Angular.TwistDrive.bEnablePositionDrive ? 1.f : 0.f))));
+			if (Label.StartsWith(TEXT("joints")))
+			{
+				UE_LOG(LogAedir, Display, TEXT("[LyingInfo] joint %s: mode %d, slerp %d/%d %.0f/%.0f, swing %d/%d %.0f/%.0f, twist %d/%d %.0f/%.0f, accel %d"), *Joint->ConstraintBone1.ToString(), static_cast<int32>(Angular.AngularDriveMode.GetValue()),
+					Angular.SlerpDrive.bEnablePositionDrive, Angular.SlerpDrive.bEnableVelocityDrive, Angular.SlerpDrive.Stiffness, Angular.SlerpDrive.Damping,
+					Angular.SwingDrive.bEnablePositionDrive, Angular.SwingDrive.bEnableVelocityDrive, Angular.SwingDrive.Stiffness, Angular.SwingDrive.Damping,
+					Angular.TwistDrive.bEnablePositionDrive, Angular.TwistDrive.bEnableVelocityDrive, Angular.TwistDrive.Stiffness, Angular.TwistDrive.Damping, Angular.bAccelerationMode ? 1 : 0);
+			}
+		}
+		UE_LOG(LogAedir, Display, TEXT("[LyingInfo] %s %s (%s, %.0f cm away) above the ground:%s; the highest %.0f cm; %d of %d bodies asleep, fastest %.0f cm/s, joint drive %.0f, angular damping %.2f, trunk bent by blows %s"), *Label, *Other->GetName(), Other->Stats && Other->Stats->IsDead() ? TEXT("dead") : TEXT("alive"),
+			FVector::Dist(Other->GetActorLocation(), GetActorLocation()), *Line, Highest, Asleep, Simulating, Fastest, Drive, AngularDamping, Other->Balance ? *Other->Balance->GetHitSway().ToCompactString() : TEXT("-"));
 	}
 }
 
@@ -2385,7 +2519,7 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 		const FTransform& Body = GetActorTransform();
 		FVector2D PeakAim;
 		const float Peak = FistArms->TakePeakPunch(PeakAim);
-		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s aim %.2f %.2f punch %.2f peak %.2f at %.2f | L %.2f fist %s | R %.2f fist %s"), *Label, FistArms->GetAim().X, FistArms->GetAim().Y, FistArms->GetPunch(), Peak, PeakAim.X,
+		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s aim %.2f %.2f punch %.2f peak %.2f at %.2f one turn %.2f | L %.2f fist %s | R %.2f fist %s"), *Label, FistArms->GetAim().X, FistArms->GetAim().Y, FistArms->GetPunch(), Peak, PeakAim.X, FistArms->GetOneTurn(),
 			Alpha[0], *Body.InverseTransformPositionNoScale(Fist[0]).ToCompactString(), Alpha[1], *Body.InverseTransformPositionNoScale(Fist[1]).ToCompactString());
 		// How low the knuckles come: their height above the ground under them.
 		{
@@ -2438,6 +2572,19 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 					FVector::DotProduct((At(TEXT("index_01")) - At(TEXT("pinky_01"))).GetSafeNormal(), Along), *Body.InverseTransformVectorNoScale(Normal).ToCompactString(), WristBend);
 			};
 			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s palms: right %s, left %s | grip at %.1f span %.1f, both hands %d"), *Label, *Hollow(TEXT("_r")), *Hollow(TEXT("_l")), Blade->GripLocalCm + Blade->HeldGripShiftCm, Blade->GripSpanCm, FistArms->IsTwoHand() ? 1 : 0);
+			// How near the blade comes to the head: the head bone's distance from the blade's line, from the grip to the point.
+			{
+				const FBox Box = Blade->GetComponentsBoundingBox(true);
+				double Reach = 0.0;
+				for (int32 Corner = 0; Corner < 8; ++Corner)
+				{
+					const FVector At((Corner & 1) ? Box.Max.X : Box.Min.X, (Corner & 2) ? Box.Max.Y : Box.Min.Y, (Corner & 4) ? Box.Max.Z : Box.Min.Z);
+					Reach = FMath::Max(Reach, FVector::DotProduct(At - Root, Along));
+				}
+				const FVector Head = GetMesh()->GetBoneLocation(TEXT("head"));
+				UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s blade from the head %.0f cm, its point %s"), *Label, FMath::PointDistToSegment(Head, Root, Root + Along * Reach),
+					*Body.InverseTransformPositionNoScale(Root + Along * Reach).ToCompactString());
+			}
 			// Where the elbows are in the body's frame (forward, right, up from the middle of the capsule).
 			const FVector LeftUpper = GetMesh()->GetBoneLocation(TEXT("lowerarm_l")) - GetMesh()->GetBoneLocation(TEXT("upperarm_l"));
 			const FVector LeftFore = GetMesh()->GetBoneLocation(TEXT("hand_l")) - GetMesh()->GetBoneLocation(TEXT("lowerarm_l"));

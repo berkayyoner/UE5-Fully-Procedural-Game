@@ -2,6 +2,9 @@
 
 #include "AedirEditor.h"
 #include "AedirTestMapBuilder.h"
+#include "MeshDescription.h"
+#include "StaticMeshAttributes.h"
+#include "UObject/SavePackage.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
@@ -496,6 +499,87 @@ namespace
 	}
 }
 
+namespace
+{
+	// The pauldrons came as one model of both shoulders. Each is cut out into a model of its own, with the triangles on its
+	// side of the middle across, so each can be worn on its own arm: shoulder_a has the half towards the low end of its longest axis.
+	void ContentSplitPauldrons(TArray<UPackage*>& ToSave)
+	{
+		const TCHAR* const Folder = TEXT("/Game/Aedir/Fab/RustyShoulders");
+		UStaticMesh* Whole = LoadObject<UStaticMesh>(nullptr, *FString::Printf(TEXT("%s/shoulder.shoulder"), Folder));
+		const FMeshDescription* Source = Whole ? Whole->GetMeshDescription(0) : nullptr;
+		if (!Source)
+		{
+			UE_LOG(LogAedirEditor, Error, TEXT("No pauldron model to split."));
+			return;
+		}
+		const FBox Bounds = Whole->GetBoundingBox();
+		// Cut across the longest way, the one from shoulder to shoulder.
+		const FVector Size = Bounds.GetSize();
+		const int32 Axis = Size.X >= Size.Y && Size.X >= Size.Z ? 0 : Size.Y >= Size.Z ? 1 : 2;
+		const double Middle = Bounds.GetCenter()[Axis];
+		UE_LOG(LogAedirEditor, Display, TEXT("Pauldrons: %s, cut at %.2f along axis %d."), *Bounds.ToString(), Middle, Axis);
+		for (int32 Half = 0; Half < 2; ++Half)
+		{
+			const FString Name = Half == 0 ? TEXT("shoulder_a") : TEXT("shoulder_b");
+			const FString PackageName = FString::Printf(TEXT("%s/%s"), Folder, *Name);
+			UPackage* Package = CreatePackage(*PackageName);
+			UStaticMesh* Part = DuplicateObject<UStaticMesh>(Whole, Package, *Name);
+			FMeshDescription* Description = Part ? Part->GetMeshDescription(0) : nullptr;
+			if (!Description)
+			{
+				continue;
+			}
+			FStaticMeshConstAttributes Attributes(*Description);
+			const TVertexAttributesConstRef<FVector3f> Positions = Attributes.GetVertexPositions();
+			TArray<FTriangleID> Others;
+			for (const FTriangleID Triangle : Description->Triangles().GetElementIDs())
+			{
+				double Sum = 0.0;
+				for (const FVertexID Vertex : Description->GetTriangleVertices(Triangle))
+				{
+					Sum += Positions[Vertex][Axis];
+				}
+				if ((Sum / 3.0 < Middle) != (Half == 0))
+				{
+					Others.Add(Triangle);
+				}
+			}
+			TArray<FEdgeID> OrphanEdges;
+			TArray<FVertexInstanceID> OrphanInstances;
+			TArray<FPolygonGroupID> OrphanGroups;
+			TArray<FVertexID> OrphanVertices;
+			for (const FTriangleID Triangle : Others)
+			{
+				Description->DeleteTriangle(Triangle, &OrphanEdges, &OrphanInstances, nullptr);
+			}
+			for (const FVertexInstanceID Instance : OrphanInstances)
+			{
+				Description->DeleteVertexInstance(Instance, &OrphanVertices);
+			}
+			for (const FEdgeID Edge : OrphanEdges)
+			{
+				Description->DeleteEdge(Edge, &OrphanVertices);
+			}
+			for (const FVertexID Vertex : OrphanVertices)
+			{
+				if (Description->IsVertexValid(Vertex) && Description->IsVertexOrphaned(Vertex))
+				{
+					Description->DeleteVertex(Vertex);
+				}
+			}
+			FElementIDRemappings Remappings;
+			Description->Compact(Remappings);
+			Part->CommitMeshDescription(0);
+			Part->Build(false);
+			Part->MarkPackageDirty();
+			FAssetRegistryModule::AssetCreated(Part);
+			ToSave.Add(Package);
+			UE_LOG(LogAedirEditor, Display, TEXT("Pauldron %s: %d triangles, %s."), *Name, Description->Triangles().Num(), *Part->GetBoundingBox().ToString());
+		}
+	}
+}
+
 UAedirContentCommandlet::UAedirContentCommandlet()
 {
 	IsEditor = true;
@@ -512,6 +596,16 @@ int32 UAedirContentCommandlet::Main(const FString& Params)
 	{
 		ContentBuildPrecip(ToSave);
 		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
+	if (Only == TEXT("Pauldrons"))
+	{
+		ContentSplitPauldrons(ToSave);
+		return !ToSave.IsEmpty() && UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
+	if (Only == TEXT("GroundHeight"))
+	{
+		AedirTestMap::FixLandscapeDisplacement(ToSave);
+		return !ToSave.IsEmpty() && UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
 	}
 	if (Only == TEXT("Blueprints") || Only == TEXT("TestMap"))
 	{

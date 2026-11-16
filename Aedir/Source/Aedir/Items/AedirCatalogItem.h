@@ -81,6 +81,14 @@ private:
 
 	bool BuildLaidArmour(const FAedirItemDef& Def);
 
+	// The pieces of a pair worn apart, and where each sits on the item as the whole model had it.
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UStaticMeshComponent>> SplitParts;
+	TArray<FTransform> SplitPartHomes;
+	void BuildSplitParts(const FAedirItemDef& Def, UStaticMeshComponent* Model, const FVector& Scale3D);
+	// Worn, each piece goes on its nearest bone; taken off, the item is built again.
+	void WearSplitParts(const FAedirItemDef& Def);
+
 	virtual void ApplyWornLook() override;
 	virtual void ClearWornLook() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
