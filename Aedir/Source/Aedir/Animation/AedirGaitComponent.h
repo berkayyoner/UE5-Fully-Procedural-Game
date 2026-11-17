@@ -538,6 +538,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchBackCm = 3.f;
 
+	// The sides of the trunk held by their own hand start this far below the shoulders; above that, up by the shoulder, the
+	// other hand comes across.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchArmpitBelowCm = 18.f;
+
+	// On its way to the place the hand comes round this far out in front of the body, halfway (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchArcCm = 25.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchBlowFullPush = 400.f;
 

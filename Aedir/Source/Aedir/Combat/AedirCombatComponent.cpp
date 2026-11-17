@@ -1063,7 +1063,8 @@ FVector UAedirCombatComponent::GetTipWorld(EAedirHand Hand) const
 
 bool UAedirCombatComponent::IsGuardActive(EAedirHand Hand) const
 {
-	return (Hand == EAedirHand::Left ? bLeftGuard : bRightGuard) && FlinchLeft[HandIndex(Hand)] <= 0.f;
+	const bool bDown = Creature && Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsRagdoll());
+	return (Hand == EAedirHand::Left ? bLeftGuard : bRightGuard) && FlinchLeft[HandIndex(Hand)] <= 0.f && !bDown;
 }
 
 bool UAedirCombatComponent::IsInFightStance() const
@@ -4698,6 +4699,15 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		AIAttackTimer = 0.f;
 		bAIHadWeapon = false;
 		ReleaseAIGrab();
+		return;
+	}
+	// Getting up nobody strikes; walking after its fall it does not turn to the foe or go after it until it stands again.
+	if (Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsRagdoll() || Creature->Balance->IsStumbling()))
+	{
+		ReleaseAIFistArms();
+		ReleaseAIGrab();
+		SetGuardInternal(EAedirHand::Left, false);
+		SetGuardInternal(EAedirHand::Right, false);
 		return;
 	}
 	// Gone for something on the ground: the fight waits.

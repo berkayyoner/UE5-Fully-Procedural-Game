@@ -471,3 +471,13 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - LayDecal <path> 1 white [mirror] lays a decal white and full, to see its shape.
 - A blow slackens the muscles of the trunk, head and arms for a moment, up to 0.55 of them, and the trunk and head always hold at 0.85.
 - A blow to the head knocks down from 480 J instead of 320, and costs 1.25 times the balance instead of 1.5.
+- The two-handed left hand's outward turn is taken out: reading the finger bones before turning the hand left the fingers behind, bent out of the grip.
+- The two-handed left elbow is no longer pushed down hard onto the shoulder line (which flipped it about striking low); as the grip goes below the shoulder it goes over smoothly from the right elbow's mirror to hanging at its own side.
+- FistInfo shows where the left elbow and wrist are against the shoulder.
+- While walking after its fall a body lets go of its target: the player's view lock lets go and an NPC neither turns to its foe nor strikes until it stands again.
+- Getting up, no fist or guard comes up and NPCs do not strike.
+- The hurried walk after a blow dies away within a second of it, so hard weapon blows carry the body about a metre, not five; hard blows slow the balance coming back less.
+- A hand going to a hurt place comes round in front of the body on an arc.
+- The side of the trunk is held by its own hand only below the armpit; up by the shoulder the other hand comes across.
+- A blow on a shoulder sends its trunk share to the highest trunk part with a body (there was none at spine_05, so it was lost), and still counts as one blow for flinching.
+- Blows push a little more and longer after they land.

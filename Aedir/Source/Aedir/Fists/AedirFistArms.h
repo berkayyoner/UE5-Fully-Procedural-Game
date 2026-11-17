@@ -490,7 +490,9 @@ private:
 
 	bool bHeld[2] = { false, false };
 	float FlinchLeft[2] = { 0.f, 0.f };
-	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft[Slot] <= 0.f; }
+	// Down or getting up, no arm comes up into the fight.
+	bool bBodyDown = false;
+	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft[Slot] <= 0.f && !bBodyDown; }
 	float Alpha[2] = { 0.f, 0.f };
 	// How far each arm is the fists' to pose: up, or carried in both hands.
 	float ShownAlpha[2] = { 0.f, 0.f };

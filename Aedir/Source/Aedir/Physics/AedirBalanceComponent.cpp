@@ -884,6 +884,11 @@ void UAedirBalanceComponent::ApplyBalanceImpact(FVector WorldDirection, float Ma
 	{
 		return;
 	}
+	// Whatever threw it off its feet, the hurried walk after it starts from now.
+	if (const UWorld* ImpactWorld = GetWorld())
+	{
+		StumbleBlowTime = ImpactWorld->GetTimeSeconds();
+	}
 
 	// Half up off the ground, on hands and knees or one foot, the body has no footing to take a blow on.
 	if (IsGettingUp())
@@ -974,6 +979,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	{
 		RecoveryWatchSince = WatchWorld->GetTimeSeconds();
 		RecoveryWatchLowest = Balance;
+		RecoveryWatchFrom = CharacterOwner->GetActorLocation();
 	}
 	// The harder it was, and on the head, the slower the balance comes back for a moment.
 	HitRecoveryScale = FMath::Min(HitRecoveryScale, FMath::Lerp(1.f, HardHitRecoveryShare, Loss) * (bHead ? HeadHitRecoveryShare : 1.f));
@@ -985,9 +991,17 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 		const FString StruckName = Impact.Bone.ToString();
 		const bool bShoulder = StruckName.StartsWith(TEXT("clavicle")) || StruckName.StartsWith(TEXT("upperarm"));
 		MulticastBoneImpulse(Impact.Bone, Impact.Direction * (ImpulseSize * (bHead ? HitReactionHeadShare : 1.f) * (bShoulder ? ShoulderBlowArmShare : 1.f)), Impact.Location);
-		if (bShoulder && BodyMesh->GetBodyInstance(TEXT("spine_05")))
+		if (bShoulder)
 		{
-			MulticastBoneImpulse(TEXT("spine_05"), Impact.Direction * (ImpulseSize * (1.f - ShoulderBlowArmShare)), Impact.Location);
+			// The highest part of the trunk that has a body of its own.
+			for (const TCHAR* Upper : { TEXT("spine_05"), TEXT("spine_04"), TEXT("spine_03") })
+			{
+				if (BodyMesh->GetBodyInstance(Upper))
+				{
+					MulticastBoneImpulse(Upper, Impact.Direction * (ImpulseSize * (1.f - ShoulderBlowArmShare)), Impact.Location);
+					break;
+				}
+			}
 		}
 		// A blow to the head snaps it aside and takes the neck and the top of the chest along: the head is light and held
 		// by little, so the same blow moves it much further than it would a limb.
@@ -1686,7 +1700,8 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 		{
 			if (WatchLog && WatchLog->GetInt() != 0)
 			{
-				UE_LOG(LogAedir, Log, TEXT("[Balance] %s has its balance back %.2f s after the blow, from %.2f"), *GetNameSafe(GetOwner()), GetWorld()->GetTimeSeconds() - RecoveryWatchSince, RecoveryWatchLowest);
+				UE_LOG(LogAedir, Log, TEXT("[Balance] %s has its balance back %.2f s after the blow, from %.2f, %.0f cm from where it was struck"), *GetNameSafe(GetOwner()), GetWorld()->GetTimeSeconds() - RecoveryWatchSince, RecoveryWatchLowest,
+					FVector::Dist2D(RecoveryWatchFrom, CharacterOwner->GetActorLocation()));
 			}
 			RecoveryWatchSince = -1.0;
 		}
@@ -1814,6 +1829,11 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 			LastBlowLocal = BodyMesh->GetBoneTransform(Bone).InverseTransformPosition(Location);
 			LastBlowTime = Now;
 			LastBlowPush = static_cast<float>(Push.Size());
+		}
+		// The share of a blow on a shoulder sent on into the trunk is still that blow.
+		else if (Bone.ToString().StartsWith(TEXT("spine")) && (LastBlowBone.ToString().StartsWith(TEXT("clavicle")) || LastBlowBone.ToString().StartsWith(TEXT("upperarm"))))
+		{
+			LastBlowPush += static_cast<float>(Push.Size());
 		}
 		BlowSoftness = FMath::Max(BlowSoftness, FMath::Clamp(static_cast<float>(Push.Size()) / FMath::Max(BlowSoftFullPush, 1.f), 0.f, 1.f) * BlowSoftMaxShare);
 	}
@@ -1946,7 +1966,11 @@ void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
 void UAedirBalanceComponent::UpdateStumbleWalk(float DeltaTime)
 {
 	UCharacterMovementComponent* Movement = CharacterOwner ? CharacterOwner->GetCharacterMovement() : nullptr;
-	if (!Movement || bIsRagdoll || IsGettingUp() || !Movement->IsMovingOnGround() || (Balance >= StumbleWalkBelowBalance && StaggerSeconds <= 0.f) || LeanDirection.IsNearlyZero())
+	const UWorld* StumbleWorld = GetWorld();
+	// Dying away after the blow that started it.
+	const float Fade = StumbleWorld ? 1.f - FMath::Clamp(static_cast<float>(StumbleWorld->GetTimeSeconds() - StumbleBlowTime) / FMath::Max(StumbleWalkSeconds, 0.05f), 0.f, 1.f) : 0.f;
+	bStumbling = Movement && !bIsRagdoll && !IsGettingUp() && Movement->IsMovingOnGround() && (Balance < StumbleWalkBelowBalance || StaggerSeconds > 0.f) && !LeanDirection.IsNearlyZero() && Fade > 0.f;
+	if (!bStumbling)
 	{
 		return;
 	}
@@ -1958,7 +1982,7 @@ void UAedirBalanceComponent::UpdateStumbleWalk(float DeltaTime)
 	const float Share = FMath::Clamp((StumbleWalkBelowBalance - Balance) / FMath::Max(StumbleWalkBelowBalance, KINDA_SMALL_NUMBER), 0.f, 1.f);
 	const FVector Way = CharacterOwner->GetActorTransform().TransformVectorNoScale(FVector(LeanDirection.X, LeanDirection.Y, 0.f)).GetSafeNormal2D();
 	// At least this fast the way it goes over, whatever else the legs were doing; quicker than that it may go.
-	const float Wanted = StumbleWalkSpeed * FMath::Lerp(StumbleWalkMinShare, 1.f, Share);
+	const float Wanted = StumbleWalkSpeed * FMath::Lerp(StumbleWalkMinShare, 1.f, Share) * Fade;
 	const float Along = static_cast<float>(FVector::DotProduct(Movement->Velocity, Way));
 	if (Along < Wanted)
 	{

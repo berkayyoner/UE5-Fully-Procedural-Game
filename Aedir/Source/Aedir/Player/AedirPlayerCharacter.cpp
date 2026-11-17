@@ -452,7 +452,8 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 	// The older guard, or a fist's (or blade's) button held down.
 	const bool bOldGuard = Combat && Combat->IsInFightStance();
 	const bool bGuard = bOldGuard || (FistArms && FistArms->IsSteering());
-	const bool bDown = Balance && (Balance->IsRagdoll() || Balance->IsGettingUp());
+	// Down, getting up, or walking after its fall: the view lets go until the feet are back under the body.
+	const bool bDown = Balance && (Balance->IsRagdoll() || Balance->IsGettingUp() || Balance->IsStumbling());
 	if (!bLockOnEnabled || !bGuard || bDown || !PlayerController || IsMenuOpen())
 	{
 		LockOnTarget.Reset();
@@ -2634,6 +2635,16 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 		const float Peak = FistArms->TakePeakPunch(PeakAim);
 		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s aim %.2f %.2f punch %.2f peak %.2f at %.2f one turn %.2f | L %.2f fist %s | R %.2f fist %s"), *Label, FistArms->GetAim().X, FistArms->GetAim().Y, FistArms->GetPunch(), Peak, PeakAim.X, FistArms->GetOneTurn(),
 			Alpha[0], *Body.InverseTransformPositionNoScale(Fist[0]).ToCompactString(), Alpha[1], *Body.InverseTransformPositionNoScale(Fist[1]).ToCompactString());
+		if (const USkeletalMeshComponent* ArmBody = GetMesh())
+		{
+			// The left arm against the body: how high the elbow and the wrist are over the shoulder, how far out at its side.
+			const FTransform Frame = GetActorTransform();
+			const FVector Shoulder = Frame.InverseTransformPositionNoScale(ArmBody->GetBoneLocation(TEXT("upperarm_l")));
+			const FVector ElbowAt = Frame.InverseTransformPositionNoScale(ArmBody->GetBoneLocation(TEXT("lowerarm_l")));
+			const FVector WristAt = Frame.InverseTransformPositionNoScale(ArmBody->GetBoneLocation(TEXT("hand_l")));
+			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s left elbow %.0f cm over the shoulder, %.0f out, %.0f ahead; left wrist %.0f over it"), *Label,
+				ElbowAt.Z - Shoulder.Z, Shoulder.Y - ElbowAt.Y, ElbowAt.X - Shoulder.X, WristAt.Z - Shoulder.Z);
+		}
 		// How low the knuckles come: their height above the ground under them.
 		{
 			FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirFistInfo), false, this);

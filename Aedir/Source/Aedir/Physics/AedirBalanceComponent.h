@@ -97,6 +97,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float StumbleWalkSpeed = 260.f;
 
+	// The hurried walk dies away over this long after the blow that started it, however long the balance takes to come
+	// back, so a hard blow throws the body a few steps, not across the field.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float StumbleWalkSeconds = 1.f;
+
+	// Whether the body is walking after its fall just now: it neither turns to whoever it fights nor is held to them.
+	bool IsStumbling() const { return bStumbling; }
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float RecoveryPerSecond = 0.5f;
 
@@ -105,10 +113,10 @@ public:
 	// comes back by HitRecoveryReturnPerSecond of the way a second. A blow to the head also costs HeadBalanceLossShare times
 	// the balance a blow of the same energy would elsewhere.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float HardHitRecoveryShare = 0.45f;
+	float HardHitRecoveryShare = 0.65f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float HeadHitRecoveryShare = 0.7f;
+	float HeadHitRecoveryShare = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float HitRecoveryReturnPerSecond = 0.8f;
@@ -601,13 +609,13 @@ public:
 	float ArmFreeSeconds = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
-	float HitPushScale = 0.85f;
+	float HitPushScale = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
-	float HitPushNowShare = 0.35f;
+	float HitPushNowShare = 0.3f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
-	float HitPushSpreadSeconds = 0.15f;
+	float HitPushSpreadSeconds = 0.2f;
 
 	// A blow to the head knocks the head on its neck as a weight on a spring: it is left behind the way the blow drove it
 	// and comes back. How fast it springs (Hz), how damped, degrees a second for each unit of push, at most so far.
@@ -669,6 +677,9 @@ private:
 	void EnterRagdoll(float MinimumSeconds);
 	void UpdatePelvisLean(float DeltaTime);
 	void UpdateStumbleWalk(float DeltaTime);
+	bool bStumbling = false;
+	double StumbleBlowTime = -100.0;
+	FVector RecoveryWatchFrom = FVector::ZeroVector;
 	float HitRecoveryScale = 1.f;
 	float BlowSoftness = 0.f;
 	double RecoveryWatchSince = -1.0;

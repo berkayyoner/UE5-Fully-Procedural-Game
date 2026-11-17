@@ -1238,8 +1238,11 @@ void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatCom
 	}
 
 	// A hand held to a hurt place, over the guard; reaching for something and swinging come over it, but not over a flinch.
+	// On its way there it comes round in front of the body on an arc, never through it or round behind.
 	const int32 ClutchSlot = Hand == EAedirHand::Left ? 0 : 1;
-	Blend.Apply(ClutchTarget[ClutchSlot], ClutchAlpha[ClutchSlot]);
+	const float Way = ClutchAlpha[ClutchSlot];
+	const FVector ClutchOnArc = ClutchTarget[ClutchSlot] + ActorTransform.GetUnitAxis(EAxis::X) * (4.f * Way * (1.f - Way) * ClutchArcCm * static_cast<float>(ActorTransform.GetScale3D().X));
+	Blend.Apply(ClutchOnArc, Way);
 
 	FVector ReachTarget = FVector::ZeroVector;
 	float ReachAlpha = 0.f;
@@ -1264,7 +1267,7 @@ void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatCom
 
 	if (bClutchFlinch[ClutchSlot])
 	{
-		Blend.Apply(ClutchTarget[ClutchSlot], ClutchAlpha[ClutchSlot]);
+		Blend.Apply(ClutchOnArc, Way);
 	}
 
 	// The protective reflex is the highest priority while falling and overrides the swing.
@@ -1359,7 +1362,8 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		bool bOwnSide = Part == EAedirClutchPart::Head || Part == EAedirClutchPart::Thigh;
 		// Only the low trunk has sides a hand on its own side holds; high up by the shoulder the other hand comes across.
 		const FString Name = Bone.ToString();
-		if (Part == EAedirClutchPart::Trunk && !Name.StartsWith(TEXT("spine_04")) && !Name.StartsWith(TEXT("spine_05")))
+		const float ArmpitZ = static_cast<float>(FMath::Min(Body->GetBoneLocation(TEXT("upperarm_l")).Z, Body->GetBoneLocation(TEXT("upperarm_r")).Z)) - ClutchArmpitBelowCm;
+		if (Part == EAedirClutchPart::Trunk && !Name.StartsWith(TEXT("spine_04")) && !Name.StartsWith(TEXT("spine_05")) && PointWorld.Z < ArmpitZ)
 		{
 			bOwnSide = FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(Round.Y), Round.X)) > ClutchFlankDegrees;
 		}

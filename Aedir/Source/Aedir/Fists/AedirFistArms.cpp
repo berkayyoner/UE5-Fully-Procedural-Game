@@ -1,4 +1,5 @@
 #include "Fists/AedirFistArms.h"
+#include "Physics/AedirBalanceComponent.h"
 
 #include "Animation/AedirGaitComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -112,6 +113,10 @@ bool UAedirFistArms::GetArm(EAedirHand Hand, FVector& OutFistWorld, FVector& Out
 void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	{
+		const UAedirBalanceComponent* OwnBalance = GetOwner() ? GetOwner()->FindComponentByClass<UAedirBalanceComponent>() : nullptr;
+		bBodyDown = OwnBalance && (OwnBalance->IsRagdoll() || OwnBalance->IsGettingUp());
+	}
 	FlinchLeft[0] = FMath::Max(FlinchLeft[0] - DeltaTime, 0.f);
 	FlinchLeft[1] = FMath::Max(FlinchLeft[1] - DeltaTime, 0.f);
 	const ACharacter* Owner = Cast<ACharacter>(GetOwner());

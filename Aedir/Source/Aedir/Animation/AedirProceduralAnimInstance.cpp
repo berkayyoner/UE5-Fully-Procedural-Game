@@ -21,10 +21,10 @@ namespace
 	constexpr float AedirObjectContactDownShare = 0.6f;
 	constexpr float AedirObjectPalmClearanceCm = 2.5f;
 	constexpr float AedirKneePoleDistance = 100.f;
-	// The left elbow on a grip rises at most this far over the grip or the shoulder before it is drawn round to the right.
-	constexpr double AedirGripElbowOverCm = 6.0;
-	// The left hand on a grip is turned back out about its forearm this far from the right hand's mirror.
-	constexpr double AedirGripLeftHandOutDegrees = 18.0;
+	// As the grip comes down below the shoulder, from the first to the second of these depths (cm), the left elbow goes over
+	// from the right elbow's mirror to hanging down and out at its own side.
+	constexpr double AedirGripLowFromCm = 5.0;
+	constexpr double AedirGripLowFullCm = 35.0;
 	constexpr float AedirKneePoleDropDistance = 30.f;
 	constexpr float AedirLegMinReachShare = 0.3f;
 	constexpr float AedirLegMaxReachShare = 0.998f;
@@ -794,12 +794,20 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	const FVector Out = ActorToMesh.RotateVector(FVector::LeftVector);
 	const FVector Back = ActorToMesh.RotateVector(FVector::BackwardVector);
 	FVector Elbow = (Shoulder + Wrist) * 0.5 + (Down * 0.8 + Out * 0.6 + Back * 0.2).GetSafeNormal() * 40.0;
+	const FVector Hanging = Elbow;
 	// The left forearm comes to the grip as the right one's mirror, so the wrist is bent no more than the right one: the
 	// elbow is pointed where the right elbow's mirror is.
 	const FCompactPoseBoneIndex RightRadius = ResolveCompactBone(Bones, BoneNameSet.RightRadius);
 	if (RightRadius.IsValid())
 	{
 		Elbow = Grip + Reflect(CSPose.GetComponentSpaceTransform(RightRadius).GetLocation() - Grip) - Blade * GaitData.FistArmGripGapCm;
+	}
+	// Striking low, the right elbow's mirror throws the left one up into the air: the lower the grip below the shoulder, the
+	// more the left elbow hangs at its own side instead, going over smoothly so it never jumps.
+	{
+		const double Below = FVector::DotProduct(Shoulder - Wrist, -Down);
+		const double Low = FMath::SmoothStep(AedirGripLowFromCm, AedirGripLowFullCm, Below);
+		Elbow = FMath::Lerp(Elbow, Hanging, Low);
 	}
 	// Still the elbow stays out at its own side: the mirror can fall across the middle of the body, and the arm would bend
 	// in through the chest.
@@ -821,17 +829,6 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	// Drawn round to the right the elbow rises, so the forearm comes along the grip; carried low it stays down, below the
 	// shoulder, whichever way the right arm has turned with the view.
 	const FVector Up = -Down;
-	// The mirror of the right elbow is no place for the left one when the grip is held low: struck down, it put the left
-	// elbow up in the air. Before the rise to the right it never goes higher than the grip or the shoulder, whichever is
-	// higher, and a little.
-	{
-		const double Highest = FMath::Max(FVector::DotProduct(Wrist - Shoulder, Up), 0.0) + AedirGripElbowOverCm;
-		const double Above = FVector::DotProduct(Elbow - Shoulder, Up) - Highest;
-		if (Above > 0.0)
-		{
-			Elbow -= Up * Above;
-		}
-	}
 	Elbow += Up * (GaitData.FistArmGripRight * GaitData.FistArmGripElbowRiseCm);
 	const float Lowered = 1.f - FMath::Clamp(GaitData.FistArmGripRaised, 0.f, 1.f);
 	const double Over = FVector::DotProduct(Elbow - Shoulder, Up) + GaitData.FistArmGripRestElbowBelowCm;
@@ -875,23 +872,6 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	const float Off = FMath::RadiansToDegrees(static_cast<float>(Left.GetRotation().AngularDistance(LeftRotation)));
 	const float Turned = Off > GaitData.FistArmGripWristMaxDegrees ? GaitData.FistArmGripWristMaxDegrees / Off : 1.f;
 	Left.SetRotation(FQuat::Slerp(Left.GetRotation(), LeftRotation, FMath::Clamp(Alpha, 0.f, 1.f) * Turned).GetNormalized());
-	// Mirrored from the right, the left hand came out turned in too far over the grip: it is turned back out about its
-	// forearm, the thumb's side towards its own side, by this much.
-	{
-		const FCompactPoseBoneIndex LeftRadius = ResolveCompactBone(Bones, BoneNameSet.LeftRadius);
-		const FCompactPoseBoneIndex LeftFirst = ResolveCompactBone(Bones, TEXT("index_01_l"));
-		const FCompactPoseBoneIndex LeftLittle = ResolveCompactBone(Bones, TEXT("pinky_01_l"));
-		if (LeftRadius.IsValid() && LeftFirst.IsValid() && LeftLittle.IsValid())
-		{
-			const FVector Forearm = (Left.GetLocation() - CSPose.GetComponentSpaceTransform(LeftRadius).GetLocation()).GetSafeNormal();
-			const FVector Row = FVector::VectorPlaneProject(CSPose.GetComponentSpaceTransform(LeftFirst).GetLocation() - CSPose.GetComponentSpaceTransform(LeftLittle).GetLocation(), Forearm).GetSafeNormal();
-			const double Way = FVector::DotProduct(FVector::CrossProduct(Forearm, Row), Out) >= 0.0 ? 1.0 : -1.0;
-			if (!Forearm.IsNearlyZero() && !Row.IsNearlyZero())
-			{
-				Left.SetRotation((FQuat(Forearm, Way * FMath::DegreesToRadians(AedirGripLeftHandOutDegrees) * FMath::Clamp(Alpha, 0.f, 1.f)) * Left.GetRotation()).GetNormalized());
-			}
-		}
-	}
 	CSPose.SetComponentSpaceTransform(LeftHand, Left);
 }
 
