@@ -108,6 +108,19 @@ public:
 	bool FindAimedBody(FVector& OutPoint) const;
 	void ReleaseBodyGrab(EAedirHand Hand);
 	bool IsGrabbingBody(EAedirHand Hand) const;
+
+	// A hand holding a dead body takes off the armour worn where it holds it and keeps it in that hand. False when there is
+	// none there, or the body is not dead.
+	bool StripGrabbedArmor(EAedirHand Hand);
+	// A hand closing on the body strips it once it is this near the place (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction")
+	float StripReachCm = 35.f;
+	// Who the hand holds, if it holds a body, and by which bone.
+	AAedirCreature* GetGrabbedCreature(EAedirHand Hand, FName* OutBone = nullptr) const;
+	// The worn piece covering the part of the body this bone is in, if any.
+	AAedirItemActor* FindWornOn(FName Bone) const;
+	// Takes a worn piece off the body as it is, to be handed to someone: it lies loose, nowhere stowed.
+	void TakeOffWornLoose(AAedirItemActor* Item);
 	bool GetBodyGrabPoint(EAedirHand Hand, FVector& OutWorld) const;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
@@ -367,6 +380,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerTakeOffWorn(int32 WornIndex);
+
+	UFUNCTION(Server, Reliable)
+	void ServerStripGrabbedArmor(EAedirHand Hand);
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirItemActor> HighlightedItem;

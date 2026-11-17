@@ -4697,6 +4697,16 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		bAIApproaching = false;
 		AIAttackTimer = 0.f;
 		bAIHadWeapon = false;
+		ReleaseAIGrab();
+		return;
+	}
+	// Gone for something on the ground: the fight waits.
+	if (bAIStandAside)
+	{
+		ReleaseAIFistArms();
+		ReleaseAIGrab();
+		SetGuardInternal(EAedirHand::Left, false);
+		SetGuardInternal(EAedirHand::Right, false);
 		return;
 	}
 
@@ -4826,6 +4836,78 @@ void UAedirCombatComponent::ReleaseAIFistArms()
 	AIMouseTimer = 0.f;
 }
 
+void UAedirCombatComponent::ReleaseAIGrab()
+{
+	if (AIGrabSlot != INDEX_NONE && Creature && Creature->Interaction)
+	{
+		Creature->Interaction->ReleaseBodyGrab(AIGrabSlot == 0 ? EAedirHand::Left : EAedirHand::Right);
+	}
+	AIGrabSlot = INDEX_NONE;
+	AIGrabTimer = 0.f;
+}
+
+void UAedirCombatComponent::UpdateAIGrab(bool bArmed, float Distance, float DeltaTime)
+{
+	UAedirInteractionComponent* Hands = Creature ? Creature->Interaction.Get() : nullptr;
+	AAedirCreature* Foe = AITarget.Get();
+	if (!Hands || !Foe || !Foe->GetMesh())
+	{
+		ReleaseAIGrab();
+		return;
+	}
+	AIGrabTimer += DeltaTime;
+	if (AIGrabSlot != INDEX_NONE)
+	{
+		// Held long enough, torn loose, or the two come apart: let go.
+		const EAedirHand Hand = AIGrabSlot == 0 ? EAedirHand::Left : EAedirHand::Right;
+		if (!Hands->IsGrabbingBody(Hand) || AIGrabTimer > AIGrabHoldSeconds || Distance > AedirAIContactRange * 1.6f || bAITargetDown)
+		{
+			UE_LOG(LogAedir, Log, TEXT("[NpcGrab] %s lets go of %s after %.1f s"), *Creature->GetName(), *Foe->GetName(), AIGrabTimer);
+			ReleaseAIGrab();
+		}
+		return;
+	}
+	if (AIGrabTimer < AIGrabEverySeconds || Distance > AedirAIContactRange || bAITargetDown)
+	{
+		return;
+	}
+	AIGrabTimer = 0.f;
+	if (FMath::FRand() >= AIGrabChance)
+	{
+		return;
+	}
+	// Bare-handed either hand; with a small blade the free one; with anything bigger not at all.
+	int32 Slot = FMath::RandBool() ? 0 : 1;
+	if (bArmed)
+	{
+		const AAedirItemActor* Blade = GetHeldItem(EAedirHand::Right);
+		if (!Blade || Blade->GetWeaponLength() > AIGrabMaxWeaponCm || GetHeldItem(EAedirHand::Left))
+		{
+			return;
+		}
+		Slot = 0;
+	}
+	const EAedirHand Hand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
+	if (Hands->GetHeldItem(Hand))
+	{
+		return;
+	}
+	// The foe's arm nearest that hand.
+	const FVector Own = Creature->GetMesh() ? Creature->GetMesh()->GetBoneLocation(Slot == 0 ? TEXT("hand_l") : TEXT("hand_r")) : Creature->GetActorLocation();
+	const FVector Left = Foe->GetMesh()->GetBoneLocation(TEXT("lowerarm_l"));
+	const FVector Right = Foe->GetMesh()->GetBoneLocation(TEXT("lowerarm_r"));
+	const FVector Point = FVector::DistSquared(Own, Left) < FVector::DistSquared(Own, Right) ? Left : Right;
+	if (Hands->TryGrabBody(Hand, &Point))
+	{
+		AIGrabSlot = Slot;
+		UE_LOG(LogAedir, Log, TEXT("[NpcGrab] %s takes hold of %s with the %s hand"), *Creature->GetName(), *Foe->GetName(), Slot == 0 ? TEXT("left") : TEXT("right"));
+	}
+	else
+	{
+		UE_LOG(LogAedir, Log, TEXT("[NpcGrab] %s reaches for %s's arm %.0f cm off and misses"), *Creature->GetName(), *Foe->GetName(), FVector::Dist(Own, Point));
+	}
+}
+
 void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed, float Distance, float Reach, float DeltaTime)
 {
 	// The eyes look at the chest of the one fought: their pitch tips a blade's arc, as the player's view does.
@@ -4837,14 +4919,18 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 	{
 		Mind->SetControlRotation(FRotator(LookPitch, Creature->GetActorRotation().Yaw, 0.f));
 	}
-	// The buttons: a blade's hand alone, bare fists both.
-	if (!Fists->IsHeld(EAedirHand::Right))
+	// Now and then a hand takes hold of the one fought; the other goes on striking.
+	UpdateAIGrab(bArmed, Distance, DeltaTime);
+	// The buttons: a blade's hand alone, bare fists both, but not a hand that holds on to the foe.
+	const bool bRightUp = AIGrabSlot != 1;
+	const bool bLeftUp = !bArmed && AIGrabSlot != 0;
+	if (Fists->IsButtonHeld(EAedirHand::Right) != bRightUp)
 	{
-		Fists->SetHeld(EAedirHand::Right, true, LookPitch);
+		Fists->SetHeld(EAedirHand::Right, bRightUp, LookPitch);
 	}
-	if (Fists->IsHeld(EAedirHand::Left) != !bArmed)
+	if (Fists->IsButtonHeld(EAedirHand::Left) != bLeftUp)
 	{
-		Fists->SetHeld(EAedirHand::Left, !bArmed, LookPitch);
+		Fists->SetHeld(EAedirHand::Left, bLeftUp, LookPitch);
 	}
 
 	// How high to strike, as a share of the mouse's way up or down: for a fist from the chest to the part aimed at, for a
@@ -5200,8 +5286,14 @@ void UAedirCombatComponent::SetAIGrudge(AAedirCreature* Attacker)
 	{
 		AIGrudge = Attacker;
 		AIGrudgeUntil = GetWorld()->GetTimeSeconds() + AedirAIGrudgeSeconds;
-		AITarget = Attacker;
-		AILastSeenTime = GetWorld()->GetTimeSeconds();
+		// It turns on whoever struck it at once only with no one else to fight, or when that one is about as near as the
+		// one it fights; otherwise the next look round weighs them.
+		const bool bNearAsTarget = AITarget && FVector::Dist(Creature->GetActorLocation(), Attacker->GetActorLocation()) <= FVector::Dist(Creature->GetActorLocation(), AITarget->GetActorLocation()) + AITargetNearSlackCm;
+		if (!AITarget || bNearAsTarget)
+		{
+			AITarget = Attacker;
+			AILastSeenTime = GetWorld()->GetTimeSeconds();
+		}
 	}
 }
 
@@ -5225,8 +5317,11 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 	TArray<FOverlapResult> Overlaps;
 	World->OverlapMultiByObjectType(Overlaps, OwnerLocation, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(AISightRange), Params);
 
+	// The nearest, one on its feet before one down; of several near it, the last to strike it.
 	AAedirCreature* BestTarget = nullptr;
-	double BestDistanceSquared = 0.0;
+	double BestDistance = 0.0;
+	AAedirCreature* Striker = nullptr;
+	double StrikerDistance = 0.0;
 
 	for (const FOverlapResult& Overlap : Overlaps)
 	{
@@ -5242,12 +5337,22 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 			continue;
 		}
 
-		const double DistanceSquared = FVector::DistSquared(OwnerLocation, Candidate->GetActorLocation());
-		if (!BestTarget || DistanceSquared < BestDistanceSquared)
+		const bool bDown = Candidate->Balance && (Candidate->Balance->IsRagdoll() || Candidate->Balance->IsGettingUp());
+		const double Distance = FVector::Dist(OwnerLocation, Candidate->GetActorLocation()) + (bDown ? AITargetDownExtraCm : 0.f);
+		if (!BestTarget || Distance < BestDistance)
 		{
 			BestTarget = Candidate;
-			BestDistanceSquared = DistanceSquared;
+			BestDistance = Distance;
 		}
+		if (bGrudge)
+		{
+			Striker = Candidate;
+			StrikerDistance = Distance;
+		}
+	}
+	if (Striker && StrikerDistance <= BestDistance + AITargetNearSlackCm)
+	{
+		BestTarget = Striker;
 	}
 
 	if (BestTarget)

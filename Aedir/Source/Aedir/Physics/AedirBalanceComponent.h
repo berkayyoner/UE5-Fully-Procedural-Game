@@ -127,6 +127,10 @@ public:
 	// With the weight beyond the feet by more than FallChanceFromCm, or the balance gone below FallBalanceThreshold, the body
 	// may go down at any moment it cannot catch itself: at most FallChancePerSecond, from FallChanceFullCm beyond the feet or
 	// with no balance left, twice that at no health left.
+	// A blow taking at least GetUpKnockLoss of the balance while the body is getting up puts it down again.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
+	float GetUpKnockLoss = 0.3f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float FallChanceFromCm = 10.f;
 
@@ -401,8 +405,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Motors")
 	float JointDragPerSecond = 2.f;
 
+	// Running into a wall, a tree or anything that does not give (a loose thing of at least StillObjectWallMassKg lying
+	// still counts): from WallImpactSpeedThreshold (cm/s, into it) the body is thrown off its balance, all of what
+	// WallImpactFullLossSpeed past it would cost at most, and knocked back off it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float WallImpactSpeedThreshold = 230.f;
+	float WallImpactSpeedThreshold = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float WallImpactFullLossSpeed = 260.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float StillObjectWallMassKg = 25.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float ObjectImpactMassSpeedThreshold = 2000.f;
@@ -651,6 +664,7 @@ private:
 	TMap<FName, double> LastPartImpactTime;
 	TArray<TPair<FVector, FVector>> HeldBodyMotion;
 	void HurtPartOnImpact(FName Bone, const FVector& NormalImpulse, const FHitResult& Hit);
+	void RunIntoWall(const FVector& OwnerVelocity, const FHitResult& Hit, class UAedirStatsComponent* StatsComponent, float Athletism);
 	// Lying loose, each part is watched for being stopped short against the ground or something fixed.
 	void WatchPartImpacts();
 	TArray<FVector> LastPartVelocity;

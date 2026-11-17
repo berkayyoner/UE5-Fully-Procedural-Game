@@ -286,7 +286,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// A blade is held further out, and reaches up further over the head.
 		// In both hands, drawn to its own side, it stays nearer the chest, where the second arm reaches it.
 		const float OwnSideRadius = FMath::Lerp(SideRadiusCm, TwoHandSideRadiusCm, Slot == 1 && bBlade ? GripAlpha : 0.f);
-		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : OwnSideRadius, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * (bBlade && Slot == 1 ? FMath::Lerp(1.f, TwoHandPunchReachShare, GripAlpha) : 1.f) * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : FMath::Max(-UpDown, 0.f) * FistDownReachCm);
+		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : OwnSideRadius, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * (bBlade && Slot == 1 ? FMath::Lerp(1.f, TwoHandPunchReachShare, GripAlpha) : 1.f) * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Sin(UE_PI * FMath::Clamp(Raise, 0.f, 1.f)) * BladeRiseForwardCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : FMath::Max(-UpDown, 0.f) * FistDownReachCm);
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
 		// Round towards the side the height of the middle falls away and turns the other way, so a raised fist comes down
@@ -377,6 +377,11 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// Drawn round and raised at once, the larger of the two, not both on top of each other.
 		// Raised, the side's bend gives way to the raise's, so over the head the point is not thrown back.
 		BladeWristUp[Slot] = bBlade ? FMath::Max(SideShare * (1.f - Raise) * BladeSideWristUpDegrees, Raise * BladeRaiseWristUpDegrees) - Lower * BladeLowerWristDownDegrees : 0.f;
+		// Going by the head on the way across, the blade is bent down out of the way and comes up again at the side.
+		if (bBlade)
+		{
+			BladeWristUp[Slot] -= FMath::Sin(UE_PI * FMath::Clamp(FMath::Abs(static_cast<float>(Aim.X)), 0.f, 1.f)) * (1.f - Raise) * BladeSweepWristDownDegrees;
+		}
 		BladeAimWay[Slot] = Look((Forward + Up * BladeGuardUpShare).GetSafeNormal());
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.

@@ -99,6 +99,10 @@ void AAedirNpc::BeginPlay()
 		{
 			Aggression = FMath::FRand();
 		}
+		if (Looter < 0)
+		{
+			Looter = FMath::FRand() < LooterChance ? 1 : 0;
+		}
 		if (Combat)
 		{
 			Combat->AISwingWaitSeconds = FMath::Lerp(1.f, 0.f, FMath::Clamp(Aggression, 0.f, 1.f));
@@ -168,6 +172,25 @@ void AAedirNpc::Tick(float DeltaSeconds)
 	}
 	UpdateWeaponReadiness(DeltaSeconds);
 	if (Combat && Combat->HasAITarget())
+	{
+		// A weapon or a piece of armour lying much nearer than the foe is gone for, the fight left waiting.
+		UpdateFightLoot(DeltaSeconds);
+		Combat->SetAIStandAside(bFightLoot && FetchItem);
+		if (bFightLoot && FetchItem)
+		{
+			UpdateFetch(DeltaSeconds);
+		}
+		return;
+	}
+	if (bFightLoot)
+	{
+		bFightLoot = false;
+		if (Combat)
+		{
+			Combat->SetAIStandAside(false);
+		}
+	}
+	if (IsLooter() && UpdateCorpseLoot(DeltaSeconds))
 	{
 		return;
 	}
@@ -302,6 +325,146 @@ bool AAedirNpc::CanSeeItem(const AAedirItemActor* Item) const
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirNpcItemSight), false, this);
 	Params.AddIgnoredActor(Item);
 	return !GetWorld()->LineTraceTestByChannel(GetPawnViewLocation(), Center, ECC_Visibility, Params);
+}
+
+void AAedirNpc::UpdateFightLoot(float DeltaSeconds)
+{
+	const AAedirCreature* Foe = Combat ? Combat->GetAITarget() : nullptr;
+	if (!Foe || !Interaction)
+	{
+		return;
+	}
+	const float FoeDistance = static_cast<float>(FVector::Dist2D(Foe->GetActorLocation(), GetActorLocation()));
+	// Gone for already: given up once the foe is nearer than it, or it is had.
+	if (bFightLoot)
+	{
+		const AAedirItemActor* Item = FetchItem.Get();
+		if (!Item || Item->Holder == this || FoeDistance < static_cast<float>(FVector::Dist2D(Item->GetActorLocation(), GetActorLocation())))
+		{
+			if (Item && Item->Holder != this)
+			{
+				GiveUpFetch();
+			}
+			bFightLoot = false;
+		}
+		return;
+	}
+	FightLootTimer -= DeltaSeconds;
+	if (FightLootTimer > 0.f || FetchItem)
+	{
+		return;
+	}
+	FightLootTimer = 0.5f;
+	AAedirItemActor* Best = nullptr;
+	float BestDistance = FoeDistance * FightLootShare;
+	for (TActorIterator<AAedirItemActor> It(GetWorld()); It; ++It)
+	{
+		AAedirItemActor* Item = *It;
+		const float Distance = static_cast<float>(FVector::Dist2D(Item->GetActorLocation(), GetActorLocation()));
+		if (Distance < BestDistance && AAedirItemActor::IsPickable(Item) && LacksItem(Item) && CanSeeItem(Item))
+		{
+			Best = Item;
+			BestDistance = Distance;
+		}
+	}
+	if (Best)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[NpcLoot] %s goes for %s %.0f cm off in the fight, the foe %.0f cm off"), *GetName(), *Best->GetName(), BestDistance, FoeDistance);
+		FetchItem = Best;
+		bFetchOrdered = false;
+		bFightLoot = true;
+		FetchReaches = 0;
+		BestWayDistance = BIG_NUMBER;
+		WayStuckSeconds = 0.f;
+	}
+}
+
+bool AAedirNpc::UpdateCorpseLoot(float DeltaSeconds)
+{
+	if (!Interaction)
+	{
+		return false;
+	}
+	AAedirCreature* Body = LootBody.Get();
+	const auto Lacks = [this](const AAedirItemActor* Piece) { return Piece && Interaction->GetWornArmorProtection(Piece->ArmorZone) <= 0.f; };
+	// Looking round now and then for a dead body wearing something it has not got.
+	if (!Body)
+	{
+		LootSearchTimer -= DeltaSeconds;
+		if (LootSearchTimer > 0.f || FetchItem)
+		{
+			return false;
+		}
+		LootSearchTimer = 1.f;
+		float BestDistance = NpcItemSightCm;
+		for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+		{
+			AAedirCreature* Dead = *It;
+			if (Dead == this || !Dead->Stats || !Dead->Stats->IsDead() || !Dead->Interaction)
+			{
+				continue;
+			}
+			for (AAedirItemActor* Piece : Dead->Interaction->GetWornItemsCopy())
+			{
+				const float Distance = static_cast<float>(FVector::Dist2D(Dead->GetMesh()->GetBoneLocation(TEXT("pelvis")), GetActorLocation()));
+				if (Lacks(Piece) && Distance < BestDistance)
+				{
+					BestDistance = Distance;
+					Body = Dead;
+					LootBone = Piece->ArmorZone == EAedirBodyZone::Head ? FName(TEXT("head")) : Piece->ArmorZone == EAedirBodyZone::Arm ? FName(TEXT("upperarm_l"))
+						: Piece->ArmorZone == EAedirBodyZone::Leg ? FName(TEXT("thigh_l")) : FName(TEXT("spine_03"));
+				}
+			}
+		}
+		if (!Body)
+		{
+			return false;
+		}
+		LootBody = Body;
+		LootHeldSeconds = 0.f;
+		UE_LOG(LogAedir, Log, TEXT("[NpcLoot] %s goes to strip %s's %s"), *GetName(), *Body->GetName(), *LootBone.ToString());
+	}
+	AAedirItemActor* Piece = Body->Interaction ? Body->Interaction->FindWornOn(LootBone) : nullptr;
+	if (!Lacks(Piece) || !Body->GetMesh())
+	{
+		LootBody.Reset();
+		return false;
+	}
+	// To it, then a free hand takes hold where it is worn, holds a moment, and the piece comes off and is put on.
+	const EAedirHand Hand = Interaction->GetHeldItem(EAedirHand::Left) ? EAedirHand::Right : EAedirHand::Left;
+	const FVector Place = Body->GetMesh()->GetBoneLocation(LootBone);
+	const float Distance = static_cast<float>(FVector::Dist2D(Place, GetActorLocation()));
+	if (Distance > NpcFetchReachCm + 30.f)
+	{
+		SetWantsToRun(false);
+		WalkTowards(Place, DeltaSeconds, NpcTurnSpeed);
+		return true;
+	}
+	TurnBodyTo(static_cast<float>((Place - GetActorLocation()).Rotation().Yaw), DeltaSeconds, NpcTurnSpeed);
+	if (Interaction->GetHeldItem(Hand))
+	{
+		LootBody.Reset();
+		return false;
+	}
+	if (!Interaction->IsGrabbingBody(Hand))
+	{
+		if (!Interaction->TryGrabBody(Hand, &Place) && (LootHeldSeconds += DeltaSeconds) > 3.f)
+		{
+			LootBody.Reset();
+		}
+		return true;
+	}
+	LootHeldSeconds += DeltaSeconds;
+	if (LootHeldSeconds >= 1.f && Interaction->StripGrabbedArmor(Hand))
+	{
+		if (AAedirItemActor* Taken = Interaction->GetHeldItem(Hand))
+		{
+			Taken->Use(this);
+		}
+		UE_LOG(LogAedir, Log, TEXT("[NpcLoot] %s stripped %s and puts it on"), *GetName(), *Piece->GetName());
+		LootBody.Reset();
+	}
+	return true;
 }
 
 void AAedirNpc::UpdateItemSearch(float DeltaSeconds)

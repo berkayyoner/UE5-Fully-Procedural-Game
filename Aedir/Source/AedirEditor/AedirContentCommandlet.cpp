@@ -126,63 +126,50 @@ namespace
 	{
 		constexpr int32 Width = 128;
 		constexpr int32 Height = 256;
-		// Width of the sole down its length, as a share of the whole print, and how much of it lies on the inner side.
-		static const FVector2f Profile[] = { { 0.f, 0.f }, { 0.03f, 0.5f }, { 0.1f, 0.82f }, { 0.24f, 0.96f }, { 0.38f, 0.9f }, { 0.55f, 0.66f }, { 0.7f, 0.66f }, { 0.84f, 0.72f }, { 0.93f, 0.62f }, { 0.98f, 0.4f }, { 1.f, 0.f } };
-		const auto WidthAt = [](float V)
+		// A bare foot on the 12 by 28 cm the print covers, in cm: across from the middle (the big toe's side negative) and down
+		// from the toe end. The heel, the outer edge of the arch, the ball of the foot and the five toes press in, the arch
+		// itself does not. Each pad runs from one point to another (the same for a round one), this wide and this deep.
+		struct FAedirPad
 		{
-			for (int32 Index = 1; Index < UE_ARRAY_COUNT(Profile); ++Index)
-			{
-				if (V <= Profile[Index].X)
-				{
-					const float Share = (V - Profile[Index - 1].X) / FMath::Max(Profile[Index].X - Profile[Index - 1].X, KINDA_SMALL_NUMBER);
-					return FMath::Lerp(Profile[Index - 1].Y, Profile[Index].Y, FMath::Sin(Share * HALF_PI));
-				}
-			}
-			return 0.f;
+			FVector2f From;
+			FVector2f To;
+			FVector2f Radius;
+			float Depth;
 		};
+		static const FAedirPad Pads[] = {
+			{ { 0.3f, 23.3f }, { 0.3f, 23.3f }, { 3.1f, 3.4f }, 1.f },
+			{ { 2.4f, 21.f }, { 3.f, 13.5f }, { 1.8f, 1.8f }, 0.6f },
+			{ { -2.5f, 11.f }, { -2.5f, 11.f }, { 2.8f, 2.4f }, 1.f },
+			{ { 1.4f, 11.8f }, { 1.4f, 11.8f }, { 3.f, 2.3f }, 0.9f },
+			{ { -3.3f, 5.f }, { -3.3f, 5.f }, { 1.8f, 2.1f }, 0.95f },
+			{ { -0.9f, 5.4f }, { -0.9f, 5.4f }, { 1.f, 1.f }, 0.8f },
+			{ { 0.9f, 6.f }, { 0.9f, 6.f }, { 0.95f, 0.95f }, 0.75f },
+			{ { 2.5f, 6.8f }, { 2.5f, 6.8f }, { 0.85f, 0.85f }, 0.7f },
+			{ { 3.9f, 8.f }, { 3.9f, 8.f }, { 0.8f, 0.8f }, 0.65f },
+		};
+		constexpr float PrintWidthCm = 12.f;
+		constexpr float PrintLengthCm = 28.f;
 
 		TArray<uint8> Pixels;
 		Pixels.SetNumZeroed(Width * Height);
 		FRandomStream Random(7);
 		for (int32 Y = 0; Y < Height; ++Y)
 		{
-			const float V = (Y + 0.5f) / Height;
-			const float Half = WidthAt(V) * 0.5f;
-			// The big toe side reaches further forward and the arch curves in, so the inner edge is drawn apart from the outer.
-			const float Arch = FMath::Clamp(1.f - FMath::Abs(V - 0.6f) / 0.16f, 0.f, 1.f);
-			const float Inner = Half * (1.f - 0.45f * Arch);
-			const float Outer = Half;
 			for (int32 X = 0; X < Width; ++X)
 			{
-				// The toe leans to the big toe's side.
-				const float U = (X + 0.5f) / Width - 0.5f + 0.06f * FMath::SmoothStep(0.f, 1.f, FMath::Clamp(1.f - V / 0.32f, 0.f, 1.f));
-				const float Edge = U < 0.f ? Inner : Outer;
-				const float FromEdge = Edge - FMath::Abs(U);
-				const float Inside = FMath::Clamp(FromEdge * 70.f, 0.f, 1.f);
-				// The rim of the sole bites deepest; inside it the lugs press and the grooves between them stay shallow.
-				const float Rim = FromEdge < 0.035f ? 1.f : 0.f;
-				float Press;
-				if (V < 0.58f)
+				const FVector2f At(((X + 0.5f) / Width - 0.5f) * PrintWidthCm, (Y + 0.5f) / Height * PrintLengthCm);
+				// Each pad is soft at its edge and deepest along its middle; where they meet the deeper one counts.
+				float Press = 0.f;
+				for (const FAedirPad& Pad : Pads)
 				{
-					// Forefoot: lugs in chevrons pointing to the toe, split down the middle.
-					const float Chevron = FMath::Fmod(V * 16.f + FMath::Abs(U) * 5.f, 1.f);
-					const bool bSplit = FMath::Abs(U) < 0.02f;
-					Press = Rim > 0.f ? 1.f : (Chevron < 0.55f && !bSplit ? 0.92f : 0.38f);
+					const FVector2f Along = Pad.To - Pad.From;
+					const float Share = Along.SizeSquared() > 0.f ? FMath::Clamp(FVector2f::DotProduct(At - Pad.From, Along) / Along.SizeSquared(), 0.f, 1.f) : 0.f;
+					const FVector2f Off = (At - (Pad.From + Along * Share)) / Pad.Radius;
+					const float Out = Off.Size();
+					Press = FMath::Max(Press, Pad.Depth * FMath::SmoothStep(1.f, 0.72f, Out) * FMath::Lerp(0.8f, 1.f, FMath::Clamp(1.f - Out, 0.f, 1.f)));
 				}
-				else if (V < 0.72f)
-				{
-					// Shank under the arch: only the outer edge and a faint middle touch the ground.
-					Press = U > 0.f ? FMath::Clamp(0.5f - (Outer - U) * 7.f, 0.f, 0.5f) : 0.f;
-				}
-				else
-				{
-					// Heel block, set off from the shank by its front edge, with bars across it.
-					const bool bFront = V < 0.745f;
-					const float Bar = FMath::Fmod((V - 0.72f) * 26.f, 1.f);
-					Press = Rim > 0.f || bFront ? 1.f : (Bar < 0.6f ? 0.9f : 0.4f);
-				}
-				const float Grain = Random.FRandRange(0.82f, 1.f);
-				Pixels[Y * Width + X] = static_cast<uint8>(FMath::Clamp(Inside * Press * Grain, 0.f, 1.f) * 255.f);
+				const float Grain = Random.FRandRange(0.85f, 1.f);
+				Pixels[Y * Width + X] = static_cast<uint8>(FMath::Clamp(Press * Grain, 0.f, 1.f) * 255.f);
 			}
 		}
 

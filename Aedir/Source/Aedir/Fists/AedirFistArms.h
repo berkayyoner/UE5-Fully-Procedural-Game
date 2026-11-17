@@ -210,6 +210,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeUpReachCm = 5.f;
 
+	// On the way up a blade reaches out ahead, this much further at the most halfway up, so a rising blow goes out at the
+	// one fought rather than up past the face.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeRiseForwardCm = 24.f;
+
 	// Drawn back to its own side, a blade arm's elbow is pointed this far below level, which leaves the upper arm about half
 	// way down (45 degrees).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
@@ -256,6 +261,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeLowerWristDownDegrees = 30.f;
+
+	// Drawn across from the middle to a side the wrist bends a blade down, most halfway (this far) and none at either end,
+	// so the blade is carried out clear of the head as it goes by it; less of it the more the blade is raised.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeSweepWristDownDegrees = 24.f;
 
 	// Brought across to the other side a blade's wrist turns out this far by BladeSideTurnSplit of the way, the point kept
 	// on the other, then back in to BladeCrossTurnDegrees at the end, the blade reaching from the other side round back.

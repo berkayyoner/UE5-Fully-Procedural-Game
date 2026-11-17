@@ -84,6 +84,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
 	float Aggression = -1.f;
 
+	// A looter strips the armour it lacks off the dead once the fight is over. Below 0 it is chosen as they come into the
+	// world, LooterChance of the time; 0 never, 1 always.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
+	int32 Looter = -1;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc", meta=(ClampMin="0", ClampMax="1"))
+	float LooterChance = 0.3f;
+
+	// In a fight, a weapon with empty hands or a piece of armour it lacks is gone for when it lies at most this share of the
+	// way to the foe (0.5: twice as near as the foe).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc", meta=(ClampMin="0", ClampMax="1"))
+	float FightLootShare = 0.5f;
+
+	bool IsLooter() const { return Looter > 0; }
+
 	// The catalog id of the weapon they carry from the start, or none.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
 	FName StartWeapon;
@@ -224,4 +239,16 @@ private:
 	float CalmSeconds = 0.f;
 	float ItemSearchTimer = 0.f;
 	TMap<TWeakObjectPtr<AAedirItemActor>, double> ItemsGivenUp;
+
+	// Something on the ground gone for in the middle of a fight.
+	bool bFightLoot = false;
+	float FightLootTimer = 0.f;
+	void UpdateFightLoot(float DeltaSeconds);
+
+	// A dead body being stripped: whose, of which part, by which hand, and for how long it has been held.
+	TWeakObjectPtr<AAedirCreature> LootBody;
+	FName LootBone;
+	float LootHeldSeconds = 0.f;
+	float LootSearchTimer = 0.f;
+	bool UpdateCorpseLoot(float DeltaSeconds);
 };

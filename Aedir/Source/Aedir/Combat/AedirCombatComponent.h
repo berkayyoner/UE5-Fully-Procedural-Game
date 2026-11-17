@@ -300,6 +300,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float AISwingWaitSeconds = 0.5f;
 
+	// Choosing whom to fight: the nearest, one lying down or getting up counted this much further off than it is, so one on
+	// its feet comes first; and of those within AITargetNearSlackCm of the nearest, the last to strike.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AITargetDownExtraCm = 600.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AITargetNearSlackCm = 200.f;
+
+	// Close in, now and then a hand takes hold of the one fought by an arm and holds on for a while, the other hand striking:
+	// tried every AIGrabEverySeconds, taken AIGrabChance of the time, held AIGrabHoldSeconds. Bare-handed either hand; with a
+	// blade no longer than AIGrabMaxWeaponCm the free one; with anything bigger never.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AIGrabEverySeconds = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIGrabChance = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AIGrabHoldSeconds = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AIGrabMaxWeaponCm = 45.f;
+
+	// The fight is left to itself for a while (going for something on the ground): no swings, no closing in.
+	void SetAIStandAside(bool bStandAside) { bAIStandAside = bStandAside; }
+
 	// How often a swing goes for the head rather than the body.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIHeadChance = 0.75f;
@@ -807,6 +833,11 @@ private:
 	// arm back to one side, or up, and throwing it across or down.
 	void UpdateAIFistArms(class UAedirFistArms* Fists, bool bArmed, float Distance, float Reach, float DeltaTime);
 	void ReleaseAIFistArms();
+	bool bAIStandAside = false;
+	int32 AIGrabSlot = INDEX_NONE;
+	float AIGrabTimer = 0.f;
+	void UpdateAIGrab(bool bArmed, float Distance, float DeltaTime);
+	void ReleaseAIGrab();
 	int32 AIMousePhase = 0;
 	float AIMouseTimer = 0.f;
 	float AIMouseWait = 0.f;

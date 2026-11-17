@@ -294,6 +294,11 @@ public:
 	UFUNCTION(Exec)
 	void StrikePart(const FString& Bone, float EnergyJoules, float SideCm = 0.f, int32 Nearest = 0);
 
+	// The right hand takes hold of the nearest dead body by this bone (it has to lie within reach), and with Strip 1 takes off what is worn there into it,
+	// as holding the hand's key down does.
+	UFUNCTION(Exec)
+	void GrabDead(const FString& Bone, int32 Strip = 0);
+
 	// The same blow on the nearest other creature, from the front or from behind.
 	UFUNCTION(Exec)
 	void StrikeNearest(float EnergyJoules, int32 FromBehind = 0);

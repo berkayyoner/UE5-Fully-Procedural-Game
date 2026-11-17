@@ -448,3 +448,19 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The free camera puts every loose body back to what it was doing when it ends.
 - A loose body's parts striking the ground or something fixed hard take a blunt blow by how fast they hit, from nothing to a bruise to blood, and lose some health.
 - The hit log shows how long balance takes to come back, where NPC fists end up against what they aimed at, and body parts striking the ground.
+- The iron helmet is 42 (between the too large 44 and the too small 40) and sits a little further back, over the back of the head.
+- Running into a wall or a tree throws the body back off it from 120 cm/s into it (it was 230, faster than a run), and a heavy loose thing lying still counts as a wall.
+- The footprint is a bare foot: heel, the outer edge of the arch, the ball of the foot and five toes.
+- Getting up off the back, the knees come up and the feet are drawn in while sitting up, so the knees no longer bend backwards.
+- A blow taking 0.3 of the balance while getting up puts the body down again.
+- Getting up, the trunk, head and arms hold to the pose with 0.6 of their strength, so blows and the body's moves show more.
+- With a one-handed blade in both hands the left elbow rises no higher than the grip or the shoulder before being drawn round, so striking low no longer lifts it.
+- A blade raised reaches out ahead on the way up, up to 24 cm further halfway.
+- A blade drawn across from the middle to a side is bent down by the wrist, most halfway, so it passes clear of the head.
+- NPCs fight the nearest foe, one on its feet before one down, and of several near, the last to strike them.
+- In a fight an NPC goes for a weapon with empty hands, or armour it lacks, lying at most half as far as the foe.
+- NPCs now and then take hold of the foe's arm with one hand and strike with the other: either hand bare-handed, the free one with a small blade, never with a big weapon.
+- A living body's part can be held even while its pose carries it.
+- Holding a hand's key down while it holds a dead body takes off the armour worn where it holds it into that hand.
+- Some NPCs are looters (0.3 of them unless set): once a fight is over they strip armour they lack off the dead and put it on.
+- Dev command GrabDead <bone> [1] takes hold of the nearest dead body and strips it; the hit log shows what bodies run into, NPC grabs and loot.

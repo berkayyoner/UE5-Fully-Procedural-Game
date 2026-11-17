@@ -60,6 +60,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float RiseHipShare = 2.f;
 
+	// Getting up, the trunk, the head and the arms hold to the pose with only this share of their strength, so blows and
+	// the body's own moves show on them; the legs and the hips keep theirs to lift it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float RisingMuscleShare = 0.6f;
+
 	// What is left of every muscle in a body that is down.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float LimpShare = 0.04f;

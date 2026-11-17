@@ -620,16 +620,18 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 			Control->SetControlMultiplier(Name, Multiplier, true);
 		}
 	};
-	Apply(SpineControls, SpineHz * Body, 0.f);
-	Apply(HeadControls, HeadStrength * Body, 0.f);
+	// Getting up the trunk, the head and the arms give more.
+	const float Soft = bRising && !bLimp ? RisingMuscleShare : 1.f;
+	Apply(SpineControls, SpineHz * Body * Soft, 0.f);
+	Apply(HeadControls, HeadStrength * Body * Soft, 0.f);
 	Apply(LeftLegControls, LegStrength * Body * (bBroken[2] && !bLimp ? BrokenShare : 1.f), 0.f);
 	Apply(RightLegControls, LegStrength * Body * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
 	// A broken arm swings loose; a hurt one keeps at least some of its strength.
 	const float LeftArmHz = ArmHz * (bLimp ? Limp : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
 	const float RightArmHz = ArmHz * (bLimp ? Limp : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
-	Apply(LeftArmControls, LeftArmHz, 0.f);
-	Apply(RightArmControls, RightArmHz, 0.f);
+	Apply(LeftArmControls, LeftArmHz * Soft, 0.f);
+	Apply(RightArmControls, RightArmHz * Soft, 0.f);
 	// A broken arm's shoulder still holds it hanging.
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
@@ -653,7 +655,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 
 	// The trunk is kept upright as a whole, and standing it carries only part of its weight.
 	const float Posture = CVarAedirBodyPosture.GetValueOnGameThread() >= 0.f ? CVarAedirBodyPosture.GetValueOnGameThread() : PostureStrength;
-	Apply(PostureControls, bLimp ? 0.f : Posture * Body, 0.f);
+	Apply(PostureControls, bLimp ? 0.f : Posture * Body * Soft, 0.f);
 	for (const FName& Name : PostureControls)
 	{
 		Control->SetControlEnabled(Name, !bLimp && Posture > 0.f);

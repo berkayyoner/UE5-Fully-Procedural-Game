@@ -1016,6 +1016,21 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone) * FMath::Lerp(HealthyKnockdownShare, LowHealthKnockdownShare, GetHurtShare()) * FMath::Lerp(1.f, TiredKnockdownShare, GetTiredShare());
 	bool bStaggered = false;
 
+	// Struck hard while still getting up, it goes down again.
+	if (!bKnockedDown && !bIsRagdoll && IsGettingUp() && Loss >= GetUpKnockLoss)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is struck down again while getting up, losing %.2f of its balance"), *GetNameSafe(GetOwner()), Loss);
+		GetUpLeft = 0.f;
+		EnterRagdoll(MinRagdollSeconds);
+		const FVector PlanarDirection = FVector(Impact.Direction.X, Impact.Direction.Y, 0.f).GetSafeNormal();
+		if (!PlanarDirection.IsNearlyZero())
+		{
+			MulticastTopple(PlanarDirection * (ComputeStaggerSpeed(Impact.EnergyJoules) * KnockdownToppleShare));
+		}
+		OnHitReaction.Broadcast(Impact.Zone, Impact.EnergyJoules, false, true);
+		return;
+	}
+
 	if (bKnockedDown)
 	{
 		if (!bIsRagdoll)
@@ -2492,6 +2507,12 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 	const float Athletism = StatsComponent ? StatsComponent->Athletism : 0.f;
 	// The movement has already stopped the body by now; what it hit with is how fast it was going just before.
 	const FVector OwnerVelocity = LastVelocity.SizeSquared() > Owner->GetVelocity().SizeSquared() ? LastVelocity : Owner->GetVelocity();
+	static const IConsoleVariable* BumpLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	if (BumpLog && BumpLog->GetInt() != 0 && OwnerVelocity.Size2D() > 150.f)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Bump] %s runs into %s (%s), normal %s, going %.0f cm/s, %.0f into it"), *GetNameSafe(Owner), *GetNameSafe(OtherActor), *GetNameSafe(OtherComponent),
+			*Hit.ImpactNormal.ToCompactString(), OwnerVelocity.Size2D(), FVector::DotProduct(OwnerVelocity, -Hit.ImpactNormal));
+	}
 
 	if (OtherComponent && OtherComponent->IsSimulatingPhysics())
 	{
@@ -2503,9 +2524,15 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 			return;
 		}
 
-		// Walking into something that lies still is no blow.
-		if (OtherComponent->GetComponentVelocity().SizeSquared() < AedirObjectImpactMinSpeed * AedirObjectImpactMinSpeed)
+		// Walking into something light that lies still is no blow: it is pushed. Something heavy is run into as a wall.
+		const bool bStill = OtherComponent->GetComponentVelocity().SizeSquared() < AedirObjectImpactMinSpeed * AedirObjectImpactMinSpeed;
+		if (bStill && OtherComponent->GetMass() < StillObjectWallMassKg)
 		{
+			return;
+		}
+		if (bStill)
+		{
+			RunIntoWall(OwnerVelocity, Hit, StatsComponent, Athletism);
 			return;
 		}
 
@@ -2532,15 +2559,37 @@ void UAedirBalanceComponent::ProcessHit(AActor* OtherActor, UPrimitiveComponent*
 		return;
 	}
 
+	RunIntoWall(OwnerVelocity, Hit, StatsComponent, Athletism);
+}
+
+void UAedirBalanceComponent::RunIntoWall(const FVector& OwnerVelocity, const FHitResult& Hit, UAedirStatsComponent* StatsComponent, float Athletism)
+{
+	// What is stood on is no wall.
+	if (bIsRagdoll || Hit.ImpactNormal.Z > AedirWalkableNormalZ)
+	{
+		return;
+	}
+	const UWorld* World = GetWorld();
+	if (World && World->GetTimeSeconds() - LastBumpTime < BumpRepeatSeconds)
+	{
+		return;
+	}
 	const float ApproachSpeed = static_cast<float>(FVector::DotProduct(OwnerVelocity, -Hit.ImpactNormal));
 	if (ApproachSpeed <= WallImpactSpeedThreshold)
 	{
 		return;
 	}
 
+	if (World)
+	{
+		LastBumpTime = World->GetTimeSeconds();
+	}
 	const float Excess = ApproachSpeed - WallImpactSpeedThreshold;
-	UAedirSfxSubsystem::Play(this, EAedirSfx::BodyImpact, Hit.ImpactPoint, FMath::Clamp(Excess / WallImpactSpeedThreshold, 0.2f, 1.f));
-	ApplyBalanceImpact(OwnerVelocity.GetSafeNormal(), FMath::Clamp(Excess / WallImpactSpeedThreshold, 0.f, AedirWallImpactMaxLoss));
+	const float Share = Excess / FMath::Max(WallImpactFullLossSpeed, 1.f);
+	UAedirSfxSubsystem::Play(this, EAedirSfx::BodyImpact, Hit.ImpactPoint, FMath::Clamp(Share, 0.2f, 1.f));
+	// Thrown back off it, the way it came.
+	ApplyBalanceImpact(Hit.ImpactNormal.GetSafeNormal2D(), FMath::Clamp(Share, 0.f, AedirWallImpactMaxLoss));
+	UE_LOG(LogAedir, Log, TEXT("[Bump] %s runs into %s at %.0f cm/s, balance %.2f"), *GetNameSafe(GetOwner()), *GetNameSafe(Hit.GetActor()), ApproachSpeed, Balance);
 	// The chest and head carry on into the wall and are thrown back off it.
 	if (BodyMesh && BodyMesh->IsAnySimulatingPhysics())
 	{

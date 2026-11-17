@@ -905,11 +905,12 @@ namespace
 		{ 0.8f,  78.f, 4.f, -22.f, -14.f, 10.f, FVector(-12.f, 12.f, 10.f), FVector(10.f, 14.f, 8.f), 0.5f, 0.f,  FVector(30.f, 24.f, 40.f), 0.f, 0.f },
 	};
 
-	// On the back: sit up propped on the hands behind, draw the feet in to the hips with the knees up, then lean over the feet
-	// and stand up on them. The body stands where the feet are drawn in to, past where its hips lay.
+	// On the back: sit up propped on the hands behind while drawing the feet in to the hips with the knees up, then lean over
+	// the feet and stand up on them. The knees come up from the first moment: sitting up on straight legs, the knee has no way
+	// to bend that is clearly forward and turns over backwards. The body stands where the feet are drawn in to.
 	const FAedirGetUpKey AedirGetUpFromBack[] = {
-		{ 0.f,   12.f, -32.f, 85.f,  5.f, -15.f, FVector(56.f, 14.f, 8.f), FVector(56.f, 14.f, 8.f), 1.f, 1.f, FVector(-35.f, 30.f, 6.f), 0.6f, 0.f },
-		{ 0.28f, 13.f, -32.f, 30.f,  8.f, -10.f, FVector(52.f, 14.f, 8.f), FVector(52.f, 14.f, 8.f), 1.f, 1.f, FVector(-68.f, 24.f, 6.f), 1.f, 0.f },
+		{ 0.f,   12.f, -32.f, 85.f,  5.f, -15.f, FVector(56.f, 14.f, 8.f), FVector(56.f, 14.f, 8.f), 1.f, 1.f, FVector(-35.f, 30.f, 6.f), 0.6f, 0.8f },
+		{ 0.28f, 13.f, -32.f, 30.f,  8.f, -10.f, FVector(28.f, 14.f, 8.f), FVector(28.f, 14.f, 8.f), 0.5f, 0.5f, FVector(-68.f, 24.f, 6.f), 1.f, 1.f },
 		{ 0.52f, 14.f, -32.f, 22.f,  4.f, 0.f,   FVector(0.f, 15.f, 8.f),  FVector(0.f, 15.f, 8.f),  0.f, 0.f, FVector(-66.f, 24.f, 6.f), 1.f, 1.f },
 		{ 0.8f,  45.f, -10.f, -35.f, -25.f, 15.f, FVector(0.f, 15.f, 8.f),  FVector(0.f, 15.f, 8.f),  0.f, 0.f, FVector(-30.f, 24.f, 40.f), 0.f, 0.f },
 	};

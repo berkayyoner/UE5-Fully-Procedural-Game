@@ -280,7 +280,7 @@ namespace
 		};
 		const auto Axes = [](const FVector& X, const FVector& Y, const FVector& Z) { return FMatrix(X, Y, Z, FVector::ZeroVector).Rotator(); };
 		AddWornModel(TEXT("IronSouthernHelmet"), TEXT("Iron Southern Helmet"), 2.2f, EAedirBodyZone::Head, 0.6f, TEXT("head"), FVector(0.24, 0.26, 0.3),
-			TEXT("/Game/Aedir/Fab/IronSouthernHelmet/helmet.helmet"), 40.f, Axes(FVector(0, 0, -1), FVector(0, 1, 0), FVector(1, 0, 0)), FVector(-8.5f, 3.2f, 0.f));
+			TEXT("/Game/Aedir/Fab/IronSouthernHelmet/helmet.helmet"), 42.f, Axes(FVector(0, 0, -1), FVector(0, 1, 0), FVector(1, 0, 0)), FVector(-9.f, 3.3f, 0.f));
 		AddWornModel(TEXT("RustyIronShield"), TEXT("Rusty Iron Shield"), 4.5f, EAedirBodyZone::Arm, 0.7f, TEXT("lowerarm_l"), FVector(0.6, 0.6, 0.08),
 			TEXT("/Game/Aedir/Fab/RustyIronShield/Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High.Historic_Medieval_Armor_Shield_Metal_Round_01_xiwkcgy_High"), 62.f, FRotator::ZeroRotator, FVector(13.f, 0.f, 9.f));
 		AddWornModel(TEXT("RustyShoulders"), TEXT("Rusty Layered Pauldrons"), 3.f, EAedirBodyZone::Arm, 0.35f, TEXT("spine_05"), FVector(0.2, 0.5, 0.2),

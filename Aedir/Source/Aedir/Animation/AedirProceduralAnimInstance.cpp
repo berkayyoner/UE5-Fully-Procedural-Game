@@ -21,6 +21,8 @@ namespace
 	constexpr float AedirObjectContactDownShare = 0.6f;
 	constexpr float AedirObjectPalmClearanceCm = 2.5f;
 	constexpr float AedirKneePoleDistance = 100.f;
+	// The left elbow on a grip rises at most this far over the grip or the shoulder before it is drawn round to the right.
+	constexpr double AedirGripElbowOverCm = 6.0;
 	constexpr float AedirKneePoleDropDistance = 30.f;
 	constexpr float AedirLegMinReachShare = 0.3f;
 	constexpr float AedirLegMaxReachShare = 0.998f;
@@ -817,6 +819,17 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	// Drawn round to the right the elbow rises, so the forearm comes along the grip; carried low it stays down, below the
 	// shoulder, whichever way the right arm has turned with the view.
 	const FVector Up = -Down;
+	// The mirror of the right elbow is no place for the left one when the grip is held low: struck down, it put the left
+	// elbow up in the air. Before the rise to the right it never goes higher than the grip or the shoulder, whichever is
+	// higher, and a little.
+	{
+		const double Highest = FMath::Max(FVector::DotProduct(Wrist - Shoulder, Up), 0.0) + AedirGripElbowOverCm;
+		const double Above = FVector::DotProduct(Elbow - Shoulder, Up) - Highest;
+		if (Above > 0.0)
+		{
+			Elbow -= Up * Above;
+		}
+	}
 	Elbow += Up * (GaitData.FistArmGripRight * GaitData.FistArmGripElbowRiseCm);
 	const float Lowered = 1.f - FMath::Clamp(GaitData.FistArmGripRaised, 0.f, 1.f);
 	const double Over = FVector::DotProduct(Elbow - Shoulder, Up) + GaitData.FistArmGripRestElbowBelowCm;

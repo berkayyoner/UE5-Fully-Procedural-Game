@@ -2,6 +2,7 @@
 
 #include "Aedir.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Physics/AedirBalanceComponent.h"
@@ -82,6 +83,96 @@ bool UAedirInteractionComponent::FindAimedBody(FVector& OutPoint) const
 		}
 	}
 	return false;
+}
+
+AAedirCreature* UAedirInteractionComponent::GetGrabbedCreature(EAedirHand Hand, FName* OutBone) const
+{
+	const FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
+	const UPrimitiveComponent* Target = Grab.Target.Get();
+	if (!(Grab.Joint.IsValid() || Grab.bReaching) || !Target)
+	{
+		return nullptr;
+	}
+	if (OutBone)
+	{
+		*OutBone = Grab.Bone;
+	}
+	return Cast<AAedirCreature>(Target->GetOwner());
+}
+
+AAedirItemActor* UAedirInteractionComponent::FindWornOn(FName Bone) const
+{
+	const EAedirBodyZone Zone = UAedirCombatComponent::ClassifyBodyZone(Bone);
+	for (const TObjectPtr<AAedirItemActor>& Worn : WornItems)
+	{
+		if (Worn && Worn->ArmorZone == Zone)
+		{
+			return Worn;
+		}
+	}
+	return nullptr;
+}
+
+void UAedirInteractionComponent::TakeOffWornLoose(AAedirItemActor* Item)
+{
+	AAedirCreature* Creature = GetCreature();
+	const int32 WornIndex = WornItems.IndexOfByKey(Item);
+	if (!IsAuthoritative() || !Creature || !Item || WornIndex == INDEX_NONE)
+	{
+		return;
+	}
+	WornItems.RemoveAt(WornIndex);
+	Item->TakeOff();
+	Item->Detach(FVector::ZeroVector);
+	if (Creature->Combat)
+	{
+		Creature->Combat->SetArmorProtection(Item->ArmorZone, GetWornArmorProtection(Item->ArmorZone));
+	}
+	UpdateCarriedWeight();
+}
+
+bool UAedirInteractionComponent::StripGrabbedArmor(EAedirHand Hand)
+{
+	if (!IsAuthoritative())
+	{
+		ServerStripGrabbedArmor(Hand);
+		return true;
+	}
+	FName Bone;
+	AAedirCreature* Body = GetGrabbedCreature(Hand, &Bone);
+	AAedirCreature* Creature = GetCreature();
+	if (!Body || !Creature || !Body->Interaction || !(Body->Stats && Body->Stats->IsDead()))
+	{
+		return false;
+	}
+	// Holding it, or with the hand on it as it closes.
+	const FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
+	if (!Grab.Joint.IsValid() && Creature->GetMesh() && Body->GetMesh())
+	{
+		const float Off = static_cast<float>(FVector::Dist(Creature->GetMesh()->GetBoneLocation(Hand == EAedirHand::Left ? LeftHandBone : RightHandBone), Body->GetMesh()->GetBoneLocation(Bone)));
+		if (Off > StripReachCm)
+		{
+			UE_LOG(LogAedir, Log, TEXT("[Strip] %s's hand is still %.0f cm from %s's %s"), *Creature->GetName(), Off, *Body->GetName(), *Bone.ToString());
+			return false;
+		}
+	}
+	AAedirItemActor* Piece = Body->Interaction->FindWornOn(Bone);
+	if (!Piece)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Strip] %s finds nothing worn on %s's %s"), *Creature->GetName(), *Body->GetName(), *Bone.ToString());
+		return false;
+	}
+	// Let go of the body, the piece comes off it into that hand.
+	ReleaseBodyGrab(Hand);
+	Body->Interaction->TakeOffWornLoose(Piece);
+	const bool bTaken = EquipImmediate(Hand, Piece);
+	UE_LOG(LogAedir, Log, TEXT("[Strip] %s takes %s off %s's %s%s"), *Creature->GetName(), *Piece->GetName(), *Body->GetName(), *Bone.ToString(), bTaken ? TEXT("") : TEXT(", but cannot hold it"));
+	return bTaken;
+}
+
+void UAedirInteractionComponent::ServerStripGrabbedArmor_Implementation(EAedirHand Hand)
+{
+	StripGrabbedArmor(Hand);
 }
 
 bool UAedirInteractionComponent::IsGrabbingBody(EAedirHand Hand) const
@@ -168,7 +259,9 @@ bool UAedirInteractionComponent::TryGrabBody(EAedirHand Hand, const FVector* Aim
 				Bone = Throat;
 			}
 			const FBodyInstance* Part = Bone.IsNone() ? nullptr : Skeletal->GetBodyInstance(Bone);
-			if (!Part || !Part->IsInstanceSimulatingPhysics())
+			// A living body's part may be carried by its pose just now rather than loose; it can be held all the same.
+			const AAedirCreature* Living = Cast<AAedirCreature>(Skeletal->GetOwner());
+			if (!Part || (!Part->IsInstanceSimulatingPhysics() && !(Living && !(Living->Stats && Living->Stats->IsDead()))))
 			{
 				continue;
 			}

@@ -1307,6 +1307,13 @@ void AAedirPlayerCharacter::UpdateHandUseHold(float DeltaSeconds)
 		}
 
 		const EAedirHand Hand = static_cast<EAedirHand>(Index);
+		// Held down on a dead body: the armour where the hand holds it comes off into the hand.
+		if (Interaction->IsGrabbingBody(Hand))
+		{
+			Interaction->StripGrabbedArmor(Hand);
+			bHandUseTriggered[Index] = true;
+			continue;
+		}
 		const EAedirHandState State = Interaction->GetHandState(Hand);
 		if (State != EAedirHandState::Holding && State != EAedirHandState::Idle)
 		{
@@ -1734,6 +1741,43 @@ namespace
 void AAedirPlayerCharacter::StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec, int32 FromBehind)
 {
 	StrikeCreature(this, EnergyJoules, MassKg, SpeedCmPerSec, FromBehind != 0);
+}
+
+void AAedirPlayerCharacter::GrabDead(const FString& Bone, int32 Strip)
+{
+	if (!Interaction)
+	{
+		return;
+	}
+	if (Strip != 0)
+	{
+		FName HeldBone;
+		const AAedirCreature* HeldBody = Interaction->GetGrabbedCreature(EAedirHand::Right, &HeldBone);
+		UE_LOG(LogTemp, Display, TEXT("[Dev] GrabDead: grabbing %d, holds %s by %s"), Interaction->IsGrabbingBody(EAedirHand::Right) ? 1 : 0, *GetNameSafe(HeldBody), *HeldBone.ToString());
+		const bool bTaken = Interaction->StripGrabbedArmor(EAedirHand::Right);
+		const AAedirItemActor* Held = Interaction->GetHeldItem(EAedirHand::Right);
+		UE_LOG(LogTemp, Display, TEXT("[Dev] GrabDead strip: %s, the right hand holds %s"), bTaken ? TEXT("taken") : TEXT("nothing taken"), *GetNameSafe(Held));
+		return;
+	}
+	AAedirCreature* Dead = nullptr;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && It->Stats && It->Stats->IsDead() && (!Dead || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Dead->GetActorLocation(), GetActorLocation())))
+		{
+			Dead = *It;
+		}
+	}
+	if (!Dead || !Dead->GetMesh())
+	{
+		UE_LOG(LogTemp, Display, TEXT("[Dev] GrabDead: no dead body"));
+		return;
+	}
+	const FVector Point = Dead->GetMesh()->GetBoneLocation(FName(*Bone));
+	// Stepped up beside it, at its own height, swept so as not to land inside anything.
+	const FVector Beside = Point + (GetActorLocation() - Point).GetSafeNormal2D() * 55.f;
+	SetActorLocation(FVector(Beside.X, Beside.Y, GetActorLocation().Z), true);
+	const bool bHeld = Interaction->TryGrabBody(EAedirHand::Right, &Point);
+	UE_LOG(LogTemp, Display, TEXT("[Dev] GrabDead: %s %s's %s"), bHeld ? TEXT("holds") : TEXT("could not hold"), *Dead->GetName(), *Bone);
 }
 
 void AAedirPlayerCharacter::StrikePart(const FString& Bone, float EnergyJoules, float SideCm, int32 Nearest)
