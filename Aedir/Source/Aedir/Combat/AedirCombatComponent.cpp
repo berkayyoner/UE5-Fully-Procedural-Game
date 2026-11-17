@@ -701,9 +701,7 @@ namespace
 	constexpr float AedirAIArmReachCm = 62.f;
 	constexpr float AedirAIWeaponReachShare = 0.85f;
 	constexpr float AedirAIStanceExtraCm = 280.f;
-	constexpr float AedirAICloseInShare = 0.9f;
 	// Armed, it keeps the length of its weapon: closer than this share of its reach it steps back, before the bodies touch.
-	constexpr float AedirAIBackOffShare = 0.75f;
 	constexpr float AedirAIBackOffInput = 0.85f;
 	// Room kept between the bodies, armed and bare-handed, and how wide the band is in which it neither closes nor gives way.
 	constexpr float AedirAIArmedRoomCm = 30.f;
@@ -712,7 +710,7 @@ namespace
 	// while it is drawn back and thrown, as long as it is further off than this.
 	constexpr float AedirAIFistStrikeSlackCm = 6.f;
 	constexpr float AedirAIFistStepInput = 0.55f;
-	constexpr float AedirAIFistStepFromCm = 50.f;
+	constexpr float AedirAIFistStepFromCm = 62.f;
 	constexpr float AedirAIKeepBandCm = 15.f;
 	// A bare fist: how long a hook or an uppercut is drawn, a jab barely; how long the throw lasts and the fist comes back.
 	constexpr float AedirAIFistWindupSeconds = 0.22f;
@@ -4651,6 +4649,14 @@ void UAedirCombatComponent::ApplyLimbInjury(EAedirLimb Limb, float Amount)
 	LimbInjury[Index] = FMath::Clamp(LimbInjury[Index] + Amount, 0.f, 1.f);
 }
 
+void UAedirCombatComponent::ClearLimbInjuries()
+{
+	for (float& Injury : LimbInjury)
+	{
+		Injury = 0.f;
+	}
+}
+
 void UAedirCombatComponent::HealLimbInjuries(float DeltaTime)
 {
 	for (float& Injury : LimbInjury)
@@ -4802,19 +4808,44 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	// The bodies never come closer than their own width and a little room, the weapon's length when there is one.
 	const float BodiesApart = (Creature->GetCapsuleComponent()->GetScaledCapsuleRadius() + (AITarget->GetCapsuleComponent() ? AITarget->GetCapsuleComponent()->GetScaledCapsuleRadius() : 0.f))
 		+ (bArmed ? AedirAIArmedRoomCm : AedirAIUnarmedRoomCm) * Scale;
-	const float KeepAt = FMath::Max(bArmed ? Reach * AedirAIBackOffShare : 0.f, BodiesApart);
-	// Bare-handed it closes right in, to where a fist reaches the head.
-	if (Distance > FMath::Max(Reach * AedirAICloseInShare, KeepAt + (bArmed ? AedirAIKeepBandCm : AedirAIKeepBandCm * 0.4f) * Scale))
+	// It keeps at a fist's reach bare-handed, at its weapon's reach armed; out of breath it backs off further to rest.
+	const float FightAt = FMath::Max(bArmed ? Reach * AIWeaponStandOffShare : AIFistStandOffCm * Scale, BodiesApart);
+	if (Creature->Stats)
+	{
+		const float Breath = Creature->Stats->GetStaminaFraction();
+		if (!bAIResting && Breath < AIRestBelowStamina)
+		{
+			bAIResting = true;
+			UE_LOG(LogAedir, Log, TEXT("[NpcRest] %s is out of breath (%.0f%%) and backs off, %.0f cm from the foe"), *Creature->GetName(), Breath * 100.f, Distance);
+		}
+		else if (bAIResting && Breath >= AIRestUntilStamina)
+		{
+			bAIResting = false;
+			UE_LOG(LogAedir, Log, TEXT("[NpcRest] %s has its breath back (%.0f%%), %.0f cm from the foe"), *Creature->GetName(), Breath * 100.f, Distance);
+		}
+	}
+	const float KeepAt = FightAt + (bAIResting ? AIRestBackOffCm * Scale : 0.f);
+	const float Band = AIStandOffBandCm * Scale;
+	if (Distance > KeepAt + Band)
 	{
 		Creature->WalkTowards(TargetLocation, DeltaTime, AedirAITurnSpeed);
 	}
 	else
 	{
 		Creature->TurnBodyTo(FacingYaw, DeltaTime, AedirAITurnSpeed);
-		if (Distance < KeepAt && !bAITargetDown)
+		if (Distance < KeepAt - Band * 0.6f && !bAITargetDown)
 		{
-			Creature->AddMovementInput(Creature->GetActorForwardVector(), -AedirAIBackOffInput * FMath::Clamp((KeepAt - Distance) / (AedirAIKeepBandCm * Scale) + 0.4f, 0.f, 1.f));
+			Creature->AddMovementInput(Creature->GetActorForwardVector(), -AedirAIBackOffInput * FMath::Clamp((KeepAt - Distance) / Band + 0.4f, 0.f, 1.f));
 		}
+	}
+	// Resting it only watches, its hands down.
+	if (bAIResting)
+	{
+		ReleaseAIFistArms();
+		ReleaseAIGrab();
+		SetGuardInternal(EAedirHand::Left, false);
+		SetGuardInternal(EAedirHand::Right, false);
+		return;
 	}
 
 	if (bFistArms)
@@ -4990,7 +5021,7 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		// On guard, the mouse in the middle at the height of the chest, until the next blow.
 		MoveTo(FVector2D(0.f, HeightFor(1) * 0.5f), AedirAIMouseGuardSpeed);
 		const bool bTired = Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare;
-		if (!bTired && Distance <= Reach + (bArmed ? AedirAIContactRange * 0.25f : AedirAIFistStrikeSlackCm) && AIMouseTimer >= AIMouseWait)
+		if (!bTired && Distance <= (bArmed ? Reach + AedirAIContactRange * 0.25f : AIFistStandOffCm + AedirAIFistStrikeSlackCm) && AIMouseTimer >= AIMouseWait)
 		{
 			// Mostly at the head; now and then into the body.
 			AIMousePart = bAITargetDown ? 1 : (FMath::FRand() < AIHeadChance ? 0 : 1);

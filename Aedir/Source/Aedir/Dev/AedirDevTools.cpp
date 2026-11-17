@@ -790,7 +790,19 @@ void UAedirDevTools::Heal(AAedirPlayerCharacter* Player, const FString& Args)
 	}
 
 	Player->Stats->RestoreAll();
-	DevToolsReport(TEXT("Health, mana and stamina restored"));
+	// The body too: wounds closed, broken bones whole, limbs sound.
+	if (Player->Wounds)
+	{
+		const int32 WasWounds = Player->Wounds->GetWoundCount();
+		const bool bWasBroken = Player->Wounds->IsLimbBroken(EAedirLimb::LeftArm) || Player->Wounds->IsLimbBroken(EAedirLimb::RightArm) || Player->Wounds->IsLimbBroken(EAedirLimb::LeftLeg) || Player->Wounds->IsLimbBroken(EAedirLimb::RightLeg);
+		Player->Wounds->HealAll();
+		DevToolsReport(FString::Printf(TEXT("Healed %d wounds%s, %d left"), WasWounds, bWasBroken ? TEXT(" and the broken bones") : TEXT(""), Player->Wounds->GetWoundCount()));
+	}
+	if (Player->Combat)
+	{
+		Player->Combat->ClearLimbInjuries();
+	}
+	DevToolsReport(TEXT("Health, mana and stamina restored, wounds and broken bones healed"));
 }
 
 void UAedirDevTools::Hurt(AAedirPlayerCharacter* Player, const FString& Args)

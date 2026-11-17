@@ -326,6 +326,29 @@ public:
 	// The fight is left to itself for a while (going for something on the ground): no swings, no closing in.
 	void SetAIStandAside(bool bStandAside) { bAIStandAside = bStandAside; }
 
+	// How far off a fighter of the world keeps from the one it fights: bare-handed AIFistStandOffCm (a fist's reach from
+	// the head), armed AIWeaponStandOffShare of the weapon's reach; it closes in past AIStandOffBandCm further and backs off
+	// nearer than that much closer.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AIFistStandOffCm = 68.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIWeaponStandOffShare = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AIStandOffBandCm = 10.f;
+
+	// Out of breath below AIRestBelowStamina of its stamina, it backs off AIRestBackOffCm past where it fights from and
+	// catches its breath, striking no more, until it is back to AIRestUntilStamina.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIRestBelowStamina = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIRestUntilStamina = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AIRestBackOffCm = 250.f;
+
 	// How often a swing goes for the head rather than the body.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIHeadChance = 0.75f;
@@ -557,6 +580,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Combat|Injury")
 	float GetLimbInjury(EAedirLimb Limb) const;
+	// Every limb as sound as it was.
+	void ClearLimbInjuries();
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Combat|Arm")
 	FVector GetHandVelocity(EAedirHand Hand) const;
@@ -834,6 +859,7 @@ private:
 	void UpdateAIFistArms(class UAedirFistArms* Fists, bool bArmed, float Distance, float Reach, float DeltaTime);
 	void ReleaseAIFistArms();
 	bool bAIStandAside = false;
+	bool bAIResting = false;
 	int32 AIGrabSlot = INDEX_NONE;
 	float AIGrabTimer = 0.f;
 	void UpdateAIGrab(bool bArmed, float Distance, float DeltaTime);

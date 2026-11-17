@@ -138,6 +138,13 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		const float NewStamina = FMath::Min(GetMaxStamina(), Stamina + GetStaminaRegenRate() * (bRested ? 1.f : StatsStaminaRegenWhileStraining) * DeltaTime);
 		bChanged |= NewStamina != Stamina;
 		Stamina = NewStamina;
+		// In god mode breath and mana stay full, whatever takes them away some other way.
+		if (bInvulnerable && (Stamina < GetMaxStamina() || Mana < GetMaxMana()))
+		{
+			Stamina = GetMaxStamina();
+			Mana = GetMaxMana();
+			bChanged = true;
+		}
 	}
 
 	const float NewHealth = FMath::Min(MaxHealth, Health + HealthRegenPerSecond * (1.f - GetNeedShare()) * DeltaTime);
@@ -226,6 +233,11 @@ bool UAedirStatsComponent::ConsumeStamina(float Amount)
 
 bool UAedirStatsComponent::ConsumeStaminaEffort(float Amount, bool bPausesRegen)
 {
+	// In god mode everything is paid for and nothing runs out.
+	if (bInvulnerable && Amount >= 0.f)
+	{
+		return true;
+	}
 	if (!IsAuthoritative() || Amount < 0.f || Stamina < Amount)
 	{
 		return false;
@@ -250,6 +262,10 @@ bool UAedirStatsComponent::ConsumeStaminaEffort(float Amount, bool bPausesRegen)
 
 bool UAedirStatsComponent::ConsumeMana(float Amount)
 {
+	if (bInvulnerable && Amount >= 0.f)
+	{
+		return true;
+	}
 	if (!IsAuthoritative() || Amount < 0.f || Mana < Amount)
 	{
 		return false;

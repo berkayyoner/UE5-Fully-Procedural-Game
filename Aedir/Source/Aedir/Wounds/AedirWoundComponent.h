@@ -167,6 +167,10 @@ public:
 	// A bandage: the worst of the open wounds stop running. Server only.
 	void StopBleedingSome();
 
+	// Every wound and bruise closed and every broken bone whole again, as if it had never been hurt; a limb cut off stays
+	// off. Server only.
+	void HealAll();
+
 private:
 	bool IsAuthoritative() const;
 	bool IsDedicatedServer() const;

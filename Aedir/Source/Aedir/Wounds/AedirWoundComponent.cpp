@@ -638,6 +638,20 @@ void UAedirWoundComponent::StopBleedingSome()
 	}
 }
 
+void UAedirWoundComponent::HealAll()
+{
+	if (!IsAuthoritative())
+	{
+		return;
+	}
+	ActiveWounds.Reset();
+	BrokenLimbs = 0;
+	SeverBleedPerSecond = 0.f;
+	BluntWear.Reset();
+	CutWear.Reset();
+	OnRep_Wounds();
+}
+
 bool UAedirWoundComponent::IsBleeding() const
 {
 	return GetTotalBleedRate() > 0.f;

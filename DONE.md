@@ -481,3 +481,7 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The side of the trunk is held by its own hand only below the armpit; up by the shoulder the other hand comes across.
 - A blow on a shoulder sends its trunk share to the highest trunk part with a body (there was none at spine_05, so it was lost), and still counts as one blow for flinching.
 - Blows push a little more and longer after they land.
+- In god mode (tgm, God) stamina and mana are never spent and stay full.
+- heal also closes every wound and bruise, mends broken bones and clears limb injuries (a limb cut off stays off), and says how many it healed.
+- NPCs keep their distance in a fight: bare-handed at a fist's reach (68 cm), armed at 0.85 of the weapon's reach, closing in past 10 cm further and backing off nearer, and start a fist only within 6 cm of that.
+- An NPC below 25% stamina backs off 2.5 m past where it fights from, hands down, and strikes no more until it is back to 50%.
