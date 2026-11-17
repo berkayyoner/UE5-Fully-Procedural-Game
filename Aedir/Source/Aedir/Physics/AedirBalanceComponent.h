@@ -98,7 +98,63 @@ public:
 	float StumbleWalkSpeed = 260.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float RecoveryPerSecond = 0.35f;
+	float RecoveryPerSecond = 0.5f;
+
+	// A blow slows getting the balance back for a moment, the more the more balance it cost: down to HardHitRecoveryShare
+	// of the usual pace after one that takes it all, and HeadHitRecoveryShare as much again after one to the head; the pace
+	// comes back by HitRecoveryReturnPerSecond of the way a second. A blow to the head also costs HeadBalanceLossShare times
+	// the balance a blow of the same energy would elsewhere.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float HardHitRecoveryShare = 0.45f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float HeadHitRecoveryShare = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float HitRecoveryReturnPerSecond = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float HeadBalanceLossShare = 1.5f;
+
+	// Where the weight is: the bodies as they are pushed about, ComPhysicalShare of the way from where the pose has them,
+	// carried on by how fast the trunk is thrown off the feet for ComCarrySeconds (the point it is falling towards).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
+	float ComPhysicalShare = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float ComCarrySeconds = 0.3f;
+
+	// With the weight beyond the feet by more than FallChanceFromCm, or the balance gone below FallBalanceThreshold, the body
+	// may go down at any moment it cannot catch itself: at most FallChancePerSecond, from FallChanceFullCm beyond the feet or
+	// with no balance left, twice that at no health left.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float FallChanceFromCm = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float FallChanceFullCm = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float FallChancePerSecond = 0.8f;
+
+	// A blow on a shoulder or an upper arm moves the arm only this share of its push; the rest goes into the trunk, so the
+	// arm is not thrown up beside the head.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit", meta=(ClampMin="0", ClampMax="1"))
+	float ShoulderBlowArmShare = 0.3f;
+
+	// Hitting the ground or something that does not give, a part of the body faster than ImpactHarmlessSpeed (cm/s) is
+	// hurt: ImpactWoundShare of its weight's energy wears the place as a blow does (a bruise, and with more, blood), and
+	// it takes ImpactDamagePerSpeed of health for each cm/s past it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float ImpactHarmlessSpeed = 380.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float ImpactWoundShare = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float ImpactDamagePerSpeed = 0.02f;
+
+	// For the free camera, whose time all but stands still: what every loose body is doing as it starts, put back as it ends.
+	void HoldBodiesStill(bool bHold);
 
 	// A body worn down weakens: below LowHealthFrom of its health, the lower it gets the harder each blow throws it (up to
 	// 1 + LowHealthHitGain times, at none left), the less it takes to knock it down (down to LowHealthKnockdownShare of a
@@ -502,7 +558,7 @@ public:
 
 	// How fast a blow sets the trunk bending, in degrees a second for each unit of the blow's push (kg cm/s, scaled).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
-	float HitSwayDegreesPerSecondPerPush = 0.9f;
+	float HitSwayDegreesPerSecondPerPush = 1.1f;
 
 	// A blow off the middle turns the trunk too: degrees a second for each unit of push and cm off the middle.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
@@ -521,7 +577,7 @@ public:
 	float ArmFreeSeconds = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
-	float HitPushScale = 0.7f;
+	float HitPushScale = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
 	float HitPushNowShare = 0.35f;
@@ -589,6 +645,15 @@ private:
 	void EnterRagdoll(float MinimumSeconds);
 	void UpdatePelvisLean(float DeltaTime);
 	void UpdateStumbleWalk(float DeltaTime);
+	float HitRecoveryScale = 1.f;
+	double RecoveryWatchSince = -1.0;
+	float RecoveryWatchLowest = 1.f;
+	TMap<FName, double> LastPartImpactTime;
+	TArray<TPair<FVector, FVector>> HeldBodyMotion;
+	void HurtPartOnImpact(FName Bone, const FVector& NormalImpulse, const FHitResult& Hit);
+	// Lying loose, each part is watched for being stopped short against the ground or something fixed.
+	void WatchPartImpacts();
+	TArray<FVector> LastPartVelocity;
 	double NextStumbleLogTime = 0.0;
 	void UpdateHitSway(float DeltaTime);
 	// Back, aside and turned, in degrees, and how fast each is changing.

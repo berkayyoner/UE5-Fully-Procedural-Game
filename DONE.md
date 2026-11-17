@@ -436,3 +436,15 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Knocked off balance, a body walks quickly after the way it goes over until its feet are back under it.
 - Off balance the hips tip further for a small loss and turn towards the side the body goes over to.
 - The hit log shows each blow's push, how each place wears and the stumbling walk.
+- Balance comes back faster, slowed for a moment by how much a blow cost and more after one to the head; a blow to the head costs 1.5 times the balance.
+- The centre of mass follows the bodies as blows push them and is carried on by the trunk thrown off the feet.
+- A body whose weight is well beyond its feet, or whose balance is nearly gone, may go over at any moment, likelier the further it is and the more hurt.
+- The iron helmet is smaller (40 instead of 44) and sits a little lower.
+- NPCs mostly go for the head, aim a fist at it higher, throw a little slower, step in with each blow and only start one within reach.
+- Every NPC has an aggression that sets its wait between swings, from a second down to none, chosen at random unless set.
+- Bodies are carried narrower (capsule 26 cm across instead of 34), so two fighters stand within a fist of each other's head.
+- Blows push bodies further and bend the trunk more.
+- A blow on a shoulder or upper arm goes mostly into the trunk, so the struck arm is no longer flung up beside the head.
+- The free camera puts every loose body back to what it was doing when it ends.
+- A loose body's parts striking the ground or something fixed hard take a blunt blow by how fast they hit, from nothing to a bruise to blood, and lose some health.
+- The hit log shows how long balance takes to come back, where NPC fists end up against what they aimed at, and body parts striking the ground.

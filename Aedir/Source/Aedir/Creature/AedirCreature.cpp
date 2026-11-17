@@ -185,6 +185,10 @@ void AAedirCreature::BeginPlay()
 {
 	UseManBody();
 	Super::BeginPlay();
+	if (CapsuleRadiusCm > 0.f && GetCapsuleComponent())
+	{
+		GetCapsuleComponent()->SetCapsuleRadius(FMath::Min(CapsuleRadiusCm, GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight()), false);
+	}
 
 	// The body is solid to every other body, held weapon, corpse and loose thing: it is a physics body of its own, and only the
 	// capsules, which carry the bodies about, pass through it.

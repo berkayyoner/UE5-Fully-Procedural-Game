@@ -42,20 +42,18 @@ namespace
 	// the end of the draw, gives each part its time at most, and now and then raises a blade overhead instead.
 	constexpr float AedirAIMouseGuardSpeed = 4.f;
 	constexpr float AedirAIMouseWindupSpeed = 3.5f;
-	constexpr float AedirAIMouseStrikeSpeed = 24.f;
+	constexpr float AedirAIMouseStrikeSpeed = 19.f;
 	// How often a blow goes for the head when the one fought holds a guard up.
-	constexpr float AedirAIHeadChanceGuarded = 0.3f;
 	constexpr float AedirAIMouseWindupAcross = 0.9f;
 	constexpr float AedirAIMouseFistThrough = 0.25f;
 	constexpr float AedirAIMouseBladeThrough = 0.7f;
-	constexpr float AedirAIMouseWaitMin = 0.35f;
 	constexpr float AedirAIMouseWaitMax = 1.f;
 	constexpr float AedirAIMouseHoldSeconds = 0.08f;
 	constexpr float AedirAIMouseWindupMaxSeconds = 0.6f;
 	constexpr float AedirAIMouseStrikeMaxSeconds = 0.45f;
 	// How near the arm has to have come to where the mouse put it before the blow counts as thrown.
 	constexpr float AedirAIMouseArrivedShare = 0.08f;
-	constexpr float AedirAIMouseRecoverSeconds = 0.4f;
+	constexpr float AedirAIMouseRecoverSeconds = 0.15f;
 	constexpr float AedirAIMouseOverheadChance = 0.3f;
 	TAutoConsoleVariable<int32> CVarAedirNpcFists(TEXT("aedir.NpcFists"), 1, TEXT("Others fight bare-handed or with a one-handed blade as the player does, moving a mouse (1), or the older way (0)."));
 	// The closed loop between the pose and what is shown: how quickly it learns, how far it may ask beyond the pose, how still
@@ -709,7 +707,12 @@ namespace
 	constexpr float AedirAIBackOffInput = 0.85f;
 	// Room kept between the bodies, armed and bare-handed, and how wide the band is in which it neither closes nor gives way.
 	constexpr float AedirAIArmedRoomCm = 30.f;
-	constexpr float AedirAIUnarmedRoomCm = 14.f;
+	constexpr float AedirAIUnarmedRoomCm = 4.f;
+	// Bare-handed, a blow is begun only this far past the arm's reach, and the body steps in with it at this much of a walk
+	// while it is drawn back and thrown, as long as it is further off than this.
+	constexpr float AedirAIFistStrikeSlackCm = 6.f;
+	constexpr float AedirAIFistStepInput = 0.55f;
+	constexpr float AedirAIFistStepFromCm = 50.f;
 	constexpr float AedirAIKeepBandCm = 15.f;
 	// A bare fist: how long a hook or an uppercut is drawn, a jab barely; how long the throw lasts and the fist comes back.
 	constexpr float AedirAIFistWindupSeconds = 0.22f;
@@ -4780,7 +4783,8 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	const float BodiesApart = (Creature->GetCapsuleComponent()->GetScaledCapsuleRadius() + (AITarget->GetCapsuleComponent() ? AITarget->GetCapsuleComponent()->GetScaledCapsuleRadius() : 0.f))
 		+ (bArmed ? AedirAIArmedRoomCm : AedirAIUnarmedRoomCm) * Scale;
 	const float KeepAt = FMath::Max(bArmed ? Reach * AedirAIBackOffShare : 0.f, BodiesApart);
-	if (Distance > FMath::Max(Reach * AedirAICloseInShare, KeepAt + AedirAIKeepBandCm * Scale))
+	// Bare-handed it closes right in, to where a fist reaches the head.
+	if (Distance > FMath::Max(Reach * AedirAICloseInShare, KeepAt + (bArmed ? AedirAIKeepBandCm : AedirAIKeepBandCm * 0.4f) * Scale))
 	{
 		Creature->WalkTowards(TargetLocation, DeltaTime, AedirAITurnSpeed);
 	}
@@ -4878,6 +4882,11 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 				*Fists->GetMouseAim().ToString(), FVector::DotProduct(Blade->GetActorForwardVector(), Toward), Blade->GetActorForwardVector().Z);
 		}
 	}
+	// A fist is thrown stepping in to it.
+	if (!bArmed && AIMousePhase >= 1 && AIMousePhase <= 3 && Distance > AedirAIFistStepFromCm * static_cast<float>(Creature->GetActorScale3D().X))
+	{
+		Creature->AddMovementInput(Creature->GetActorForwardVector(), AedirAIFistStepInput);
+	}
 	switch (AIMousePhase)
 	{
 	case 0:
@@ -4885,14 +4894,11 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		// On guard, the mouse in the middle at the height of the chest, until the next blow.
 		MoveTo(FVector2D(0.f, HeightFor(1) * 0.5f), AedirAIMouseGuardSpeed);
 		const bool bTired = Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare;
-		if (!bTired && Distance <= Reach + AedirAIContactRange * 0.25f && AIMouseTimer >= AIMouseWait)
+		if (!bTired && Distance <= Reach + (bArmed ? AedirAIContactRange * 0.25f : AedirAIFistStrikeSlackCm) && AIMouseTimer >= AIMouseWait)
 		{
-			// Against a guard held up before the face, mostly into the body under it.
-			const AAedirCreature* Foe = AITarget.Get();
-			const UAedirFistArms* FoeFists = Foe ? Foe->FindComponentByClass<UAedirFistArms>() : nullptr;
-			const float HeadChance = FoeFists && FoeFists->IsSteering() ? AedirAIHeadChanceGuarded : 0.5f;
-			AIMousePart = bAITargetDown ? 1 : (FMath::FRand() < HeadChance ? 0 : 1);
-			const float Height = HeightFor(AIMousePart);
+			// Mostly at the head; now and then into the body.
+			AIMousePart = bAITargetDown ? 1 : (FMath::FRand() < AIHeadChance ? 0 : 1);
+			const float Height = FMath::Min(HeightFor(AIMousePart) + (AIMousePart == 0 && !bArmed ? AIHeadAimLift : 0.f), 1.f);
 			// Drawn back to one side and thrown across, or for a blade now and then raised and brought down.
 			const float Side = bArmed ? (FMath::RandBool() ? 1.f : -1.f) : (bAINextLeft ? -1.f : 1.f);
 			bAINextLeft = !bAINextLeft;
@@ -4934,6 +4940,17 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		{
 			FVector2D Then;
 			UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s threw: the punch went out %.2f, the aim now %s"), *Creature->GetName(), Fists->TakePeakPunch(Then), *Fists->GetAim().ToString());
+			if (CVarAedirHitLog.GetValueOnGameThread() != 0)
+			{
+				// Where the fist came to against what it went for: how far off, and how much above it (negative below).
+				FVector Fist, Elbow;
+				float Up = 0.f;
+				const EAedirHand Thrown = AIMouseStrike.X > 0.f ? EAedirHand::Right : EAedirHand::Left;
+				Fists->GetArm(Thrown, Fist, Elbow, Up);
+				const FVector Aimed = GetAITargetPoint(AIMousePart);
+				UE_LOG(LogAedir, Log, TEXT("[NpcAim] %s went for the %s: the fist came %.0f cm from it, %.0f cm above it, %.0f cm short"), *Creature->GetName(), AIMousePart == 0 ? TEXT("head") : TEXT("body"),
+					FVector::Dist(Fist, Aimed), Fist.Z - Aimed.Z, FVector::DotProduct(Aimed - Fist, (Aimed - Creature->GetActorLocation()).GetSafeNormal2D()));
+			}
 			AIMousePhase = 4;
 			AIMouseTimer = 0.f;
 		}
@@ -4945,7 +4962,7 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		{
 			AIMousePhase = 0;
 			AIMouseTimer = 0.f;
-			AIMouseWait = FMath::FRandRange(AedirAIMouseWaitMin, AedirAIMouseWaitMax);
+			AIMouseWait = FMath::Clamp(AISwingWaitSeconds * FMath::FRandRange(0.75f, 1.25f), 0.f, AedirAIMouseWaitMax);
 		}
 		break;
 	}

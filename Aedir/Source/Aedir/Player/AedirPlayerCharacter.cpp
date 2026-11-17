@@ -1366,9 +1366,17 @@ void AAedirPlayerCharacter::HandleHeadCameraPressed()
 {
 	// The photo camera, as Half Sword's C: the camera leaves the body and flies free from where the view was.
 	bPhotoCamera = !bPhotoCamera;
-	// Only playing alone may time stop; with others in the world it would stop it for them too.
+	// Only playing alone may time stop; with others in the world it would stop it for them too. Loose bodies are held to
+	// what they were doing, or they would come out of it flung into the air.
 	if (GetNetMode() == NM_Standalone)
 	{
+		for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+		{
+			if (It->Balance)
+			{
+				It->Balance->HoldBodiesStill(bPhotoCamera);
+			}
+		}
 		UGameplayStatics::SetGlobalTimeDilation(this, bPhotoCamera ? PhotoTimeDilation : 1.f);
 	}
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());

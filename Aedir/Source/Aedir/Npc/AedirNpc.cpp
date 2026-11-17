@@ -93,6 +93,19 @@ void AAedirNpc::BeginPlay()
 		SetHome(GetActorLocation(), static_cast<float>(GetActorRotation().Yaw));
 	}
 
+	if (HasAuthority())
+	{
+		if (Aggression < 0.f)
+		{
+			Aggression = FMath::FRand();
+		}
+		if (Combat)
+		{
+			Combat->AISwingWaitSeconds = FMath::Lerp(1.f, 0.f, FMath::Clamp(Aggression, 0.f, 1.f));
+		}
+		UE_LOG(LogAedir, Log, TEXT("[Npc] %s aggression %.2f, waits %.2f s between swings"), *GetName(), Aggression, Combat ? Combat->AISwingWaitSeconds : 0.f);
+	}
+
 	// Placed in a level with a name: who they are and what they carry come from what was set on them there.
 	if (HasAuthority() && !NpcName.IsEmpty())
 	{

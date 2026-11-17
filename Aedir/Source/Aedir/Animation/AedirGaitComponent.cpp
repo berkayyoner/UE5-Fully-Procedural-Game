@@ -1479,7 +1479,8 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			if (Before > Into && FlinchLeft <= Into)
 			{
 				const FVector Palm = Body->GetBoneLocation(FlinchSlot == 0 ? TEXT("hand_l") : TEXT("hand_r"));
-				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s: the hand is %.0f cm from the place on %s"), *GetNameSafe(CreatureOwner), FVector::Dist(Palm, At), *FlinchBone.ToString());
+				const FVector OtherPalm = Body->GetBoneLocation(FlinchSlot == 0 ? TEXT("hand_r") : TEXT("hand_l"));
+				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s: the hand is %.0f cm from the place on %s, the other %.0f cm"), *GetNameSafe(CreatureOwner), FVector::Dist(Palm, At), *FlinchBone.ToString(), FVector::Dist(OtherPalm, At));
 			}
 			Wanted[FlinchSlot] = ClutchBlowShare;
 			Goal[FlinchSlot] = WristAt(FlinchSlot, At, (At - Frame.GetLocation()).GetSafeNormal());

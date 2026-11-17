@@ -21,6 +21,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Aedir.h"
 #include "Engine/World.h"
+#include "GameFramework/WorldSettings.h"
 #include "Net/UnrealNetwork.h"
 #include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/PhysicalAnimationComponent.h"
@@ -62,6 +63,8 @@ namespace
 	constexpr float AedirPlantedFootLift = 0.12f;
 	// A frame longer than the physics steps through (six substeps of a sixtieth of a second).
 	constexpr float AedirBodyHitchSeconds = 0.1f;
+	// A loose part that loses this much speed in a frame has run into something.
+	constexpr float AedirPartStopCm = 150.f;
 	// The mass an arm moves by itself, and the strength at which a held load weighs what it weighs.
 	constexpr float AedirArmKilos = 4.f;
 	constexpr float AedirArmLoadStrengthRef = 10.f;
@@ -382,6 +385,20 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 		PendingTopple = FVector::ZeroVector;
 	}
+	// For the hit log: a lying body thrown up into the air, and how long the frame was.
+	static const IConsoleVariable* LeapLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	if (bIsRagdoll && LeapLog && LeapLog->GetInt() != 0)
+	{
+		for (const FBodyInstance* Body : BodyMesh->Bodies)
+		{
+			if (Body && Body->IsInstanceSimulatingPhysics() && Body->GetUnrealWorldVelocity().Z > 300.f)
+			{
+				UE_LOG(LogAedir, Log, TEXT("[Leap] %s %s goes up at %.0f cm/s, frame %.4f s, dilation %.4f"), *GetNameSafe(GetOwner()), *Body->BodySetup->BoneName.ToString(), Body->GetUnrealWorldVelocity().Z, DeltaTime, GetWorld()->GetWorldSettings()->TimeDilation);
+				break;
+			}
+		}
+	}
+	WatchPartImpacts();
 	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
 	UpdateStumbleWalk(DeltaTime);
@@ -948,13 +965,28 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 
 	// Worn down, the same blow throws the body further and costs it more of its balance.
 	const float Weak = FMath::Lerp(HealthyHitShare, 1.f + LowHealthHitGain, GetHurtShare()) + TiredHitGain * GetTiredShare();
-	const float Loss = FMath::Min(ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction) * Weak, 1.f);
+	const bool bHead = Impact.Zone == EAedirBodyZone::Head;
+	const float Loss = FMath::Min(ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction) * Weak * (bHead ? HeadBalanceLossShare : 1.f), 1.f);
 	ApplyBalanceImpact(Impact.Direction, Loss);
+	if (const UWorld* WatchWorld = GetWorld())
+	{
+		RecoveryWatchSince = WatchWorld->GetTimeSeconds();
+		RecoveryWatchLowest = Balance;
+	}
+	// The harder it was, and on the head, the slower the balance comes back for a moment.
+	HitRecoveryScale = FMath::Min(HitRecoveryScale, FMath::Lerp(1.f, HardHitRecoveryShare, Loss) * (bHead ? HeadHitRecoveryShare : 1.f));
 
 	if (Impact.Bone != NAME_None && BodyMesh)
 	{
 		const float ImpulseSize = FMath::Min(Impact.MassKg * Impact.RelativeSpeed * HitReactionBoneImpulseScale, HitReactionBoneImpulseMax) * Weak;
-		MulticastBoneImpulse(Impact.Bone, Impact.Direction * (ImpulseSize * (Impact.Zone == EAedirBodyZone::Head ? HitReactionHeadShare : 1.f)), Impact.Location);
+		// A shoulder or an upper arm struck: the trunk takes most of it, so the arm is not flung up beside the head.
+		const FString StruckName = Impact.Bone.ToString();
+		const bool bShoulder = StruckName.StartsWith(TEXT("clavicle")) || StruckName.StartsWith(TEXT("upperarm"));
+		MulticastBoneImpulse(Impact.Bone, Impact.Direction * (ImpulseSize * (bHead ? HitReactionHeadShare : 1.f) * (bShoulder ? ShoulderBlowArmShare : 1.f)), Impact.Location);
+		if (bShoulder && BodyMesh->GetBodyInstance(TEXT("spine_05")))
+		{
+			MulticastBoneImpulse(TEXT("spine_05"), Impact.Direction * (ImpulseSize * (1.f - ShoulderBlowArmShare)), Impact.Location);
+		}
 		// A blow to the head snaps it aside and takes the neck and the top of the chest along: the head is light and held
 		// by little, so the same blow moves it much further than it would a limb.
 		if (Impact.Zone == EAedirBodyZone::Head && BodyMesh->GetBodyInstance(TEXT("spine_05")))
@@ -1327,9 +1359,11 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 		// The animated bone location is used, not the simulated body: legs and spine follow the pose while balanced,
 		// and crouching or reaching would otherwise move the simulated centre of mass away from the pose-driven feet.
 		const FName BoneName = Body->BodySetup.IsValid() ? Body->BodySetup->BoneName : NAME_None;
-		const FVector BodyLocation = BoneName != NAME_None && BodyMesh->GetBoneIndex(BoneName) != INDEX_NONE
+		const FVector PoseLocation = BoneName != NAME_None && BodyMesh->GetBoneIndex(BoneName) != INDEX_NONE
 			? BodyMesh->GetBoneLocation(BoneName, EBoneSpaces::WorldSpace)
 			: Body->GetCOMPosition();
+		// Pushed about by blows, the bodies are where the weight really is.
+		const FVector BodyLocation = Body->IsInstanceSimulatingPhysics() ? FMath::Lerp(PoseLocation, Body->GetCOMPosition(), ComPhysicalShare) : PoseLocation;
 		WeightedSum += BodyLocation * Mass;
 		TotalMass += Mass;
 	}
@@ -1339,6 +1373,12 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 		return;
 	}
 	CenterOfMassWorld = WeightedSum / TotalMass;
+	// A trunk thrown off the feet carries the weight on the way it goes.
+	if (const FBodyInstance* Trunk = BodyMesh->GetBodyInstance(TEXT("spine_03")); Trunk && Trunk->IsInstanceSimulatingPhysics())
+	{
+		const FVector Thrown = Trunk->GetUnrealWorldVelocity() - CharacterOwner->GetVelocity();
+		CenterOfMassWorld += FVector(Thrown.X, Thrown.Y, 0.0) * ComCarrySeconds;
+	}
 
 	TArray<FVector2D> SupportPoints;
 	AddFootSupportPoints(FootLeftBone, BallLeftBone, SupportPoints);
@@ -1594,7 +1634,8 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 
 	const float DazeRecoveryScale = IsDazed() ? HitReactionDazeRecoveryScale : 1.f;
 	const float StaggerRecoveryScale = IsStaggering() ? HitReactionStaggerRecoveryScale : 1.f;
-	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * FMath::Lerp(HealthyRecoveryShare, LowHealthRecoveryShare, GetHurtShare()) * FMath::Lerp(1.f, TiredRecoveryShare, GetTiredShare()) * DeltaTime;
+	const float Recovery = RecoveryPerSecond * (1.f + Athletism / AedirAthletismRecoveryScale) * (1.f - AedirLegInjuryRecoveryPenalty * MaxLegInjury) * DazeRecoveryScale * StaggerRecoveryScale * FMath::Lerp(HealthyRecoveryShare, LowHealthRecoveryShare, GetHurtShare()) * FMath::Lerp(1.f, TiredRecoveryShare, GetTiredShare()) * HitRecoveryScale * DeltaTime;
+	HitRecoveryScale = FMath::Min(HitRecoveryScale + (1.f - HitRecoveryScale) * FMath::Min(HitRecoveryReturnPerSecond * DeltaTime, 1.f) + 0.02f * DeltaTime, 1.f);
 	// Once the legs have given way there is no catching it any more, only getting up again afterwards.
 	if (bIsRagdoll || bDead || Balance >= FallBalanceThreshold)
 	{
@@ -1615,6 +1656,24 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 		StaggerSeconds = FMath::Max(StaggerSeconds, StumbleStaggerSeconds);
 	}
 	ApplyCenterOfMassLoss(DeltaTime);
+	// For the hit log: how long the balance took to come back after the last blow, from how low.
+	if (RecoveryWatchSince >= 0.0)
+	{
+		RecoveryWatchLowest = FMath::Min(RecoveryWatchLowest, Balance);
+		static const IConsoleVariable* WatchLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+		if (bIsRagdoll)
+		{
+			RecoveryWatchSince = -1.0;
+		}
+		else if (Balance >= 0.95f && GetWorld())
+		{
+			if (WatchLog && WatchLog->GetInt() != 0)
+			{
+				UE_LOG(LogAedir, Log, TEXT("[Balance] %s has its balance back %.2f s after the blow, from %.2f"), *GetNameSafe(GetOwner()), GetWorld()->GetTimeSeconds() - RecoveryWatchSince, RecoveryWatchLowest);
+			}
+			RecoveryWatchSince = -1.0;
+		}
+	}
 
 	StaggerSeconds = FMath::Max(0.f, StaggerSeconds - DeltaTime);
 	DazeSeconds = FMath::Max(0.f, DazeSeconds - DeltaTime);
@@ -1635,10 +1694,24 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 
 	// One leg short, a body only ever gets as far as its knees before it goes down again.
 	const bool bLegGivesWay = bLegLost && (!IsGettingUp() || GetGetUpProgress() >= LegLostGetUpGivesWayAt);
-	if (!bIsRagdoll && (bDead || bSenseless || bLegGivesWay || TimeBelowThreshold >= FallDelaySeconds))
+	// Unable to catch itself, the body may go over at any moment: the further its weight is beyond the feet, or the less
+	// balance it has left, the likelier; worn down, likelier still.
+	bool bTipsOver = false;
+	if (!bIsRagdoll && !IsGettingUp() && bSupportGrounded)
 	{
-		UE_LOG(LogAedir, Log, TEXT("[Fall] %s goes down: dead %d, senseless %d, leg %d, balance %.2f."), *GetNameSafe(GetOwner()), bDead ? 1 : 0, bSenseless ? 1 : 0, bLegGivesWay ? 1 : 0, Balance);
+		const float Beyond = FMath::Clamp((-SupportMargin - FallChanceFromCm) / FMath::Max(FallChanceFullCm - FallChanceFromCm, 1.f), 0.f, 1.f);
+		const float Lost = Balance < FallBalanceThreshold ? 1.f - Balance / FMath::Max(FallBalanceThreshold, KINDA_SMALL_NUMBER) : 0.f;
+		const float Chance = FallChancePerSecond * FMath::Max(Beyond, Lost) * (1.f + GetHurtShare()) * DeltaTime;
+		bTipsOver = Chance > 0.f && FMath::FRand() < Chance;
+	}
+	if (!bIsRagdoll && (bDead || bSenseless || bLegGivesWay || bTipsOver || TimeBelowThreshold >= FallDelaySeconds))
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Fall] %s goes down: dead %d, senseless %d, leg %d, tipped over %d, balance %.2f, weight %.0f cm beyond the feet."), *GetNameSafe(GetOwner()), bDead ? 1 : 0, bSenseless ? 1 : 0, bLegGivesWay ? 1 : 0, bTipsOver ? 1 : 0, Balance, -SupportMargin);
 		EnterRagdoll(MinRagdollSeconds);
+		if (bTipsOver && !ComOffsetDirection.IsNearlyZero())
+		{
+			MulticastTopple(ComOffsetDirection * (ComputeStaggerSpeed(200.f) * KnockdownToppleShare));
+		}
 		// Nothing is held by a hand that has gone slack.
 		if (bSenseless && Creature && Creature->Interaction)
 		{
@@ -1915,6 +1988,14 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 	if (!CharacterOwner || !BodyMesh || !BodyCapsule)
 	{
 		return;
+	}
+	// Every part tells when it strikes something, so a hard landing hurts the part that took it.
+	for (FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		if (Body)
+		{
+			Body->SetInstanceNotifyRBCollision(true);
+		}
 	}
 
 	UpdateMotors(0.f, true);
@@ -2513,7 +2594,130 @@ void UAedirBalanceComponent::OnCapsuleHit(UPrimitiveComponent* HitComponent, AAc
 
 void UAedirBalanceComponent::OnMeshHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
 {
+	// A part of the body striking the ground or something fixed hard is hurt by it.
+	if (OtherActor != GetOwner() && !Cast<AAedirCreature>(OtherActor) && !(OtherComponent && OtherComponent->IsSimulatingPhysics()))
+	{
+		HurtPartOnImpact(Hit.MyBoneName, NormalImpulse, Hit);
+	}
 	ProcessHit(OtherActor, OtherComponent, Hit);
+}
+
+void UAedirBalanceComponent::HurtPartOnImpact(FName Bone, const FVector& NormalImpulse, const FHitResult& Hit)
+{
+	const FBodyInstance* Part = BodyMesh && Bone != NAME_None ? BodyMesh->GetBodyInstance(Bone) : nullptr;
+	const UWorld* World = GetWorld();
+	static const IConsoleVariable* TouchLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	if (TouchLog && TouchLog->GetInt() > 2)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Impact] %s mesh hit on %s, simulating %d"), *GetNameSafe(GetOwner()), *Bone.ToString(), Part && Part->IsInstanceSimulatingPhysics() ? 1 : 0);
+	}
+	if (!IsAuthoritative() || !Part || !Part->IsInstanceSimulatingPhysics() || !World)
+	{
+		return;
+	}
+	// How fast it was stopped: the push the hit gave it over its weight.
+	const float Mass = FMath::Max(Part->GetBodyMass(), 0.5f);
+	const float Speed = static_cast<float>(NormalImpulse.Size()) / Mass;
+	const double Now = World->GetTimeSeconds();
+	static const IConsoleVariable* ImpactLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	if (ImpactLog && ImpactLog->GetInt() > 1)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Impact] %s %s touches %s, stopped by %.0f cm/s"), *GetNameSafe(GetOwner()), *Bone.ToString(), *GetNameSafe(Hit.GetActor()), Speed);
+	}
+	double& Last = LastPartImpactTime.FindOrAdd(Bone);
+	if (Speed <= ImpactHarmlessSpeed || Now - Last < 0.25)
+	{
+		return;
+	}
+	Last = Now;
+	const float Joules = 0.5f * Mass * FMath::Square(Speed / 100.f) * ImpactWoundShare;
+	const AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
+	if (Creature && Creature->Wounds)
+	{
+		Creature->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, EAedirDamageType::Blunt, Joules, 0.f, Hit.ImpactNormal, Speed);
+	}
+	if (UAedirStatsComponent* StatsComponent = FindStats())
+	{
+		StatsComponent->ApplyDamage((Speed - ImpactHarmlessSpeed) * ImpactDamagePerSpeed);
+	}
+	UAedirSfxSubsystem::Play(this, EAedirSfx::BodyImpact, Hit.ImpactPoint, FMath::Clamp((Speed - ImpactHarmlessSpeed) / ImpactHarmlessSpeed, 0.2f, 1.f));
+	UE_LOG(LogAedir, Log, TEXT("[Impact] %s %s hits %s at %.0f cm/s, %.0f J, %.1f damage"), *GetNameSafe(GetOwner()), *Bone.ToString(), *GetNameSafe(Hit.GetActor()), Speed, Joules, (Speed - ImpactHarmlessSpeed) * ImpactDamagePerSpeed);
+}
+
+void UAedirBalanceComponent::WatchPartImpacts()
+{
+	if (!bIsRagdoll || !BodyMesh || !IsAuthoritative())
+	{
+		LastPartVelocity.Reset();
+		return;
+	}
+	const UWorld* World = GetWorld();
+	if (LastPartVelocity.Num() != BodyMesh->Bodies.Num())
+	{
+		LastPartVelocity.Init(FVector::ZeroVector, BodyMesh->Bodies.Num());
+	}
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirPartImpact), false, GetOwner());
+	for (int32 Index = 0; Index < BodyMesh->Bodies.Num(); ++Index)
+	{
+		const FBodyInstance* Body = BodyMesh->Bodies[Index];
+		if (!Body || !Body->IsInstanceSimulatingPhysics() || !Body->BodySetup.IsValid())
+		{
+			continue;
+		}
+		const FVector Before = LastPartVelocity[Index];
+		const FVector Now = Body->GetUnrealWorldVelocity();
+		LastPartVelocity[Index] = Now;
+		// Stopped short against the ground or something that does not give: as hard as it was going into it.
+		const float Lost = static_cast<float>(Before.Size() - Now.Size());
+		if (Lost <= AedirPartStopCm || !World)
+		{
+			continue;
+		}
+		const FVector From = Body->GetCOMPosition();
+		const float Radius = static_cast<float>(Body->GetBodyBounds().GetExtent().GetMin()) + 12.f;
+		FHitResult Hit;
+		if (World->LineTraceSingleByChannel(Hit, From, From + Before.GetSafeNormal() * Radius, ECC_WorldStatic, Params)
+			&& !Cast<AAedirCreature>(Hit.GetActor()) && !(Hit.GetComponent() && Hit.GetComponent()->IsSimulatingPhysics()))
+		{
+			const float Into = static_cast<float>(FVector::DotProduct(Before, -Hit.ImpactNormal));
+			Hit.MyBoneName = Body->BodySetup->BoneName;
+			HurtPartOnImpact(Hit.MyBoneName, -Hit.ImpactNormal * (FMath::Max(Into, 0.f) * Body->GetBodyMass()), Hit);
+		}
+	}
+}
+
+void UAedirBalanceComponent::HoldBodiesStill(bool bHold)
+{
+	if (!BodyMesh)
+	{
+		return;
+	}
+	if (bHold)
+	{
+		HeldBodyMotion.Reset();
+		for (const FBodyInstance* Body : BodyMesh->Bodies)
+		{
+			HeldBodyMotion.Emplace(Body ? Body->GetUnrealWorldVelocity() : FVector::ZeroVector, Body ? Body->GetUnrealWorldAngularVelocityInRadians() : FVector::ZeroVector);
+		}
+		return;
+	}
+	// In time all but stopped the solver pushes bodies out of the ground with speeds of a whole step's work done in a sliver
+	// of one, which they would leave with: they take up again what they were doing.
+	float Fastest = 0.f;
+	for (const FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		Fastest = Body && Body->IsInstanceSimulatingPhysics() ? FMath::Max(Fastest, static_cast<float>(Body->GetUnrealWorldVelocity().Size())) : Fastest;
+	}
+	UE_LOG(LogAedir, Log, TEXT("[PhotoCamera] %s: its fastest part was going %.0f cm/s, put back to what it did before"), *GetNameSafe(GetOwner()), Fastest);
+	for (int32 Index = 0; Index < BodyMesh->Bodies.Num() && Index < HeldBodyMotion.Num(); ++Index)
+	{
+		if (FBodyInstance* Body = BodyMesh->Bodies[Index]; Body && Body->IsInstanceSimulatingPhysics())
+		{
+			Body->SetLinearVelocity(HeldBodyMotion[Index].Key, false);
+			Body->SetAngularVelocityInRadians(HeldBodyMotion[Index].Value, false);
+		}
+	}
+	HeldBodyMotion.Reset();
 }
 
 void UAedirBalanceComponent::SetupMotors()

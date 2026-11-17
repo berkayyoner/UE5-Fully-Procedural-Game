@@ -295,6 +295,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float AIAttackInterval = 0.9f;
 
+	// How long a fighter of the world waits back on guard between one swing of fist or blade and the next (seconds, a
+	// little more or less each time); an NPC sets it from how aggressive it is.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AISwingWaitSeconds = 0.5f;
+
+	// How often a swing goes for the head rather than the body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIHeadChance = 0.75f;
+
+	// A swing at the head is aimed this share of the way up higher than the head itself: coming round from the side the
+	// arc is lower than in the middle, and the blow would land on the shoulder.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIHeadAimLift = 0.2f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float AIApproachSpeedStopDistance = 110.f;
 
