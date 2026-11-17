@@ -286,7 +286,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// A blade is held further out, and reaches up further over the head.
 		// In both hands, drawn to its own side, it stays nearer the chest, where the second arm reaches it.
 		const float OwnSideRadius = FMath::Lerp(SideRadiusCm, TwoHandSideRadiusCm, Slot == 1 && bBlade ? GripAlpha : 0.f);
-		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : OwnSideRadius, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * (bBlade && Slot == 1 ? FMath::Lerp(1.f, TwoHandPunchReachShare, GripAlpha) : 1.f) * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + FMath::Sin(UE_PI * FMath::Clamp(Raise, 0.f, 1.f)) * BladeRiseForwardCm + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : FMath::Max(-UpDown, 0.f) * FistDownReachCm);
+		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : OwnSideRadius, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * (bBlade && Slot == 1 ? FMath::Lerp(1.f, TwoHandPunchReachShare, GripAlpha) : 1.f) * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + ArmPunch * BladeLookUpPunchCm * FMath::Clamp(ViewPitch / FMath::Max(BladeLookUpFullDegrees, 1.f), 0.f, 1.f) + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : FMath::Max(-UpDown, 0.f) * FistDownReachCm);
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
 		// Round towards the side the height of the middle falls away and turns the other way, so a raised fist comes down

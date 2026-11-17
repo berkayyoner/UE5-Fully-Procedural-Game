@@ -289,8 +289,8 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 				Print->SetVectorParameterValue(TEXT("Color"), Color);
 				Print->SetScalarParameterValue(TEXT("Strength"), Strength);
 				Print->SetScalarParameterValue(TEXT("Roughness"), Roughness);
-				// The sole is drawn as a left one; the right foot gets it mirrored.
-				Print->SetScalarParameterValue(TEXT("Mirror"), Foot == 1 ? 1.f : 0.f);
+				// The print is drawn as a right foot's; the left foot gets it mirrored.
+				Print->SetScalarParameterValue(TEXT("Mirror"), Foot == 0 ? 1.f : 0.f);
 			}
 		}
 	}

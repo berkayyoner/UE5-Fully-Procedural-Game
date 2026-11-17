@@ -221,6 +221,17 @@ void UAedirBodyControlComponent::SetStrengths(float InUpright, float LeftArm, fl
 	ApplyMultipliers();
 }
 
+void UAedirBodyControlComponent::SetBlowSoftness(float Share)
+{
+	const float Clamped = FMath::Clamp(Share, 0.f, 1.f);
+	if (FMath::Abs(Clamped - BlowSoftness) > 0.04f || (Clamped != BlowSoftness && Clamped == 0.f))
+	{
+		BlowSoftness = Clamped;
+		AppliedKey = -1.f;
+		ApplyMultipliers();
+	}
+}
+
 void UAedirBodyControlComponent::SetTwoHandGrip(float Alpha)
 {
 	const float Clamped = FMath::Clamp(Alpha, 0.f, 1.f);
@@ -621,9 +632,12 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 		}
 	};
 	// Getting up the trunk, the head and the arms give more.
-	const float Soft = bRising && !bLimp ? RisingMuscleShare : 1.f;
-	Apply(SpineControls, SpineHz * Body * Soft, 0.f);
-	Apply(HeadControls, HeadStrength * Body * Soft, 0.f);
+	// A blow just now slackens the trunk, the head and the arms for a moment, and the trunk and head always give a little.
+	const float Blow = bLimp ? 1.f : 1.f - BlowSoftness;
+	const float Soft = (bRising && !bLimp ? RisingMuscleShare : 1.f) * Blow;
+	const float Trunk = Soft * (bLimp ? 1.f : TrunkMuscleShare);
+	Apply(SpineControls, SpineHz * Body * Trunk, 0.f);
+	Apply(HeadControls, HeadStrength * Body * Trunk, 0.f);
 	Apply(LeftLegControls, LegStrength * Body * (bBroken[2] && !bLimp ? BrokenShare : 1.f), 0.f);
 	Apply(RightLegControls, LegStrength * Body * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;

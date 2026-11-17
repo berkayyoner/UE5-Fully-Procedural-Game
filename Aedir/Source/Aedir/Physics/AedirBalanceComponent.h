@@ -114,7 +114,7 @@ public:
 	float HitRecoveryReturnPerSecond = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float HeadBalanceLossShare = 1.5f;
+	float HeadBalanceLossShare = 1.25f;
 
 	// Where the weight is: the bodies as they are pushed about, ComPhysicalShare of the way from where the pose has them,
 	// carried on by how fast the trunk is thrown off the feet for ComCarrySeconds (the point it is falling towards).
@@ -144,6 +144,17 @@ public:
 	// arm is not thrown up beside the head.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit", meta=(ClampMin="0", ClampMax="1"))
 	float ShoulderBlowArmShare = 0.3f;
+
+	// A blow slackens the muscles of the trunk, head and arms by up to BlowSoftMaxShare, all of it from a push of
+	// BlowSoftFullPush, for a moment that passes off over BlowSoftSeconds, so it is felt through the body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit", meta=(ClampMin="0", ClampMax="1"))
+	float BlowSoftMaxShare = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float BlowSoftFullPush = 350.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float BlowSoftSeconds = 0.6f;
 
 	// Hitting the ground or something that does not give, a part of the body faster than ImpactHarmlessSpeed (cm/s) is
 	// hurt: ImpactWoundShare of its weight's energy wears the place as a blow does (a bruise, and with more, blood), and
@@ -659,6 +670,7 @@ private:
 	void UpdatePelvisLean(float DeltaTime);
 	void UpdateStumbleWalk(float DeltaTime);
 	float HitRecoveryScale = 1.f;
+	float BlowSoftness = 0.f;
 	double RecoveryWatchSince = -1.0;
 	float RecoveryWatchLowest = 1.f;
 	TMap<FName, double> LastPartImpactTime;

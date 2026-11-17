@@ -126,49 +126,59 @@ namespace
 	{
 		constexpr int32 Width = 128;
 		constexpr int32 Height = 256;
-		// A bare foot on the 12 by 28 cm the print covers, in cm: across from the middle (the big toe's side negative) and down
-		// from the toe end. The heel, the outer edge of the arch, the ball of the foot and the five toes press in, the arch
-		// itself does not. Each pad runs from one point to another (the same for a round one), this wide and this deep.
-		struct FAedirPad
-		{
-			FVector2f From;
-			FVector2f To;
-			FVector2f Radius;
-			float Depth;
+		// A right foot's print, as its outline is drawn: across from its middle and down from the toe end, both as shares of
+		// its length (26 of the 28 cm the print covers, 12 across), the toes at the top and the arch narrowing the inner side
+		// on the left. It presses in all over, softly at the edge, deepest under the ball and the heel.
+		static const FVector2f Outline[] = {
+			{ -0.055f, 0.000f }, { -0.102f, 0.035f }, { -0.147f, 0.071f }, { -0.157f, 0.106f }, { -0.169f, 0.143f }, { -0.181f, 0.177f },
+			{ -0.189f, 0.214f }, { -0.193f, 0.248f }, { -0.198f, 0.285f }, { -0.193f, 0.320f }, { -0.189f, 0.356f }, { -0.183f, 0.391f },
+			{ -0.173f, 0.428f }, { -0.161f, 0.462f }, { -0.147f, 0.499f }, { -0.134f, 0.536f }, { -0.126f, 0.570f }, { -0.112f, 0.607f },
+			{ -0.114f, 0.642f }, { -0.120f, 0.678f }, { -0.132f, 0.713f }, { -0.147f, 0.749f }, { -0.159f, 0.784f }, { -0.167f, 0.821f },
+			{ -0.170f, 0.855f }, { -0.166f, 0.892f }, { -0.152f, 0.927f }, { -0.122f, 0.963f }, { -0.065f, 1.000f }, { -0.014f, 1.000f },
+			{ 0.047f, 0.963f }, { 0.071f, 0.927f }, { 0.086f, 0.892f }, { 0.094f, 0.855f }, { 0.096f, 0.821f }, { 0.100f, 0.784f },
+			{ 0.100f, 0.749f }, { 0.104f, 0.713f }, { 0.110f, 0.678f }, { 0.118f, 0.642f }, { 0.128f, 0.607f }, { 0.141f, 0.570f },
+			{ 0.153f, 0.536f }, { 0.167f, 0.499f }, { 0.177f, 0.462f }, { 0.185f, 0.428f }, { 0.191f, 0.391f }, { 0.194f, 0.356f },
+			{ 0.194f, 0.320f }, { 0.193f, 0.285f }, { 0.190f, 0.248f }, { 0.184f, 0.214f }, { 0.171f, 0.177f }, { 0.158f, 0.143f },
+			{ 0.138f, 0.106f }, { 0.110f, 0.071f }, { 0.073f, 0.035f }, { -0.029f, 0.000f },
 		};
-		static const FAedirPad Pads[] = {
-			{ { 0.3f, 23.3f }, { 0.3f, 23.3f }, { 3.1f, 3.4f }, 1.f },
-			{ { 2.4f, 21.f }, { 3.f, 13.5f }, { 1.8f, 1.8f }, 0.6f },
-			{ { -2.5f, 11.f }, { -2.5f, 11.f }, { 2.8f, 2.4f }, 1.f },
-			{ { 1.4f, 11.8f }, { 1.4f, 11.8f }, { 3.f, 2.3f }, 0.9f },
-			{ { -3.3f, 5.f }, { -3.3f, 5.f }, { 1.8f, 2.1f }, 0.95f },
-			{ { -0.9f, 5.4f }, { -0.9f, 5.4f }, { 1.f, 1.f }, 0.8f },
-			{ { 0.9f, 6.f }, { 0.9f, 6.f }, { 0.95f, 0.95f }, 0.75f },
-			{ { 2.5f, 6.8f }, { 2.5f, 6.8f }, { 0.85f, 0.85f }, 0.7f },
-			{ { 3.9f, 8.f }, { 3.9f, 8.f }, { 0.8f, 0.8f }, 0.65f },
-		};
+		constexpr float FootLengthCm = 26.f;
 		constexpr float PrintWidthCm = 12.f;
 		constexpr float PrintLengthCm = 28.f;
+		constexpr float EdgeSoftCm = 0.8f;
 
 		TArray<uint8> Pixels;
 		Pixels.SetNumZeroed(Width * Height);
 		FRandomStream Random(7);
+		const int32 Count = UE_ARRAY_COUNT(Outline);
 		for (int32 Y = 0; Y < Height; ++Y)
 		{
 			for (int32 X = 0; X < Width; ++X)
 			{
-				const FVector2f At(((X + 0.5f) / Width - 0.5f) * PrintWidthCm, (Y + 0.5f) / Height * PrintLengthCm);
-				// Each pad is soft at its edge and deepest along its middle; where they meet the deeper one counts.
-				float Press = 0.f;
-				for (const FAedirPad& Pad : Pads)
+				// Where this texel is on the foot, in shares of its length.
+				const FVector2f At(((X + 0.5f) / Width - 0.5f) * PrintWidthCm / FootLengthCm, ((Y + 0.5f) / Height * PrintLengthCm - (PrintLengthCm - FootLengthCm) * 0.5f) / FootLengthCm);
+				bool bInside = false;
+				float Nearest = BIG_NUMBER;
+				for (int32 Index = 0; Index < Count; ++Index)
 				{
-					const FVector2f Along = Pad.To - Pad.From;
-					const float Share = Along.SizeSquared() > 0.f ? FMath::Clamp(FVector2f::DotProduct(At - Pad.From, Along) / Along.SizeSquared(), 0.f, 1.f) : 0.f;
-					const FVector2f Off = (At - (Pad.From + Along * Share)) / Pad.Radius;
-					const float Out = Off.Size();
-					Press = FMath::Max(Press, Pad.Depth * FMath::SmoothStep(1.f, 0.72f, Out) * FMath::Lerp(0.8f, 1.f, FMath::Clamp(1.f - Out, 0.f, 1.f)));
+					const FVector2f A = Outline[Index];
+					const FVector2f B = Outline[(Index + 1) % Count];
+					if ((A.Y > At.Y) != (B.Y > At.Y) && At.X < (B.X - A.X) * (At.Y - A.Y) / (B.Y - A.Y) + A.X)
+					{
+						bInside = !bInside;
+					}
+					const FVector2f Along = B - A;
+					const float Share = FMath::Clamp(FVector2f::DotProduct(At - A, Along) / FMath::Max(Along.SizeSquared(), KINDA_SMALL_NUMBER), 0.f, 1.f);
+					Nearest = FMath::Min(Nearest, (At - (A + Along * Share)).Size());
 				}
-				const float Grain = Random.FRandRange(0.85f, 1.f);
+				if (!bInside)
+				{
+					continue;
+				}
+				const float Edge = FMath::SmoothStep(0.f, EdgeSoftCm / FootLengthCm, Nearest);
+				const float Ball = FMath::Clamp(1.f - FMath::Abs(At.Y - 0.3f) / 0.16f, 0.f, 1.f);
+				const float Heel = FMath::Clamp(1.f - FMath::Abs(At.Y - 0.86f) / 0.12f, 0.f, 1.f);
+				const float Press = Edge * (0.7f + 0.3f * FMath::Max(Ball, Heel));
+				const float Grain = Random.FRandRange(0.88f, 1.f);
 				Pixels[Y * Width + X] = static_cast<uint8>(FMath::Clamp(Press * Grain, 0.f, 1.f) * 255.f);
 			}
 		}
@@ -194,7 +204,7 @@ namespace
 		Material->MaterialDomain = MD_DeferredDecal;
 		Material->BlendMode = BLEND_Translucent;
 
-		// Mirror 1 turns the left sole into a right one.
+		// Mirror 1 turns the right foot's print into a left one.
 		UMaterialExpressionTextureCoordinate* Coord = ContentNode<UMaterialExpressionTextureCoordinate>(Material, -1200, 0);
 		UMaterialExpressionComponentMask* U = ContentNode<UMaterialExpressionComponentMask>(Material, -1000, -60);
 		U->R = true;

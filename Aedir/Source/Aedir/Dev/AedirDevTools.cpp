@@ -276,6 +276,13 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 			Material->SetScalarParameterValue(TEXT("Length01"), Tokens.IsValidIndex(1) ? FCString::Atof(*Tokens[1]) : 1.f);
 			Material->SetScalarParameterValue(TEXT("Wet"), 1.f);
 			Material->SetScalarParameterValue(TEXT("Severity"), 1.f);
+			// "white": drawn white and full, to see its shape on any ground.
+			if (Tokens.IsValidIndex(2) && Tokens[2] == TEXT("white"))
+			{
+				Material->SetVectorParameterValue(TEXT("Color"), FLinearColor::White);
+				Material->SetScalarParameterValue(TEXT("Strength"), 1.f);
+				Material->SetScalarParameterValue(TEXT("Mirror"), Tokens.IsValidIndex(3) ? FCString::Atof(*Tokens[3]) : 0.f);
+			}
 			if (Tokens.IsValidIndex(2) && Tokens[2] == TEXT("body"))
 			{
 				// On the chest instead, projected into it from the front, with its top at the breastbone.

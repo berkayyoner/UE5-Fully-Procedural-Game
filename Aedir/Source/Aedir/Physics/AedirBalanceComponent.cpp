@@ -620,6 +620,8 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	BodyControl->SetArmLoads(LoadShare(EAedirHand::Left), LoadShare(EAedirHand::Right));
 	const UAedirFistArms* FistArms = CharacterOwner->FindComponentByClass<UAedirFistArms>();
 	BodyControl->SetTwoHandGrip(FistArms ? FistArms->GetGripAlpha() : 0.f);
+	BlowSoftness = FMath::Max(BlowSoftness - DeltaTime * BlowSoftMaxShare / FMath::Max(BlowSoftSeconds, 0.05f), 0.f);
+	BodyControl->SetBlowSoftness(BlowSoftness);
 	{
 		bool bKickLeft = false;
 		FVector KickFoot = FVector::ZeroVector;
@@ -1117,7 +1119,7 @@ float UAedirBalanceComponent::GetKnockdownEnergy(EAedirBodyZone Zone)
 	{
 	// A blow that lays a man out at once: a club full on the head, a charge into the chest. Lesser blows unbalance him and he
 	// goes down only if he cannot catch himself.
-	case EAedirBodyZone::Head: return 320.f;
+	case EAedirBodyZone::Head: return 480.f;
 	case EAedirBodyZone::Torso: return 650.f;
 	case EAedirBodyZone::Arm: return 1400.f;
 	case EAedirBodyZone::Leg: return 300.f;
@@ -1813,6 +1815,7 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 			LastBlowTime = Now;
 			LastBlowPush = static_cast<float>(Push.Size());
 		}
+		BlowSoftness = FMath::Max(BlowSoftness, FMath::Clamp(static_cast<float>(Push.Size()) / FMath::Max(BlowSoftFullPush, 1.f), 0.f, 1.f) * BlowSoftMaxShare);
 	}
 	const float Now = HitPushSpreadSeconds > KINDA_SMALL_NUMBER ? FMath::Clamp(HitPushNowShare, 0.f, 1.f) : 1.f;
 	LandPush(Bone, Push * Now, Location);

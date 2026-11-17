@@ -464,3 +464,10 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Holding a hand's key down while it holds a dead body takes off the armour worn where it holds it into that hand.
 - Some NPCs are looters (0.3 of them unless set): once a fight is over they strip armour they lack off the dead and put it on.
 - Dev command GrabDead <bone> [1] takes hold of the nearest dead body and strips it; the hit log shows what bodies run into, NPC grabs and loot.
+- The blade's rising reach is taken out again: raised a little, the arm no longer goes straight.
+- Looking up, a blade's swing reaches up to 18 cm further out as it is thrown, the guard staying where it is.
+- The left hand on a two-handed grip is turned 18 degrees back out about its forearm.
+- The footprint is the outline of a right foot (the left foot's is mirrored); it was a full rectangle with the shape cut out, the edge softening worked backwards.
+- LayDecal <path> 1 white [mirror] lays a decal white and full, to see its shape.
+- A blow slackens the muscles of the trunk, head and arms for a moment, up to 0.55 of them, and the trunk and head always hold at 0.85.
+- A blow to the head knocks down from 480 J instead of 320, and costs 1.25 times the balance instead of 1.5.

@@ -23,6 +23,8 @@ namespace
 	constexpr float AedirKneePoleDistance = 100.f;
 	// The left elbow on a grip rises at most this far over the grip or the shoulder before it is drawn round to the right.
 	constexpr double AedirGripElbowOverCm = 6.0;
+	// The left hand on a grip is turned back out about its forearm this far from the right hand's mirror.
+	constexpr double AedirGripLeftHandOutDegrees = 18.0;
 	constexpr float AedirKneePoleDropDistance = 30.f;
 	constexpr float AedirLegMinReachShare = 0.3f;
 	constexpr float AedirLegMaxReachShare = 0.998f;
@@ -873,6 +875,23 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	const float Off = FMath::RadiansToDegrees(static_cast<float>(Left.GetRotation().AngularDistance(LeftRotation)));
 	const float Turned = Off > GaitData.FistArmGripWristMaxDegrees ? GaitData.FistArmGripWristMaxDegrees / Off : 1.f;
 	Left.SetRotation(FQuat::Slerp(Left.GetRotation(), LeftRotation, FMath::Clamp(Alpha, 0.f, 1.f) * Turned).GetNormalized());
+	// Mirrored from the right, the left hand came out turned in too far over the grip: it is turned back out about its
+	// forearm, the thumb's side towards its own side, by this much.
+	{
+		const FCompactPoseBoneIndex LeftRadius = ResolveCompactBone(Bones, BoneNameSet.LeftRadius);
+		const FCompactPoseBoneIndex LeftFirst = ResolveCompactBone(Bones, TEXT("index_01_l"));
+		const FCompactPoseBoneIndex LeftLittle = ResolveCompactBone(Bones, TEXT("pinky_01_l"));
+		if (LeftRadius.IsValid() && LeftFirst.IsValid() && LeftLittle.IsValid())
+		{
+			const FVector Forearm = (Left.GetLocation() - CSPose.GetComponentSpaceTransform(LeftRadius).GetLocation()).GetSafeNormal();
+			const FVector Row = FVector::VectorPlaneProject(CSPose.GetComponentSpaceTransform(LeftFirst).GetLocation() - CSPose.GetComponentSpaceTransform(LeftLittle).GetLocation(), Forearm).GetSafeNormal();
+			const double Way = FVector::DotProduct(FVector::CrossProduct(Forearm, Row), Out) >= 0.0 ? 1.0 : -1.0;
+			if (!Forearm.IsNearlyZero() && !Row.IsNearlyZero())
+			{
+				Left.SetRotation((FQuat(Forearm, Way * FMath::DegreesToRadians(AedirGripLeftHandOutDegrees) * FMath::Clamp(Alpha, 0.f, 1.f)) * Left.GetRotation()).GetNormalized());
+			}
+		}
+	}
 	CSPose.SetComponentSpaceTransform(LeftHand, Left);
 }
 

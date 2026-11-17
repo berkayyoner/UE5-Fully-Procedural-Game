@@ -65,6 +65,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float RisingMuscleShare = 0.6f;
 
+	// The trunk and the head hold to the pose with this share of their strength all the time, so blows move them.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	float TrunkMuscleShare = 0.85f;
+
 	// What is left of every muscle in a body that is down.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float LimpShare = 0.04f;
@@ -119,6 +123,8 @@ public:
 
 	// Every frame: how far one thing is held in both hands (0..1).
 	void SetTwoHandGrip(float Alpha);
+	// How far a blow just now has slackened the muscles (0..1), so it is felt through the body; it passes off by itself.
+	void SetBlowSoftness(float Share);
 
 	// Builds the controls on the body's bones; called again whenever the physics bodies are made anew.
 	void Setup(USkeletalMeshComponent* InMesh, UCapsuleComponent* InCapsule);
@@ -212,6 +218,7 @@ private:
 	TArray<FName> LeftHandControls;
 	TArray<FName> RightHandControls;
 	float TwoHandGrip = 0.f;
+	float BlowSoftness = 0.f;
 	TArray<FName> LegControls;
 	TArray<FName> LeftLegControls;
 	TArray<FName> RightLegControls;

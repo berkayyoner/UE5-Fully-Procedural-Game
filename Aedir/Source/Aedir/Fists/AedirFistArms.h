@@ -210,10 +210,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeUpReachCm = 5.f;
 
-	// On the way up a blade reaches out ahead, this much further at the most halfway up, so a rising blow goes out at the
-	// one fought rather than up past the face.
+	// Looking up, a blade's swing reaches this much further out as it is thrown (cm at BladeLookUpFullDegrees up and more),
+	// so a blow at someone above or taller still gets there. The guard itself stays where it is.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeRiseForwardCm = 24.f;
+	float BladeLookUpPunchCm = 18.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	float BladeLookUpFullDegrees = 35.f;
 
 	// Drawn back to its own side, a blade arm's elbow is pointed this far below level, which leaves the upper arm about half
 	// way down (45 degrees).
