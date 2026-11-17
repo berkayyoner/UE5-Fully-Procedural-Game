@@ -830,14 +830,8 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
 	const bool bAuthority = IsAuthoritative();
 
-	if (FlinchLeft > 0.f)
-	{
-		FlinchLeft = FMath::Max(FlinchLeft - DeltaTime, 0.f);
-		if (FlinchLeft <= 0.f)
-		{
-			Creature->SetWantsFightStance(IsInFightStance());
-		}
-	}
+	FlinchLeft[0] = FMath::Max(FlinchLeft[0] - DeltaTime, 0.f);
+	FlinchLeft[1] = FMath::Max(FlinchLeft[1] - DeltaTime, 0.f);
 
 	for (int32 Index = 0; Index < 2; ++Index)
 	{
@@ -1066,24 +1060,23 @@ FVector UAedirCombatComponent::GetTipWorld(EAedirHand Hand) const
 
 bool UAedirCombatComponent::IsGuardActive(EAedirHand Hand) const
 {
-	return (Hand == EAedirHand::Left ? bLeftGuard : bRightGuard) && FlinchLeft <= 0.f;
+	return (Hand == EAedirHand::Left ? bLeftGuard : bRightGuard) && FlinchLeft[HandIndex(Hand)] <= 0.f;
 }
 
 bool UAedirCombatComponent::IsInFightStance() const
 {
-	return (bLeftGuard || bRightGuard) && FlinchLeft <= 0.f;
+	return bLeftGuard || bRightGuard;
 }
 
-void UAedirCombatComponent::Flinch(float Seconds)
+void UAedirCombatComponent::Flinch(EAedirHand Hand, float Seconds)
 {
 	if (Seconds <= 0.f || !Creature)
 	{
 		return;
 	}
-	FlinchLeft = FMath::Max(FlinchLeft, Seconds);
-	CancelSwing(EAedirHand::Left);
-	CancelSwing(EAedirHand::Right);
-	Creature->SetWantsFightStance(false);
+	float& Left = FlinchLeft[HandIndex(Hand)];
+	Left = FMath::Max(Left, Seconds);
+	CancelSwing(Hand);
 }
 
 bool UAedirCombatComponent::GetGuardPose(EAedirHand Hand, float& OutAlpha) const
@@ -4527,7 +4520,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	{
 		// The blood goes the way the weapon went through the hit, as the swept blade really moved there (the arm's own model
 		// of its tip lags behind a blade swung by the fists, and pointed it astray).
-		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, bGlance ? EAedirDamageType::Blunt : Landed, Energy * DamageShare, VictimZoneProtection, TipVelocity);
+		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, bGlance ? EAedirDamageType::Blunt : Landed, Energy * DamageShare, VictimZoneProtection, TipVelocity, RelativeSpeed);
 	}
 
 	USkeletalMeshComponent* VictimBody = Victim->GetMesh();
@@ -5868,7 +5861,7 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 
 	if (Victim->Wounds)
 	{
-		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, EAedirDamageType::Blunt, Energy, VictimZoneProtection, FootMotion);
+		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, EAedirDamageType::Blunt, Energy, VictimZoneProtection, FootMotion, FootSpeed);
 	}
 
 	OnKick.Broadcast(Victim);

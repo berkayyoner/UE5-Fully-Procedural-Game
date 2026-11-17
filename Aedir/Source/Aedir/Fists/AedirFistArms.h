@@ -404,14 +404,18 @@ public:
 	// the game.
 	// The first button down starts the fists where the view looks: up or down by its pitch (degrees, up positive).
 	void SetHeld(EAedirHand Hand, bool bHeld, float ViewPitchDegrees = 0.f);
-	// Whether an arm is up: its button held, and the body not flinching from a blow just now.
+	// Whether an arm is up: its button held, and that arm not flinching from a hurt just now.
 	bool IsHeld(EAedirHand Hand) const { return HeldNow(Index(Hand)); }
-	bool IsSteering() const { return HeldNow(0) || HeldNow(1); }
+	// Whether its button is held, flinching or not.
+	bool IsButtonHeld(EAedirHand Hand) const { return bHeld[Index(Hand)]; }
+	// Whether the mouse steers the fists: while any button is held, even with that arm down for a moment, so the view does not
+	// turn with it.
+	bool IsSteering() const { return bHeld[0] || bHeld[1]; }
 
-	// Hurt just now: both arms come down out of the guard for this long, whatever the buttons say, and go back up after if
-	// they are still held. A longer one already going is kept.
-	void Flinch(float Seconds) { FlinchLeft = FMath::Max(FlinchLeft, Seconds); }
-	bool IsFlinching() const { return FlinchLeft > 0.f; }
+	// Hurt just now: that arm comes down out of the guard for this long, whatever its button says, and goes back up after if
+	// it is still held; the other arm goes on. A longer one already going is kept.
+	void Flinch(EAedirHand Hand, float Seconds) { FlinchLeft[Index(Hand)] = FMath::Max(FlinchLeft[Index(Hand)], Seconds); }
+	bool IsFlinching(EAedirHand Hand) const { return FlinchLeft[Index(Hand)] > 0.f; }
 
 	// The mouse moved while a button is held (mouse axis units, up positive).
 	void AddMouse(const FVector2D& Delta);
@@ -472,8 +476,8 @@ private:
 	static int32 Index(EAedirHand Hand) { return Hand == EAedirHand::Left ? 0 : 1; }
 
 	bool bHeld[2] = { false, false };
-	float FlinchLeft = 0.f;
-	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft <= 0.f; }
+	float FlinchLeft[2] = { 0.f, 0.f };
+	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft[Slot] <= 0.f; }
 	float Alpha[2] = { 0.f, 0.f };
 	// How far each arm is the fists' to pose: up, or carried in both hands.
 	float ShownAlpha[2] = { 0.f, 0.f };

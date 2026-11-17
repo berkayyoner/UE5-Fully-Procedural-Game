@@ -517,7 +517,7 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 		}
 		if (Player->Wounds)
 		{
-			Player->Wounds->AddWound(Bone, At + From * 10.f, From, bCut ? EAedirDamageType::Slash : EAedirDamageType::Blunt, Joules, 0.f, -From * 200.f);
+			Player->Wounds->AddWound(Bone, At + From * 10.f, From, bCut ? EAedirDamageType::Slash : EAedirDamageType::Blunt, Joules, 0.f, -From * 200.f, FMath::Sqrt(2.f * Joules / 3.f) * 100.f);
 		}
 		DevToolsReport(FString::Printf(TEXT("Hit on %s: %.0f J from %.0f deg, balance %.2f"), *Bone.ToString(), Joules, FromYaw, Player->Balance ? Player->Balance->GetBalance() : 1.f));
 	}
@@ -922,7 +922,9 @@ void UAedirDevTools::Wound(AAedirPlayerCharacter* Player, const FString& Args)
 	{
 		Location = Skin.ImpactPoint;
 	}
-	const bool bOpened = Player->Wounds->AddWound(Bone, Location, Normal, DamageType, DevToolsWoundEnergyJoules, 0.f, Normal);
+	// A bruise needs its place worn first: enough at once to bring it up.
+	const float Joules = DamageType == EAedirDamageType::Blunt ? FMath::Max(DevToolsWoundEnergyJoules, Player->Wounds->BluntBruiseJoules + 1.f) : DevToolsWoundEnergyJoules;
+	const bool bOpened = Player->Wounds->AddWound(Bone, Location, Normal, DamageType, Joules, 0.f, Normal);
 	DevToolsReport(bOpened ? FString::Printf(TEXT("%s wound on %s"), *TypeToken, *Bone.ToString()) : TEXT("The wound was not created"));
 }
 

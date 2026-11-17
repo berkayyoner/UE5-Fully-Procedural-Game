@@ -428,3 +428,11 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The head is held with the hand on its own side, the neck with the other one, and the sides of the trunk with the hand on that side.
 - Out of the fight stance, a body holds a wound still bleeding, the stump of a lost limb or a broken leg as well as a broken arm.
 - StrikePart strikes oneself or the nearest body on a chosen bone, and aedir.Wet and aedir.CloudTry hold the wet look and the clouds for measuring.
+- The ground's scanned relief rises and falls 14 cm instead of 5, the collision ground a little over a third of the way up.
+- No hand holds its own arm or shoulder, and arms are held by the other hand.
+- Only hard blows and open wounds of some size make a body flinch, never a blow on an arm, and nobody reaches round to hold the back or the back of the neck or head.
+- A flinch takes only the hand that goes to the place out of the fight; the other hand, the stance, the view and the target go on.
+- Blunt blows wear a place by how fast they come: it bruises once worn enough and splits and bleeds with more, and the face wears more than twice as fast.
+- Knocked off balance, a body walks quickly after the way it goes over until its feet are back under it.
+- Off balance the hips tip further for a small loss and turn towards the side the body goes over to.
+- The hit log shows each blow's push, how each place wears and the stumbling walk.

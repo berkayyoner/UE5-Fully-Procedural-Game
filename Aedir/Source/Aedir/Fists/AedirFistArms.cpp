@@ -112,7 +112,8 @@ bool UAedirFistArms::GetArm(EAedirHand Hand, FVector& OutFistWorld, FVector& Out
 void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
-	FlinchLeft = FMath::Max(FlinchLeft - DeltaTime, 0.f);
+	FlinchLeft[0] = FMath::Max(FlinchLeft[0] - DeltaTime, 0.f);
+	FlinchLeft[1] = FMath::Max(FlinchLeft[1] - DeltaTime, 0.f);
 	const ACharacter* Owner = Cast<ACharacter>(GetOwner());
 	if (!Owner || DeltaTime <= 0.f)
 	{
@@ -268,7 +269,7 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// In both hands the left one stays on the grip, whether the blade is up or not, until it is let go.
 		if (Slot == 0)
 		{
-			GripAlpha = FMath::FInterpConstantTo(GripAlpha, bTwoHand && !bOffHandOut && FlinchLeft <= 0.f ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(RaiseSeconds, KINDA_SMALL_NUMBER));
+			GripAlpha = FMath::FInterpConstantTo(GripAlpha, bTwoHand && !bOffHandOut && FlinchLeft[0] <= 0.f ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(RaiseSeconds, KINDA_SMALL_NUMBER));
 		}
 		Raised = FMath::Max(Raised, Alpha[Slot]);
 		// With both arms up, only the arm on the side the mouse is drawn to goes round the arc and only the arm that came in

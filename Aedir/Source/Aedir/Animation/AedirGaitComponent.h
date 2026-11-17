@@ -520,17 +520,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
 	float ReadyHandShare = 0.8f;
 
-	// A body hurt on the head, the neck, the chest, the belly, a side, the groin, a shoulder or a thigh flinches: it drops
-	// out of the fight stance and a free hand goes to the place for ClutchFlinchMinSeconds to ClutchFlinchMaxSeconds, the
-	// longer the worse, as far as ClutchBlowShare, over whatever that arm was doing. A blow counts from ClutchBlowMinPush
-	// and is at its worst at ClutchBlowFullPush; a new wound counts by how bad it is. The head is held by the hand on its own
-	// side, the neck, a shoulder and the middle of the trunk by the other one, a side of the trunk past ClutchFlankDegrees
-	// round from the front by the one on that side; never by a hand holding something.
+	// A body hurt badly on the head, the neck, the chest, the belly, a side, the groin, a shoulder, an arm or a thigh flinches:
+	// the hand that goes there comes out of the fight for ClutchFlinchMinSeconds to ClutchFlinchMaxSeconds, the longer the
+	// worse, and is held to the place as far as ClutchBlowShare, while the other hand goes on. A hard blow counts from
+	// ClutchBlowMinPush and is at its worst at ClutchBlowFullPush; a wound counts once it is open skin of at least
+	// ClutchFlinchWoundSeverity. The head is held by the hand on its own side; the neck, a shoulder, an arm and the middle of
+	// the trunk by the other one, so no hand holds its own arm or shoulder; a side of the low trunk, past ClutchFlankDegrees
+	// round from the front, by the one on that side. The back, the back of the neck and of the head, more than
+	// ClutchBackCm behind the bone, are left alone; and never a hand holding something. A blow on an arm, as one that is
+	// blocked, makes nobody flinch; a wound or a break there does.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
-	float ClutchBlowMinPush = 120.f;
+	float ClutchBlowMinPush = 180.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchFlinchWoundSeverity = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
-	float ClutchBlowFullPush = 600.f;
+	float ClutchBackCm = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchBlowFullPush = 400.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchFlinchMinSeconds = 1.f;

@@ -1,5 +1,6 @@
 #include "Animation/AedirGaitComponent.h"
 #include "Aedir.h"
+#include "HAL/IConsoleManager.h"
 #include "Fists/AedirFistArms.h"
 
 #include "Components/CapsuleComponent.h"
@@ -601,7 +602,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * GaitIntensity;
 	// A low reach hinges at the hips as well as along the spine: half of the bend tips the pelvis forward.
 	const float ReachLean = Interaction ? Interaction->GetReachLeanDegrees() : 0.f;
-	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch - ReachLean * AedirReachHipHingeShare, PelvisYaw + SmoothedSwingTwist * AedirSwingPelvisShare, BalanceLean.Roll + TrunkInertia.Y + LoadRoll);
+	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch - ReachLean * AedirReachHipHingeShare, PelvisYaw + SmoothedSwingTwist * AedirSwingPelvisShare + BalanceLean.Yaw, BalanceLean.Roll + TrunkInertia.Y + LoadRoll);
 
 	const float LookYaw = MovementComponent->GetYawDeltaToControl();
 	const float LookPitch = FMath::Clamp(FRotator::NormalizeAxis(CreatureOwner->GetControlRotation().Pitch), -MaxLookPitchDegrees, MaxLookPitchDegrees);
@@ -1281,6 +1282,7 @@ namespace
 		Head,
 		Neck,
 		Shoulder,
+		Arm,
 		Trunk,
 		Thigh
 	};
@@ -1294,6 +1296,10 @@ namespace
 		if (Name.StartsWith(TEXT("clavicle")) || Name.StartsWith(TEXT("upperarm")))
 		{
 			return EAedirClutchPart::Shoulder;
+		}
+		if (Name.StartsWith(TEXT("lowerarm")) || Name.StartsWith(TEXT("hand")))
+		{
+			return EAedirClutchPart::Arm;
 		}
 		if (Name.StartsWith(TEXT("thigh")))
 		{
@@ -1330,11 +1336,6 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		const EAedirHand Hand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
 		return !(Interaction && Interaction->GetHeldItem(Hand)) && !(WoundComponent && WoundComponent->HasUselessArm(Slot == 0));
 	};
-	// Which side of the body the place is on, -1 the left, 1 the right, seen from the body itself.
-	const auto SideOf = [&](const FVector& PointWorld, const FVector& FromWorld)
-	{
-		return ActorTransform.InverseTransformVectorNoScale(PointWorld - FromWorld).Y < 0.0 ? -1 : 1;
-	};
 	// The hand for a place on a bone: the head by its own side, the neck, a shoulder and the middle of the trunk by the other
 	// side, a side of the trunk and a thigh by their own side. When that one is busy the other one may go, except to a
 	// shoulder, which the hand on its own side cannot reach.
@@ -1347,20 +1348,28 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			return INDEX_NONE;
 		}
 		const FVector BoneWorld = Body->GetBoneLocation(Bone);
-		int32 Side = PartSide != 0 ? PartSide : SideOf(PointWorld, BoneWorld);
-		bool bOwnSide = Part == EAedirClutchPart::Head || Part == EAedirClutchPart::Thigh;
-		if (Part == EAedirClutchPart::Trunk)
+		const FVector Round = ActorTransform.InverseTransformVectorNoScale(PointWorld - BoneWorld);
+		// Nobody reaches round to hold the back, the back of the neck or of the head.
+		if ((Part == EAedirClutchPart::Head || Part == EAedirClutchPart::Neck || Part == EAedirClutchPart::Trunk) && Round.X < -ClutchBackCm)
 		{
-			const FVector Round = ActorTransform.InverseTransformVectorNoScale(PointWorld - BoneWorld);
+			return INDEX_NONE;
+		}
+		int32 Side = PartSide != 0 ? PartSide : (Round.Y < 0.0 ? -1 : 1);
+		bool bOwnSide = Part == EAedirClutchPart::Head || Part == EAedirClutchPart::Thigh;
+		// Only the low trunk has sides a hand on its own side holds; high up by the shoulder the other hand comes across.
+		const FString Name = Bone.ToString();
+		if (Part == EAedirClutchPart::Trunk && !Name.StartsWith(TEXT("spine_04")) && !Name.StartsWith(TEXT("spine_05")))
+		{
 			bOwnSide = FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(Round.Y), Round.X)) > ClutchFlankDegrees;
-			Side = Round.Y < 0.0 ? -1 : 1;
 		}
 		const int32 First = bOwnSide ? (Side < 0 ? 0 : 1) : (Side < 0 ? 1 : 0);
 		if (Free(First))
 		{
 			return First;
 		}
-		return Part != EAedirClutchPart::Shoulder && Free(1 - First) ? 1 - First : INDEX_NONE;
+		// A shoulder or an arm is never held by its own hand.
+		const bool bOwnLimb = Part == EAedirClutchPart::Shoulder || Part == EAedirClutchPart::Arm;
+		return !bOwnLimb && Free(1 - First) ? 1 - First : INDEX_NONE;
 	};
 	// The wrist a little off the skin and back towards the hand's own shoulder, so the palm and fingers lie over the place.
 	const auto WristAt = [&](int32 Slot, const FVector& PointWorld, const FVector& OutwardWorld)
@@ -1389,8 +1398,14 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		if (BalanceComponent && BalanceComponent->GetLastBlow(Bone, Local, When, Push) && When > FlinchBlowSeen)
 		{
 			FlinchBlowSeen = When;
+			static const IConsoleVariable* HitLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+			if (HitLog && HitLog->GetInt() != 0)
+			{
+				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s takes a blow of %.0f on %s"), *GetNameSafe(CreatureOwner), Push, *Bone.ToString());
+			}
 			int32 PartSide = 0;
-			if (Push >= ClutchBlowMinPush && AedirClutchPartOf(Bone, PartSide) != EAedirClutchPart::None && Body->GetBoneIndex(Bone) != INDEX_NONE)
+			const EAedirClutchPart Struck = AedirClutchPartOf(Bone, PartSide);
+			if (Push >= ClutchBlowMinPush && Struck != EAedirClutchPart::None && Struck != EAedirClutchPart::Arm && Body->GetBoneIndex(Bone) != INDEX_NONE)
 			{
 				NewBone = Bone;
 				NewLocal = Local;
@@ -1404,7 +1419,8 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 				bool bAlreadySeen = false;
 				FlinchWoundsSeen.Add(Wound.Id, &bAlreadySeen);
 				int32 PartSide = 0;
-				if (bAlreadySeen || !bFlinchWoundsKnown || Wound.GetSeverity() <= NewSeverity || AedirClutchPartOf(Wound.Bone, PartSide) == EAedirClutchPart::None || Body->GetBoneIndex(Wound.Bone) == INDEX_NONE)
+				if (bAlreadySeen || !bFlinchWoundsKnown || Wound.Type == EAedirWoundType::Bruise || Wound.GetSeverity() < ClutchFlinchWoundSeverity || Wound.GetSeverity() <= NewSeverity
+					|| AedirClutchPartOf(Wound.Bone, PartSide) == EAedirClutchPart::None || Body->GetBoneIndex(Wound.Bone) == INDEX_NONE)
 				{
 					continue;
 				}
@@ -1437,16 +1453,17 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 				FlinchLeft = NewSeconds;
 				FlinchSeconds = NewSeconds;
 				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s flinches for %.1f s, the %s hand to %s"), *GetNameSafe(CreatureOwner), NewSeconds, Slot == 0 ? TEXT("left") : TEXT("right"), *NewBone.ToString());
-				// Out of the fight stance: the guard and the fists come down while the hand is there.
+				// That hand comes out of the fight while it is there; the other one goes on.
+				const EAedirHand FlinchHand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
 				if (AAedirCreature* Owner = CreatureOwner.Get())
 				{
 					if (Owner->Combat)
 					{
-						Owner->Combat->Flinch(NewSeconds);
+						Owner->Combat->Flinch(FlinchHand, NewSeconds);
 					}
 					if (UAedirFistArms* Fists = Owner->FindComponentByClass<UAedirFistArms>())
 					{
-						Fists->Flinch(NewSeconds);
+						Fists->Flinch(FlinchHand, NewSeconds);
 					}
 				}
 			}

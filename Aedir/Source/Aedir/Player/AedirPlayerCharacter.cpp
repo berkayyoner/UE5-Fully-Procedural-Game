@@ -685,7 +685,7 @@ void AAedirPlayerCharacter::HandleLeftGuardPressed()
 void AAedirPlayerCharacter::HandleLeftGuardReleased()
 {
 	bRightButtonDown = false;
-	if (FistArms && FistArms->IsHeld(EAedirHand::Left))
+	if (FistArms && FistArms->IsButtonHeld(EAedirHand::Left))
 	{
 		// Let go, a left hand that came off the grip goes back on it.
 		FistArms->SetHeld(EAedirHand::Left, false);
@@ -765,7 +765,7 @@ void AAedirPlayerCharacter::HandleRightGuardPressed()
 
 void AAedirPlayerCharacter::HandleRightGuardReleased()
 {
-	if (FistArms && FistArms->IsHeld(EAedirHand::Right))
+	if (FistArms && FistArms->IsButtonHeld(EAedirHand::Right))
 	{
 		FistArms->SetHeld(EAedirHand::Right, false);
 		return;

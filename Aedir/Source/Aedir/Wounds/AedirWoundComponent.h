@@ -59,6 +59,28 @@ public:
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
 	int32 MaxWounds = 250;
 
+	// Blunt blows wear a place before they mark it: each adds its energy, all of it from BluntFastSpeed up and none of it at
+	// BluntSlowSpeed or below (cm/s), less what armour takes; the face takes FaceBluntShare times as much. The place bruises
+	// once its wear reaches BluntBruiseJoules and the skin splits and bleeds at BluntSplitJoules, worse the more it takes
+	// after; the wear wanes by half every BluntWearHalfLifeSeconds.
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
+	float BluntSlowSpeed = 250.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
+	float BluntFastSpeed = 800.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
+	float FaceBluntShare = 2.2f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
+	float BluntBruiseJoules = 90.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
+	float BluntSplitJoules = 320.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
+	float BluntWearHalfLifeSeconds = 120.f;
+
 	// A parted limb's stump runs with blood all the time, this many drops a second, and goes on for this long after death,
 	// thinning out; the piece cut off runs from its cut end this many a second for this long.
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
@@ -99,8 +121,12 @@ public:
 	static float ComputeBleedRate(EAedirWoundType Type, float Severity, float AgeSeconds);
 	static float ComputeAge01(EAedirWoundType Type, float Severity, float AgeSeconds);
 
-	// Server only. Returns true when a wound was opened or merged into an existing one.
-	bool AddWound(FName Bone, const FVector& WorldLocation, const FVector& WorldNormal, EAedirDamageType DamageType, float EnergyJoules, float ArmorProtection, const FVector& SprayDirection);
+	// Server only. Returns true when a wound was opened or merged into an existing one. A blunt blow only wears the place:
+	// see the blunt settings. SpeedCmPerSec is how fast it came, below 0 when not known (then as fast as a hard blow).
+	bool AddWound(FName Bone, const FVector& WorldLocation, const FVector& WorldNormal, EAedirDamageType DamageType, float EnergyJoules, float ArmorProtection, const FVector& SprayDirection, float SpeedCmPerSec = -1.f);
+
+	// How much a place has taken from blunt blows lately, in joules.
+	float GetBluntWear(FName Bone) const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Wounds")
 	int32 GetWoundCount() const;
@@ -171,6 +197,17 @@ private:
 
 	// How much cutting each joint has taken so far, towards parting it.
 	TMap<FName, float> CutWear;
+
+	// How much each place has taken from blunt blows, and when it was last worked out (server time).
+	struct FAedirBluntWear
+	{
+		float Joules = 0.f;
+		double Time = 0.0;
+	};
+	TMap<FName, FAedirBluntWear> BluntWear;
+
+	// Opens a wound of this kind and badness, or makes one already there that bad (bAdd: that much worse).
+	void OpenWound(FName ResolvedBone, const FVector& WorldLocation, const FVector& WorldNormal, EAedirWoundType Type, float Severity, bool bAdd, const FVector& SprayDirection);
 
 	// Blood running from an open artery comes in beats.
 	float SeverBleedPerSecond = 0.f;

@@ -313,7 +313,7 @@ float UAedirWoundComponent::ComputeAge01(EAedirWoundType Type, float Severity, f
 	return FMath::Clamp(FMath::Max(AgeSeconds, 0.f) / HealSeconds, 0.f, 1.f);
 }
 
-bool UAedirWoundComponent::AddWound(FName Bone, const FVector& WorldLocation, const FVector& WorldNormal, EAedirDamageType DamageType, float EnergyJoules, float ArmorProtection, const FVector& SprayDirection)
+bool UAedirWoundComponent::AddWound(FName Bone, const FVector& WorldLocation, const FVector& WorldNormal, EAedirDamageType DamageType, float EnergyJoules, float ArmorProtection, const FVector& SprayDirection, float SpeedCmPerSec)
 {
 	if (!IsAuthoritative() || !ShouldCreateWound(DamageType, EnergyJoules, ArmorProtection))
 	{
@@ -327,6 +327,57 @@ bool UAedirWoundComponent::AddWound(FName Bone, const FVector& WorldLocation, co
 	}
 
 	const FName ResolvedBone = WoundResolveBone(Mesh, Bone);
+	if (DamageType != EAedirDamageType::Blunt)
+	{
+		OpenWound(ResolvedBone, WorldLocation, WorldNormal, ClassifyWound(DamageType), ComputeSeverity(DamageType, EnergyJoules, ArmorProtection), true, SprayDirection);
+		return true;
+	}
+
+	// A blunt blow wears the place, by how fast it came; the face wears soonest. A bruise comes up once it has taken enough,
+	// and with more the skin splits and bleeds.
+	const float Fast = SpeedCmPerSec < 0.f ? 1.f : FMath::SmoothStep(BluntSlowSpeed, FMath::Max(BluntFastSpeed, BluntSlowSpeed + 1.f), SpeedCmPerSec);
+	const bool bFace = ResolvedBone.ToString().StartsWith(TEXT("head"));
+	const float Added = EnergyJoules * Fast * (1.f - WoundArmorSeverityFactor * FMath::Clamp(ArmorProtection, 0.f, 1.f)) * (bFace ? FaceBluntShare : 1.f);
+	const double Now = GetWoundServerTime();
+	FAedirBluntWear& Wear = BluntWear.FindOrAdd(ResolvedBone);
+	if (Wear.Time > 0.0 && BluntWearHalfLifeSeconds > KINDA_SMALL_NUMBER)
+	{
+		Wear.Joules *= FMath::Pow(0.5f, static_cast<float>(Now - Wear.Time) / BluntWearHalfLifeSeconds);
+	}
+	Wear.Time = Now;
+	Wear.Joules += Added;
+	UE_LOG(LogAedir, Log, TEXT("%s: %s takes %.0f J of a blunt blow at %.0f cm/s (%.0f counted), worn %.0f, bruises at %.0f, splits at %.0f"), *GetNameSafe(GetOwner()), *ResolvedBone.ToString(),
+		EnergyJoules, SpeedCmPerSec, Added, Wear.Joules, BluntBruiseJoules, BluntSplitJoules);
+	if (Added <= 0.f || Wear.Joules < BluntBruiseJoules)
+	{
+		return false;
+	}
+	OpenWound(ResolvedBone, WorldLocation, WorldNormal, EAedirWoundType::Bruise, FMath::Clamp(Wear.Joules / FMath::Max(BluntSplitJoules, 1.f), 0.f, 1.f), false, SprayDirection);
+	if (Wear.Joules >= BluntSplitJoules)
+	{
+		const float Over = (Wear.Joules - BluntSplitJoules) / FMath::Max(BluntSplitJoules, 1.f);
+		OpenWound(ResolvedBone, WorldLocation, WorldNormal, EAedirWoundType::Cut, FMath::Clamp(0.15f + 0.5f * Over, 0.15f, 0.7f), false, SprayDirection);
+	}
+	return true;
+}
+
+float UAedirWoundComponent::GetBluntWear(FName Bone) const
+{
+	const FAedirBluntWear* Wear = BluntWear.Find(Bone);
+	if (!Wear)
+	{
+		return 0.f;
+	}
+	return BluntWearHalfLifeSeconds > KINDA_SMALL_NUMBER ? Wear->Joules * FMath::Pow(0.5f, static_cast<float>(GetWoundServerTime() - Wear->Time) / BluntWearHalfLifeSeconds) : Wear->Joules;
+}
+
+void UAedirWoundComponent::OpenWound(FName ResolvedBone, const FVector& WorldLocation, const FVector& WorldNormal, EAedirWoundType Type, float Severity, bool bAdd, const FVector& SprayDirection)
+{
+	USkeletalMeshComponent* Mesh = GetBodyMesh();
+	if (!Mesh)
+	{
+		return;
+	}
 	const FTransform Reference = WoundBoneTransform(Mesh, ResolvedBone);
 	const FVector LocalOffset = Reference.InverseTransformPosition(WorldLocation);
 	FVector LocalNormal = Reference.InverseTransformVectorNoScale(WorldNormal).GetSafeNormal();
@@ -335,9 +386,7 @@ bool UAedirWoundComponent::AddWound(FName Bone, const FVector& WorldLocation, co
 		LocalNormal = FVector::UpVector;
 	}
 
-	const EAedirWoundType Type = ClassifyWound(DamageType);
-	const float Severity = ComputeSeverity(DamageType, EnergyJoules, ArmorProtection);
-	const uint8 AddedSeverity255 = static_cast<uint8>(FMath::RoundToInt(Severity * 255.f));
+	const uint8 AddedSeverity255 = static_cast<uint8>(FMath::RoundToInt(FMath::Clamp(Severity, 0.f, 1.f) * 255.f));
 	const float ServerTime = static_cast<float>(GetWoundServerTime());
 
 	FAedirWound* Existing = ActiveWounds.FindByPredicate([ResolvedBone, Type, &LocalOffset](const FAedirWound& Wound)
@@ -347,7 +396,7 @@ bool UAedirWoundComponent::AddWound(FName Bone, const FVector& WorldLocation, co
 
 	if (Existing)
 	{
-		Existing->Severity255 = static_cast<uint8>(FMath::Min(255, static_cast<int32>(Existing->Severity255) + static_cast<int32>(AddedSeverity255)));
+		Existing->Severity255 = bAdd ? static_cast<uint8>(FMath::Min(255, static_cast<int32>(Existing->Severity255) + static_cast<int32>(AddedSeverity255))) : FMath::Max(Existing->Severity255, AddedSeverity255);
 		Existing->StartServerTime = ServerTime;
 	}
 	else
@@ -381,7 +430,6 @@ bool UAedirWoundComponent::AddWound(FName Bone, const FVector& WorldLocation, co
 
 	OnWounded.Broadcast(Type, ResolvedBone, Severity);
 	MulticastWoundSpray(WorldLocation, Direction, Severity, Type);
-	return true;
 }
 
 int32 UAedirWoundComponent::GetWoundCount() const

@@ -384,6 +384,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
+	UpdateStumbleWalk(DeltaTime);
 	UpdatePendingPushes(DeltaTime);
 	UpdateHitSway(DeltaTime);
 	UpdateMotors(DeltaTime, false);
@@ -1831,7 +1832,8 @@ void UAedirBalanceComponent::UpdateHitSway(float DeltaTime)
 
 void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
 {
-	const float Disturbance = FMath::Clamp(1.f - Balance, 0.f, 1.f);
+	// Even a little lost balance shows in the hips: the lean grows quickly at first.
+	const float Disturbance = FMath::Sqrt(FMath::Clamp(1.f - Balance, 0.f, 1.f));
 
 	// Positive pitch raises the nose, moving the top of the pelvis toward -X; positive roll moves it toward +Y.
 	// The lean therefore points opposite to the disturbance on both axes.
@@ -1841,10 +1843,43 @@ void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
 	const float Sway = bIsRagdoll ? 0.f : BalanceSwayDegrees + Tired * BalanceSwayTiredDegrees + Hurt * BalanceSwayHurtDegrees;
 	SwayClock += DeltaTime * BalanceSwayRate;
 	// The hips tip the way the balance is lost, so the body is seen going over that way as the feet hurry to catch it.
-	const double Pitch = -LeanDirection.X * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock + SwaySeed);
-	const double Roll = LeanDirection.Y * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock * 1.3f + SwaySeed + 17.f);
+	const FVector2D Way = LeanDirection.GetSafeNormal();
+	const double Pitch = -Way.X * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock + SwaySeed);
+	const double Roll = Way.Y * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock * 1.3f + SwaySeed + 17.f);
 
-	CurrentLean = FMath::RInterpTo(CurrentLean, FRotator(Pitch, 0.0, Roll), DeltaTime, AedirLeanInterpSpeed);
+	// And they turn towards the side it goes over to.
+	const double Yaw = Way.Y * Disturbance * LeanTwistDegrees;
+	CurrentLean = FMath::RInterpTo(CurrentLean, FRotator(Pitch, Yaw, Roll), DeltaTime, AedirLeanInterpSpeed);
+}
+
+void UAedirBalanceComponent::UpdateStumbleWalk(float DeltaTime)
+{
+	UCharacterMovementComponent* Movement = CharacterOwner ? CharacterOwner->GetCharacterMovement() : nullptr;
+	if (!Movement || bIsRagdoll || IsGettingUp() || !Movement->IsMovingOnGround() || (Balance >= StumbleWalkBelowBalance && StaggerSeconds <= 0.f) || LeanDirection.IsNearlyZero())
+	{
+		return;
+	}
+	// Steered where the steering is: the player's own machine, or the server for anyone else.
+	if (!CharacterOwner->IsLocallyControlled() && !(CharacterOwner->HasAuthority() && !CharacterOwner->IsPlayerControlled()))
+	{
+		return;
+	}
+	const float Share = FMath::Clamp((StumbleWalkBelowBalance - Balance) / FMath::Max(StumbleWalkBelowBalance, KINDA_SMALL_NUMBER), 0.f, 1.f);
+	const FVector Way = CharacterOwner->GetActorTransform().TransformVectorNoScale(FVector(LeanDirection.X, LeanDirection.Y, 0.f)).GetSafeNormal2D();
+	// At least this fast the way it goes over, whatever else the legs were doing; quicker than that it may go.
+	const float Wanted = StumbleWalkSpeed * FMath::Lerp(StumbleWalkMinShare, 1.f, Share);
+	const float Along = static_cast<float>(FVector::DotProduct(Movement->Velocity, Way));
+	if (Along < Wanted)
+	{
+		Movement->Velocity += Way * ((Wanted - Along) * FMath::Min(DeltaTime * 12.f, 1.f));
+	}
+	static const IConsoleVariable* HitLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	const UWorld* World = GetWorld();
+	if (HitLog && HitLog->GetInt() != 0 && World && World->GetTimeSeconds() >= NextStumbleLogTime)
+	{
+		NextStumbleLogTime = World->GetTimeSeconds() + 0.1;
+		UE_LOG(LogAedir, Log, TEXT("[Stumble] %s balance %.2f, walked %s at %.0f cm/s, hips %s"), *GetNameSafe(GetOwner()), Balance, *Way.ToCompactString(), CharacterOwner->GetVelocity().Size2D(), *CurrentLean.ToCompactString());
+	}
 }
 
 void UAedirBalanceComponent::DrivePelvis()

@@ -81,6 +81,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float MaxLeanDegrees = 25.f;
 
+	// Off balance, the hips also turn this far towards the side the body goes over to (degrees, at the most).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float LeanTwistDegrees = 18.f;
+
+	// Driven off balance below StumbleWalkBelowBalance, or staggering, the body is carried the way it goes over and walks
+	// after it in hurried steps until it has its feet back under it: at StumbleWalkMinShare of StumbleWalkSpeed (cm/s) just
+	// below it, at all of it as it nears falling.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
+	float StumbleWalkBelowBalance = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
+	float StumbleWalkMinShare = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	float StumbleWalkSpeed = 260.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float RecoveryPerSecond = 0.35f;
 
@@ -572,6 +588,8 @@ private:
 	void ApplyCenterOfMassLoss(float DeltaTime);
 	void EnterRagdoll(float MinimumSeconds);
 	void UpdatePelvisLean(float DeltaTime);
+	void UpdateStumbleWalk(float DeltaTime);
+	double NextStumbleLogTime = 0.0;
 	void UpdateHitSway(float DeltaTime);
 	// Back, aside and turned, in degrees, and how fast each is changing.
 	FVector HitSway = FVector::ZeroVector;
