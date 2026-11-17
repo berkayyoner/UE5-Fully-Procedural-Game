@@ -79,8 +79,8 @@ public:
 	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
 	FText NpcName;
 
-	// How aggressive they are, 0 to 1: the more, the less they wait between one swing and the next, from a second down to
-	// none. Below 0 it is chosen at random as they come into the world.
+	// How aggressive they are, 0 to 1: the more, the less they wait between one swing and the next, from a second down to a
+	// tenth of one. Below 0 it is chosen at random as they come into the world.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
 	float Aggression = -1.f;
 

@@ -485,3 +485,7 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - heal also closes every wound and bruise, mends broken bones and clears limb injuries (a limb cut off stays off), and says how many it healed.
 - NPCs keep their distance in a fight: bare-handed at a fist's reach (68 cm), armed at 0.85 of the weapon's reach, closing in past 10 cm further and backing off nearer, and start a fist only within 6 cm of that.
 - An NPC below 25% stamina backs off 2.5 m past where it fights from, hands down, and strikes no more until it is back to 50%.
+- An NPC's wait between swings runs from 1 second at no aggression to 0.1 at the most, a little more or less each time.
+- Bare-handed and done waiting, an NPC steps in to throwing range at once instead of waiting to drift there, and runs after a foe driven back further than a step.
+- An NPC draws back for a blow a little faster (the windup is at most 0.4 s).
+- The hit log tells what holds an NPC's next blow back.
