@@ -710,7 +710,7 @@ namespace
 	// while it is drawn back and thrown, as long as it is further off than this.
 	constexpr float AedirAIFistStrikeSlackCm = 6.f;
 	constexpr float AedirAIFistStepInput = 0.55f;
-	constexpr float AedirAIFistStepFromCm = 62.f;
+	constexpr float AedirAIFistStepFromCm = 68.f;
 	// Further than this past where it fights from, it closes in at a run.
 	constexpr float AedirAIPressRunCm = 60.f;
 	constexpr float AedirAIKeepBandCm = 15.f;
@@ -4831,6 +4831,11 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		}
 	}
 	const float KeepAt = FightAt + (bAIResting ? AIRestBackOffCm * Scale : 0.f);
+	if (CVarAedirHitLog.GetValueOnGameThread() != 0 && GetWorld() && GetWorld()->GetTimeSeconds() >= NextAIKeepLogTime)
+	{
+		NextAIKeepLogTime = GetWorld()->GetTimeSeconds() + 0.5;
+		UE_LOG(LogAedir, Log, TEXT("[NpcKeep] %s is %.0f cm from %s, keeps %.0f, %s"), *Creature->GetName(), Distance, *AITarget->GetName(), KeepAt, bArmed ? *GetNameSafe(Weapon) : TEXT("bare-handed"));
+	}
 	const float Band = AIStandOffBandCm * Scale;
 	// Bare-handed and done waiting for the next blow, it steps right in to where the fist is thrown from instead of waiting
 	// to drift there.

@@ -85,6 +85,17 @@ public:
 	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
 	float PoolSpreadMax = 2.2f;
 
+	// The burst of blood where a blow lands plays as it is for BurstFullSeconds, then ages BurstFadeSpeed times as fast so
+	// it is gone quickly, and is taken away after BurstMaxSeconds whatever is left of it.
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float BurstFullSeconds = 0.3f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float BurstFadeSpeed = 6.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
+	float BurstMaxSeconds = 2.f;
+
 	static constexpr int32 MaxSplats = 700;
 	int32 GetSplatCount() const { return Splats.Num(); }
 	// Three game days at Skyrim's pace, where a day passes in 72 real minutes.

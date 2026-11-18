@@ -330,10 +330,10 @@ public:
 	// the head), armed AIWeaponStandOffShare of the weapon's reach; it closes in past AIStandOffBandCm further and backs off
 	// nearer than that much closer.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float AIFistStandOffCm = 68.f;
+	float AIFistStandOffCm = 74.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
-	float AIWeaponStandOffShare = 0.85f;
+	float AIWeaponStandOffShare = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float AIStandOffBandCm = 10.f;
@@ -866,6 +866,7 @@ private:
 	void ReleaseAIGrab();
 	int32 AIMousePhase = 0;
 	float AIMouseTimer = 0.f;
+	double NextAIKeepLogTime = 0.0;
 	float AIMouseWait = 0.f;
 	FVector2D AIMouseWindup = FVector2D::ZeroVector;
 	FVector2D AIMouseStrike = FVector2D::ZeroVector;

@@ -489,3 +489,8 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Bare-handed and done waiting, an NPC steps in to throwing range at once instead of waiting to drift there, and runs after a foe driven back further than a step.
 - An NPC draws back for a blow a little faster (the windup is at most 0.4 s).
 - The hit log tells what holds an NPC's next blow back.
+- The hips tip and turn after the weight gone off from where it settles over the feet, whatever moved it, and standing with it far off costs balance.
+- The burst of blood where a blow lands plays a moment and then dies away quickly, gone within about two seconds.
+- Bare-handed NPCs keep a little further off (74 cm instead of 68) and only step in with a punch from further than 68 cm.
+- NPCs with a blade keep at their whole weapon reach instead of 85% of it.
+- The hit log tells how far an NPC is from its foe and how far it means to keep; aedir.AutoGetUp 1 lets the player's body get up by itself for unattended tests.

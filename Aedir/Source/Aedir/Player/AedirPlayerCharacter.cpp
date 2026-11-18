@@ -71,6 +71,8 @@
 #include "Weather/AedirWeatherEffectsComponent.h"
 #include "Weather/AedirWeatherManager.h"
 
+static TAutoConsoleVariable<int32> CVarAedirAutoGetUp(TEXT("aedir.AutoGetUp"), 0, TEXT("1: the player's body gets up by itself whenever it can, for tests left to run on their own."));
+
 namespace
 {
 }
@@ -312,6 +314,12 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		if (Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()) && FMath::Abs(MoveInput.Y) > 0.5)
 		{
 			Balance->RequestGetUp(MoveInput.Y > 0.0);
+		}
+		// For tests left to run by themselves: the body gets up on its own whenever it can, the way it lies.
+		static const IConsoleVariable* AutoGetUp = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.AutoGetUp"));
+		if (AutoGetUp && AutoGetUp->GetInt() != 0 && Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()))
+		{
+			Balance->RequestGetUp(Balance->GetLyingStyle() != EAedirGetUpStyle::FromFront);
 		}
 	}
 

@@ -148,6 +148,39 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float FallChancePerSecond = 0.8f;
 
+	// Where the weight settles over the feet as the body stands is learnt over ComSettleSeconds while it is steady. The hips
+	// tip after the weight gone off from there however it got there: more than ComLeanFromCm off, ComLeanDegreesPerCm for
+	// every cm further, at most ComLeanMaxDegrees, that way; walking, ComLeanWalkingShare of that at ComLeanWalkSpeed and
+	// over, since walking always carries the weight ahead of the feet.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComSettleSeconds = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComLeanFromCm = 4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComLeanDegreesPerCm = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComLeanMaxDegrees = 12.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight", meta=(ClampMin="0", ClampMax="1"))
+	float ComLeanWalkingShare = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComLeanWalkSpeed = 200.f;
+
+	// Not walking, the balance goes with the weight more than ComDriftLossFromCm off where it settles, by up to
+	// ComDriftLossPerSecond from ComDriftLossFullCm off; it comes back by about RecoveryPerSecond at the same time.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComDriftLossFromCm = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComDriftLossFullCm = 16.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComDriftLossPerSecond = 1.f;
+
 	// A blow on a shoulder or an upper arm moves the arm only this share of its push; the rest goes into the trunk, so the
 	// arm is not thrown up beside the head.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit", meta=(ClampMin="0", ClampMax="1"))
@@ -851,6 +884,16 @@ private:
 	FVector ComOffsetDirection = FVector::ZeroVector;
 	float SupportMargin = 0.f;
 	bool bSupportGrounded = false;
+	// The weight off the middle of the feet in the body's own frame (cm), how near it is to their edge (cm, under 0 past
+	// it), and whether the body stands so it can lose its balance by it.
+	FVector2D ComFromFeetLocal = FVector2D::ZeroVector;
+	// Where it settles as the body stands, and how far off from there it is now.
+	FVector2D ComSettledLocal = FVector2D::ZeroVector;
+	FVector2D ComDriftLocal = FVector2D::ZeroVector;
+	bool bComSettledKnown = false;
+	float ComEdgeCm = 100.f;
+	bool bComEdgeCounts = false;
+	double NextComLogTime = 0.0;
 
 	// Protective reflex. The target is sampled every 0.1 s, the blend is smoothed every tick.
 	float TargetProtectiveAlpha = 0.f;

@@ -1370,6 +1370,10 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	bSupportGrounded = false;
 	SupportMargin = 0.f;
 	ComOffsetDirection = FVector::ZeroVector;
+	ComFromFeetLocal = FVector2D::ZeroVector;
+	ComDriftLocal = FVector2D::ZeroVector;
+	ComEdgeCm = 100.f;
+	bComEdgeCounts = false;
 
 	if (bIsRagdoll || !BodyMesh || !CharacterOwner)
 	{
@@ -1423,7 +1427,8 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	ComputeConvexHull2D(SupportPoints, Hull);
 
 	const FVector2D ComXY(CenterOfMassWorld.X, CenterOfMassWorld.Y);
-	SupportMargin = ComputeSupportMargin(Hull, ComXY) + ComBalanceStaticAllowanceCm;
+	ComEdgeCm = ComputeSupportMargin(Hull, ComXY);
+	SupportMargin = ComEdgeCm + ComBalanceStaticAllowanceCm;
 	// Walking is a controlled fall: the swing foot leaves the polygon every step, so moving bodies get a margin allowance.
 	const float MoveSpeed = CharacterOwner->GetVelocity().Size2D();
 	SupportMargin += FMath::Clamp(MoveSpeed / ComBalanceMovingSpeedRef, 0.f, 1.f) * ComBalanceMovingAllowanceCm;
@@ -1438,6 +1443,7 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	{
 		SupportMargin = FMath::Max(SupportMargin, 0.f);
 	}
+	bComEdgeCounts = !bKicking && !bBending && (MoveSpeed <= 20.f || StaggerSeconds > 0.f);
 	bSupportGrounded = true;
 
 	FVector2D Centroid = FVector2D::ZeroVector;
@@ -1449,6 +1455,28 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 
 	const FVector2D Offset = (ComXY - Centroid).GetSafeNormal();
 	ComOffsetDirection = FVector(Offset.X, Offset.Y, 0.0);
+	const FVector OffLocal = CharacterOwner->GetActorTransform().InverseTransformVectorNoScale(FVector(ComXY - Centroid, 0.0));
+	ComFromFeetLocal = FVector2D(OffLocal.X, OffLocal.Y);
+	// Steady on its feet, standing or walking slowly, the body teaches where its weight belongs.
+	const bool bSteady = Balance >= 0.95f && StaggerSeconds <= 0.f && !bStumbling && !bKicking && !bBending && MoveSpeed < ComLeanWalkSpeed;
+	if (!bComSettledKnown)
+	{
+		ComSettledLocal = ComFromFeetLocal;
+		bComSettledKnown = true;
+	}
+	else if (bSteady)
+	{
+		ComSettledLocal += (ComFromFeetLocal - ComSettledLocal) * FMath::Min(ComBalanceSampleIntervalSeconds / FMath::Max(ComSettleSeconds, 0.1f), 1.f);
+	}
+	ComDriftLocal = ComFromFeetLocal - ComSettledLocal;
+
+	static const IConsoleVariable* ComLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	if (ComLog && ComLog->GetInt() != 0 && GetWorld() && GetWorld()->GetTimeSeconds() >= NextComLogTime)
+	{
+		NextComLogTime = GetWorld()->GetTimeSeconds() + 0.5;
+		UE_LOG(LogAedir, Log, TEXT("[Com] %s weight %.1f forward %.1f right of the feet, off where it settles by %.1f %.1f, %.1f cm from their edge%s, balance %.2f, hips %s"), *GetNameSafe(GetOwner()), ComFromFeetLocal.X, ComFromFeetLocal.Y,
+			ComDriftLocal.X, ComDriftLocal.Y, ComEdgeCm, bComEdgeCounts ? TEXT("") : TEXT(" (walking)"), Balance, *CurrentLean.ToCompactString());
+	}
 }
 
 void UAedirBalanceComponent::AddFootSupportPoints(FName FootBone, FName BallBone, TArray<FVector2D>& OutPoints) const
@@ -1501,14 +1529,18 @@ void UAedirBalanceComponent::ApplyCenterOfMassLoss(float DeltaTime)
 		return;
 	}
 
-	const float Loss = ComputeComBalanceLoss(SupportMargin, DeltaTime);
+	// Not walking, the weight gone off from where it settles over the feet takes the balance with it, before it is past them.
+	const float Drift = static_cast<float>(ComDriftLocal.Size());
+	const float DriftLoss = bComEdgeCounts ? FMath::Clamp((Drift - ComDriftLossFromCm) / FMath::Max(ComDriftLossFullCm - ComDriftLossFromCm, 1.f), 0.f, 1.f) * ComDriftLossPerSecond * DeltaTime : 0.f;
+	const float Loss = FMath::Max(ComputeComBalanceLoss(SupportMargin, DeltaTime), DriftLoss);
 	if (Loss <= 0.f)
 	{
 		return;
 	}
 
-	// The body falls towards the side the centre of mass has left the support polygon on.
-	AddLeanDirection(ComOffsetDirection, Loss);
+	// The body falls towards the side the centre of mass has left the support polygon on, or has gone off to.
+	const FVector DriftWorld = CharacterOwner ? CharacterOwner->GetActorTransform().TransformVectorNoScale(FVector(ComDriftLocal, 0.0)) : FVector::ZeroVector;
+	AddLeanDirection(SupportMargin < 0.f || DriftWorld.IsNearlyZero() ? ComOffsetDirection : DriftWorld.GetSafeNormal2D(), Loss);
 	SetBalance(Balance - Loss);
 }
 
@@ -1959,8 +1991,26 @@ void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
 	const double Roll = Way.Y * Disturbance * MaxLeanDegrees + Sway * FMath::PerlinNoise1D(SwayClock * 1.3f + SwaySeed + 17.f);
 
 	// And they turn towards the side it goes over to.
-	const double Yaw = Way.Y * Disturbance * LeanTwistDegrees;
-	CurrentLean = FMath::RInterpTo(CurrentLean, FRotator(Pitch, Yaw, Roll), DeltaTime, AedirLeanInterpSpeed);
+	double Yaw = Way.Y * Disturbance * LeanTwistDegrees;
+
+	// The weight off the middle of the feet tips and turns them that way too, however it got there.
+	double ComPitch = 0.0;
+	double ComRoll = 0.0;
+	if (bSupportGrounded && !bIsRagdoll && !IsGettingUp())
+	{
+		const float Off = static_cast<float>(ComDriftLocal.Size());
+		const float Speed = CharacterOwner ? static_cast<float>(CharacterOwner->GetVelocity().Size2D()) : 0.f;
+		const float Walking = FMath::Lerp(1.f, ComLeanWalkingShare, FMath::Clamp(Speed / FMath::Max(ComLeanWalkSpeed, 1.f), 0.f, 1.f));
+		const float Degrees = FMath::Min(FMath::Max(Off - ComLeanFromCm, 0.f) * ComLeanDegreesPerCm, ComLeanMaxDegrees) * Walking;
+		if (Degrees > 0.f)
+		{
+			const FVector2D ComWay = ComDriftLocal / Off;
+			ComPitch = -ComWay.X * Degrees;
+			ComRoll = ComWay.Y * Degrees;
+			Yaw += ComWay.Y * Degrees * LeanTwistDegrees / FMath::Max(MaxLeanDegrees, 1.f);
+		}
+	}
+	CurrentLean = FMath::RInterpTo(CurrentLean, FRotator(FMath::Clamp(Pitch + ComPitch, -MaxLeanDegrees, MaxLeanDegrees), Yaw, FMath::Clamp(Roll + ComRoll, -MaxLeanDegrees, MaxLeanDegrees)), DeltaTime, AedirLeanInterpSpeed);
 }
 
 void UAedirBalanceComponent::UpdateStumbleWalk(float DeltaTime)

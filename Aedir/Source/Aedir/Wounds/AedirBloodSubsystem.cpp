@@ -1,5 +1,7 @@
 #include "Wounds/AedirBloodSubsystem.h"
 
+#include "NiagaraComponent.h"
+#include "TimerManager.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraSystem.h"
 
@@ -205,7 +207,30 @@ void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Di
 	if (UNiagaraSystem* Burst = BurstPath ? LoadObject<UNiagaraSystem>(nullptr, BurstPath, nullptr, LOAD_NoWarn | LOAD_Quiet) : nullptr)
 	{
 		const float BurstScale = FMath::Lerp(BloodBurstMinScale, BloodBurstMaxScale, FMath::Clamp(Severity, 0.f, 1.f));
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Burst, Location, Direction.Rotation(), FVector(BurstScale));
+		UNiagaraComponent* BurstNow = UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Burst, Location, Direction.Rotation(), FVector(BurstScale));
+		UWorld* BurstWorld = GetWorld();
+		if (BurstNow && BurstWorld)
+		{
+			// A moment as it is, then it ages fast and goes.
+			const TWeakObjectPtr<UNiagaraComponent> Weak(BurstNow);
+			const float FadeSpeed = BurstFadeSpeed;
+			FTimerHandle FadeHandle;
+			BurstWorld->GetTimerManager().SetTimer(FadeHandle, FTimerDelegate::CreateLambda([Weak, FadeSpeed]()
+			{
+				if (UNiagaraComponent* Fading = Weak.Get())
+				{
+					Fading->SetCustomTimeDilation(FMath::Max(FadeSpeed, 1.f));
+				}
+			}), FMath::Max(BurstFullSeconds, 0.01f), false);
+			FTimerHandle GoneHandle;
+			BurstWorld->GetTimerManager().SetTimer(GoneHandle, FTimerDelegate::CreateLambda([Weak]()
+			{
+				if (UNiagaraComponent* Gone = Weak.Get())
+				{
+					Gone->DestroyComponent();
+				}
+			}), FMath::Max(BurstMaxSeconds, BurstFullSeconds + 0.05f), false);
+		}
 	}
 
 	if (Type == EAedirWoundType::Bruise || !BloodCanSpawn(GetWorld()))
