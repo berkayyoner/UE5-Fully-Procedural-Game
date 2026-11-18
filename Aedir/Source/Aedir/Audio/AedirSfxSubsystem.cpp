@@ -23,10 +23,8 @@ namespace
 		{ TEXT("MetalHit"), 0.7f, 250.f, 2500.f },
 		{ TEXT("WoodHit"), 0.7f, 200.f, 2000.f },
 		{ TEXT("WoodCut"), 0.8f, 200.f, 2200.f },
-		{ TEXT("Punch"), 0.75f, 150.f, 1500.f },
-		{ TEXT("PunchFast"), 0.85f, 180.f, 1800.f },
-		{ TEXT("PunchCloth"), 0.7f, 130.f, 1300.f },
-		{ TEXT("PunchClothFast"), 0.8f, 160.f, 1600.f },
+		{ TEXT("PunchBody"), 0.85f, 160.f, 1600.f },
+		{ TEXT("PunchFace"), 0.85f, 160.f, 1600.f },
 		{ TEXT("BodyImpact"), 0.8f, 200.f, 2000.f },
 		{ TEXT("Cut"), 0.8f, 150.f, 1500.f },
 		{ TEXT("Stab"), 0.8f, 150.f, 1500.f },
@@ -47,13 +45,10 @@ namespace
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Shield_Wood_Impact_2-1"), TEXT("/Game/Free_Sounds_Pack/wav/Wood_14-8") },
 		// Wood cut.
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Wood_Chop_1-4") },
-		// Punch on bare skin: the thud and the slap of skin, at a middling pace.
-		{ TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_0"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_1"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_2"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_3"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_4"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_5"), TEXT("/Game/Free_Sounds_Pack/wav/Punch_2-1"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_2-1") },
-		// Thrown fast: harder, lower and sharper.
-		{ TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_0"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_1"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_2"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_3"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_4"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_5"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_5-1") },
-		// On clothing: a duller thud under the rustle of the cloth.
-		{ TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_0"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_1"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_2"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_3"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_4"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_5") },
-		{ TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_0"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_1"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_2"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_3"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_4"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_5") },
+		// A fist on the arms, the trunk or the legs, from the slowest blow to the hardest.
+		{ TEXT("/Game/Aedir/Sounds/S_PunchArm_10"), TEXT("/Game/Aedir/Sounds/S_PunchArm_20"), TEXT("/Game/Aedir/Sounds/S_PunchArm_30"), TEXT("/Game/Aedir/Sounds/S_PunchArm_40"), TEXT("/Game/Aedir/Sounds/S_PunchArm_50"), TEXT("/Game/Aedir/Sounds/S_PunchArm_60"), TEXT("/Game/Aedir/Sounds/S_PunchArm_70"), TEXT("/Game/Aedir/Sounds/S_PunchArm_80"), TEXT("/Game/Aedir/Sounds/S_PunchArm_90") },
+		// A fist in the face.
+		{ TEXT("/Game/Aedir/Sounds/S_PunchFace_15"), TEXT("/Game/Aedir/Sounds/S_PunchFace_30"), TEXT("/Game/Aedir/Sounds/S_PunchFace_50"), TEXT("/Game/Aedir/Sounds/S_PunchFace_70"), TEXT("/Game/Aedir/Sounds/S_PunchFace_90") },
 		// A body struck.
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_5-1"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_2-1"), TEXT("/Game/Free_Sounds_Pack/wav/Punch_2-1") },
 		// A cut into flesh.
@@ -68,6 +63,16 @@ namespace
 		{},
 	};
 	static_assert(UE_ARRAY_COUNT(AedirSfxRecorded) == static_cast<int32>(EAedirSfx::Count), "A take list for every kind of sound");
+	// For the kinds whose takes belong to a speed, the share of a full-speed blow each take above is for, in percent; empty
+	// for the kinds whose takes are chosen at random.
+	const TArray<float> AedirSfxTakeSpeeds[] =
+	{
+		{}, {}, {}, {},
+		{ 10.f, 20.f, 30.f, 40.f, 50.f, 60.f, 70.f, 80.f, 90.f },
+		{ 15.f, 30.f, 50.f, 70.f, 90.f },
+		{}, {}, {}, {}, {}, {},
+	};
+	static_assert(UE_ARRAY_COUNT(AedirSfxTakeSpeeds) == static_cast<int32>(EAedirSfx::Count), "A speed list for every kind of sound");
 	constexpr int32 AedirSfxMaxTakes = 8;
 	// The same kind within this far and this long of another is the same sound, heard once.
 	constexpr double AedirSfxRepeatSeconds = 0.06;
@@ -80,7 +85,7 @@ const TCHAR* UAedirSfxSubsystem::GetName(EAedirSfx Kind)
 	return AedirSfxKinds[static_cast<int32>(Kind)].Name;
 }
 
-void UAedirSfxSubsystem::Play(const UObject* WorldContext, EAedirSfx Kind, const FVector& Location, float Strength)
+void UAedirSfxSubsystem::Play(const UObject* WorldContext, EAedirSfx Kind, const FVector& Location, float Strength, float SpeedShare)
 {
 	UWorld* World = WorldContext ? WorldContext->GetWorld() : nullptr;
 	if (!World || World->GetNetMode() == NM_DedicatedServer)
@@ -89,7 +94,7 @@ void UAedirSfxSubsystem::Play(const UObject* WorldContext, EAedirSfx Kind, const
 	}
 	if (UAedirSfxSubsystem* Sfx = World->GetSubsystem<UAedirSfxSubsystem>())
 	{
-		Sfx->PlayAt(Kind, Location, FMath::Clamp(Strength, 0.f, 1.f));
+		Sfx->PlayAt(Kind, Location, FMath::Clamp(Strength, 0.f, 1.f), SpeedShare < 0.f ? -1.f : FMath::Clamp(SpeedShare, 0.f, 1.f));
 	}
 }
 
@@ -99,13 +104,19 @@ const TArray<TObjectPtr<USoundBase>>& UAedirSfxSubsystem::GetTakes(EAedirSfx Kin
 	if (!bLoaded[Index])
 	{
 		bLoaded[Index] = true;
-		for (const TCHAR* Recorded : AedirSfxRecorded[Index])
+		const TArray<float>& Speeds = AedirSfxTakeSpeeds[Index];
+		for (int32 Take = 0; Take < AedirSfxRecorded[Index].Num(); ++Take)
 		{
+			const TCHAR* Recorded = AedirSfxRecorded[Index][Take];
 			const FString Name = FPaths::GetBaseFilename(Recorded);
 			if (USoundBase* Sound = LoadObject<USoundBase>(nullptr, *FString::Printf(TEXT("%s.%s"), Recorded, *Name), nullptr, LOAD_NoWarn | LOAD_Quiet))
 			{
 				Takes[Index].Add(Sound);
 				AllTakes.Add(Sound);
+				if (Speeds.IsValidIndex(Take))
+				{
+					TakeSpeeds[Index].Add(Speeds[Take] * 0.01f);
+				}
 			}
 			else
 			{
@@ -127,7 +138,7 @@ const TArray<TObjectPtr<USoundBase>>& UAedirSfxSubsystem::GetTakes(EAedirSfx Kin
 	return Takes[Index];
 }
 
-void UAedirSfxSubsystem::PlayAt(EAedirSfx Kind, const FVector& Location, float Strength)
+void UAedirSfxSubsystem::PlayAt(EAedirSfx Kind, const FVector& Location, float Strength, float SpeedShare)
 {
 	UWorld* World = GetWorld();
 	const double Now = World->GetTimeSeconds();
@@ -160,9 +171,22 @@ void UAedirSfxSubsystem::PlayAt(EAedirSfx Kind, const FVector& Location, float S
 	Settings.DistanceAlgorithm = EAttenuationDistanceModel::NaturalSound;
 
 	// A harder blow is louder and a little lower; every take is pitched a little differently so no two sound the same.
-	USoundBase* Sound = Options[FMath::RandRange(0, Options.Num() - 1)];
+	// A kind whose takes belong to speeds plays the one made for the speed nearest the blow's.
+	int32 Chosen = FMath::RandRange(0, Options.Num() - 1);
+	const TArray<float>& Speeds = TakeSpeeds[static_cast<int32>(Kind)];
+	if (SpeedShare >= 0.f && Speeds.Num() == Options.Num())
+	{
+		for (int32 Take = 0; Take < Speeds.Num(); ++Take)
+		{
+			if (FMath::Abs(Speeds[Take] - SpeedShare) < FMath::Abs(Speeds[Chosen] - SpeedShare))
+			{
+				Chosen = Take;
+			}
+		}
+	}
+	USoundBase* Sound = Options[Chosen];
 	const float Volume = Info.Volume * FMath::Lerp(0.35f, 1.f, Strength) * UAedirSettingsSubsystem::GetValues().EffectsVolume;
 	const float Pitch = FMath::FRandRange(0.92f, 1.08f) * FMath::Lerp(1.08f, 0.92f, Strength);
 	UGameplayStatics::PlaySoundAtLocation(World, Sound, Location, FRotator::ZeroRotator, Volume, Pitch, 0.f, Attenuation, nullptr);
-	UE_CLOG(CVarAedirSfxLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Sfx] %s at %s, strength %.2f -> %s"), Info.Name, *Location.ToCompactString(), Strength, *Sound->GetName());
+	UE_CLOG(CVarAedirSfxLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Sfx] %s at %s, strength %.2f, speed %.0f%% -> %s"), Info.Name, *Location.ToCompactString(), Strength, SpeedShare * 100.f, *Sound->GetName());
 }

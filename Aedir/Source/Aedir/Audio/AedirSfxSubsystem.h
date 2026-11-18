@@ -16,11 +16,10 @@ enum class EAedirSfx : uint8
 	MetalHit,
 	WoodHit,
 	WoodCut,
-	// A fist on bare skin at a middling pace, the same thrown fast, and a fist on clothing at either.
-	Punch,
-	PunchFast,
-	PunchCloth,
-	PunchClothFast,
+	// A fist on the arms, the trunk or the legs, and a fist in the face; each take belongs to a share of the full speed of a
+	// punch, and the one nearest the blow's speed is played.
+	PunchBody,
+	PunchFace,
 	BodyImpact,
 	Cut,
 	Stab,
@@ -37,19 +36,22 @@ class AEDIR_API UAedirSfxSubsystem : public UWorldSubsystem
 
 public:
 	// Plays a sound of this kind at a place, as loud and as low as the blow behind it (0 a touch, 1 a full blow). The same
-	// kind at the same place is heard only once within a moment.
-	static void Play(const UObject* WorldContext, EAedirSfx Kind, const FVector& Location, float Strength);
+	// kind at the same place is heard only once within a moment. A kind whose takes belong to speeds plays the take nearest
+	// SpeedShare (0 the slowest blow, 1 the fastest); left below 0, or for any other kind, a take is chosen at random.
+	static void Play(const UObject* WorldContext, EAedirSfx Kind, const FVector& Location, float Strength, float SpeedShare = -1.f);
 
 	static const TCHAR* GetName(EAedirSfx Kind);
 
 private:
-	void PlayAt(EAedirSfx Kind, const FVector& Location, float Strength);
+	void PlayAt(EAedirSfx Kind, const FVector& Location, float Strength, float SpeedShare);
 	const TArray<TObjectPtr<USoundBase>>& GetTakes(EAedirSfx Kind);
 
 	// Every take of every kind, kept loaded; Takes holds them by kind.
 	UPROPERTY()
 	TArray<TObjectPtr<USoundBase>> AllTakes;
 	TArray<TObjectPtr<USoundBase>> Takes[static_cast<int32>(EAedirSfx::Count)];
+	// The speed share each loaded take of a kind belongs to, for the kinds that have them.
+	TArray<float> TakeSpeeds[static_cast<int32>(EAedirSfx::Count)];
 	bool bLoaded[static_cast<int32>(EAedirSfx::Count)] = {};
 
 	UPROPERTY()

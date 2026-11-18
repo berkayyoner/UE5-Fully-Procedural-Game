@@ -273,9 +273,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float StrengthBlowGain = 1.f;
 
-	// A fist landing at least this fast (cm/s, into the body) sounds as a fast punch, slower as a middling one.
+	// The speed of a fist into the body (cm/s) that counts as 0% and as 100% of a punch's speed when its sound is chosen:
+	// each punch sound belongs to a share between them, and the one nearest the blow's share is played.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float PunchFastSoundSpeed = 650.f;
+	float PunchSoundSpeedMin = 180.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float PunchSoundSpeedMax = 1300.f;
 
 	float GetStrengthBlowScale() const;
 

@@ -4603,17 +4603,23 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		{
 			UAedirSfxSubsystem::Play(this, EAedirSfx::Armour, At, Loud);
 		}
+		// A fist sounds by where it landed, the face or the rest of the body, and by how fast it came in.
+		const EAedirSfx FistSound = Zone == EAedirBodyZone::Head ? EAedirSfx::PunchFace : EAedirSfx::PunchBody;
+		const float FistSpeedShare = FMath::Clamp((RelativeSpeed - PunchSoundSpeedMin) / FMath::Max(PunchSoundSpeedMax - PunchSoundSpeedMin, 1.f), 0.f, 1.f);
 		if (!bEdged)
 		{
-			// A fist slaps on bare skin and thuds duller through clothing or under armour; thrown fast it is harder.
-			const bool bFast = RelativeSpeed >= PunchFastSoundSpeed;
-			const bool bCloth = Armour.bCovered;
-			const EAedirSfx FistSound = bCloth ? (bFast ? EAedirSfx::PunchClothFast : EAedirSfx::PunchCloth) : (bFast ? EAedirSfx::PunchFast : EAedirSfx::Punch);
-			UAedirSfxSubsystem::Play(this, HeldItem ? EAedirSfx::BodyImpact : FistSound, At, Loud);
+			if (HeldItem)
+			{
+				UAedirSfxSubsystem::Play(this, EAedirSfx::BodyImpact, At, Loud);
+			}
+			else
+			{
+				UAedirSfxSubsystem::Play(this, FistSound, At, Loud, FistSpeedShare);
+			}
 		}
 		else if (bGlance)
 		{
-			UAedirSfxSubsystem::Play(this, EAedirSfx::Punch, At, Loud * 0.6f);
+			UAedirSfxSubsystem::Play(this, FistSound, At, Loud * 0.6f, FistSpeedShare);
 		}
 		else if (bPointFirst)
 		{
