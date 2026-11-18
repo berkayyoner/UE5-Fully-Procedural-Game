@@ -440,9 +440,8 @@ float UAedirBalanceComponent::GetUprightStrength() const
 	}
 	const float Stamina = Stats ? FMath::Clamp(Stats->GetStaminaFraction(), 0.f, 1.f) : 1.f;
 	const float Health = Stats ? FMath::Clamp(Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 1.f;
-	// Out of breath it weakens only below TiredFrom of its stamina, the more the less is left.
-	const float Breath = TiredFrom > KINDA_SMALL_NUMBER ? FMath::Clamp(Stamina / TiredFrom, 0.f, 1.f) : 1.f;
-	return FMath::Lerp(UprightExhaustedShare, 1.f, Breath) * FMath::Lerp(UprightDyingShare, 1.f, Health)
+	// The less breath it has left, all the way from full to none, the weaker it stands and holds its trunk.
+	return FMath::Lerp(UprightExhaustedShare, 1.f, Stamina) * FMath::Lerp(UprightDyingShare, 1.f, Health)
 		* (1.f - 0.5f * GetDazeFactor()) * FMath::Lerp(1.f, GetUpMuscleShare, GetGetUpShare());
 }
 
@@ -646,8 +645,9 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 		BoundCapsuleHalfHeight = CapsuleHalfHeight;
 		BodyControl->RebindHips(BodyCapsule);
 	}
-	// Out of breath, the arms hold their pose less firmly.
-	const float Breath = FMath::Lerp(1.f, TiredStrengthShare, GetTiredShare());
+	// The less breath left, from full to none, the less firmly the arms hold their pose.
+	const UAedirStatsComponent* BreathStats = FindStats();
+	const float Breath = FMath::Lerp(TiredStrengthShare, 1.f, BreathStats ? FMath::Clamp(BreathStats->GetStaminaFraction(), 0.f, 1.f) : 1.f);
 	BodyControl->SetStrengths(Upright, LeftArm * Breath, RightArm * Breath);
 	// Dying, the body goes down as the dead do: what muscle it has left only holds its shape a while longer.
 	BodyControl->SetDead(Creature && Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying()));

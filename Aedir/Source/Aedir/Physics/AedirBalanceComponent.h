@@ -296,8 +296,8 @@ public:
 
 	// Out of breath the body weakens too, but only so far: below TiredFrom of its stamina, the lower it gets the harder
 	// blows throw it (up to 1 + TiredHitGain times at none left), the less it takes to knock it down (down to
-	// TiredKnockdownShare), the slower its balance comes back (TiredRecoveryShare) and the weaker its muscles hold
-	// (TiredStrengthShare).
+	// TiredKnockdownShare) and the slower its balance comes back (TiredRecoveryShare). Its arms hold the weaker the less
+	// stamina it has, from full to none, down to TiredStrengthShare; its legs and trunk likewise down to UprightExhaustedShare.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float TiredFrom = 0.5f;
 
