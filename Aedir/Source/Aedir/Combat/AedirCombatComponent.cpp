@@ -4605,7 +4605,11 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		}
 		if (!bEdged)
 		{
-			UAedirSfxSubsystem::Play(this, HeldItem ? EAedirSfx::BodyImpact : EAedirSfx::Punch, At, Loud);
+			// A fist slaps on bare skin and thuds duller through clothing or under armour; thrown fast it is harder.
+			const bool bFast = RelativeSpeed >= PunchFastSoundSpeed;
+			const bool bCloth = Armour.bCovered;
+			const EAedirSfx FistSound = bCloth ? (bFast ? EAedirSfx::PunchClothFast : EAedirSfx::PunchCloth) : (bFast ? EAedirSfx::PunchFast : EAedirSfx::Punch);
+			UAedirSfxSubsystem::Play(this, HeldItem ? EAedirSfx::BodyImpact : FistSound, At, Loud);
 		}
 		else if (bGlance)
 		{

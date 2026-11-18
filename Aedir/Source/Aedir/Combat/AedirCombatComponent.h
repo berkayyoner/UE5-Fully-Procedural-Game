@@ -273,6 +273,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float StrengthBlowGain = 1.f;
 
+	// A fist landing at least this fast (cm/s, into the body) sounds as a fast punch, slower as a middling one.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float PunchFastSoundSpeed = 650.f;
+
 	float GetStrengthBlowScale() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")

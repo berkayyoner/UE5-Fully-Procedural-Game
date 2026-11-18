@@ -16,7 +16,11 @@ enum class EAedirSfx : uint8
 	MetalHit,
 	WoodHit,
 	WoodCut,
+	// A fist on bare skin at a middling pace, the same thrown fast, and a fist on clothing at either.
 	Punch,
+	PunchFast,
+	PunchCloth,
+	PunchClothFast,
 	BodyImpact,
 	Cut,
 	Stab,

@@ -24,6 +24,9 @@ namespace
 		{ TEXT("WoodHit"), 0.7f, 200.f, 2000.f },
 		{ TEXT("WoodCut"), 0.8f, 200.f, 2200.f },
 		{ TEXT("Punch"), 0.75f, 150.f, 1500.f },
+		{ TEXT("PunchFast"), 0.85f, 180.f, 1800.f },
+		{ TEXT("PunchCloth"), 0.7f, 130.f, 1300.f },
+		{ TEXT("PunchClothFast"), 0.8f, 160.f, 1600.f },
 		{ TEXT("BodyImpact"), 0.8f, 200.f, 2000.f },
 		{ TEXT("Cut"), 0.8f, 150.f, 1500.f },
 		{ TEXT("Stab"), 0.8f, 150.f, 1500.f },
@@ -44,8 +47,13 @@ namespace
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Shield_Wood_Impact_2-1"), TEXT("/Game/Free_Sounds_Pack/wav/Wood_14-8") },
 		// Wood cut.
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Wood_Chop_1-4") },
-		// Punch.
-		{ TEXT("/Game/Free_Sounds_Pack/wav/Punch_2-1"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_2-1") },
+		// Punch on bare skin: the thud and the slap of skin, at a middling pace.
+		{ TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_0"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_1"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_2"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_3"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_4"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Mid_5"), TEXT("/Game/Free_Sounds_Pack/wav/Punch_2-1"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_2-1") },
+		// Thrown fast: harder, lower and sharper.
+		{ TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_0"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_1"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_2"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_3"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_4"), TEXT("/Game/Aedir/Sounds/S_PunchSkin_Fast_5"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_5-1") },
+		// On clothing: a duller thud under the rustle of the cloth.
+		{ TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_0"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_1"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_2"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_3"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_4"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Mid_5") },
+		{ TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_0"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_1"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_2"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_3"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_4"), TEXT("/Game/Aedir/Sounds/S_PunchCloth_Fast_5") },
 		// A body struck.
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_5-1"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_2-1"), TEXT("/Game/Free_Sounds_Pack/wav/Punch_2-1") },
 		// A cut into flesh.

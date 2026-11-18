@@ -516,3 +516,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Armour worn as it was modelled (helmet, pauldrons) grows and sits with the body's size: on a strong, big body it no longer sinks into it or vanishes inside the trunk.
 - Out of breath, the body's strength to stand goes only below half its stamina, the less the less is left, as its arms already did.
 - A lost balance sinks the hips, faster and faster the more of it is gone, and the body goes down once they are near the ground, instead of all at once after a while at low balance or by chance.
+- The land is heard: the wildlife of the day, the insects and owls of the night and the birds of dawn and dusk fade in and out with the hour, hushed by rain and snow, and now and then a single bird, crow, raven, owl, cricket, rustle of leaves or snapping twig somewhere nearby.
+- A fist sounds by what it lands on and how fast: on bare skin a thud and a slap, on clothing or under armour a duller thud under the rustle of the cloth, and a fast punch (650 cm/s and over) harder, lower and sharper; six made takes of each kind (Scripts/MakePunchSounds.py), mixed with the recorded ones.
