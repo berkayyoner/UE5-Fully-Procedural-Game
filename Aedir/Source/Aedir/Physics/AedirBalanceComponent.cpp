@@ -45,6 +45,8 @@ namespace
 	constexpr float AedirAthletismDamageScale = 200.f;
 	constexpr float AedirWalkableNormalZ = 0.5f;
 	constexpr float AedirWallImpactMaxLoss = 0.8f;
+	// How far from a part of the body the thing it ran into is looked for, to tell which part met it.
+	constexpr float AedirWallPartReachCm = 60.f;
 	constexpr float AedirObjectImpactBalanceMultiplier = 0.14f;
 	constexpr float AedirObjectImpactMinSpeed = 120.f;
 	constexpr float ObjectImpactMinHeightCm = 50.f;
@@ -620,7 +622,11 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	BodyControl->SetArmLoads(LoadShare(EAedirHand::Left), LoadShare(EAedirHand::Right));
 	const UAedirFistArms* FistArms = CharacterOwner->FindComponentByClass<UAedirFistArms>();
 	BodyControl->SetTwoHandGrip(FistArms ? FistArms->GetGripAlpha() : 0.f);
-	BlowSoftness = FMath::Max(BlowSoftness - DeltaTime * BlowSoftMaxShare / FMath::Max(BlowSoftSeconds, 0.05f), 0.f);
+	// Held slack as long as the blow lasts, then the muscles take hold again quickly.
+	if (!GetWorld() || GetWorld()->GetTimeSeconds() >= BlowSoftUntil)
+	{
+		BlowSoftness = FMath::Max(BlowSoftness - DeltaTime / FMath::Max(BlowSlackReturnSeconds, 0.01f), 0.f);
+	}
 	BodyControl->SetBlowSoftness(BlowSoftness);
 	{
 		bool bKickLeft = false;
@@ -1101,6 +1107,17 @@ float UAedirBalanceComponent::GetTiredShare() const
 		return 0.f;
 	}
 	return FMath::Clamp((TiredFrom - StatsComponent->GetStaminaFraction()) / TiredFrom, 0.f, 1.f);
+}
+
+float UAedirBalanceComponent::GetWornShare() const
+{
+	const UAedirStatsComponent* StatsComponent = FindStats();
+	if (!StatsComponent)
+	{
+		return 0.f;
+	}
+	const float Health = FMath::Clamp(StatsComponent->GetHealth() / FMath::Max(StatsComponent->GetMaxHealth(), 1.f), 0.f, 1.f);
+	return FMath::Clamp(0.5f * (1.f - Health) + 0.5f * (1.f - StatsComponent->GetStaminaFraction()), 0.f, 1.f);
 }
 
 float UAedirBalanceComponent::GetHurtShare() const
@@ -1879,7 +1896,21 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 		{
 			LastBlowPush += static_cast<float>(Push.Size());
 		}
-		BlowSoftness = FMath::Max(BlowSoftness, FMath::Clamp(static_cast<float>(Push.Size()) / FMath::Max(BlowSoftFullPush, 1.f), 0.f, 1.f) * BlowSoftMaxShare);
+		// The more worn the body, the more and the longer a blow slackens it.
+		const float Worn = GetWornShare();
+		const float Size = FMath::Clamp(static_cast<float>(Push.Size()) / FMath::Max(BlowSoftFullPush, 1.f), 0.f, 1.f);
+		const float Slack = FMath::Lerp(BlowSlackFitShare, BlowSlackWornShare, Worn) * Size;
+		if (Slack > BlowSoftness || Now >= BlowSoftUntil)
+		{
+			BlowSoftness = FMath::Max(BlowSoftness, Slack);
+		}
+		BlowSoftUntil = FMath::Max(BlowSoftUntil, Now + FMath::Lerp(BlowSlackFitSeconds, BlowSlackWornSeconds, Worn) * FMath::Sqrt(Size));
+		static const IConsoleVariable* SlackLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+		if (SlackLog && SlackLog->GetInt() != 0 && Slack > 0.02f && Now >= NextSlackLogTime)
+		{
+			NextSlackLogTime = Now + 0.05;
+			UE_LOG(LogAedir, Log, TEXT("[Slack] %s, worn %.2f, push %.0f: muscles %.0f%% softer for %.2f s"), *GetNameSafe(GetOwner()), Worn, Push.Size(), BlowSoftness * 100.f, BlowSoftUntil - Now);
+		}
 	}
 	const float Now = HitPushSpreadSeconds > KINDA_SMALL_NUMBER ? FMath::Clamp(HitPushNowShare, 0.f, 1.f) : 1.f;
 	LandPush(Bone, Push * Now, Location);
@@ -2681,12 +2712,58 @@ void UAedirBalanceComponent::RunIntoWall(const FVector& OwnerVelocity, const FHi
 	// Thrown back off it, the way it came.
 	ApplyBalanceImpact(Hit.ImpactNormal.GetSafeNormal2D(), FMath::Clamp(Share, 0.f, AedirWallImpactMaxLoss));
 	UE_LOG(LogAedir, Log, TEXT("[Bump] %s runs into %s at %.0f cm/s, balance %.2f"), *GetNameSafe(GetOwner()), *GetNameSafe(Hit.GetActor()), ApproachSpeed, Balance);
-	// The chest and head carry on into the wall and are thrown back off it.
-	if (BodyMesh && BodyMesh->IsAnySimulatingPhysics())
+	// The part of the body that met it is thrown back off it, and the trunk a little with it, each by its own weight and
+	// only by how much harder than harmless it came in. Held up by the pose, the trunk is bent back off it all the same.
+	if (BodyMesh)
 	{
-		const FVector Rebound = Hit.ImpactNormal * (ApproachSpeed * WallImpactBodyImpulsePerSpeed);
-		MulticastBoneImpulse(TEXT("spine_03"), Rebound, Hit.ImpactPoint);
-		MulticastBoneImpulse(TEXT("head"), Rebound * 0.4f, Hit.ImpactPoint);
+		FName Part = NAME_None;
+		double Nearest = TNumericLimits<double>::Max();
+		float PartMass = 0.f;
+		// The part nearest the thing itself, looked for straight towards it from each part; failing that, the one nearest
+		// where the body touched it.
+		UPrimitiveComponent* Met = Hit.GetComponent();
+		const FVector Into = -Hit.ImpactNormal.GetSafeNormal2D();
+		bool bReached = false;
+		// Something standing higher than the knee is met by the body above it: the feet step on under it, the trunk, arms
+		// and head carry on into it. A lower thing is tripped over with the legs.
+		const double FeetZ = GetOwner()->GetActorLocation().Z - (BodyCapsule ? BodyCapsule->GetScaledCapsuleHalfHeight() : 0.f);
+		const double KneeZ = FeetZ + ObjectImpactMinHeightCm * GetOwner()->GetActorScale3D().Z;
+		const bool bTall = Met && Met->Bounds.GetBox().Max.Z > KneeZ;
+		for (const FBodyInstance* Body : BodyMesh->Bodies)
+		{
+			if (!Body || !Body->BodySetup.IsValid())
+			{
+				continue;
+			}
+			const FVector At = BodyMesh->GetBoneLocation(Body->BodySetup->BoneName);
+			if (bTall && At.Z < KneeZ)
+			{
+				continue;
+			}
+			FHitResult Reach;
+			const bool bReaches = Met && Met->LineTraceComponent(Reach, At, At + Into * AedirWallPartReachCm, FCollisionQueryParams(SCENE_QUERY_STAT(AedirWallPart), false));
+			const double Away = bReaches ? FVector::DistSquared(At, Reach.ImpactPoint) : FVector::DistSquared(At, Hit.ImpactPoint);
+			if ((bReaches && !bReached) || (bReaches == bReached && Away < Nearest))
+			{
+				bReached = bReached || bReaches;
+				Nearest = Away;
+				Part = Body->BodySetup->BoneName;
+				PartMass = Body->GetBodyMass();
+			}
+		}
+		const FVector Back = Hit.ImpactNormal.GetSafeNormal2D();
+		if (Part != NAME_None)
+		{
+			MulticastBoneImpulse(Part, Back * (PartMass * Excess * WallImpactPartRebound), Hit.ImpactPoint);
+		}
+		const FBodyInstance* Trunk = BodyMesh->GetBodyInstance(TEXT("spine_03"));
+		if (Trunk && Part != TEXT("spine_03"))
+		{
+			MulticastBoneImpulse(TEXT("spine_03"), Back * (Trunk->GetBodyMass() * Excess * WallImpactTrunkRebound), BodyMesh->GetBoneLocation(TEXT("spine_03")));
+		}
+		UE_LOG(LogAedir, Log, TEXT("[Bump] %s meets it with its %s, thrown back by %.0f cm/s; it stands %.0f cm up from the feet, touched %.0f cm up"), *GetNameSafe(GetOwner()), *Part.ToString(), Excess * WallImpactPartRebound,
+			Met ? Met->Bounds.GetBox().Max.Z - (GetOwner()->GetActorLocation().Z - (BodyCapsule ? BodyCapsule->GetScaledCapsuleHalfHeight() : 0.f)) : 0.0,
+			Hit.ImpactPoint.Z - (GetOwner()->GetActorLocation().Z - (BodyCapsule ? BodyCapsule->GetScaledCapsuleHalfHeight() : 0.f)));
 	}
 
 	if (StatsComponent)

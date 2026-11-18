@@ -498,3 +498,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Where the weight settles is taken afresh whenever the body moves or shifts its feet, so a step ending a little off no longer costs balance; the weight must go further off, and costs it slower, before balance goes.
 - Losing its balance, by a blow or by its weight, the body walks or runs the way it goes over, the faster the more it has lost (up to 420 cm/s), instead of standing where it is.
 - Blows cost less than half the balance they did, so the hips tip far less from them.
+- Running into something that does not give pushes back the part of the body that met it (above the knee for anything taller, the legs for something low), and the trunk a little, each for its own weight and only by how much faster than harmless it came in, instead of always the chest and head by the whole speed.
+- A blow slackens the muscles by how worn the body is: fresh and unhurt 30% for 0.1 s, out of health and breath up to 80% for 0.5 s, less for a smaller blow.

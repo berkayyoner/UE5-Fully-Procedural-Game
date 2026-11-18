@@ -199,16 +199,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit", meta=(ClampMin="0", ClampMax="1"))
 	float ShoulderBlowArmShare = 0.3f;
 
-	// A blow slackens the muscles of the trunk, head and arms by up to BlowSoftMaxShare, all of it from a push of
-	// BlowSoftFullPush, for a moment that passes off over BlowSoftSeconds, so it is felt through the body.
+	// A blow slackens the muscles of the trunk, head and arms for a moment, so it is felt through the body: a fresh, unhurt
+	// body by BlowSlackFitShare for BlowSlackFitSeconds, a worn one (no health and no breath left) by BlowSlackWornShare for
+	// BlowSlackWornSeconds, half worn halfway between; all of it from a push of BlowSoftFullPush, less from a smaller one.
+	// After that the muscles take hold again over BlowSlackReturnSeconds.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit", meta=(ClampMin="0", ClampMax="1"))
-	float BlowSoftMaxShare = 0.55f;
+	float BlowSlackFitShare = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit", meta=(ClampMin="0", ClampMax="1"))
+	float BlowSlackWornShare = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
-	float BlowSoftFullPush = 350.f;
+	float BlowSlackFitSeconds = 0.1f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
-	float BlowSoftSeconds = 0.6f;
+	float BlowSlackWornSeconds = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float BlowSlackReturnSeconds = 0.08f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float BlowSoftFullPush = 250.f;
+
+	// How worn the body is for that: half from health gone, half from stamina gone, 0 to 1.
+	float GetWornShare() const;
 
 	// Hitting the ground or something that does not give, a part of the body faster than ImpactHarmlessSpeed (cm/s) is
 	// hurt: ImpactWoundShare of its weight's energy wears the place as a blow does (a bruise, and with more, blood), and
@@ -437,9 +451,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
 	float RagdollEntryMaxRiseSpeed = 60.f;
 
-	// Impulse on the chest per cm/s of the speed a wall is met at.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
-	float WallImpactBodyImpulsePerSpeed = 9.f;
+	// Run into a wall, the part of the body that met it is thrown back off it by WallImpactPartRebound of the speed it
+	// came in at past WallImpactSpeedThreshold, and the trunk by WallImpactTrunkRebound of it, each for its own weight.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts", meta=(ClampMin="0"))
+	float WallImpactPartRebound = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts", meta=(ClampMin="0"))
+	float WallImpactTrunkRebound = 0.25f;
 
 	// Running into another body: from what closing speed in cm/s it counts.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
@@ -728,6 +746,8 @@ private:
 	FVector RecoveryWatchFrom = FVector::ZeroVector;
 	float HitRecoveryScale = 1.f;
 	float BlowSoftness = 0.f;
+	double BlowSoftUntil = -100.0;
+	double NextSlackLogTime = 0.0;
 	double RecoveryWatchSince = -1.0;
 	float RecoveryWatchLowest = 1.f;
 	TMap<FName, double> LastPartImpactTime;
