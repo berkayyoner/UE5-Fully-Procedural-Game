@@ -1444,7 +1444,11 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	ComputeConvexHull2D(SupportPoints, Hull);
 
 	const FVector2D ComXY(CenterOfMassWorld.X, CenterOfMassWorld.Y);
-	ComEdgeCm = ComputeSupportMargin(Hull, ComXY);
+	// Every distance of the weight from the feet is measured for a body of the usual size: a bigger one's weight is as much
+	// further off for the same lean.
+	const UAedirStatsComponent* GrowthStats = FindStats();
+	const float Growth = GrowthStats ? FMath::Max(GrowthStats->GetStrengthGrowth(), 0.1f) : 1.f;
+	ComEdgeCm = ComputeSupportMargin(Hull, ComXY) / Growth;
 	SupportMargin = ComEdgeCm + ComBalanceStaticAllowanceCm;
 	// Walking is a controlled fall: the swing foot leaves the polygon every step, so moving bodies get a margin allowance.
 	const float MoveSpeed = CharacterOwner->GetVelocity().Size2D();
@@ -1473,12 +1477,12 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	const FVector2D Offset = (ComXY - Centroid).GetSafeNormal();
 	ComOffsetDirection = FVector(Offset.X, Offset.Y, 0.0);
 	const FVector OffLocal = CharacterOwner->GetActorTransform().InverseTransformVectorNoScale(FVector(ComXY - Centroid, 0.0));
-	ComFromFeetLocal = FVector2D(OffLocal.X, OffLocal.Y);
+	ComFromFeetLocal = FVector2D(OffLocal.X, OffLocal.Y) / Growth;
 	// Steady on its feet, the body teaches where its weight belongs. Moving, or just set its feet somewhere new, it takes
 	// that afresh: a stance a step leaves it in is where it now stands.
 	const bool bSteady = Balance >= 0.95f && StaggerSeconds <= 0.f && !bStumbling && !bKicking && !bBending;
 	const double ComNow = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
-	if (MoveSpeed > 20.f || FVector2D::Distance(Centroid, LastFeetCentre) > ComFeetShiftCm)
+	if (MoveSpeed > 20.f || FVector2D::Distance(Centroid, LastFeetCentre) / Growth > ComFeetShiftCm)
 	{
 		ComResettleUntil = ComNow + ComResettleSeconds;
 	}
@@ -1535,9 +1539,12 @@ void UAedirBalanceComponent::AddFootSupportPoints(FName FootBone, FName BallBone
 	const FVector2D Side2D(-Forward.Y, Forward.X);
 	const FVector2D FootXY(Foot.X, Foot.Y);
 	const FVector2D BallXY(Ball.X, Ball.Y);
-	const FVector2D Heel = FootXY - Forward2D * ComBalanceHeelOffsetCm;
-	const FVector2D Toe = BallXY + Forward2D * ComBalanceToeOffsetCm;
-	const FVector2D HalfWidth = Side2D * ComBalanceFootHalfWidthCm;
+	// A bigger, stronger body stands on bigger feet.
+	const UAedirStatsComponent* FootStats = FindStats();
+	const float FootGrowth = FootStats ? FootStats->GetStrengthGrowth() : 1.f;
+	const FVector2D Heel = FootXY - Forward2D * (ComBalanceHeelOffsetCm * FootGrowth);
+	const FVector2D Toe = BallXY + Forward2D * (ComBalanceToeOffsetCm * FootGrowth);
+	const FVector2D HalfWidth = Side2D * (ComBalanceFootHalfWidthCm * FootGrowth);
 
 	OutPoints.Add(Heel + HalfWidth);
 	OutPoints.Add(Heel - HalfWidth);
@@ -1792,7 +1799,9 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	bool bTipsOver = false;
 	if (!bIsRagdoll && !IsGettingUp() && bSupportGrounded)
 	{
-		const float Beyond = FMath::Clamp((-SupportMargin - FallChanceFromCm) / FMath::Max(FallChanceFullCm - FallChanceFromCm, 1.f), 0.f, 1.f);
+		// The weight past the feet tips over only a body already losing its balance: one still steady just steps after it.
+		const float Losing = FMath::Clamp((1.f - Balance) / FMath::Max(1.f - FallTipBelowBalance, 0.01f), 0.f, 1.f);
+		const float Beyond = FMath::Clamp((-SupportMargin - FallChanceFromCm) / FMath::Max(FallChanceFullCm - FallChanceFromCm, 1.f), 0.f, 1.f) * Losing;
 		const float Lost = Balance < FallBalanceThreshold ? 1.f - Balance / FMath::Max(FallBalanceThreshold, KINDA_SMALL_NUMBER) : 0.f;
 		const float Chance = FallChancePerSecond * FMath::Max(Beyond, Lost) * (1.f + GetHurtShare()) * DeltaTime;
 		bTipsOver = Chance > 0.f && FMath::FRand() < Chance;
@@ -1904,7 +1913,9 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 		{
 			BlowSoftness = FMath::Max(BlowSoftness, Slack);
 		}
-		BlowSoftUntil = FMath::Max(BlowSoftUntil, Now + FMath::Lerp(BlowSlackFitSeconds, BlowSlackWornSeconds, Worn) * FMath::Sqrt(Size));
+		// As long as the blow was hard: in proportion to its push, longer still for one past the full push.
+		const float Hard = FMath::Clamp(static_cast<float>(Push.Size()) / FMath::Max(BlowSoftFullPush, 1.f), 0.f, FMath::Max(BlowSlackMaxScale, 1.f));
+		BlowSoftUntil = FMath::Max(BlowSoftUntil, Now + FMath::Lerp(BlowSlackFitSeconds, BlowSlackWornSeconds, Worn) * Hard);
 		static const IConsoleVariable* SlackLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
 		if (SlackLog && SlackLog->GetInt() != 0 && Slack > 0.02f && Now >= NextSlackLogTime)
 		{

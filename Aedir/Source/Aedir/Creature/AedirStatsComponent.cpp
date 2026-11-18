@@ -9,6 +9,8 @@ namespace
 	// The senses come back this long after the last blow, at this many points a second, quicker on one's feet; one knocked
 	// senseless wakes with this many back.
 	constexpr float StatsConsciousnessQuietSeconds = 3.f;
+	// The strength of an ordinary grown man, which the body's proportions are laid out for.
+	constexpr float StatsUsualStrength = 10.f;
 	constexpr float StatsConsciousnessRegen = 9.f;
 	constexpr float StatsConsciousnessOutRegen = 6.f;
 	constexpr float StatsConsciousnessWakeAt = 35.f;
@@ -182,7 +184,9 @@ float UAedirStatsComponent::GetStaminaRegenRate() const
 {
 	// The hungrier and thirstier, the slower the breath comes back. A trained body gets it back sooner.
 	const float NeedLoss = FMath::Clamp(1.f - FMath::Min(Hunger, Thirst) / StatsEnergyFeltBelow, 0.f, 1.f) * StatsEnergyNeedLoss;
-	return StaminaRegenPerSecond * (1.f + GetAthleticsShare() * StatsAthletismRegenGain) * (1.f - NeedLoss);
+	// Hurt, it comes back slower, in proportion to the health gone.
+	const float HealthLeft = FMath::Clamp(Health / FMath::Max(MaxHealth, 1.f), 0.f, 1.f);
+	return StaminaRegenPerSecond * (1.f + GetAthleticsShare() * StatsAthletismRegenGain) * (1.f - NeedLoss) * FMath::Lerp(HurtStaminaRegenShare, 1.f, HealthLeft);
 }
 
 float UAedirStatsComponent::GetNeedShare() const
@@ -532,6 +536,19 @@ float UAedirStatsComponent::GetSizeScale() const
 	const float Alpha = Range > 0.f ? FMath::Clamp((Strength - StrengthMin) / Range, 0.f, 1.f) : 0.f;
 	const float StrengthScale = FMath::Lerp(MinSizeScale, MaxSizeScale, Alpha);
 	return UAedirRaceCatalog::ComputeRaceSizeScale(StrengthScale, RaceSizeMultiplier);
+}
+
+float UAedirStatsComponent::GetStrengthShare() const
+{
+	const float Range = StrengthMax - StrengthMin;
+	return Range > 0.f ? FMath::Clamp((Strength - StrengthMin) / Range, 0.f, 1.f) : 0.f;
+}
+
+float UAedirStatsComponent::GetStrengthGrowth() const
+{
+	const float Range = StrengthMax - StrengthMin;
+	const float Usual = Range > 0.f ? FMath::Clamp((StatsUsualStrength - StrengthMin) / Range, 0.f, 1.f) : 0.f;
+	return FMath::Lerp(MinSizeScale, MaxSizeScale, GetStrengthShare()) / FMath::Max(FMath::Lerp(MinSizeScale, MaxSizeScale, Usual), 0.01f);
 }
 
 float UAedirStatsComponent::GetBulkScale() const

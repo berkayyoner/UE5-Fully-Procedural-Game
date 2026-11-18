@@ -3,6 +3,7 @@
 #include "Aedir.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Combat/AedirCombatComponent.h"
+#include "Fists/AedirFistArms.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Physics/AedirBalanceComponent.h"
@@ -35,6 +36,8 @@ namespace
 	constexpr float BodyGrabLivePullPerCm = 22.f;
 	constexpr float BodyGrabLivePullMax = 420.f;
 	constexpr float BodyGrabLiveBalancePerSecond = 0.35f;
+	// How much of its going away from the hand a living body held loses, all of the hold's share.
+	constexpr float BodyGrabHoldBackShare = 0.9f;
 	constexpr float BodyGrabCloseCm = 22.f;
 	constexpr float BodyGrabReachSeconds = 2.f;
 	// A grown man drags a body of his own weight over grass, about 400 N of friction, at a walk; a strong one easily.
@@ -421,6 +424,42 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 		// A living body standing on its feet is not dragged by its limbs alone: the pull reaches its whole body, which gives
 		// a little, the more the stronger the hand and the lighter the body, and is thrown off balance by it.
 		AAedirCreature* Held = Cast<AAedirCreature>(Grab.Target.IsValid() ? Grab.Target->GetOwner() : nullptr);
+		if (Held && Held != Creature && Held->Stats && !Held->Stats->IsDead() && Held->Balance && !Held->Balance->IsRagdoll())
+		{
+			// Held, a living body is held back: going away from the hand it gets only as far as it outmatches the arm, by
+			// strength against strength and the holder's breath.
+			const float HeldStrengthNow = FMath::Max(Held->Stats->Strength, 1.f);
+			const float Hold = FMath::Clamp(Strength / (Strength + HeldStrengthNow), 0.1f, 0.9f) * FMath::Lerp(0.5f, 1.f, StaminaShare);
+			if (UCharacterMovementComponent* HeldMove = Held->GetCharacterMovement())
+			{
+				const FVector FromHand = (Point - HandWorld).GetSafeNormal2D();
+				const FVector Off = FromHand.IsNearlyZero() ? (Held->GetActorLocation() - Creature->GetActorLocation()).GetSafeNormal2D() : FromHand;
+				const double Leaving = FVector::DotProduct(HeldMove->Velocity, Off);
+				if (Leaving > 0.0)
+				{
+					HeldMove->Velocity -= Off * (Leaving * Hold * BodyGrabHoldBackShare);
+				}
+				static const IConsoleVariable* HoldLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+				if (HoldLog && HoldLog->GetInt() != 0 && GFrameCounter % 15 == 0)
+				{
+					UE_LOG(LogAedir, Log, TEXT("[Hold] %s holds %s by the %s (%.0f%% of the struggle): it was going away at %.0f cm/s, held back by %.0f"), *Creature->GetName(), *Held->GetName(), *Grab.Bone.ToString(), Hold * 100.f,
+						FMath::Max(Leaving, 0.0), FMath::Max(Leaving, 0.0) * Hold * BodyGrabHoldBackShare);
+				}
+			}
+			// An arm or a hand held cannot strike freely: its fist is kept near the holding hand and thrown the slower.
+			const FString HeldBone = Grab.Bone.ToString();
+			const bool bArm = HeldBone.StartsWith(TEXT("hand")) || HeldBone.StartsWith(TEXT("lowerarm")) || HeldBone.StartsWith(TEXT("upperarm"))
+				|| HeldBone.StartsWith(TEXT("thumb")) || HeldBone.StartsWith(TEXT("index")) || HeldBone.StartsWith(TEXT("middle")) || HeldBone.StartsWith(TEXT("ring")) || HeldBone.StartsWith(TEXT("pinky"));
+			if (bArm)
+			{
+				if (UAedirFistArms* HeldArms = Held->FindComponentByClass<UAedirFistArms>())
+				{
+					// Held by the hand the fist is held all but still; by the upper arm, less.
+					const float ByPart = HeldBone.StartsWith(TEXT("upperarm")) ? 0.5f : HeldBone.StartsWith(TEXT("lowerarm")) ? 0.8f : 1.f;
+					HeldArms->SetHeldBy(HeldBone.EndsWith(TEXT("_l")) ? EAedirHand::Left : EAedirHand::Right, HandWorld, FMath::Clamp(Hold * 1.6f, 0.f, 1.f) * ByPart);
+				}
+			}
+		}
 		if (Held && Held != Creature && Held->Balance && !Held->Balance->IsRagdoll() && Gap > BodyGrabCloseCm * 0.5f)
 		{
 			const FVector Pull = (HandWorld - Point).GetSafeNormal2D();

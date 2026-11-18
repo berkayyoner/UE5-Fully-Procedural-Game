@@ -1,4 +1,5 @@
 #include "Wounds/AedirSever.h"
+#include "Engine/SkinnedAssetCommon.h"
 #include "TimerManager.h"
 
 #include "Aedir.h"
@@ -250,8 +251,15 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 
 		if (!Triangles.IsEmpty())
 		{
+			// A level of detail may map its sections onto the mesh's materials its own way (the face's does): that map wins.
+			int32 MaterialIndex = Section.MaterialIndex;
+			if (const FSkeletalMeshLODInfo* LodInfo = LayerAsset->GetLODInfo(0); LodInfo && LodInfo->LODMaterialMap.IsValidIndex(SectionIndex) && LodInfo->LODMaterialMap[SectionIndex] != INDEX_NONE)
+			{
+				MaterialIndex = LodInfo->LODMaterialMap[SectionIndex];
+			}
+			UE_LOG(LogAedir, Verbose, TEXT("[Sever] %s section %d of %s: %d triangles, material %s"), *SeverBone.ToString(), SectionIndex, *LayerAsset->GetName(), Triangles.Num() / 3, *GetNameSafe(Layer->GetMaterial(MaterialIndex)));
 			Mesh->CreateMeshSection(MadeSections, Vertices, Triangles, Normals, UV, TArray<FColor>(), Tangents, false);
-			Mesh->SetMaterial(MadeSections, Layer->GetMaterial(Section.MaterialIndex));
+			Mesh->SetMaterial(MadeSections, Layer->GetMaterial(MaterialIndex));
 			++MadeSections;
 			const int32 Step = FMath::Max(Vertices.Num() / SeverHullPoints, 1);
 			for (int32 Index = 0; Index < Vertices.Num(); Index += Step)

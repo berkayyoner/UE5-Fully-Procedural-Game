@@ -37,8 +37,8 @@ namespace
 	constexpr float ReachTableLowerCm = 8.f;
 	constexpr float ReachTableHipForwardCm = 0.f;
 	constexpr float ReachShoulderSideCm = 18.f;
-	constexpr float ReachMaxLowerCm = 54.f;
-	constexpr float ReachMaxHipBackCm = 30.f;
+	constexpr float ReachMaxLowerCm = 62.f;
+	constexpr float ReachMaxHipBackCm = 38.f;
 	constexpr float ReachMaxHipForwardCm = 25.f;
 	constexpr float ReachMinLeanDegrees = 15.f;
 	constexpr float ReachMaxLeanDegrees = 90.f;
@@ -1171,7 +1171,9 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 
 	const FVector ItemCenter = GetReachTargetWorld(Hand, Item);
 	const FVector ToItem = ItemCenter - Slot.ReachHandWorld;
-	const float Step = ReachSpeed * DeltaTime;
+	// A bigger, stronger body reaches as much further and faster, and takes hold as far off.
+	const float Growth = Creature->Stats ? FMath::Max(Creature->Stats->GetStrengthGrowth(), 0.1f) : 1.f;
+	const float Step = ReachSpeed * Growth * DeltaTime;
 	if (ToItem.SizeSquared() <= FMath::Square(Step))
 	{
 		Slot.ReachHandWorld = ItemCenter;
@@ -1183,10 +1185,14 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 
 	// A pass takes its time, and happens once the hands have met.
 	const bool bPassing = IsPassingHeld(GetOtherHand(Hand));
-	const bool bClose = FVector::Dist(GetHandWorld(Hand), ItemCenter) < GrabDistance;
+	const bool bClose = FVector::Dist(GetHandWorld(Hand), ItemCenter) < GrabDistance * Growth;
 	if (bPassing ? (Slot.ReachElapsed >= PassGiveUpSeconds || (bClose && Slot.ReachElapsed >= PassHandSeconds)) : bClose)
 	{
-		UE_LOG(LogAedir, Log, TEXT("[Reach] %s took %s after %.2f s"), *GetNameSafe(Creature), *Item->GetName(), Slot.ReachElapsed);
+		const double TookFloorZ = Creature->GetActorLocation().Z - Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		const FVector TookShoulder = Creature->GetMesh() ? Creature->GetMesh()->GetBoneLocation(Hand == EAedirHand::Left ? TEXT("upperarm_l") : TEXT("upperarm_r")) : FVector::ZeroVector;
+		const FVector TookPelvis = Creature->GetMesh() ? Creature->GetMesh()->GetBoneLocation(TEXT("pelvis")) : FVector::ZeroVector;
+		UE_LOG(LogAedir, Log, TEXT("[Reach] %s took %s after %.2f s; the item %.0f cm ahead, shoulder %.0f up, pelvis %.0f up, lowered %.0f, leaning %.0f, hips forward %.0f, scale %.2f"), *GetNameSafe(Creature), *Item->GetName(), Slot.ReachElapsed,
+			Creature->GetActorTransform().InverseTransformPositionNoScale(ItemCenter).X, TookShoulder.Z - TookFloorZ, TookPelvis.Z - TookFloorZ, PelvisLowerZ, ReachLeanDegrees, ReachHipForward, Creature->GetActorScale3D().Z);
 		GrabItem(Hand, Item);
 		return;
 	}
@@ -1195,7 +1201,7 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 	// than straining on.
 	const float HandGap = static_cast<float>(FVector::Dist(GetHandWorld(Hand), ItemCenter));
 	const int32 Index = static_cast<int32>(Hand);
-	if (Slot.ReachElapsed <= DeltaTime || HandGap < ReachBestGap[Index] - ReachProgressCm)
+	if (Slot.ReachElapsed <= DeltaTime || HandGap < ReachBestGap[Index] - ReachProgressCm * Growth)
 	{
 		ReachBestGap[Index] = HandGap;
 		ReachStallSeconds[Index] = 0.f;
@@ -1206,12 +1212,15 @@ void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)
 	}
 	const bool bStalled = !bPassing && Slot.ReachElapsed > ReachStallGraceSeconds && ReachStallSeconds[Index] >= ReachStallLimitSeconds;
 	const bool bTimedOut = Slot.ReachElapsed >= ReachTimeout;
-	const bool bOutOfRange = FVector::Dist(Creature->GetActorLocation(), ItemCenter) > PickupRange * ReachRangeMultiplier;
+	const bool bOutOfRange = FVector::Dist(Creature->GetActorLocation(), ItemCenter) > PickupRange * Growth * ReachRangeMultiplier;
 	if (bTimedOut || bOutOfRange || bStalled)
 	{
-		UE_LOG(LogAedir, Log, TEXT("[Reach] %s gave up on %s after %.2f s (%s), the hand %.0f cm short, the item %.0f cm above the feet"), *GetNameSafe(Creature), *Item->GetName(), Slot.ReachElapsed,
+		const double GaveUpFloorZ = Creature->GetActorLocation().Z - Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		const FVector GaveUpShoulder = Creature->GetMesh() ? Creature->GetMesh()->GetBoneLocation(Hand == EAedirHand::Left ? TEXT("upperarm_l") : TEXT("upperarm_r")) : FVector::ZeroVector;
+		const FVector GaveUpPelvis = Creature->GetMesh() ? Creature->GetMesh()->GetBoneLocation(TEXT("pelvis")) : FVector::ZeroVector;
+		UE_LOG(LogAedir, Log, TEXT("[Reach] %s gave up on %s after %.2f s (%s), the hand %.0f cm short, the item %.0f cm above the feet and %.0f cm ahead; hand %.0f up, shoulder %.0f up, pelvis %.0f up, lowered %.0f, leaning %.0f, hips forward %.0f, scale %.2f"), *GetNameSafe(Creature), *Item->GetName(), Slot.ReachElapsed,
 			bStalled ? TEXT("stopped getting closer") : bOutOfRange ? TEXT("out of range") : TEXT("too long"), HandGap,
-			ItemCenter.Z - (Creature->GetActorLocation().Z - Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight()));
+			ItemCenter.Z - GaveUpFloorZ, Creature->GetActorTransform().InverseTransformPositionNoScale(ItemCenter).X, GetHandWorld(Hand).Z - GaveUpFloorZ, GaveUpShoulder.Z - GaveUpFloorZ, GaveUpPelvis.Z - GaveUpFloorZ, PelvisLowerZ, ReachLeanDegrees, ReachHipForward, Creature->GetActorScale3D().Z);
 		ResetSlot(Slot);
 	}
 }
@@ -1621,7 +1630,8 @@ AAedirItemActor* UAedirInteractionComponent::FindBestItem() const
 	const FCollisionObjectQueryParams ObjectParams(FCollisionObjectQueryParams::AllDynamicObjects);
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(Creature);
-	World->OverlapMultiByObjectType(Overlaps, CreatureLocation, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(PickupRange), QueryParams);
+	const float Range = PickupRange * (Creature->Stats ? FMath::Max(Creature->Stats->GetStrengthGrowth(), 0.1f) : 1.f);
+	World->OverlapMultiByObjectType(Overlaps, CreatureLocation, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(Range), QueryParams);
 
 	AAedirItemActor* Best = nullptr;
 	float BestDot = 0.f;
@@ -1634,7 +1644,7 @@ AAedirItemActor* UAedirInteractionComponent::FindBestItem() const
 		}
 
 		const FVector ItemCenter = Item->GetBoundsCenterWorld();
-		if (FVector::Dist(CreatureLocation, ItemCenter) > PickupRange)
+		if (FVector::Dist(CreatureLocation, ItemCenter) > Range)
 		{
 			continue;
 		}

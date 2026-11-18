@@ -68,7 +68,7 @@ namespace
 	constexpr float AedirMinStepSeconds = 0.14f;
 	constexpr float AedirMaxStepSeconds = 0.38f;
 	constexpr float AedirLandingOverlapStart = 0.75f;
-	constexpr float AedirOverlapMinWalkShare = 1.2f;
+	constexpr float AedirOverlapMinWalkShare = 1.f;
 	constexpr float AedirLandingOverlapShare = 1.15f;
 	constexpr float AedirLandingLeadSeconds = 0.03f;
 	constexpr float AedirPlaceStepSeconds = 0.32f;
@@ -225,7 +225,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float WalkSpeedCm = FMath::Max(MovementComponent->WalkSpeed, 1.f);
 	const float RunSpeedCm = WalkSpeedCm * MovementComponent->RunSpeedMultiplier;
 	const float RunMix = FMath::Clamp((Speed2D - WalkSpeedCm) / FMath::Max(RunSpeedCm - WalkSpeedCm, 1.f), 0.f, 1.f);
-	const float SlowStrideScale = FMath::Clamp(Speed2D / WalkSpeedCm, AedirSlowStrideMinScale, 1.f);
+	const float SlowStrideScale = FMath::Max(FMath::Clamp(Speed2D / WalkSpeedCm, AedirSlowStrideMinScale, 1.f), CrouchStrideShare * CrouchAlpha);
 	const float StrideLength = FMath::Max(
 		FMath::Lerp(StrideWalkCm * SlowStrideScale, StrideRunCm, RunMix) * ActorScale * DirectionalStrideScale * AthleticsScale * StairFactor * StanceStrideScale,
 		AedirMinStrideLength);
@@ -325,9 +325,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const bool bLaterLanding = bSwinging[LaterFoot] && SwingElapsed[LaterFoot] / FMath::Max(SwingDuration[LaterFoot], KINDA_SMALL_NUMBER) > AedirLandingOverlapStart;
 		// Up to walking pace and on steady feet there is only ever one foot in the air, and the body settles on both for a moment between steps.
 		const bool bMayOverlap = Speed2D > WalkSpeedCm * AedirOverlapMinWalkShare || bRecovering || (BalanceComponent && BalanceComponent->IsStaggering());
+		// Running, the feet may both be off the ground between steps; the faster, the sooner the next one goes.
+		const float OverlapShare = FMath::Lerp(AedirLandingOverlapShare, RunFlightTriggerShare, RunMix);
 		const bool bDoubleSupportDone = PlantedSeconds[LaterFoot] >= CycleSeconds * FMath::Max(0.5f - SwingFraction, 0.f);
 		const bool bNextMayStep = !bSwinging[NextStepFoot]
-			&& (bSwinging[LaterFoot] ? (bMayOverlap && bLaterLanding && FootDistance(NextStepFoot) >= Trigger * AedirLandingOverlapShare) : (bMayOverlap || bDoubleSupportDone || bFirstStep));
+			&& (bSwinging[LaterFoot] ? (bMayOverlap && bLaterLanding && FootDistance(NextStepFoot) >= Trigger * OverlapShare) : (bMayOverlap || bDoubleSupportDone || bFirstStep));
 
 		if (bRecovering && !bFootInAir && (RecoveryCooldownRemaining <= 0.f || RecoveryUrgency > 0.7f))
 		{
@@ -363,7 +365,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float StairTarget = FMath::Lerp(1.f, StairStrideMultiplier, FMath::Clamp(MaxRise / StairHeightForShorteningCm, 0.f, 1.f));
 	StairFactor = FMath::FInterpTo(StairFactor, StairTarget, DeltaTime, StairFactorInterpSpeed);
 
-	const float SpeedStepHeight = BaseStepHeightCm + StepHeightSpeedBonusCm * SpeedAlpha + RunStepHeightBonusCm * RunMix;
+	// A bigger body lifts its feet as much higher as it is bigger; crouched, higher still under the bent knees.
+	const float SpeedStepHeight = (BaseStepHeightCm + StepHeightSpeedBonusCm * SpeedAlpha + RunStepHeightBonusCm * RunMix + CrouchStepHeightBonusCm * CrouchAlpha) * ActorScale;
 	const float AnkleRestCm = (AnkleRefHeightCm > 0.f ? AnkleRefHeightCm : AnkleHeightCm) * ActorScale + FootGroundLiftCm;
 	FVector Contact[2];
 	FVector AnkleWorld[2];
@@ -403,7 +406,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			const float Rise = bSwingFixedTarget[Foot] ? static_cast<float>(FMath::Abs(Target.Z - SwingStartContact[Foot].Z)) : RiseCm[Foot];
 			// A broken leg is swung through low, the knee hardly bent.
 			const float LimpLift = Foot == BrokenLeg ? LimpLiftShare : 1.f;
-			const float StepHeight = FMath::Clamp(FMath::Max(SpeedStepHeight * LimpLift, Rise + AedirStepHeightClearance), 0.f, MaxStepHeightCm);
+			const float StepHeight = FMath::Clamp(FMath::Max(SpeedStepHeight * LimpLift, Rise + AedirStepHeightClearance), 0.f, MaxStepHeightCm * ActorScale);
 
 			Contact[Foot] = FMath::Lerp(SwingStartContact[Foot], Target, Smooth);
 			FootPosition = Contact[Foot] + FVector::UpVector * (StepHeight * Arc);
@@ -1141,6 +1144,11 @@ void UAedirGaitComponent::CacheLegGeometry()
 
 void UAedirGaitComponent::BeginStep(int32 Foot, float Seconds)
 {
+	static const IConsoleVariable* StepLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	if (StepLog && StepLog->GetInt() != 0 && bSwinging[1 - Foot])
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Flight] %s lifts its %s foot before the other is down, at %.0f cm/s"), *GetNameSafe(GetOwner()), Foot == 0 ? TEXT("left") : TEXT("right"), GetOwner() ? GetOwner()->GetVelocity().Size2D() : 0.0);
+	}
 	bSwinging[Foot] = true;
 	bSwingFixedTarget[Foot] = false;
 	SwingStartContact[Foot] = PlantedContact[Foot];

@@ -94,6 +94,9 @@ private:
 
 	// Whether each foot has been lifted since it last came down.
 	bool bFootRaised[2] = { false, false };
+	// For the hit log: where the last print of each foot was laid, and when, to tell how far the foot then came to rest from it.
+	FVector LastPrintAt[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	double LastPrintTime[2] = { -1.0, -1.0 };
 	float SurfaceQueryTimer = 0.1f;
 	float CachedSlipperiness = 0.f;
 	float CachedSpeedMultiplier = 1.f;

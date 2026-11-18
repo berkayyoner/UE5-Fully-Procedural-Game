@@ -265,7 +265,15 @@ public:
 	float FistDustFullJoules = 130.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
-	float SwingStaminaCost = 5.f;
+	float SwingStaminaCost = 7.f;
+
+	// A stronger body puts more of its weight behind a blow: from the usual strength (10) to the most, its fist or weapon
+	// strikes as if this much heavier again (1 for twice), in proportion between; a weaker one less. The blow's push and harm
+	// grow with it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float StrengthBlowGain = 1.f;
+
+	float GetStrengthBlowScale() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingDurationBase = 0.45f;

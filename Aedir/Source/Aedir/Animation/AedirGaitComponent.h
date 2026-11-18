@@ -407,6 +407,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MaxStepHeightCm = 45.f;
 
+	// Crouched, the feet are lifted this much higher (cm, all of it fully down), so they clear the ground under bent knees
+	// instead of shuffling along it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float CrouchStepHeightBonusCm = 9.f;
+
+	// Crouched, the strides are at least this share of a walking one, slow as it goes, so it steps rather than shuffles.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait", meta=(ClampMin="0", ClampMax="1"))
+	float CrouchStrideShare = 0.7f;
+
+	// Faster than walking, the next foot may leave the ground before the other is down, both off it for a moment, once the
+	// body has carried it RunFlightTriggerShare of its usual step away (at a full run; more than that just past walking).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float RunFlightTriggerShare = 0.9f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float StairProbeDistanceCm = 35.f;
 

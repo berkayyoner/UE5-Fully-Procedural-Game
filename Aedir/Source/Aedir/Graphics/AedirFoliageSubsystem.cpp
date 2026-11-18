@@ -58,6 +58,7 @@ namespace
 	// Share of the foliage pack's own lean away from a leg that is kept: its own pushes the grass down out of sight.
 	constexpr float FoliageBendStrengthShare = 0.15f;
 	constexpr float FoliageWindFollow = 0.4f;
+	constexpr float FoliageGrassSwaySpeed = 0.55f;
 	const TCHAR* const FoliageNaniteGrassRoot = TEXT("/Game/OWD_Nanite_Base_Grass/Meshes/");
 	const TCHAR* const FoliageScannedGrassRoot = TEXT("/Game/Aedir/Megascans/Grass/");
 	// Each scanned plant and its variations; the tall meadow grass is grown low, as a grazed meadow's is.
@@ -576,7 +577,10 @@ void UAedirFoliageSubsystem::UpdateWind(float DeltaTime)
 		return;
 	}
 	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Intensity"), FMath::Lerp(0.12f, 0.7f, WindNow));
-	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Speed"), FMath::Lerp(0.35f, 0.85f, WindNow));
+	// The grass sways by the time since the game began times this speed, so changing it while the weather turns would sweep
+	// the sway through a great many swings at once and set every blade shaking: it stays put, and the strength alone
+	// follows the weather.
+	UKismetMaterialLibrary::SetScalarParameterValue(World, Collection, TEXT("Wind_Speed"), FoliageGrassSwaySpeed);
 }
 
 void UAedirFoliageSubsystem::CrushUnderFeet()

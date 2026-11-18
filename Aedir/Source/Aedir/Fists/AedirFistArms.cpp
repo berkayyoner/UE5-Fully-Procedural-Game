@@ -119,6 +119,14 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	}
 	FlinchLeft[0] = FMath::Max(FlinchLeft[0] - DeltaTime, 0.f);
 	FlinchLeft[1] = FMath::Max(FlinchLeft[1] - DeltaTime, 0.f);
+	for (int32 HeldSlot = 0; HeldSlot < 2; ++HeldSlot)
+	{
+		HeldLeft[HeldSlot] = FMath::Max(HeldLeft[HeldSlot] - DeltaTime, 0.f);
+		if (HeldLeft[HeldSlot] <= 0.f)
+		{
+			HeldShare[HeldSlot] = 0.f;
+		}
+	}
 	const ACharacter* Owner = Cast<ACharacter>(GetOwner());
 	if (!Owner || DeltaTime <= 0.f)
 	{
@@ -219,7 +227,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float Before = Punch;
 		const UAedirStatsComponent* Breath = Owner->FindComponentByClass<UAedirStatsComponent>();
 		const float Tired = Breath && TiredFrom > KINDA_SMALL_NUMBER ? FMath::Clamp((TiredFrom - Breath->GetStaminaFraction()) / TiredFrom, 0.f, 1.f) : 0.f;
-		float Next = FMath::FInterpConstantTo(Punch, PunchWanted, DeltaTime, (PunchWanted > Punch ? PunchOutRate : PunchBackRate) * FMath::Lerp(1.f, TiredSpeedShare, Tired));
+		// An arm someone holds goes out the slower, the harder it is held.
+		const float HeldSlow = FMath::Lerp(1.f, HeldPunchSpeedShare, HeldShare[PunchSlot]);
+		float Next = FMath::FInterpConstantTo(Punch, PunchWanted, DeltaTime, (PunchWanted > Punch ? PunchOutRate * HeldSlow : PunchBackRate) * FMath::Lerp(1.f, TiredSpeedShare, Tired));
 		// Going out costs breath: as far as what is left pays for, and no further. A blade costs more than a fist.
 		const float Cost = bArmed[PunchSlot] && HeldNow(PunchSlot) ? BladeSwingStaminaCost : PunchStaminaCost;
 		if (Next > Before && Cost > 0.f)
@@ -254,6 +264,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	const FVector ShoulderL = Mesh ? Mesh->GetBoneLocation(TEXT("upperarm_l")) : Owner->GetActorLocation() - Right * 18.f + Up * 45.f;
 	const FVector ShoulderR = Mesh ? Mesh->GetBoneLocation(TEXT("upperarm_r")) : Owner->GetActorLocation() + Right * 18.f + Up * 45.f;
 	const FVector Chest = (ShoulderL + ShoulderR) * 0.5;
+	// Every reach and height of the guard and the arcs is for a body of the usual size: a bigger, stronger one reaches as much
+	// further as it is bigger, a smaller one less.
+	const UAedirStatsComponent* GrowthStats = Owner->FindComponentByClass<UAedirStatsComponent>();
+	const float BodyScale = GrowthStats ? GrowthStats->GetStrengthGrowth() : 1.f;
 
 	// Up and down the guard turns round the chest as a whole, so its shape holds.
 	const float Phi = FMath::DegreesToRadians(UpDown > 0.f ? UpDown * ArcUpDegrees : UpDown * ArcDownDegrees);
@@ -338,12 +352,12 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			const double B = FVector::DotProduct(V, Up);
 			return V - Forward * A - Up * B + Forward * (A * CosL - B * SinL) + Up * (A * SinL + B * CosL);
 		};
-		FistWorld[Slot] = Chest + Look(FistFromChest);
+		FistWorld[Slot] = Chest + Look(FistFromChest) * BodyScale;
 		// Thrust out in both hands, the blade goes out and a little down, so the arms reach on below the shoulders and the
 		// elbows are not drawn up with them.
 		if (bBlade)
 		{
-			FistWorld[Slot] -= Up * (ArmPunch * TwoHandPunchDropCm * (Slot == 1 ? GripAlpha : 0.f));
+			FistWorld[Slot] -= Up * (ArmPunch * TwoHandPunchDropCm * BodyScale * (Slot == 1 ? GripAlpha : 0.f));
 		}
 		const FVector Pole = Look(Tip(PoleLevel));
 		// Out at its own side the fist turns over, palm down; brought across or in the guard it stays upright. A blade's wrist
@@ -388,9 +402,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			BladeWristUp[Slot] -= FMath::Sin(UE_PI * FMath::Clamp(FMath::Abs(static_cast<float>(Aim.X)), 0.f, 1.f)) * (1.f - Raise) * BladeSweepWristDownDegrees;
 		}
 		BladeAimWay[Slot] = Look((Forward + Up * BladeGuardUpShare).GetSafeNormal());
-		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * 40.f;
+		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * (40.f * BodyScale);
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
-		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm));
+		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm) * BodyScale);
 		ShownAlpha[Slot] = Alpha[Slot];
 		// In both hands and not raised, the blade is carried low before the hips, aslant across with its point out to the
 		// right and down, the elbow hanging out at its side; raised, it goes as in one hand.
@@ -405,10 +419,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			const FVector RestRight = ChestYaw.RotateVector(FVector::RightVector);
 			const FVector Lay = FRotator(TwoHandRestPitchDegrees, TwoHandRestYawDegrees, 0.f).RotateVector(FVector::ForwardVector);
 			const FVector Way = RestForward * Lay.X + RestRight * Lay.Y + Up * Lay.Z;
-			const FVector RestPlace = Owner->GetActorLocation() + RestForward * TwoHandRestForwardCm + RestRight * TwoHandRestSideCm + Up * TwoHandRestHeightCm;
+			const FVector RestPlace = Owner->GetActorLocation() + (RestForward * TwoHandRestForwardCm + RestRight * TwoHandRestSideCm + Up * TwoHandRestHeightCm) * BodyScale;
 			const FVector RestPole = (-Up * 0.8f + RestRight * 0.6f - RestForward * 0.2f).GetSafeNormal();
 			FistWorld[Slot] = FMath::Lerp(FistWorld[Slot], RestPlace, Rest);
-			ElbowWorld[Slot] = FMath::Lerp(ElbowWorld[Slot], (Shoulder + RestPlace) * 0.5 + RestPole * 40.f, Rest);
+			ElbowWorld[Slot] = FMath::Lerp(ElbowWorld[Slot], (Shoulder + RestPlace) * 0.5 + RestPole * (40.f * BodyScale), Rest);
 			BladeAimWay[Slot] = FMath::Lerp(BladeAimWay[Slot], Way, Rest).GetSafeNormal();
 			BladeLean[Slot] = FMath::Lerp(BladeLean[Slot], Way, Rest).GetSafeNormal();
 			BladeAim[Slot] = FMath::Lerp(BladeAim[Slot], 1.f, Rest);
@@ -416,6 +430,14 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			BladeWristUp[Slot] = FMath::Lerp(BladeWristUp[Slot], 0.f, Rest);
 			FistTurn[Slot] = FMath::Lerp(FistTurn[Slot], 0.f, Rest);
 			ShownAlpha[Slot] = 1.f - (1.f - Alpha[Slot]) * (1.f - GripAlpha);
+		}
+		// Held, the fist gets only as far from the holding hand as the struggle lets it.
+		if (HeldShare[Slot] > 0.f)
+		{
+			const FVector Kept = HeldAt[Slot] + (FistWorld[Slot] - HeldAt[Slot]).GetClampedToMaxSize(HeldSlackCm * BodyScale);
+			const FVector Moved = FMath::Lerp(FistWorld[Slot], Kept, HeldShare[Slot]) - FistWorld[Slot];
+			FistWorld[Slot] += Moved;
+			ElbowWorld[Slot] += Moved * 0.5;
 		}
 	}
 	const bool bBladeUp = (HeldNow(0) && bArmed[0]) || (HeldNow(1) && bArmed[1]);

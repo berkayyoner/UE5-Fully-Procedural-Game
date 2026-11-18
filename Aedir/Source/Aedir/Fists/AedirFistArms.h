@@ -140,7 +140,7 @@ public:
 
 	// A whole punch thrown out costs this much stamina; without enough left, it only goes out as far as what is left pays for.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float PunchStaminaCost = 8.f;
+	float PunchStaminaCost = 11.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistBackDegrees = 8.f;
@@ -315,7 +315,7 @@ public:
 	// A blade swung out costs this much stamina where a fist's punch costs PunchStaminaCost, and every quick move of it
 	// (faster than PunchSlowSpeed) this much more for each whole width of the mouse's field it goes.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeSwingStaminaCost = 12.f;
+	float BladeSwingStaminaCost = 16.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeFastMoveStaminaPerField = 4.f;
@@ -428,6 +428,21 @@ public:
 	// Hurt just now: that arm comes down out of the guard for this long, whatever its button says, and goes back up after if
 	// it is still held; the other arm goes on. A longer one already going is kept.
 	void Flinch(EAedirHand Hand, float Seconds) { FlinchLeft[Index(Hand)] = FMath::Max(FlinchLeft[Index(Hand)], Seconds); }
+	// Someone's hand holds this arm at that place, by that share of the struggle (0 to 1): the fist gets only so far from it
+	// and is thrown out the slower. It lasts as long as it is told again every moment.
+	void SetHeldBy(EAedirHand Hand, const FVector& HoldWorld, float Share)
+	{
+		HeldAt[Index(Hand)] = HoldWorld;
+		HeldShare[Index(Hand)] = FMath::Clamp(Share, 0.f, 1.f);
+		HeldLeft[Index(Hand)] = 0.15f;
+	}
+
+	// Held fully, the fist reaches no further than this from the holding hand (cm), and is thrown out this share as fast.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float HeldSlackCm = 12.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", ClampMax="1"))
+	float HeldPunchSpeedShare = 0.25f;
 	bool IsFlinching(EAedirHand Hand) const { return FlinchLeft[Index(Hand)] > 0.f; }
 
 	// The mouse moved while a button is held (mouse axis units, up positive).
@@ -490,6 +505,9 @@ private:
 
 	bool bHeld[2] = { false, false };
 	float FlinchLeft[2] = { 0.f, 0.f };
+	FVector HeldAt[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float HeldShare[2] = { 0.f, 0.f };
+	float HeldLeft[2] = { 0.f, 0.f };
 	// Down or getting up, no arm comes up into the fight.
 	bool bBodyDown = false;
 	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft[Slot] <= 0.f && !bBodyDown; }

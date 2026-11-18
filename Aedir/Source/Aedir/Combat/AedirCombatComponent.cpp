@@ -2927,6 +2927,19 @@ void UAedirCombatComponent::UpdateLeadFoot()
 	}
 }
 
+float UAedirCombatComponent::GetStrengthBlowScale() const
+{
+	const UAedirStatsComponent* Stats = Creature ? Creature->Stats.Get() : nullptr;
+	if (!Stats)
+	{
+		return 1.f;
+	}
+	const float Range = FMath::Max(Stats->StrengthMax - Stats->StrengthMin, 1.f);
+	const float Usual = FMath::Clamp((10.f - Stats->StrengthMin) / Range, 0.f, 1.f);
+	// Never below a share of the usual weight, however weak.
+	return FMath::Max(1.f + StrengthBlowGain * (Stats->GetStrengthShare() - Usual) / FMath::Max(1.f - Usual, 0.01f), 0.4f);
+}
+
 float UAedirCombatComponent::ComputeImpactEnergy(float MassKg, float SpeedCmPerSec)
 {
 	const float SpeedMetersPerSecond = FMath::Max(SpeedCmPerSec, 0.f) / 100.f;
@@ -4377,6 +4390,8 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		return;
 	}
 	const EAedirDamageType DamageType = HeldItem ? HeldItem->GetDamageType() : EAedirDamageType::Blunt;
+	// The stronger the arm, the more weight behind the blow.
+	MassEff *= GetStrengthBlowScale();
 	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
 	// The armour where it landed, for the way it landed: an edge, a point driven in along the blade, or a blunt blow. Bare
 	// places (the face under an open helmet, the neck, under the arms, the hands) take it all.

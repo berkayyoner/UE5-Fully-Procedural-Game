@@ -12,6 +12,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/DecalComponent.h"
 #include "Surface/AedirFootprintSubsystem.h"
+#include "Aedir.h"
 #include "Weather/AedirWeatherManager.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
@@ -29,6 +30,8 @@
 #include "Surface/AedirPhysicalMaterial.h"
 #include "Surface/AedirSurfaceSubsystem.h"
 
+static TAutoConsoleVariable<int32> CVarAedirWhitePrints(TEXT("aedir.WhitePrints"), 0, TEXT("1: footprints are drawn white and full, to see where they lie."));
+
 namespace
 {
 	constexpr float AedirStepBloodRadiusCm = 12.f;
@@ -39,7 +42,9 @@ namespace
 	constexpr float AedirStepPrintDepthCm = 4.f;
 	constexpr float AedirStepHalfWidthCm = 6.f;
 	constexpr float AedirStepHalfLengthCm = 14.f;
-	constexpr float AedirStepForwardCm = 8.f;
+	constexpr float AedirStepHeelBehindAnkleCm = 6.f;
+	constexpr float AedirStepToesPastBallCm = 7.f;
+	constexpr float AedirStepPrintLeadSeconds = 0.012f;
 	constexpr float AedirStepRunSpeed = 380.f;
 	constexpr float AedirStepSnowShare = 0.3f;
 	constexpr float AedirStepSoundShare = 0.35f;
@@ -116,8 +121,22 @@ void UAedirFootstepComponent::TickComponent(float DeltaTime, ELevelTick TickType
 	const FVector FootWorld[2] = { GaitState.LeftFootWorld, GaitState.RightFootWorld };
 	const float Speed2D = Movement->Velocity.Size2D();
 
+	static const IConsoleVariable* PrintLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	const USkeletalMeshComponent* PrintBody = CreatureOwner->GetMesh();
 	for (int32 FootIndex = 0; FootIndex < 2; ++FootIndex)
 	{
+		// For the hit log: a moment after a print, how far the middle of the sole has come to rest from it.
+		if (PrintLog && PrintLog->GetInt() != 0 && PrintBody && LastPrintTime[FootIndex] > 0.0 && GetWorld()->GetTimeSeconds() - LastPrintTime[FootIndex] > 0.2)
+		{
+			LastPrintTime[FootIndex] = -1.0;
+			const FVector Ankle = PrintBody->GetBoneLocation(FootIndex == 0 ? TEXT("foot_l") : TEXT("foot_r"));
+			const FVector Ball = PrintBody->GetBoneLocation(FootIndex == 0 ? TEXT("ball_l") : TEXT("ball_r"));
+			const FVector Way = FVector(Ball - Ankle).GetSafeNormal2D();
+			const FVector Sole = ((Ankle - Way * AedirStepHeelBehindAnkleCm) + (Ball + Way * AedirStepToesPastBallCm)) * 0.5;
+			const FVector Off = Sole - LastPrintAt[FootIndex];
+			UE_LOG(LogAedir, Log, TEXT("[Print] %s %s foot rests %.1f cm along, %.1f across from its print, lifted %.2f"), *CreatureOwner->GetName(), FootIndex == 0 ? TEXT("left") : TEXT("right"),
+				FVector::DotProduct(Off, Way), FVector::DotProduct(Off, FVector::CrossProduct(FVector::UpVector, Way)), Lift[FootIndex]);
+		}
 		// A foot that has been up comes down once, however slowly it settles.
 		if (Lift[FootIndex] > AedirPlantLiftHigh)
 		{
@@ -256,12 +275,34 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 		WaterOnFoot[Foot] *= AedirStepCarryShare;
 	}
 
-	// The plant is told from the foot in the air, so the print finds its ground for itself.
-	FVector PrintPoint = Point;
+	// The print lies under the foot as the body has it: from the heel to past the toes, the way the foot points, its middle
+	// found on the ground straight under the middle of the sole.
+	const USkeletalMeshComponent* Body = CreatureOwner->GetMesh();
+	const FName HeelBone = Foot == 0 ? FName(TEXT("foot_l")) : FName(TEXT("foot_r"));
+	const FName BallBone = Foot == 0 ? FName(TEXT("ball_l")) : FName(TEXT("ball_r"));
+	FVector SoleMiddle = Point;
+	FVector FootWay = CreatureOwner->GetActorForwardVector();
+	if (Body && Body->GetBoneIndex(HeelBone) != INDEX_NONE && Body->GetBoneIndex(BallBone) != INDEX_NONE)
+	{
+		const FVector Ankle = Body->GetBoneLocation(HeelBone);
+		const FVector Ball = Body->GetBoneLocation(BallBone);
+		const FVector Way = FVector(Ball.X - Ankle.X, Ball.Y - Ankle.Y, 0.0).GetSafeNormal();
+		if (!Way.IsNearlyZero())
+		{
+			FootWay = Way;
+			// The heel reaches a little behind the ankle and the toes past the ball: the middle of that is the middle of the sole.
+			const float Scale = static_cast<float>(CreatureOwner->GetActorScale3D().Z);
+			const FVector Heel = Ankle - Way * (AedirStepHeelBehindAnkleCm * Scale);
+			const FVector Toes = Ball + Way * (AedirStepToesPastBallCm * Scale);
+			// Running, the foot still slides on a little after it is told down.
+			SoleMiddle = FVector((Heel.X + Toes.X) * 0.5, (Heel.Y + Toes.Y) * 0.5, Point.Z) + Way * (Speed2D * AedirStepPrintLeadSeconds);
+		}
+	}
+	FVector PrintPoint = SoleMiddle;
 	FVector PrintNormal = Normal;
 	FHitResult GroundHit;
 	FCollisionQueryParams GroundParams(SCENE_QUERY_STAT(AedirStepPrint), false, CreatureOwner);
-	if (World->LineTraceSingleByChannel(GroundHit, Point + FVector(0.f, 0.f, 60.f), Point - FVector(0.f, 0.f, 120.f), ECC_Visibility, GroundParams))
+	if (World->LineTraceSingleByChannel(GroundHit, SoleMiddle + FVector(0.f, 0.f, 60.f), SoleMiddle - FVector(0.f, 0.f, 120.f), ECC_Visibility, GroundParams))
 	{
 		PrintPoint = GroundHit.ImpactPoint;
 		PrintNormal = GroundHit.ImpactNormal;
@@ -274,9 +315,11 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 	}
 	if (UMaterialInterface* Base = StepMaterial.Get())
 	{
-		const FVector Forward = FVector::VectorPlaneProject(CreatureOwner->GetActorForwardVector(), PrintNormal).GetSafeNormal();
+		const FVector Forward = FVector::VectorPlaneProject(FootWay, PrintNormal).GetSafeNormal();
 		const float Scale = static_cast<float>(CreatureOwner->GetActorScale3D().Z);
-		if (UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(this, Base, FVector(AedirStepPrintDepthCm, AedirStepHalfWidthCm, AedirStepHalfLengthCm) * Scale, PrintPoint + Forward * (AedirStepForwardCm * Scale), FRotationMatrix::MakeFromXZ(-PrintNormal, Forward).Rotator(), 0.f))
+		LastPrintAt[Foot] = PrintPoint;
+		LastPrintTime[Foot] = World->GetTimeSeconds();
+		if (UDecalComponent* Decal = UGameplayStatics::SpawnDecalAtLocation(this, Base, FVector(AedirStepPrintDepthCm, AedirStepHalfWidthCm, AedirStepHalfLengthCm) * Scale, PrintPoint, FRotationMatrix::MakeFromXZ(-PrintNormal, Forward).Rotator(), 0.f))
 		{
 			Decal->SetFadeScreenSize(0.f);
 			UMaterialInstanceDynamic* Print = Decal->CreateDynamicMaterialInstance();
@@ -286,8 +329,11 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 			}
 			if (Print)
 			{
-				Print->SetVectorParameterValue(TEXT("Color"), Color);
-				Print->SetScalarParameterValue(TEXT("Strength"), Strength);
+				// For looking at the prints: white and full, seen on any ground.
+				static const IConsoleVariable* WhitePrints = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.WhitePrints"));
+				const bool bWhite = WhitePrints && WhitePrints->GetInt() != 0;
+				Print->SetVectorParameterValue(TEXT("Color"), bWhite ? FLinearColor::White : Color);
+				Print->SetScalarParameterValue(TEXT("Strength"), bWhite ? 1.f : Strength);
 				Print->SetScalarParameterValue(TEXT("Roughness"), Roughness);
 				// The print is drawn as a right foot's; the left foot gets it mirrored.
 				Print->SetScalarParameterValue(TEXT("Mirror"), Foot == 0 ? 1.f : 0.f);

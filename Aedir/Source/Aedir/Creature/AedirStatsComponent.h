@@ -91,6 +91,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
 	float StaminaRegenDelay = 0.6f;
 
+	// Hurt, the breath comes back slower: with no health left only this share as fast, in proportion between.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Stats", meta=(ClampMin="0", ClampMax="1"))
+	float HurtStaminaRegenShare = 0.25f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
 	float MaxStaminaGainPerStaminaSpent = 0.0005f;
 
@@ -107,7 +111,7 @@ public:
 	float MinSizeScale = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
-	float MaxSizeScale = 1.2f;
+	float MaxSizeScale = 1.12f;
 
 	// How thick the trunk and limbs are against the plain body, from the weakest to the strongest: a weak body is lean, a
 	// strong one broad and heavy with muscle.
@@ -115,7 +119,7 @@ public:
 	float MinBulkScale = 0.86f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats")
-	float MaxBulkScale = 1.2f;
+	float MaxBulkScale = 1.12f;
 
 	// While set, ApplyDamage ignores every hit, including bleeding.
 	UPROPERTY(Replicated, EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats")
@@ -219,6 +223,10 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetSizeScale() const;
+	// How strong the body is, 0 at StrengthMin to 1 at StrengthMax.
+	float GetStrengthShare() const;
+	// How many times as big as at the usual strength (10) its strength makes the body: reaches, feet and the like grow with it.
+	float GetStrengthGrowth() const;
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Stats")
 	float GetSpeedMultiplier() const;

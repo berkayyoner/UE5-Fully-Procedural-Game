@@ -148,6 +148,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float FallChancePerSecond = 0.8f;
 
+	// The weight beyond the feet counts towards going over only once the balance is going: none of it at full balance, all
+	// of it from this much balance down.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
+	float FallTipBelowBalance = 0.5f;
+
 	// Where the weight settles over the feet as the body stands is learnt over ComSettleSeconds while it is steady. The hips
 	// tip after the weight gone off from there however it got there: more than ComLeanFromCm off, ComLeanDegreesPerCm for
 	// every cm further, at most ComLeanMaxDegrees, that way; walking, ComLeanWalkingShare of that at ComLeanWalkSpeed and
@@ -202,7 +207,11 @@ public:
 	// A blow slackens the muscles of the trunk, head and arms for a moment, so it is felt through the body: a fresh, unhurt
 	// body by BlowSlackFitShare for BlowSlackFitSeconds, a worn one (no health and no breath left) by BlowSlackWornShare for
 	// BlowSlackWornSeconds, half worn halfway between; all of it from a push of BlowSoftFullPush, less from a smaller one.
-	// After that the muscles take hold again over BlowSlackReturnSeconds.
+	// The slack lasts as long as that for a blow pushing BlowSoftFullPush, in proportion for a lighter one, at most
+	// BlowSlackMaxScale times as long for a harder one. After that the muscles take hold again over BlowSlackReturnSeconds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
+	float BlowSlackMaxScale = 1.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit", meta=(ClampMin="0", ClampMax="1"))
 	float BlowSlackFitShare = 0.3f;
 
@@ -210,10 +219,10 @@ public:
 	float BlowSlackWornShare = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
-	float BlowSlackFitSeconds = 0.1f;
+	float BlowSlackFitSeconds = 0.2f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
-	float BlowSlackWornSeconds = 0.5f;
+	float BlowSlackWornSeconds = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
 	float BlowSlackReturnSeconds = 0.08f;

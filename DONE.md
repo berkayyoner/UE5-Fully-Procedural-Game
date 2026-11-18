@@ -500,3 +500,16 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Blows cost less than half the balance they did, so the hips tip far less from them.
 - Running into something that does not give pushes back the part of the body that met it (above the knee for anything taller, the legs for something low), and the trunk a little, each for its own weight and only by how much faster than harmless it came in, instead of always the chest and head by the whole speed.
 - A blow slackens the muscles by how worn the body is: fresh and unhurt 30% for 0.1 s, out of health and breath up to 80% for 0.5 s, less for a smaller blow.
+- Punches and blade swings cost more stamina (punch 8 to 11, blade 12 to 16, the old swing 5 to 7).
+- A blow slackens the muscles twice as long as before (fresh 0.2 s, worn out 1 s) and in proportion to how hard it was, up to half as long again for a very hard one.
+- Stamina comes back slower the more hurt the body is, at a quarter of the pace with no health left.
+- A cut-off head shows as a head: each part of the face mesh takes its own material from the level of detail's own map, not the mesh's order.
+- The grass sway speed stays put while the weather turns, so the blades no longer shake wildly through a change of weather; the wind's strength alone follows it.
+- Faster than walking, a foot may leave the ground before the other is down, both off it for a moment.
+- Footprints lie under the sole as the body has it, from heel to toes the way the foot points, a little ahead at a run where the foot slides on.
+- Crouched, the feet are lifted higher and the strides are longer, so the body steps rather than shuffles; a bigger body lifts its feet as much higher as it is bigger.
+- The Southern helmet sits 1.5 cm further back on the head.
+- A living body held is held back from going away from the hand, by strength against strength; an arm or hand held keeps its fist near the holding hand and throws it the slower.
+- Strength sizes the body less (at most 1.12 instead of 1.2 times, the same for its bulk), and a stronger body's guard and arcs, feet under its balance, reach for things and blows all grow in proportion: from the usual strength to the most, a blow lands as if twice as heavy.
+- The pelvis is moved by the gait in the world's cm on bodies of any size (it was scaled twice), so big bodies no longer sink too low reaching down.
+- The weight past the feet tips over only a body already losing its balance, so a steady one no longer falls standing still.

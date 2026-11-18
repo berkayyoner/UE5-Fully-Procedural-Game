@@ -377,7 +377,9 @@ void FAedirProceduralAnimProxy::ApplyPelvis(FCSPose<FCompactPose>& CSPose, const
 	const FVector RightMesh = ActorToMesh.RotateVector(FVector::RightVector);
 	FTransform PelvisTransform = CSPose.GetComponentSpaceTransform(Pelvis);
 	const FVector ForwardMeshDirection = ActorToMesh.RotateVector(FVector::ForwardVector);
-	PelvisTransform.AddToTranslation(UpMesh * GaitData.HipOffsetZ + RightMesh * GaitData.HipLateralOffset + ForwardMeshDirection * GaitData.HipForwardOffset);
+	// The gait's offsets are in the world's cm; the pose is in the mesh's own, which the body's size scales up or down again.
+	const double MeshScale = FMath::Max(FMath::Abs(MeshToWorld.GetScale3D().Z), UE_KINDA_SMALL_NUMBER);
+	PelvisTransform.AddToTranslation((UpMesh * GaitData.HipOffsetZ + RightMesh * GaitData.HipLateralOffset + ForwardMeshDirection * GaitData.HipForwardOffset) / MeshScale);
 
 	FRotator PelvisRotation = GaitData.PelvisRotation;
 	PelvisRotation.Roll += GaitData.PelvisRollDegrees;
