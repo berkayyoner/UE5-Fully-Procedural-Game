@@ -518,6 +518,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float CrouchDropCm = FMath::Max(CreatureOwner->GetDefaultHalfHeight() - MovementComponent->GetCrouchedHalfHeight(), 0.f) * ActorScale;
 	CrouchAlpha = FMath::FInterpTo(CrouchAlpha, CreatureOwner->bIsCrouched ? 1.f : 0.f, DeltaTime, 3.5f);
 	GaitState.HipOffsetZ -= CrouchDropCm * CrouchAlpha;
+	// Going over, the legs give and the hips sink.
+	GaitState.HipOffsetZ -= BalanceComponent ? BalanceComponent->GetBalanceSinkCm() : 0.f;
 
 	// Jump wind-up: the body sinks before the push-off. Landing: the pelvis absorbs the fall and springs back, less so for athletic bodies.
 	// The dip deepens to its peak, then the legs extend again: the push-off is visible before the feet leave the ground.

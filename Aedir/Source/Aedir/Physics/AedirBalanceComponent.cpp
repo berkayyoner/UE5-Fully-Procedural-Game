@@ -403,6 +403,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	WatchPartImpacts();
 	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
+	UpdateBalanceSink(DeltaTime);
 	UpdateStumbleWalk(DeltaTime);
 	UpdatePendingPushes(DeltaTime);
 	UpdateHitSway(DeltaTime);
@@ -439,7 +440,9 @@ float UAedirBalanceComponent::GetUprightStrength() const
 	}
 	const float Stamina = Stats ? FMath::Clamp(Stats->GetStaminaFraction(), 0.f, 1.f) : 1.f;
 	const float Health = Stats ? FMath::Clamp(Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 1.f;
-	return FMath::Lerp(UprightExhaustedShare, 1.f, Stamina) * FMath::Lerp(UprightDyingShare, 1.f, Health)
+	// Out of breath it weakens only below TiredFrom of its stamina, the more the less is left.
+	const float Breath = TiredFrom > KINDA_SMALL_NUMBER ? FMath::Clamp(Stamina / TiredFrom, 0.f, 1.f) : 1.f;
+	return FMath::Lerp(UprightExhaustedShare, 1.f, Breath) * FMath::Lerp(UprightDyingShare, 1.f, Health)
 		* (1.f - 0.5f * GetDazeFactor()) * FMath::Lerp(1.f, GetUpMuscleShare, GetGetUpShare());
 }
 
@@ -1796,23 +1799,18 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	const bool bLegGivesWay = bLegLost && (!IsGettingUp() || GetGetUpProgress() >= LegLostGetUpGivesWayAt);
 	// Unable to catch itself, the body may go over at any moment: the further its weight is beyond the feet, or the less
 	// balance it has left, the likelier; worn down, likelier still.
-	bool bTipsOver = false;
-	if (!bIsRagdoll && !IsGettingUp() && bSupportGrounded)
-	{
-		// The weight past the feet tips over only a body already losing its balance: one still steady just steps after it.
-		const float Losing = FMath::Clamp((1.f - Balance) / FMath::Max(1.f - FallTipBelowBalance, 0.01f), 0.f, 1.f);
-		const float Beyond = FMath::Clamp((-SupportMargin - FallChanceFromCm) / FMath::Max(FallChanceFullCm - FallChanceFromCm, 1.f), 0.f, 1.f) * Losing;
-		const float Lost = Balance < FallBalanceThreshold ? 1.f - Balance / FMath::Max(FallBalanceThreshold, KINDA_SMALL_NUMBER) : 0.f;
-		const float Chance = FallChancePerSecond * FMath::Max(Beyond, Lost) * (1.f + GetHurtShare()) * DeltaTime;
-		bTipsOver = Chance > 0.f && FMath::FRand() < Chance;
-	}
-	if (!bIsRagdoll && (bDead || bSenseless || bLegGivesWay || bTipsOver || TimeBelowThreshold >= FallDelaySeconds))
+	// A lost balance brings the body down as its hips sink: once they are near the ground it goes over.
+	const float SinkScale = CharacterOwner ? FMath::Max(static_cast<float>(CharacterOwner->GetActorScale3D().Z), 0.1f) : 1.f;
+	const bool bTipsOver = !bIsRagdoll && !IsGettingUp() && SinkCm >= FallSinkCm * SinkScale;
+	if (!bIsRagdoll && (bDead || bSenseless || bLegGivesWay || bTipsOver))
 	{
 		UE_LOG(LogAedir, Log, TEXT("[Fall] %s goes down: dead %d, senseless %d, leg %d, tipped over %d, balance %.2f, weight %.0f cm beyond the feet."), *GetNameSafe(GetOwner()), bDead ? 1 : 0, bSenseless ? 1 : 0, bLegGivesWay ? 1 : 0, bTipsOver ? 1 : 0, Balance, -SupportMargin);
 		EnterRagdoll(MinRagdollSeconds);
-		if (bTipsOver && !ComOffsetDirection.IsNearlyZero())
+		// Sunk down, it goes over the way it was going.
+		const FVector Over = CharacterOwner ? CharacterOwner->GetActorTransform().TransformVectorNoScale(FVector(LeanDirection.X, LeanDirection.Y, 0.f)).GetSafeNormal2D() : FVector::ZeroVector;
+		if (bTipsOver && !(Over.IsNearlyZero() && ComOffsetDirection.IsNearlyZero()))
 		{
-			MulticastTopple(ComOffsetDirection * (ComputeStaggerSpeed(200.f) * KnockdownToppleShare));
+			MulticastTopple((Over.IsNearlyZero() ? ComOffsetDirection : Over) * (ComputeStaggerSpeed(200.f) * KnockdownToppleShare));
 		}
 		// Nothing is held by a hand that has gone slack.
 		if (bSenseless && Creature && Creature->Interaction)
@@ -2065,6 +2063,44 @@ void UAedirBalanceComponent::UpdatePelvisLean(float DeltaTime)
 		}
 	}
 	CurrentLean = FMath::RInterpTo(CurrentLean, FRotator(FMath::Clamp(Pitch + ComPitch, -MaxLeanDegrees, MaxLeanDegrees), Yaw, FMath::Clamp(Roll + ComRoll, -MaxLeanDegrees, MaxLeanDegrees)), DeltaTime, AedirLeanInterpSpeed);
+}
+
+void UAedirBalanceComponent::UpdateBalanceSink(float DeltaTime)
+{
+	// Down, getting up, or kicking (one leg holds it then), there is nothing to sink.
+	if (bIsRagdoll || IsGettingUp() || DeltaTime <= 0.f)
+	{
+		SinkCm = 0.f;
+		SinkSpeed = 0.f;
+		SinkLastBalance = Balance;
+		return;
+	}
+	const float Lost = FMath::Clamp((SinkFromBalance - Balance) / FMath::Max(SinkFromBalance, 0.01f), 0.f, 1.f);
+	if (Lost > 0.f)
+	{
+		// The legs give: the hips drop the faster the longer they go, the more of the balance is gone. Coming back, the legs
+		// take hold of the drop again.
+		SinkSpeed += 981.f * SinkGravityShare * Lost * Lost * DeltaTime;
+		if (Balance > SinkLastBalance)
+		{
+			SinkSpeed *= FMath::Exp(-4.f * DeltaTime);
+		}
+		SinkCm += SinkSpeed * DeltaTime;
+	}
+	else
+	{
+		SinkSpeed = 0.f;
+		const float Scale = CharacterOwner ? FMath::Max(static_cast<float>(CharacterOwner->GetActorScale3D().Z), 0.1f) : 1.f;
+		SinkCm = FMath::Max(SinkCm - SinkRiseSpeed * Scale * DeltaTime, 0.f);
+	}
+	SinkLastBalance = Balance;
+	static const IConsoleVariable* SinkLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	const UWorld* World = GetWorld();
+	if (SinkLog && SinkLog->GetInt() != 0 && SinkCm > 0.5f && World && World->GetTimeSeconds() >= NextSinkLogTime)
+	{
+		NextSinkLogTime = World->GetTimeSeconds() + 0.1;
+		UE_LOG(LogAedir, Log, TEXT("[Sink] %s balance %.2f, hips sunk %.1f cm, going down at %.0f cm/s"), *GetNameSafe(GetOwner()), Balance, SinkCm, SinkSpeed);
+	}
 }
 
 void UAedirBalanceComponent::UpdateStumbleWalk(float DeltaTime)

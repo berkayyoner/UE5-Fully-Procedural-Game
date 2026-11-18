@@ -85,6 +85,17 @@ private:
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<UStaticMeshComponent>> SplitParts;
 	TArray<FTransform> SplitPartHomes;
+	// How much the shown model has been grown for the body wearing it, so it is grown only once.
+	float AppliedWornGrowth = 1.f;
+	// How many times as big as the body the worn pieces were fitted on the body wearing it is.
+	float GetWornGrowth() const;
+
+public:
+	// Worn pieces were fitted on a body of this size; on a bigger or smaller one they are grown or shrunk as it is.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Item")
+	float WornFittedBodyScale = 0.87f;
+
+private:
 	void BuildSplitParts(const FAedirItemDef& Def, UStaticMeshComponent* Model, const FVector& Scale3D);
 	// Worn, each piece goes on its nearest bone; taken off, the item is built again.
 	void WearSplitParts(const FAedirItemDef& Def);

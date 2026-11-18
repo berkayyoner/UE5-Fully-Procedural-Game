@@ -238,7 +238,8 @@ void AAedirCatalogItem::WearSplitParts(const FAedirItemDef& Def)
 		Part->AttachToComponent(Body, FAttachmentTransformRules::KeepRelativeTransform, Bone);
 		OnBone.SetScale3D(FVector::OneVector);
 		Part->SetRelativeTransform(OnBone);
-		Part->SetWorldScale3D(Scale);
+		// Fitted on a body of the usual size: on a bigger one its place on the bone has grown with it, and so does the piece.
+		Part->SetWorldScale3D(Scale * GetWornGrowth());
 		Part->SetVisibility(true);
 		UE_LOG(LogTemp, Verbose, TEXT("Item %s: piece %d worn on %s."), *CatalogId.ToString(), Index, *Bone.ToString());
 	}
@@ -253,6 +254,21 @@ void AAedirCatalogItem::ApplyWornLook()
 		return;
 	}
 	USkeletalMeshComponent* Body = Holder ? Holder->GetMesh() : nullptr;
+	// A piece worn as it was modelled hangs on its bone the way it was fitted, as much bigger as the body is: its place on the
+	// bone grows with the body, so the model must too.
+	if (Def && Def->WornMeshPath.IsEmpty() && Body)
+	{
+		const float Growth = GetWornGrowth();
+		for (const TObjectPtr<UStaticMeshComponent>& Detail : DetailMeshes)
+		{
+			if (Detail && !SplitParts.Contains(Detail))
+			{
+				Detail->SetWorldScale3D(Detail->GetComponentScale() * (Growth / AppliedWornGrowth));
+			}
+		}
+		AppliedWornGrowth = Growth;
+		return;
+	}
 	if (!Def || Def->WornMeshPath.IsEmpty() || !Body || WornMesh)
 	{
 		return;
@@ -693,8 +709,14 @@ void AAedirCatalogItem::OnConstruction(const FTransform& Transform)
 	}
 }
 
+float AAedirCatalogItem::GetWornGrowth() const
+{
+	return Holder ? FMath::Max(static_cast<float>(Holder->GetActorScale3D().Z), 0.1f) / FMath::Max(WornFittedBodyScale, 0.1f) : 1.f;
+}
+
 void AAedirCatalogItem::ClearWornLook()
 {
+	AppliedWornGrowth = 1.f;
 	if (WornMesh)
 	{
 		WornMesh->DestroyComponent();

@@ -513,3 +513,6 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Strength sizes the body less (at most 1.12 instead of 1.2 times, the same for its bulk), and a stronger body's guard and arcs, feet under its balance, reach for things and blows all grow in proportion: from the usual strength to the most, a blow lands as if twice as heavy.
 - The pelvis is moved by the gait in the world's cm on bodies of any size (it was scaled twice), so big bodies no longer sink too low reaching down.
 - The weight past the feet tips over only a body already losing its balance, so a steady one no longer falls standing still.
+- Armour worn as it was modelled (helmet, pauldrons) grows and sits with the body's size: on a strong, big body it no longer sinks into it or vanishes inside the trunk.
+- Out of breath, the body's strength to stand goes only below half its stamina, the less the less is left, as its arms already did.
+- A lost balance sinks the hips, faster and faster the more of it is gone, and the body goes down once they are near the ground, instead of all at once after a while at low balance or by chance.

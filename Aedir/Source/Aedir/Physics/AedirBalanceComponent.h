@@ -153,6 +153,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
 	float FallTipBelowBalance = 0.5f;
 
+	// Going over, the legs give and the hips sink, faster and faster: below SinkFromBalance of its balance they drop with up
+	// to SinkGravityShare of a fall's pull (all of it at no balance left, as the square of the balance lost between); the
+	// body goes down once the hips have sunk FallSinkCm (for a body of size 1). With its balance coming back above
+	// SinkFromBalance they rise again at SinkRiseSpeed (cm/s).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Sink", meta=(ClampMin="0", ClampMax="1"))
+	float SinkFromBalance = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Sink", meta=(ClampMin="0", ClampMax="1"))
+	float SinkGravityShare = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Sink")
+	float FallSinkCm = 48.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Sink")
+	float SinkRiseSpeed = 60.f;
+
+	// How far the hips have sunk under a lost balance, in the world's cm.
+	float GetBalanceSinkCm() const { return SinkCm; }
+
 	// Where the weight settles over the feet as the body stands is learnt over ComSettleSeconds while it is steady. The hips
 	// tip after the weight gone off from there however it got there: more than ComLeanFromCm off, ComLeanDegreesPerCm for
 	// every cm further, at most ComLeanMaxDegrees, that way; walking, ComLeanWalkingShare of that at ComLeanWalkSpeed and
@@ -948,6 +967,11 @@ private:
 
 	FRotator CurrentLean = FRotator::ZeroRotator;
 	float TimeBelowThreshold = 0.f;
+	float SinkCm = 0.f;
+	float SinkSpeed = 0.f;
+	float SinkLastBalance = 1.f;
+	double NextSinkLogTime = 0.0;
+	void UpdateBalanceSink(float DeltaTime);
 
 	// Where the slow drift of a standing body is, and what sets one body's drift apart from another's.
 	float SwayClock = 0.f;

@@ -847,6 +847,8 @@ void AAedirItemActor::AttachToWornBone(AAedirCreature* Creature)
 	}
 
 	AttachToBone(Creature, ArmorAttachBone, WornTransform);
+	UE_LOG(LogAedir, Verbose, TEXT("[Worn] %s on %s's %s: %s from the bone, the body %.2f big, the piece %s"), *GetName(), *Creature->GetName(), *ArmorAttachBone.ToString(),
+		*Creature->GetMesh()->GetBoneTransform(ArmorAttachBone).InverseTransformPosition(GetActorLocation()).ToCompactString(), Creature->GetActorScale3D().Z, *GetActorScale3D().ToCompactString());
 
 	Holder = Creature;
 	bHolstered = false;

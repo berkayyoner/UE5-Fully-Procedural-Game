@@ -2413,6 +2413,8 @@ void AAedirPlayerCharacter::ArmourFit(const FString& Label)
 		{
 			continue;
 		}
+		UE_LOG(LogAedir, Display, TEXT("[ArmourFit] %s %s hangs on %s's %s at %s, scale %s, the bone at %s"), *Label, *It->GetName(), *GetNameSafe(It->GetAttachParentActor()), *It->GetAttachParentSocketName().ToString(),
+			*It->GetRootComponent()->GetRelativeLocation().ToCompactString(), *It->GetActorScale3D().ToCompactString(), *InFrame(Skin->GetBoneLocation(It->GetAttachParentSocketName())).ToCompactString());
 		TArray<UStaticMeshComponent*> Parts;
 		It->GetComponents(Parts);
 		// Pieces worn apart hang from the body itself.
