@@ -494,3 +494,7 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Bare-handed NPCs keep a little further off (74 cm instead of 68) and only step in with a punch from further than 68 cm.
 - NPCs with a blade keep at their whole weapon reach instead of 85% of it.
 - The hit log tells how far an NPC is from its foe and how far it means to keep; aedir.AutoGetUp 1 lets the player's body get up by itself for unattended tests.
+- Walking, the hips no longer tip after the weight (it always runs ahead of the feet then), so the upper body stays calm.
+- Where the weight settles is taken afresh whenever the body moves or shifts its feet, so a step ending a little off no longer costs balance; the weight must go further off, and costs it slower, before balance goes.
+- Losing its balance, by a blow or by its weight, the body walks or runs the way it goes over, the faster the more it has lost (up to 420 cm/s), instead of standing where it is.
+- Blows cost less than half the balance they did, so the hips tip far less from them.

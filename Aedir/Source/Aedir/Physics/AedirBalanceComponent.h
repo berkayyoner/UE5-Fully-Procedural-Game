@@ -89,13 +89,13 @@ public:
 	// after it in hurried steps until it has its feet back under it: at StumbleWalkMinShare of StumbleWalkSpeed (cm/s) just
 	// below it, at all of it as it nears falling.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
-	float StumbleWalkBelowBalance = 0.8f;
+	float StumbleWalkBelowBalance = 0.9f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
-	float StumbleWalkMinShare = 0.55f;
+	float StumbleWalkMinShare = 0.3f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
-	float StumbleWalkSpeed = 260.f;
+	float StumbleWalkSpeed = 420.f;
 
 	// The hurried walk dies away over this long after the blow that started it, however long the balance takes to come
 	// back, so a hard blow throws the body a few steps, not across the field.
@@ -165,21 +165,34 @@ public:
 	float ComLeanMaxDegrees = 12.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight", meta=(ClampMin="0", ClampMax="1"))
-	float ComLeanWalkingShare = 0.15f;
+	float ComLeanWalkingShare = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
-	float ComLeanWalkSpeed = 200.f;
+	float ComLeanWalkSpeed = 60.f;
+
+	// After the body has moved or shifted its feet, where the weight settles is taken afresh for this long, so a step
+	// that ends a little off is a new stance, not the weight gone off.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComResettleSeconds = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
+	float ComFeetShiftCm = 2.f;
 
 	// Not walking, the balance goes with the weight more than ComDriftLossFromCm off where it settles, by up to
 	// ComDriftLossPerSecond from ComDriftLossFullCm off; it comes back by about RecoveryPerSecond at the same time.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
-	float ComDriftLossFromCm = 6.f;
+	float ComDriftLossFromCm = 9.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
-	float ComDriftLossFullCm = 16.f;
+	float ComDriftLossFullCm = 24.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Weight")
-	float ComDriftLossPerSecond = 1.f;
+	float ComDriftLossPerSecond = 0.7f;
+
+	// A blow costs this share of the balance it would by its energy alone; the weight thrown off the feet by it does the
+	// rest.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit", meta=(ClampMin="0", ClampMax="1"))
+	float HitBalanceLossShare = 0.45f;
 
 	// A blow on a shoulder or an upper arm moves the arm only this share of its push; the rest goes into the trunk, so the
 	// arm is not thrown up beside the head.
@@ -891,6 +904,8 @@ private:
 	FVector2D ComSettledLocal = FVector2D::ZeroVector;
 	FVector2D ComDriftLocal = FVector2D::ZeroVector;
 	bool bComSettledKnown = false;
+	FVector2D LastFeetCentre = FVector2D::ZeroVector;
+	double ComResettleUntil = 0.0;
 	float ComEdgeCm = 100.f;
 	bool bComEdgeCounts = false;
 	double NextComLogTime = 0.0;

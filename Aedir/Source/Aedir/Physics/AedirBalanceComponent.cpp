@@ -973,7 +973,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	// Worn down, the same blow throws the body further and costs it more of its balance.
 	const float Weak = FMath::Lerp(HealthyHitShare, 1.f + LowHealthHitGain, GetHurtShare()) + TiredHitGain * GetTiredShare();
 	const bool bHead = Impact.Zone == EAedirBodyZone::Head;
-	const float Loss = FMath::Min(ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction) * Weak * (bHead ? HeadBalanceLossShare : 1.f), 1.f);
+	const float Loss = FMath::Min(ComputeBalanceLoss(Impact.Zone, Impact.EnergyJoules, Athletism, StaminaFraction) * Weak * (bHead ? HeadBalanceLossShare : 1.f) * HitBalanceLossShare, 1.f);
 	ApplyBalanceImpact(Impact.Direction, Loss);
 	if (const UWorld* WatchWorld = GetWorld())
 	{
@@ -1457,9 +1457,16 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	ComOffsetDirection = FVector(Offset.X, Offset.Y, 0.0);
 	const FVector OffLocal = CharacterOwner->GetActorTransform().InverseTransformVectorNoScale(FVector(ComXY - Centroid, 0.0));
 	ComFromFeetLocal = FVector2D(OffLocal.X, OffLocal.Y);
-	// Steady on its feet, standing or walking slowly, the body teaches where its weight belongs.
-	const bool bSteady = Balance >= 0.95f && StaggerSeconds <= 0.f && !bStumbling && !bKicking && !bBending && MoveSpeed < ComLeanWalkSpeed;
-	if (!bComSettledKnown)
+	// Steady on its feet, the body teaches where its weight belongs. Moving, or just set its feet somewhere new, it takes
+	// that afresh: a stance a step leaves it in is where it now stands.
+	const bool bSteady = Balance >= 0.95f && StaggerSeconds <= 0.f && !bStumbling && !bKicking && !bBending;
+	const double ComNow = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+	if (MoveSpeed > 20.f || FVector2D::Distance(Centroid, LastFeetCentre) > ComFeetShiftCm)
+	{
+		ComResettleUntil = ComNow + ComResettleSeconds;
+	}
+	LastFeetCentre = Centroid;
+	if (!bComSettledKnown || ComNow < ComResettleUntil)
 	{
 		ComSettledLocal = ComFromFeetLocal;
 		bComSettledKnown = true;
@@ -1542,6 +1549,11 @@ void UAedirBalanceComponent::ApplyCenterOfMassLoss(float DeltaTime)
 	const FVector DriftWorld = CharacterOwner ? CharacterOwner->GetActorTransform().TransformVectorNoScale(FVector(ComDriftLocal, 0.0)) : FVector::ZeroVector;
 	AddLeanDirection(SupportMargin < 0.f || DriftWorld.IsNearlyZero() ? ComOffsetDirection : DriftWorld.GetSafeNormal2D(), Loss);
 	SetBalance(Balance - Loss);
+	// Going over, the feet hurry after it.
+	if (const UWorld* LossWorld = GetWorld())
+	{
+		StumbleBlowTime = LossWorld->GetTimeSeconds();
+	}
 }
 
 void UAedirBalanceComponent::SampleProtectiveReflex()
@@ -2034,6 +2046,8 @@ void UAedirBalanceComponent::UpdateStumbleWalk(float DeltaTime)
 	// At least this fast the way it goes over, whatever else the legs were doing; quicker than that it may go.
 	const float Wanted = StumbleWalkSpeed * FMath::Lerp(StumbleWalkMinShare, 1.f, Share) * Fade;
 	const float Along = static_cast<float>(FVector::DotProduct(Movement->Velocity, Way));
+	// The legs walk it, so they are not braking against it, and are hurried on where they lag behind.
+	CharacterOwner->AddMovementInput(Way, FMath::Clamp(Wanted / FMath::Max(Movement->GetMaxSpeed(), 1.f), 0.f, 1.f));
 	if (Along < Wanted)
 	{
 		Movement->Velocity += Way * ((Wanted - Along) * FMath::Min(DeltaTime * 12.f, 1.f));
