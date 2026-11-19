@@ -388,6 +388,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIHeadChance = 0.75f;
 
+	// One who is down is closed on and struck at by the upper body, between the chest and the head, not at the hips and the
+	// legs: 0 the chest, 1 the head.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|AI", meta=(ClampMin="0", ClampMax="1"))
+	float AIDownAimHeadShare = 0.4f;
+
 	// A swing at the head is aimed this share of the way up higher than the head itself: coming round from the side the
 	// arc is lower than in the middle, and the blow would land on the shoulder.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))

@@ -25,6 +25,14 @@
 
 namespace
 {
+	// The balance ring shown while getting up: its radius at a 1080-high screen, how round it is drawn and the dot's size.
+	constexpr float AedirGetUpRingRadius = 46.f;
+	constexpr int32 AedirGetUpRingSteps = 40;
+	constexpr float AedirGetUpDotSize = 5.f;
+}
+
+namespace
+{
 	constexpr float HudLookRangeCm = 1500.f;
 	constexpr float HudPointRadiusCm = 45.f;
 	constexpr float HudPointItemRadiusCm = 30.f;
@@ -718,6 +726,27 @@ void AAedirHUD::DrawPrompt(const AAedirCreature* Creature)
 			? TEXT("S   Push up on hands and knees")
 			: TEXT("W   Sit up and stand");
 		AedirUIStyle::DrawText(*Canvas, Hint, Font, FVector2f(static_cast<float>(Canvas->SizeX) * 0.5f, static_cast<float>(Canvas->SizeY) * 0.72f), AedirUIStyle::Ivory, EAedirTextAlign::Center, 1.f);
+	}
+
+	// Getting up: where the hips are against their balance, a dot in a ring, up for forward. At the ring the body goes down.
+	if (BalanceComponent && BalanceComponent->bPlayerChoosesGetUp && BalanceComponent->IsGettingUp())
+	{
+		const float Scale = AedirUIStyle::ScaleForHeight(static_cast<float>(Canvas->SizeY));
+		const FVector2D Middle(Canvas->SizeX * 0.5f, Canvas->SizeY * 0.74f);
+		const float Radius = AedirGetUpRingRadius * Scale;
+		const FVector Sway = BalanceComponent->GetGetUpSwayLocal() / FMath::Max(BalanceComponent->GetGetUpSwayFallCm(), 1.f);
+		const float Off = FMath::Clamp(static_cast<float>(Sway.Size()), 0.f, 1.f);
+		const FLinearColor Ring = FLinearColor::LerpUsingHSV(AedirUIStyle::Ivory, FLinearColor(0.85f, 0.2f, 0.15f), Off);
+		for (int32 Step = 0; Step < AedirGetUpRingSteps; ++Step)
+		{
+			const float A = 2.f * UE_PI * Step / AedirGetUpRingSteps;
+			const float B = 2.f * UE_PI * (Step + 1) / AedirGetUpRingSteps;
+			Canvas->K2_DrawLine(Middle + FVector2D(FMath::Cos(A), FMath::Sin(A)) * Radius, Middle + FVector2D(FMath::Cos(B), FMath::Sin(B)) * Radius, 2.f * Scale, Ring);
+		}
+		const FVector2D Dot = Middle + FVector2D(Sway.Y, -Sway.X) * Radius;
+		Canvas->K2_DrawLine(Dot - FVector2D(AedirGetUpDotSize * Scale, 0.f), Dot + FVector2D(AedirGetUpDotSize * Scale, 0.f), AedirGetUpDotSize * 2.f * Scale, Ring);
+		const FSlateFontInfo Font = AedirUIStyle::RegularFont(HudPromptFontSize * Scale, 40);
+		AedirUIStyle::DrawText(*Canvas, TEXT("W A S D   Keep your balance"), Font, FVector2f(static_cast<float>(Middle.X), static_cast<float>(Middle.Y + Radius) + 12.f * Scale), AedirUIStyle::Ivory, EAedirTextAlign::Center, 1.f);
 	}
 
 	const AAedirItemActor* Item = Interaction->GetHighlightedItem();

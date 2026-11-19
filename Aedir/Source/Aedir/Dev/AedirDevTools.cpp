@@ -1555,15 +1555,21 @@ void UAedirDevTools::PlaceItem(AAedirPlayerCharacter* Player, const FString& Arg
 	UWorld* World = Player->GetWorld();
 	if (Tokens.Num() < 3 || !World || !UAedirItemCatalog::Find(FName(*Tokens[0])))
 	{
-		DevToolsReport(TEXT("Usage: PlaceItem <Id> <forward cm> <right cm> [up cm from the feet, 20]"));
+		DevToolsReport(TEXT("Usage: PlaceItem <Id> <forward cm> <right cm> [up cm from the feet, 20] [hips: below the hips instead, by up cm]"));
 		return;
 	}
 
 	const float Up = Tokens.IsValidIndex(3) ? FCString::Atof(*Tokens[3]) : 20.f;
-	const FVector Location = Player->GetActorLocation()
+	FVector Location = Player->GetActorLocation()
 		+ Player->GetActorForwardVector() * FCString::Atof(*Tokens[1])
 		+ Player->GetActorRightVector() * FCString::Atof(*Tokens[2])
 		- FVector(0.f, 0.f, Player->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() - Up);
+	// "hips": straight under where the hips are, as they lie, to put something under a body that is down.
+	if (Tokens.IsValidIndex(4) && Tokens[4] == TEXT("hips") && Player->GetMesh())
+	{
+		const FVector Hips = Player->GetMesh()->GetBoneLocation(TEXT("pelvis"));
+		Location = FVector(Hips.X + FCString::Atof(*Tokens[1]), Hips.Y + FCString::Atof(*Tokens[2]), Hips.Z - Up);
+	}
 	if (AAedirCatalogItem::SpawnCatalogItem(World, FName(*Tokens[0]), FTransform(DevToolsFlatYaw(Player), Location)))
 	{
 		DevToolsReport(FString::Printf(TEXT("Placed %s"), *Tokens[0]));

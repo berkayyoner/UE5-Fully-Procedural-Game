@@ -107,8 +107,40 @@ public:
 	float FightCameraAlpha = 0.f;
 	FRotator FightCameraSway = FRotator::ZeroRotator;
 
+	// How far through the view's shake it is (1 at its start, 0 still), how far it turns at its start and how long it lasts.
 	float HitShake = 0.f;
 	float HitShakeStrength = 0.f;
+	float HitShakeSeconds = 0.25f;
+
+	// Hurt by a blow the view shakes, the more the more harm it did: Min degrees for the least, Max from HurtShakeFullDamage on.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
+	float HurtShakeDegreesMin = 0.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
+	float HurtShakeDegreesMax = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
+	float HurtShakeFullDamage = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
+	float HurtShakeSeconds = 0.35f;
+
+	// A blow that does less harm than this, taken or landed, does not shake the view at all.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
+	float ShakeMinDamage = 0.5f;
+
+	// Landing a blow of one's own with a fist, a foot or a weapon in hand shakes it a little too, for the weight of the hit.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
+	float StrikeShakeDegreesMin = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
+	float StrikeShakeDegreesMax = 0.9f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
+	float StrikeShakeFullDamage = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
+	float StrikeShakeSeconds = 0.18f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	FVector ThirdPersonShoulderOffset = FVector(0.f, 26.f, 10.f);
@@ -289,10 +321,10 @@ public:
 	UFUNCTION(Exec)
 	void StrikeSelf(float EnergyJoules, float MassKg, float SpeedCmPerSec, int32 FromBehind = 0);
 
-	// A blow from the front on one bone, this far to the body's right (cm, left negative): to oneself, or with Nearest 1 to
-	// the nearest other body.
+	// A blow on one bone, this far to the body's right (cm, left negative) and this far in front of it (cm; behind, negative,
+	// it comes from behind): to oneself, or with Nearest 1 to the nearest other body.
 	UFUNCTION(Exec)
-	void StrikePart(const FString& Bone, float EnergyJoules, float SideCm = 0.f, int32 Nearest = 0);
+	void StrikePart(const FString& Bone, float EnergyJoules, float SideCm = 0.f, int32 Nearest = 0, float AheadCm = 12.f);
 
 	// The right hand takes hold of the nearest dead body by this bone (it has to lie within reach), and with Strip 1 takes off what is worn there into it,
 	// as holding the hand's key down does.
@@ -337,8 +369,11 @@ public:
 	UFUNCTION(Exec)
 	void GripInfo();
 
-	// A blow taken shakes the view: the shake starts full and fades, turning further the harder the blow.
-	void ShakeViewFromBlow(float EnergyJoules) { HitShake = 1.f; HitShakeStrength = FMath::Clamp(0.4f + EnergyJoules * 0.006f, 0.4f, 2.2f); }
+	// A blow taken, or landed, shakes the view: the shake starts full and fades, the further the more harm the blow did. A
+	// bigger shake takes over from a smaller one still going.
+	void ShakeViewFromHurt(float Damage);
+	void ShakeViewFromStrike(float Damage);
+	void ShakeView(float Degrees, float Seconds);
 
 	UFUNCTION(Exec)
 	void JitterProbe(const FString& ProbeArgs);

@@ -1009,12 +1009,17 @@ void UAedirGaitComponent::PoseGetUp(const FTransform& ActorTransform, float Bott
 	}
 	const FRotator HipRotation = HipTurn.Rotator();
 	GaitState.HipOffsetZ = FMath::Lerp(GaitState.HipOffsetZ, static_cast<float>(HipOffset.Z), Weight);
-	GaitState.HipForwardOffset = FMath::Lerp(GaitState.HipForwardOffset, static_cast<float>(HipOffset.X), Weight);
-	GaitState.HipLateralOffset = FMath::Lerp(GaitState.HipLateralOffset, static_cast<float>(HipOffset.Y), Weight);
+	// Off its balance the hips stand off to that side, and tip with it.
+	const FVector Sway = BalanceComponent->GetGetUpSwayLocal();
+	GaitState.HipForwardOffset = FMath::Lerp(GaitState.HipForwardOffset, static_cast<float>(HipOffset.X + Sway.X), Weight);
+	GaitState.HipLateralOffset = FMath::Lerp(GaitState.HipLateralOffset, static_cast<float>(HipOffset.Y + Sway.Y), Weight);
 	GaitState.PelvisRotation = FMath::Lerp(GaitState.PelvisRotation, HipRotation, Weight);
 	GaitState.PelvisRollDegrees *= 1.f - Weight;
 	GaitState.SpineLeanPitch = FMath::Lerp(GaitState.SpineLeanPitch, Key.SpinePitch, Weight);
 	GaitState.SpineLeanRoll *= 1.f - Weight;
+	// The trunk leans the way the hips are going over, forward a negative pitch.
+	GaitState.SpineLeanRoll += static_cast<float>(Sway.Y) * GetUpSwayLeanDegreesPerCm * Weight;
+	GaitState.SpineLeanPitch -= static_cast<float>(Sway.X) * GetUpSwayLeanDegreesPerCm * Weight;
 	GaitState.SpineTwistYaw *= 1.f - Weight;
 	GaitState.SpineCounterRollDegrees *= 1.f - Weight;
 	GaitState.HeadStabilizeRollDegrees *= 1.f - Weight;
@@ -1680,6 +1685,8 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 				FlinchSeverity = NewSeverity;
 				FlinchLeft = NewSeconds;
 				FlinchSeconds = NewSeconds;
+				FlinchElbowJump = 0.f;
+				FlinchElbowLast.Reset();
 				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s flinches for %.1f s, the %s hand to %s"), *GetNameSafe(CreatureOwner), NewSeconds, Slot == 0 ? TEXT("left") : TEXT("right"), *NewBone.ToString());
 				// That hand comes out of the fight while it is there; the other one goes on.
 				const EAedirHand FlinchHand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
@@ -1708,11 +1715,32 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			{
 				const FVector Palm = Body->GetBoneLocation(FlinchSlot == 0 ? TEXT("hand_l") : TEXT("hand_r"));
 				const FVector OtherPalm = Body->GetBoneLocation(FlinchSlot == 0 ? TEXT("hand_r") : TEXT("hand_l"));
-				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s: the hand is %.0f cm from the place on %s, the other %.0f cm"), *GetNameSafe(CreatureOwner), FVector::Dist(Palm, At), *FlinchBone.ToString(), FVector::Dist(OtherPalm, At));
+				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s: the hand is %.0f cm from the place on %s, the other %.0f cm; the elbow jumped at most %.1f cm in a frame"), *GetNameSafe(CreatureOwner), FVector::Dist(Palm, At), *FlinchBone.ToString(), FVector::Dist(OtherPalm, At), FlinchElbowJump);
+			}
+			// A blow by the ear or behind it is held from the side of the face: a hand reached round to behind the ear twists
+			// the arm up over itself and it thrashes about. The place is taken forward to the temple, and held from outside.
+			FVector HoldAt = At;
+			FVector Outward = (At - Frame.GetLocation()).GetSafeNormal();
+			int32 PartSide = 0;
+			if (AedirClutchPartOf(FlinchBone, PartSide) == EAedirClutchPart::Head)
+			{
+				const float Scale = static_cast<float>(ActorTransform.GetScale3D().X);
+				FVector Round = ActorTransform.InverseTransformVectorNoScale(At - Frame.GetLocation());
+				Round.X = FMath::Max(Round.X, static_cast<double>(ClutchHeadFrontCm * Scale));
+				HoldAt = Frame.GetLocation() + ActorTransform.TransformVectorNoScale(Round);
+				const FVector SideOut = ActorTransform.TransformVectorNoScale(FVector(0.f, FlinchSlot == 0 ? -1.f : 1.f, 0.f));
+				Outward = (Outward + SideOut).GetSafeNormal();
 			}
 			Wanted[FlinchSlot] = ClutchBlowShare;
-			Goal[FlinchSlot] = WristAt(FlinchSlot, At, (At - Frame.GetLocation()).GetSafeNormal());
+			Goal[FlinchSlot] = WristAt(FlinchSlot, HoldAt, Outward);
 			bFlinchHand[FlinchSlot] = true;
+			// Dev: the biggest jump the elbow makes from one frame to the next while the hand goes there.
+			const FVector Elbow = Body->GetBoneLocation(FlinchSlot == 0 ? TEXT("lowerarm_l") : TEXT("lowerarm_r"));
+			if (FlinchElbowLast.IsSet())
+			{
+				FlinchElbowJump = FMath::Max(FlinchElbowJump, static_cast<float>(FVector::Dist(Elbow, FlinchElbowLast.GetValue())));
+			}
+			FlinchElbowLast = Elbow;
 		}
 
 		// Out of the fight and not reaching for anything, the worst of what still hurts is held while it lasts: a stump, a

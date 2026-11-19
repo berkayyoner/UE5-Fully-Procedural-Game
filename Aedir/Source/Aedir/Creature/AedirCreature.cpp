@@ -1,4 +1,5 @@
 #include "AedirCreature.h"
+#include "Player/AedirPlayerCharacter.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "PhysicsEngine/BodySetup.h"
@@ -282,7 +283,13 @@ float AAedirCreature::ReceiveCreatureDamage(float Amount)
 		return 0.f;
 	}
 
-	return Stats->ApplyDamage(Amount);
+	const float Applied = Stats->ApplyDamage(Amount);
+	// The one who plays it feels a blow that hurt it.
+	if (AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(this))
+	{
+		Player->ShakeViewFromHurt(Applied);
+	}
+	return Applied;
 }
 
 float AAedirCreature::GetCarriedWeight() const

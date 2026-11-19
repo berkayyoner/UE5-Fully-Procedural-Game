@@ -24,6 +24,7 @@
 #include "GameFramework/WorldSettings.h"
 #include "Net/UnrealNetwork.h"
 #include "PhysicsEngine/BodySetup.h"
+#include "Engine/OverlapResult.h"
 #include "PhysicsEngine/PhysicalAnimationComponent.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Physics/AedirBodyControlComponent.h"
@@ -34,6 +35,19 @@
 
 namespace
 {
+	// How long after going down the fall is watched for the dev log.
+	constexpr float AedirFallWatchSeconds = 1.5f;
+	// A body nobody plays steers its hips back by itself: a share of full steer per cm off, and per cm/s it slips.
+	constexpr float AedirGetUpSelfSteerPerCm = 0.12f;
+	constexpr float AedirGetUpSelfSteerPerCmPerSecond = 0.05f;
+	// How fast the wandering push on the hips changes, in waves a second.
+	constexpr float AedirGetUpWanderRate = 0.7f;
+	// How many loose things or bodies the ground a body stands up on is looked for past.
+	constexpr int32 AedirStandGroundTries = 6;
+	constexpr float AedirFallFlyingSpeed = 1000.f;
+	// A leg is looked for in the ground this far above and below its shapes; a body is lifted out of it by no more than this.
+	constexpr float AedirLegGroundProbeCm = 20.f;
+	constexpr float AedirLegGroundLiftMaxCm = 15.f;
 	TAutoConsoleVariable<int32> CVarAedirDirectPose(TEXT("aedir.DirectPose"), 1, TEXT("The body is shown and moved as the pose has it, kinematic, with no physics (1), or held to it by its muscles (0)."));
 	constexpr float AedirPhysicsRescaleStep = 0.005f;
 	constexpr float AedirLegInjuryRecoveryPenalty = 0.5f;
@@ -75,7 +89,6 @@ namespace
 	// How long a body that was just carried over is left to arrive.
 	constexpr float AedirBodyTeleportGraceSeconds = 0.15f;
 	// Balance lost each second a player getting up lets go of the key: the body sinks back down within half a second.
-	constexpr float AedirGetUpLetGoLossPerSecond = 2.5f;
 	// How much harder a blow throws a body that is getting up than one standing.
 	constexpr float AedirGetUpBlowScale = 2.f;
 	// A living joint's room against the limp body's limits in the physics asset: scaled, then widened, never past the cap.
@@ -358,6 +371,9 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 
 	KeepHeadOnNeck(DeltaTime);
+	WatchFall(DeltaTime);
+	SettleRagdollEntry(DeltaTime);
+	ForgetThingsSteppedOff();
 
 	// The muscles pull towards the pose, so they start once a body spawned in mid-game has one.
 	if (!MotorComponent && !BodyControl && !BodyMesh->GetEditableComponentSpaceTransforms().IsEmpty())
@@ -832,9 +848,32 @@ EAedirGetUpStyle UAedirBalanceComponent::ReadLyingStyle() const
 	return Belly.Z < 0.0 ? EAedirGetUpStyle::FromFront : EAedirGetUpStyle::FromBack;
 }
 
+void UAedirBalanceComponent::SetGetUpSteer(const FVector2D& Steer)
+{
+	if (IsAuthoritative())
+	{
+		GetUpSteer = Steer;
+	}
+	else if (!Steer.Equals(GetUpSteer, 0.05))
+	{
+		GetUpSteer = Steer;
+		ServerSetGetUpSteer(Steer);
+	}
+}
+
+void UAedirBalanceComponent::ServerSetGetUpSteer_Implementation(FVector2D Steer)
+{
+	GetUpSteer = Steer.GetClampedToMaxSize(1.0);
+}
+
+FVector UAedirBalanceComponent::GetGetUpSwayLocal() const
+{
+	return IsGettingUp() ? FVector(GetUpSway.X, GetUpSway.Y, 0.f) : FVector::ZeroVector;
+}
+
 void UAedirBalanceComponent::RequestGetUp(bool bForwardKey)
 {
-	// Down, the key starts getting up; on the way up, holding it keeps the body going.
+	// Down, the key starts getting up; on the way up the keys keep the hips balanced instead (SetGetUpSteer).
 	if (!bIsRagdoll && !IsGettingUp())
 	{
 		return;
@@ -1027,10 +1066,6 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	// The head is knocked the way the blow went.
 	if (APlayerController* Viewer = Cast<APlayerController>(CharacterOwner->GetController()))
 	{
-		if (AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(CharacterOwner))
-		{
-			Player->ShakeViewFromBlow(Impact.EnergyJoules);
-		}
 		const float Kick = FMath::Min(Impact.EnergyJoules * HitReactionViewDegreesPerJoule, HitReactionViewMaxDegrees);
 		const FVector Local = CharacterOwner->GetActorTransform().InverseTransformVectorNoScale(Impact.Direction);
 		Viewer->SetControlRotation(Viewer->GetControlRotation() + FRotator(static_cast<float>(Local.Z - Local.X * 0.5) * Kick, static_cast<float>(Local.Y) * Kick, 0.f));
@@ -1665,6 +1700,87 @@ bool UAedirBalanceComponent::TraceGround(const FVector& Start, const FVector& En
 	return true;
 }
 
+void UAedirBalanceComponent::IgnoreLooseThingsAtFeet()
+{
+	UWorld* World = GetWorld();
+	if (!World || !BodyCapsule)
+	{
+		return;
+	}
+	// Whatever loose thing the body stood up in the middle of, a sword it lay on, is passed through until the body has
+	// stepped off it: the capsule would otherwise be pushed up out of it and stand on it, the feet hanging in the air.
+	TArray<FOverlapResult> Overlaps;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirGetUpLoose), false, GetOwner());
+	World->OverlapMultiByChannel(Overlaps, BodyCapsule->GetComponentLocation(), BodyCapsule->GetComponentQuat(), ECC_Pawn,
+		FCollisionShape::MakeCapsule(BodyCapsule->GetScaledCapsuleRadius(), BodyCapsule->GetScaledCapsuleHalfHeight()), Params);
+	for (const FOverlapResult& Overlap : Overlaps)
+	{
+		UPrimitiveComponent* Part = Overlap.GetComponent();
+		AActor* Thing = Overlap.GetActor();
+		if (Part && Thing && Part->IsSimulatingPhysics() && !Cast<ACharacter>(Thing))
+		{
+			BodyCapsule->IgnoreActorWhenMoving(Thing, true);
+			Part->IgnoreActorWhenMoving(GetOwner(), true);
+			SteppedOffThings.AddUnique(Thing);
+			UE_LOG(LogAedir, Log, TEXT("[GetUp] %s gets up in %s and passes through it until it is off it."), *GetOwner()->GetName(), *Thing->GetName());
+		}
+	}
+}
+
+void UAedirBalanceComponent::ForgetThingsSteppedOff()
+{
+	if (SteppedOffThings.IsEmpty() || !BodyCapsule)
+	{
+		return;
+	}
+	for (int32 Index = SteppedOffThings.Num() - 1; Index >= 0; --Index)
+	{
+		AActor* Thing = SteppedOffThings[Index].Get();
+		const UPrimitiveComponent* Part = Thing ? Cast<UPrimitiveComponent>(Thing->GetRootComponent()) : nullptr;
+		if (!Thing || !Part || !BodyCapsule->OverlapComponent(Part->GetComponentLocation(), Part->GetComponentQuat(), Part->GetCollisionShape()))
+		{
+			if (Thing)
+			{
+				BodyCapsule->IgnoreActorWhenMoving(Thing, false);
+				if (UPrimitiveComponent* Root = Cast<UPrimitiveComponent>(Thing->GetRootComponent()))
+				{
+					Root->IgnoreActorWhenMoving(GetOwner(), false);
+				}
+			}
+			SteppedOffThings.RemoveAt(Index);
+		}
+	}
+}
+
+bool UAedirBalanceComponent::TraceStandingGround(const FVector& Start, const FVector& End, FVector& OutHitPoint) const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return false;
+	}
+	// What a body stands up on is the ground itself: not a sword or a shield lying under it, nor a body, nor anything a body
+	// holds or wears. Standing on those it was lifted off the ground onto them and left hanging over it once they moved.
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirStandingGround), false, GetOwner());
+	FHitResult Hit;
+	for (int32 Try = 0; Try < AedirStandGroundTries && World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params); ++Try)
+	{
+		AActor* Thing = Hit.GetActor();
+		const AActor* Holder = Thing && Thing->GetAttachParentActor() ? Thing->GetAttachParentActor() : Thing;
+		const UPrimitiveComponent* Part = Hit.GetComponent();
+		if ((Part && Part->IsSimulatingPhysics()) || Cast<ACharacter>(Holder))
+		{
+			UE_LOG(LogAedir, Log, TEXT("[GetUp] %s stands up past %s lying under it."), *GetOwner()->GetName(), *GetNameSafe(Thing));
+			Params.AddIgnoredActor(Thing);
+			continue;
+		}
+		OutHitPoint = Hit.ImpactPoint;
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s stands up on %s (%s) at %.1f."), *GetOwner()->GetName(), *GetNameSafe(Thing), *GetNameSafe(Part), Hit.ImpactPoint.Z);
+		return true;
+	}
+	return false;
+}
+
 bool UAedirBalanceComponent::IsAuthoritative() const
 {
 	return GetOwner() != nullptr && GetOwner()->HasAuthority();
@@ -2139,6 +2255,131 @@ void UAedirBalanceComponent::UpdateStumbleWalk(float DeltaTime)
 	}
 }
 
+void UAedirBalanceComponent::LiftLegsOutOfGround()
+{
+	UWorld* World = GetWorld();
+	if (!World || !BodyMesh)
+	{
+		return;
+	}
+	// Standing, the feet are set on the ground by the pose and the legs pass through it, so their shapes sit a little in it.
+	// The whole body is lifted by as much as any leg is in the ground the moment it meets the ground, or that leg is shot out.
+	float Deepest = 0.f;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirLegsOutOfGround), false, GetOwner());
+	for (FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		const FString Bone = Body && Body->GetBodySetup() ? Body->GetBodySetup()->BoneName.ToString() : FString();
+		if (!(Bone.Contains(TEXT("thigh")) || Bone.Contains(TEXT("calf")) || Bone.Contains(TEXT("foot")) || Bone.Contains(TEXT("ball"))))
+		{
+			continue;
+		}
+		const FBox Bounds = Body->GetBodyBounds();
+		const FVector Middle = Bounds.GetCenter();
+		FHitResult Hit;
+		if (World->LineTraceSingleByChannel(Hit, FVector(Middle.X, Middle.Y, Bounds.Max.Z + AedirLegGroundProbeCm), FVector(Middle.X, Middle.Y, Bounds.Min.Z - AedirLegGroundProbeCm), ECC_WorldStatic, Params))
+		{
+			Deepest = FMath::Max(Deepest, static_cast<float>(Hit.ImpactPoint.Z - Bounds.Min.Z));
+		}
+	}
+	Deepest = FMath::Min(Deepest, AedirLegGroundLiftMaxCm);
+	if (Deepest <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	for (FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		if (Body && Body->IsValidBodyInstance())
+		{
+			FTransform Moved = Body->GetUnrealWorldTransform();
+			Moved.AddToTranslation(FVector(0.f, 0.f, Deepest));
+			Body->SetBodyTransform(Moved, ETeleportType::TeleportPhysics);
+		}
+	}
+	UE_LOG(LogAedir, Log, TEXT("[Fall] %s's legs were %.1f cm in the ground going down and the body is lifted out of it."), *GetOwner()->GetName(), Deepest);
+}
+
+void UAedirBalanceComponent::SettleRagdollEntry(float DeltaTime)
+{
+	if (RagdollSettleLeft <= 0.f || !BodyMesh)
+	{
+		return;
+	}
+	RagdollSettleLeft = bIsRagdoll ? RagdollSettleLeft - DeltaTime : 0.f;
+	CapRagdollEntrySpeeds();
+}
+
+void UAedirBalanceComponent::CapRagdollEntrySpeeds()
+{
+	// Going down, and for a moment after, nothing in the body rises faster than it did then, and no part of a leg moves or
+	// spins faster against the body than a loose leg could: what the joints and the ground push back as they take hold of a
+	// body caught mid-step does not throw it up or fling its legs.
+	for (FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		if (!Body || !Body->IsInstanceSimulatingPhysics())
+		{
+			continue;
+		}
+		FVector Velocity = Body->GetUnrealWorldVelocity();
+		const FVector Was = Velocity;
+		Velocity.Z = FMath::Min(Velocity.Z, static_cast<double>(RagdollRiseLimit));
+		const FString Bone = Body->GetBodySetup() ? Body->GetBodySetup()->BoneName.ToString() : FString();
+		const bool bLeg = Bone.Contains(TEXT("thigh")) || Bone.Contains(TEXT("calf")) || Bone.Contains(TEXT("foot")) || Bone.Contains(TEXT("ball"));
+		const FVector Own = Velocity - RagdollCarried;
+		if (bLeg && Own.Size() > RagdollEntryLegSpeed)
+		{
+			Velocity = RagdollCarried + Own.GetSafeNormal() * RagdollEntryLegSpeed;
+		}
+		if (!Velocity.Equals(Was, 0.1))
+		{
+			Body->SetLinearVelocity(Velocity, false);
+		}
+		const FVector Spin = Body->GetUnrealWorldAngularVelocityInRadians();
+		const float MaxSpin = FMath::DegreesToRadians(RagdollEntryLegSpinDegrees);
+		if (bLeg && Spin.Size() > MaxSpin)
+		{
+			Body->SetAngularVelocityInRadians(Spin.GetSafeNormal() * MaxSpin, false);
+		}
+	}
+}
+
+void UAedirBalanceComponent::WatchFall(float DeltaTime)
+{
+	if (FallWatchLeft <= 0.f || !BodyMesh)
+	{
+		return;
+	}
+	FallWatchLeft -= DeltaTime;
+	// How high the hips go above where they were when the body went down, and the fastest any part rises and moves.
+	if (const FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName))
+	{
+		FallMaxRise = FMath::Max(FallMaxRise, static_cast<float>(Pelvis->GetUnrealWorldTransform().GetLocation().Z) - FallStartZ);
+		if (Pelvis->GetUnrealWorldVelocity().Z > AedirFallFlyingSpeed)
+		{
+			const UAedirStatsComponent* FlyingStats = FindStats();
+			UE_LOG(LogAedir, Log, TEXT("[Fall] %s's hips fly up at %.0f cm/s, %.2f s in: down %d, getting up %d (%.2f), dead %d, simulating %d, kinematic %d, mesh on capsule %d"), *GetOwner()->GetName(), Pelvis->GetUnrealWorldVelocity().Z, AedirFallWatchSeconds - FallWatchLeft,
+				bIsRagdoll ? 1 : 0, IsGettingUp() ? 1 : 0, GetGetUpProgress(), FlyingStats && FlyingStats->IsDead() ? 1 : 0, Pelvis->IsInstanceSimulatingPhysics() ? 1 : 0, Pelvis->IsInstanceSimulatingPhysics() ? 0 : 1, BodyMesh->GetAttachParent() == BodyCapsule ? 1 : 0);
+		}
+	}
+	for (const FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		if (Body && Body->IsInstanceSimulatingPhysics())
+		{
+			const FVector Velocity = Body->GetUnrealWorldVelocity();
+			FallMaxUpSpeed = FMath::Max(FallMaxUpSpeed, static_cast<float>(Velocity.Z));
+			if (Velocity.Size() > FallMaxSpeed)
+			{
+				FallMaxSpeed = static_cast<float>(Velocity.Size());
+				FallFastestBone = Body->GetBodySetup() ? Body->GetBodySetup()->BoneName : NAME_None;
+				FallFastestAt = AedirFallWatchSeconds - FallWatchLeft;
+			}
+		}
+	}
+	if (FallWatchLeft <= 0.f)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Fall] %s went down at %.0f cm/s: the hips rose %.1f cm, fastest rise %.0f cm/s, fastest part %.0f cm/s (%s, %.2f s in)"), *GetOwner()->GetName(), FallEntrySpeed, FallMaxRise, FallMaxUpSpeed, FallMaxSpeed, *FallFastestBone.ToString(), FallFastestAt);
+	}
+}
+
 void UAedirBalanceComponent::DrivePelvis()
 {
 	FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName);
@@ -2214,15 +2455,20 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		{
 			Pelvis->SetInstanceSimulatePhysics(true);
 		}
+		// Standing, the legs went through the ground and through each other untouched; now they meet it, and a leg found in it
+		// is let out slowly instead of shot out of it.
 		for (FBodyInstance* Body : BodyMesh->Bodies)
 		{
-			if (Body && Body->IsInstanceSimulatingPhysics())
+			if (Body)
 			{
-				FVector Velocity = Body->GetUnrealWorldVelocity();
-				Velocity.Z = FMath::Min(Velocity.Z, FMath::Max(Carried.Z, 0.0) + RagdollEntryMaxRiseSpeed);
-				Body->SetLinearVelocity(Velocity, false);
+				Body->SetMaxDepenetrationVelocity(RagdollEntryOutOfGroundSpeed);
 			}
 		}
+		LiftLegsOutOfGround();
+		RagdollSettleLeft = RagdollEntrySettleSeconds;
+		RagdollRiseLimit = static_cast<float>(FMath::Max(Carried.Z, 0.0)) + RagdollEntryMaxRiseSpeed;
+		RagdollCarried = Carried;
+		CapRagdollEntrySpeeds();
 
 		if (Movement)
 		{
@@ -2230,6 +2476,12 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		}
 
 		BodyCapsule->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		FallWatchLeft = AedirFallWatchSeconds;
+		FallStartZ = Pelvis ? static_cast<float>(Pelvis->GetUnrealWorldTransform().GetLocation().Z) : 0.f;
+		FallMaxRise = 0.f;
+		FallMaxUpSpeed = 0.f;
+		FallMaxSpeed = 0.f;
+		FallEntrySpeed = static_cast<float>(Carried.Size());
 		return;
 	}
 
@@ -2266,12 +2518,13 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 			const FVector Facing = bFromBack ? -Along : Along;
 			const FVector StandXY = PelvisLocation + Facing * (bFromBack ? GetUpFromBackStandCm * static_cast<float>(BodyMesh->GetComponentScale().Z) : 0.f);
 			FVector Ground;
-			if (!TraceGround(StandXY + FVector(0.f, 0.f, 80.f), StandXY - FVector(0.f, 0.f, 200.f), Ground))
+			if (!TraceStandingGround(StandXY + FVector(0.f, 0.f, 80.f), StandXY - FVector(0.f, 0.f, 200.f), Ground))
 			{
 				Ground = StandXY - FVector(0.f, 0.f, 10.f);
 			}
 			const FVector CapsuleLocation = Ground + FVector(0.f, 0.f, BodyCapsule->GetScaledCapsuleHalfHeight() + 1.f);
 			CharacterOwner->SetActorLocationAndRotation(CapsuleLocation, FRotator(0.f, Facing.Rotation().Yaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+			IgnoreLooseThingsAtFeet();
 		}
 
 		// A loose pelvis took the mesh along with it. Back on its feet the mesh goes back to the capsule, and the limbs to the pose.
@@ -2310,9 +2563,17 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		const float Tired = StatsComponent ? 1.f - FMath::Clamp(StatsComponent->GetStaminaFraction(), 0.f, 1.f) : 0.f;
 		const float Hurt = StatsComponent ? 1.f - FMath::Clamp(StatsComponent->GetHealth() / FMath::Max(StatsComponent->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
 		GetUpTotal = FMath::Lerp(GetUpSecondsMin, GetUpSecondsMax, FMath::Clamp(Tired * GetUpTiredShare + Hurt * GetUpHurtShare, 0.f, 1.f));
-		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s gets up in %.2f s (stamina gone %.2f, health gone %.2f)"), *GetOwner()->GetName(), GetUpTotal, Tired, Hurt);
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s gets up in %.2f s (stamina gone %.2f, health gone %.2f), its feet at %.1f"), *GetOwner()->GetName(), GetUpTotal, Tired, Hurt, CharacterOwner->GetActorLocation().Z - BodyCapsule->GetScaledCapsuleHalfHeight());
 		GetUpLeft = GetUpTotal;
 		bHipsInitialized = false;
+		// The hips set out a little off their balance, one way or another.
+		GetUpSwaySeed = FMath::FRandRange(0.f, 100.f);
+		GetUpSwayClock = 0.f;
+		GetUpSway = FVector2D(FMath::FRandRange(-1.f, 1.f), FMath::FRandRange(-1.f, 1.f)).GetSafeNormal() * GetUpSwayStartCm;
+		GetUpSwayRate = FVector2D::ZeroVector;
+		GetUpSwayLow = 0.f;
+		GetUpPace = 1.f;
+		GetUpSteer = FVector2D::ZeroVector;
 		if (UAedirGaitComponent* Gait = CharacterOwner->FindComponentByClass<UAedirGaitComponent>())
 		{
 			Gait->BeginGetUpPose();
@@ -2383,18 +2644,42 @@ void UAedirBalanceComponent::UpdateGetUp(float DeltaTime)
 	{
 		return;
 	}
-	// A player gets up only as long as the key is held: let go half way and the body sinks back to the ground.
-	const UWorld* World = GetWorld();
-	const double Now = World ? World->GetTimeSeconds() : 0.0;
-	const bool bChooses = bPlayerChoosesGetUp && CharacterOwner && CharacterOwner->IsPlayerControlled();
-	const bool bHeld = Now - GetUpRequestTime <= AedirGetUpRequestHoldSeconds && RequestedGetUpStyle == GetUpStyle;
-	// A long frame is not a let-go: the key could not be read in it.
-	if (bChooses && !bHeld && IsAuthoritative() && DeltaTime <= AedirBodyHitchSeconds)
+	// Getting up, the body has to be kept balanced over its hips on the way: they tip away from where they should be, the
+	// more the higher they are, a tired or hurt body more, and are steered back (the player with W, A, S and D, anyone else
+	// by itself). Kept near the middle it rises at full pace; slipping, slower; slipped too far, it goes down again.
+	if (IsAuthoritative() && DeltaTime <= AedirBodyHitchSeconds)
 	{
-		ApplyBalanceImpact(-CharacterOwner->GetActorForwardVector(), AedirGetUpLetGoLossPerSecond * DeltaTime);
-		return;
+		// Tests left to run by themselves (aedir.AutoGetUp) keep a player's balance for it too.
+		static const IConsoleVariable* AutoGetUp = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.AutoGetUp"));
+		const bool bChooses = bPlayerChoosesGetUp && CharacterOwner && CharacterOwner->IsPlayerControlled() && !(AutoGetUp && AutoGetUp->GetInt() != 0);
+		const UAedirStatsComponent* SwayStats = FindStats();
+		const float Tired = SwayStats ? 1.f - FMath::Clamp(SwayStats->GetStaminaFraction(), 0.f, 1.f) : 0.f;
+		const float Hurt = SwayStats ? 1.f - FMath::Clamp(SwayStats->GetHealth() / FMath::Max(SwayStats->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
+		const float Unsteady = FMath::Clamp(Tired * GetUpTiredShare + Hurt * GetUpHurtShare, 0.f, 1.f);
+		const float Height = FMath::Lerp(GetUpSwayLowShare, 1.f, GetGetUpProgress());
+		const FVector2D Steer = bChooses ? GetUpSteer.GetClampedToMaxSize(1.0) : FVector2D(-(GetUpSway * AedirGetUpSelfSteerPerCm + GetUpSwayRate * AedirGetUpSelfSteerPerCmPerSecond)).GetClampedToMaxSize(1.0);
+		// A push that wanders, as a body unsure of its feet: two slow waves each way.
+		GetUpSwayClock += DeltaTime;
+		const FVector2D Wander(FMath::PerlinNoise1D(GetUpSwayClock * AedirGetUpWanderRate + GetUpSwaySeed), FMath::PerlinNoise1D(GetUpSwayClock * AedirGetUpWanderRate + GetUpSwaySeed + 31.f));
+		const FVector2D Push = GetUpSway * (GetUpSwayTipping * Height) + Wander * (FMath::Lerp(GetUpSwayWanderMin, GetUpSwayWanderMax, Unsteady) * Height)
+			+ Steer * GetUpSteerPush - GetUpSwayRate * GetUpSwayDamping;
+		GetUpSwayRate += Push * DeltaTime;
+		GetUpSway += GetUpSwayRate * DeltaTime;
+		const float Off = static_cast<float>(GetUpSway.Size());
+		if (Off > GetUpSwayFallCm)
+		{
+			UE_LOG(LogAedir, Log, TEXT("[GetUp] %s lost its balance getting up, %.0f%% of the way, the hips %.0f cm off."), *GetNameSafe(GetOwner()), GetGetUpProgress() * 100.f, Off);
+			EnterRagdoll(MinRagdollSeconds);
+			return;
+		}
+		GetUpPace = FMath::Lerp(1.f, GetUpUnsteadyPace, FMath::Clamp((Off - GetUpSteadyCm) / FMath::Max(GetUpSwayFallCm - GetUpSteadyCm, 1.f), 0.f, 1.f));
+		GetUpSwayLow = FMath::Max(GetUpSwayLow, Off);
 	}
-	GetUpLeft = FMath::Max(GetUpLeft - DeltaTime, 0.f);
+	GetUpLeft = FMath::Max(GetUpLeft - DeltaTime * GetUpPace, 0.f);
+	if (GetUpLeft <= 0.f)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is up: the hips were at most %.0f cm off on the way."), *GetNameSafe(GetOwner()), GetUpSwayLow);
+	}
 	// The moves are over, but the hips never made it up: the body did not get up.
 	if (GetUpLeft <= 0.f && BodyControl && IsAuthoritative())
 	{

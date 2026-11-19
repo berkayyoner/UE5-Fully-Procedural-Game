@@ -279,6 +279,34 @@ void AAedirPlayerCharacter::PossessedBy(AController* NewController)
 	}
 }
 
+void AAedirPlayerCharacter::ShakeView(float Degrees, float Seconds)
+{
+	// The shake still going is kept if it is the bigger.
+	if (Degrees >= HitShakeStrength * HitShake * HitShake)
+	{
+		HitShake = 1.f;
+		HitShakeStrength = Degrees;
+		HitShakeSeconds = Seconds;
+	}
+	UE_LOG(LogAedir, Log, TEXT("[Shake] %s's view shakes %.2f degrees for %.2f s"), *GetName(), Degrees, Seconds);
+}
+
+void AAedirPlayerCharacter::ShakeViewFromHurt(float Damage)
+{
+	if (Damage >= ShakeMinDamage && IsLocallyControlled())
+	{
+		ShakeView(FMath::Lerp(HurtShakeDegreesMin, HurtShakeDegreesMax, FMath::Clamp(Damage / FMath::Max(HurtShakeFullDamage, 1.f), 0.f, 1.f)), HurtShakeSeconds);
+	}
+}
+
+void AAedirPlayerCharacter::ShakeViewFromStrike(float Damage)
+{
+	if (Damage >= ShakeMinDamage && IsLocallyControlled())
+	{
+		ShakeView(FMath::Lerp(StrikeShakeDegreesMin, StrikeShakeDegreesMax, FMath::Clamp(Damage / FMath::Max(StrikeShakeFullDamage, 1.f), 0.f, 1.f)), StrikeShakeSeconds);
+	}
+}
+
 void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -313,10 +341,15 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		{
 			MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
 		}
-		// Down on the ground the same keys get the body up: W off the back, S from face down, held all the way up.
-		if (Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()) && FMath::Abs(MoveInput.Y) > 0.5)
+		// Down on the ground the same keys get the body up: W off the back, S from face down. On the way up they keep the hips
+		// balanced over the feet, pushing them the way each key goes.
+		if (Balance && Balance->IsRagdoll() && FMath::Abs(MoveInput.Y) > 0.5)
 		{
 			Balance->RequestGetUp(MoveInput.Y > 0.0);
+		}
+		if (Balance && Balance->IsGettingUp())
+		{
+			Balance->SetGetUpSteer(FVector2D(MoveInput.Y, MoveInput.X).GetClampedToMaxSize(1.0));
 		}
 		// For tests left to run by themselves: the body gets up on its own whenever it can, the way it lies.
 		static const IConsoleVariable* AutoGetUp = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.AutoGetUp"));
@@ -885,7 +918,7 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 			(FMath::Sin(Time * 1.1f + 2.f) * 0.15f + MouseLean.X * 0.4f) * FightCameraAlpha);
 		FightCameraSway = FMath::RInterpTo(FightCameraSway, Sway, DeltaSeconds, 6.f);
 		// A blow taken jolts the view a little, quickly and fading, never so much that the fight is lost from sight.
-		HitShake = FMath::Max(HitShake - DeltaSeconds / 0.25f, 0.f);
+		HitShake = FMath::Max(HitShake - DeltaSeconds / FMath::Max(HitShakeSeconds, 0.05f), 0.f);
 		const float ShakeDegrees = HitShakeStrength * HitShake * HitShake * UAedirSettingsSubsystem::GetValues().CameraShake;
 		const FRotator Shake(FMath::PerlinNoise1D(Time * 31.f) * ShakeDegrees, FMath::PerlinNoise1D(Time * 27.f + 7.f) * ShakeDegrees, FMath::PerlinNoise1D(Time * 23.f + 13.f) * ShakeDegrees * 0.6f);
 		FollowCamera->SetRelativeRotation(FightCameraSway + Shake);
@@ -1795,7 +1828,7 @@ void AAedirPlayerCharacter::GrabDead(const FString& Bone, int32 Strip)
 	UE_LOG(LogTemp, Display, TEXT("[Dev] GrabDead: %s %s's %s"), bHeld ? TEXT("holds") : TEXT("could not hold"), *Dead->GetName(), *Bone);
 }
 
-void AAedirPlayerCharacter::StrikePart(const FString& Bone, float EnergyJoules, float SideCm, int32 Nearest)
+void AAedirPlayerCharacter::StrikePart(const FString& Bone, float EnergyJoules, float SideCm, int32 Nearest, float AheadCm)
 {
 	AAedirCreature* Victim = this;
 	if (Nearest != 0)
@@ -1820,8 +1853,9 @@ void AAedirPlayerCharacter::StrikePart(const FString& Bone, float EnergyJoules, 
 	Impact.Bone = FName(*Bone);
 	Impact.Zone = Bone.StartsWith(TEXT("head")) || Bone.StartsWith(TEXT("neck")) ? EAedirBodyZone::Head : EAedirBodyZone::Torso;
 	Impact.EnergyJoules = EnergyJoules;
-	Impact.Direction = -Ahead;
-	Impact.Location = Place + Ahead * 12.f;
+	// From in front it pushes back; from behind (a negative AheadCm) it pushes forward.
+	Impact.Direction = AheadCm >= 0.f ? -Ahead : Ahead;
+	Impact.Location = Place + Ahead * AheadCm;
 	Impact.MassKg = 3.f;
 	Impact.RelativeSpeed = 900.f;
 	Victim->Balance->ApplyHitReaction(Impact);

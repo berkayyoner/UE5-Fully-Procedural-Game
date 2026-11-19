@@ -548,7 +548,7 @@ public:
 
 	// The feet spread this much wider with the fists' guard fully up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="1"))
-	float FistStanceWidthMultiplier = 1.25f;
+	float FistStanceWidthMultiplier = 1.6f;
 
 	// Walking stride multiplier at a full fighting stance. Running is not affected.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -590,6 +590,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchBackCm = 3.f;
+
+	// A place on the head is held at least this far in front of the head's middle: by the ear or behind it, the hand goes to
+	// the temple instead of reaching round.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchHeadFrontCm = 5.f;
 
 	// The sides of the trunk held by their own hand start this far below the shoulders; above that, up by the shoulder, the
 	// other hand comes across.
@@ -923,6 +928,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
 	float LimpNeckBowDegrees = 10.f;
 
+	// Getting up off its balance, the trunk leans this many degrees the way the hips are going over for each cm they are off.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|GetUp")
+	float GetUpSwayLeanDegreesPerCm = 0.8f;
+
 	// Backward torso lean in degrees at a full kick pose.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
 	float KickSpineLeanDegrees = 6.f;
@@ -959,6 +968,8 @@ private:
 	float FlinchLeft = 0.f;
 	float FlinchSeconds = 0.f;
 	float FlinchSeverity = 0.f;
+	TOptional<FVector> FlinchElbowLast;
+	float FlinchElbowJump = 0.f;
 	double FlinchBlowSeen = -1.0;
 	TSet<uint8> FlinchWoundsSeen;
 	bool bFlinchWoundsKnown = false;

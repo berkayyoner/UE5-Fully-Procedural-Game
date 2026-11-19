@@ -1,4 +1,5 @@
 #include "Combat/AedirCombatComponent.h"
+#include "Player/AedirPlayerCharacter.h"
 #include "Fists/AedirFistArms.h"
 #include "Audio/AedirSfxSubsystem.h"
 
@@ -4486,6 +4487,11 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	const float MaxShare = Zone == EAedirBodyZone::Head ? AedirImpactMaxHealthShareHead : AedirImpactMaxHealthShare;
 	const float Damage = DamageShare * (!Victim->Stats ? RawDamage : FMath::Min(RawDamage, Victim->Stats->GetMaxHealth() * MaxShare));
 	const float AppliedDamage = Victim->ReceiveCreatureDamage(Damage);
+	// Landing it, the one who plays the striker feels the weight of the hit.
+	if (AAedirPlayerCharacter* Striker = Cast<AAedirPlayerCharacter>(Creature))
+	{
+		Striker->ShakeViewFromStrike(AppliedDamage);
+	}
 
 	EAedirLimb Limb = EAedirLimb::LeftArm;
 	if (Victim->Combat && GetBoneLimb(Bone, Limb))
@@ -4776,9 +4782,13 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	}
 
 	const FVector OwnerLocation = Creature->GetActorLocation();
-	// One who is down lies where the hips are, not where it stood; it is closed on and struck at down there, bent over it.
+	// One who is down lies where its body is, not where it stood; it is closed on and struck at down there, bent over it, by
+	// the upper body: the chest and the head, not the hips and the legs.
 	bAITargetDown = AITarget->Balance && (AITarget->Balance->IsRagdoll() || AITarget->Balance->IsGettingUp());
-	const FVector TargetLocation = bAITargetDown && AITarget->GetMesh() ? AITarget->GetMesh()->GetBoneLocation(TEXT("pelvis")) : AITarget->GetActorLocation();
+	const USkeletalMeshComponent* DownBody = bAITargetDown ? AITarget->GetMesh() : nullptr;
+	const FVector TargetLocation = DownBody
+		? FMath::Lerp(DownBody->GetBoneLocation(TEXT("spine_03")), DownBody->GetBoneLocation(TEXT("head")), AIDownAimHeadShare)
+		: AITarget->GetActorLocation();
 	const float Distance = static_cast<float>(FVector::Dist2D(OwnerLocation, TargetLocation));
 	const bool bStoop = bAITargetDown && Distance < AedirAIStoopCm * static_cast<float>(Creature->GetActorScale3D().X);
 	if (bStoop && !Creature->bIsCrouched && Creature->CanCrouch())
@@ -6092,7 +6102,11 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 	}
 	const float VictimZoneProtection = Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f;
 	const float Damage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(EAedirDamageType::Blunt, 0.f) * GetZoneDamageMultiplier(Zone) * (1.f - VictimZoneProtection);
-	Victim->ReceiveCreatureDamage(Damage);
+	const float KickDamage = Victim->ReceiveCreatureDamage(Damage);
+	if (AAedirPlayerCharacter* Kicker = Cast<AAedirPlayerCharacter>(Creature))
+	{
+		Kicker->ShakeViewFromStrike(KickDamage);
+	}
 
 	EAedirLimb Limb = EAedirLimb::LeftArm;
 	if (Victim->Combat && GetBoneLimb(Bone, Limb))

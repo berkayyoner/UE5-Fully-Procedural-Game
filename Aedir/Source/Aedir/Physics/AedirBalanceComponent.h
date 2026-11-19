@@ -470,6 +470,50 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
 	float GetUpHurtShare = 0.5f;
 
+	// Getting up the hips have to be kept balanced (the player with W, A, S and D): they tip away from the middle by
+	// GetUpSwayTipping (per second squared) times how far they are off, are pushed about by a wandering push of Min cm/s² for
+	// a fresh body to Max for one with no stamina or health left, are slowed by GetUpSwayDamping (per second) and steered
+	// back by GetUpSteerPush (cm/s² at a full key). Low down, on the hands and knees, all of it is GetUpSwayLowShare as much.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSwayTipping = 15.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSwayWanderMin = 40.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSwayWanderMax = 100.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSwayDamping = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSteerPush = 260.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float GetUpSwayLowShare = 0.35f;
+
+	// The hips set out this far off at the start of getting up.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSwayStartCm = 4.f;
+
+	// Within GetUpSteadyCm of the middle the body rises at full pace, slower the further off, down to GetUpUnsteadyPace of it
+	// just short of GetUpSwayFallCm, where it goes down again.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSteadyCm = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSwayFallCm = 22.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float GetUpUnsteadyPace = 0.25f;
+
+	// The player's keys while getting up: X forward, Y right, each -1 to 1.
+	void SetGetUpSteer(const FVector2D& Steer);
+
+	// How far the hips are off their balance getting up, in cm in the body's frame (X forward, Y right); zero otherwise.
+	FVector GetGetUpSwayLocal() const;
+	float GetGetUpSwayFallCm() const { return GetUpSwayFallCm; }
+
 	// How weak the muscles are at the start of getting up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float GetUpMuscleShare = 0.7f;
@@ -481,6 +525,22 @@ public:
 	// Going down, no part of the body is thrown upwards faster than this, in cm/s.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
 	float RagdollEntryMaxRiseSpeed = 60.f;
+
+	// For this long after going down that limit holds on every part, whatever pushes it: the joints and the ground taking
+	// hold of a body caught mid-step.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float RagdollEntrySettleSeconds = 0.4f;
+
+	// The fastest a part found in the ground is let out of it, in cm/s.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float RagdollEntryOutOfGroundSpeed = 40.f;
+
+	// Over that moment no part of a leg moves faster than this against the speed the body went down at, in cm/s.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float RagdollEntryLegSpeed = 250.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts")
+	float RagdollEntryLegSpinDegrees = 540.f;
 
 	// Run into a wall, the part of the body that met it is thrown back off it by WallImpactPartRebound of the speed it
 	// came in at past WallImpactSpeedThreshold, and the trunk by WallImpactTrunkRebound of it, each for its own weight.
@@ -817,6 +877,28 @@ private:
 	void ApplyBodyContacts(bool bRagdoll);
 	void ApplyLegPhysics(bool bRagdoll);
 	void UpdateGetUp(float DeltaTime);
+	// Dev: for a moment after going down, how high the hips rise and how fast the parts move ([Fall] in the log).
+	void WatchFall(float DeltaTime);
+	void SettleRagdollEntry(float DeltaTime);
+	void LiftLegsOutOfGround();
+	// The ground a body gets up on, under anything loose, any body and anything held or worn.
+	bool TraceStandingGround(const FVector& Start, const FVector& End, FVector& OutHitPoint) const;
+	// Loose things a body stood up in the middle of, passed through until it is off them.
+	void IgnoreLooseThingsAtFeet();
+	void ForgetThingsSteppedOff();
+	TArray<TWeakObjectPtr<AActor>> SteppedOffThings;
+	void CapRagdollEntrySpeeds();
+	float RagdollSettleLeft = 0.f;
+	float RagdollRiseLimit = 0.f;
+	FVector RagdollCarried = FVector::ZeroVector;
+	float FallWatchLeft = 0.f;
+	float FallStartZ = 0.f;
+	float FallMaxRise = 0.f;
+	float FallMaxUpSpeed = 0.f;
+	float FallMaxSpeed = 0.f;
+	float FallEntrySpeed = 0.f;
+	FName FallFastestBone;
+	float FallFastestAt = 0.f;
 	// Pulls the physical hips towards where the pose and the capsule want them, as hard as the body is strong.
 	void HoldPelvis(float DeltaTime);
 	// The body on physics control: whether it is used, and its update every frame while standing.
@@ -849,11 +931,20 @@ private:
 	void BumpInto(class AAedirCreature* Other, const FHitResult& Hit);
 	float GetUpLeft = 0.f;
 	float GetUpTotal = 0.f;
+	FVector2D GetUpSway = FVector2D::ZeroVector;
+	FVector2D GetUpSwayRate = FVector2D::ZeroVector;
+	FVector2D GetUpSteer = FVector2D::ZeroVector;
+	float GetUpSwayClock = 0.f;
+	float GetUpSwaySeed = 0.f;
+	float GetUpSwayLow = 0.f;
+	float GetUpPace = 1.f;
 	// Where the hips lay when getting up started.
 	FTransform GetUpStartPelvis = FTransform::Identity;
 	EAedirGetUpStyle ReadLyingStyle() const;
 	UFUNCTION(Server, Unreliable)
 	void ServerRequestGetUp(bool bForwardKey);
+	UFUNCTION(Server, Unreliable)
+	void ServerSetGetUpSteer(FVector2D Steer);
 	double GetUpRequestTime = -100.0;
 	EAedirGetUpStyle RequestedGetUpStyle = EAedirGetUpStyle::None;
 	double LastGetUpRequestSent = -100.0;
