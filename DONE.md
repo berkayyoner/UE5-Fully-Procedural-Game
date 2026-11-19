@@ -529,3 +529,9 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Punches sound with only three of the given recordings: face-70 and face-90 in the face (the nearer by speed), arm-90 everywhere else.
 - Bare-handed enemies hold their guard high, the fists before the face (about 4 cm above the chin instead of 18 cm below it): the mouse on guard goes to the foe's head height and AIFistGuardLift (0.35) above it (AIFistGuardHeadShare, AIFistGuardLift); [NpcGuard] in the hit log.
 - Punch sounds are the new recordings in three sets: the trunk, upper arms and legs (20/40/60), the face and neck (0/20/40/60/80) and the forearm, wrist and hand (30/60), the take nearest the punch's speed; the old punch takes are gone.
+- Feet stand a little closer together: 14.8 cm apart instead of 17.4 (HipHalfWidthCm 10 -> 8.5).
+- The free camera stops the physics while it is out: time all but stopped still let the solver push bodies apart, and lying limbs crept open (up to 6 cm in 25 s); now nothing moves.
+- A broken arm takes and holds nothing (picking up, drawing from the waist or the pack, the second hand of a two-handed hold) and does not come up or close into a fist when its button is pressed.
+- With the fists up the feet take the fight stance's stagger, the foot on the other side from where the mouse is drawn forward (24 cm ahead, the other 12 cm back), and the knees bend a little (FistStanceFootShare, FistStanceBendShare, LeadFootSwitchAcross 0.6).
+- The waist turns more with the fists: 45 degrees with the mouse to a side instead of 30, and a punch turns it on 30 degrees the other way, the punching shoulder forward (WaistTurnDegrees, PunchWaistTurnDegrees); in a fight the chest turned -54..46 degrees instead of -30..31.
+- aedir.LegLog logs feet, knees, leg lengths, shake and chest turn; PhotoShots takes pictures in the free camera and logs how far bodies moved.

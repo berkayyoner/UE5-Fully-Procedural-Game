@@ -384,6 +384,10 @@ public:
 	UFUNCTION(Exec)
 	void HeadCamera();
 
+	// Puts the free camera up and takes this many pictures this many real seconds apart while its time all but stands still.
+	UFUNCTION(Exec)
+	void PhotoShots(int32 Count, float RealSeconds);
+
 	// The mouse as the player moves it, through the same handlers: this much axis value a second, for this long.
 	UFUNCTION(Exec)
 	void MouseInput(float ValueX, float ValueY, float Seconds);

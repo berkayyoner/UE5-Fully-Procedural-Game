@@ -404,6 +404,8 @@ private:
 
 	FVector GetReachTargetWorld(EAedirHand Hand, const AAedirItemActor* Item) const;
 	bool CanLift(const AAedirItemActor* Item) const;
+	// A hand whose arm is broken or gone takes and holds nothing.
+	bool IsHandUseless(EAedirHand Hand) const;
 	void UpdateObjectStrain(float DeltaTime);
 
 	// The hand goes to the belt first, and the item changes place when it gets there.

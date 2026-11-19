@@ -1,4 +1,6 @@
 #include "AedirPlayerCharacter.h"
+#include "PhysicsEngine/BodySetup.h"
+#include "Containers/Ticker.h"
 #include "Aedir.h"
 #include "Audio/AedirSfxSubsystem.h"
 #include "Camera/PlayerCameraManager.h"
@@ -1395,6 +1397,9 @@ void AAedirPlayerCharacter::HandleHeadCameraPressed()
 			}
 		}
 		UGameplayStatics::SetGlobalTimeDilation(this, bPhotoCamera ? PhotoTimeDilation : 1.f);
+		// Time all but stopped is not stopped for the solver: it still pushes bodies apart and out of the ground every frame,
+		// and limbs would creep open for as long as the camera is out. The physics is held still altogether instead.
+		GetWorld()->bShouldSimulatePhysics = !bPhotoCamera;
 	}
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (bPhotoCamera)
@@ -2054,6 +2059,63 @@ void AAedirPlayerCharacter::HandWatch(int32 RightHand, float Seconds)
 void AAedirPlayerCharacter::HeadCamera()
 {
 	HandleHeadCameraPressed();
+}
+
+void AAedirPlayerCharacter::PhotoShots(int32 Count, float RealSeconds)
+{
+	if (!bPhotoCamera)
+	{
+		HandleHeadCameraPressed();
+	}
+	TWeakObjectPtr<AAedirPlayerCharacter> Self(this);
+	double Next = FPlatformTime::Seconds() + RealSeconds;
+	int32 Left = Count;
+	// Where every body part of every creature was as the time stopped, to see how far each has gone since.
+	TArray<TPair<TWeakObjectPtr<USkeletalMeshComponent>, TArray<FVector>>> Start;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (USkeletalMeshComponent* Body = It->GetMesh())
+		{
+			TArray<FVector>& Places = Start.Emplace_GetRef(Body, TArray<FVector>()).Value;
+			for (const FBodyInstance* Part : Body->Bodies)
+			{
+				Places.Add(Part ? Part->GetUnrealWorldTransform().GetLocation() : FVector::ZeroVector);
+			}
+		}
+	}
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Self, Next, Left, RealSeconds, Start](float) mutable
+	{
+		APlayerController* PlayerController = Self.IsValid() ? Cast<APlayerController>(Self->GetController()) : nullptr;
+		if (!PlayerController || Left <= 0)
+		{
+			return false;
+		}
+		if (FPlatformTime::Seconds() >= Next)
+		{
+			PlayerController->ConsoleCommand(TEXT("HighResShot 1"));
+			UE_LOG(LogAedir, Display, TEXT("[Dev] PhotoShots: picture %d"), Left);
+			for (const TPair<TWeakObjectPtr<USkeletalMeshComponent>, TArray<FVector>>& Was : Start)
+			{
+				const USkeletalMeshComponent* Body = Was.Key.Get();
+				float Furthest = 0.f;
+				FName FurthestPart;
+				for (int32 Index = 0; Body && Index < Body->Bodies.Num() && Index < Was.Value.Num(); ++Index)
+				{
+					const FBodyInstance* Part = Body->Bodies[Index];
+					const float Gone = Part ? static_cast<float>(FVector::Dist(Part->GetUnrealWorldTransform().GetLocation(), Was.Value[Index])) : 0.f;
+					if (Gone > Furthest)
+					{
+						Furthest = Gone;
+						FurthestPart = Part->BodySetup.IsValid() ? Part->BodySetup->BoneName : NAME_None;
+					}
+				}
+				UE_LOG(LogAedir, Display, TEXT("[Dev] PhotoShots: %s has moved up to %.2f cm (%s) since the time stopped"), *GetNameSafe(Body ? Body->GetOwner() : nullptr), Furthest, *FurthestPart.ToString());
+			}
+			Next += RealSeconds;
+			--Left;
+		}
+		return Left > 0;
+	}));
 }
 
 void AAedirPlayerCharacter::MouseInput(float ValueX, float ValueY, float Seconds)

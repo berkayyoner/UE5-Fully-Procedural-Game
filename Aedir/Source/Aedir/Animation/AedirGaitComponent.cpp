@@ -204,6 +204,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.StanceAlpha = FMath::FInterpTo(GaitState.StanceAlpha, (Combat && Combat->IsInFightStance()) ? 1.f : 0.f, DeltaTime, StanceInterpSpeed);
 	const float StanceAlpha = GaitState.StanceAlpha;
 	const bool bRightLead = Combat && Combat->IsLeadFootRight();
+	{
+		const UAedirFistArms* StanceFists = CreatureOwner->FindComponentByClass<UAedirFistArms>();
+		const float FistsUp = StanceFists ? FMath::Max(StanceFists->GetRaised(EAedirHand::Left), StanceFists->GetRaised(EAedirHand::Right)) : 0.f;
+		FistStanceAlpha = FMath::FInterpTo(FistStanceAlpha, FistsUp, DeltaTime, StanceInterpSpeed);
+	}
+	// How far the feet are set one before the other, and the hips and knees sunk: by the fight stance, or the fists' guard.
+	const float StaggerAlpha = FMath::Max(StanceAlpha, FistStanceAlpha * FistStanceFootShare);
+	const float SinkAlpha = FMath::Max(StanceAlpha, FistStanceAlpha * FistStanceBendShare);
 
 	// Kick: the rear leg throws the kick while the lead leg holds the body up.
 	bool bKickLeftLeg = false;
@@ -253,7 +261,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float ReachWidenAlpha = FMath::Clamp((WidenInteraction ? WidenInteraction->GetPelvisLowerZ() : 0.f) / ReachLowerMaxCm, 0.f, 1.f);
 	const float PostureWidthScale = 1.f + (CrouchFootWidenShare * CrouchAlpha) + (CrouchFootWidenShare * ReachWidenAlpha);
 	const float StanceWidthScale = FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha) * PostureWidthScale;
-	const float StanceLeadForwardCm = StanceLeadFootForwardCm * StanceAlpha * ActorScale;
+	const float StanceLeadForwardCm = StanceLeadFootForwardCm * StaggerAlpha * ActorScale;
 	for (int32 Foot = 0; Foot < 2; ++Foot)
 	{
 		const float Side = Foot == 0 ? -1.f : 1.f;
@@ -513,7 +521,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float ReachLowerAlpha = FMath::Clamp(ReachLowerCm / FMath::Max(ReachLowerMaxCm, KINDA_SMALL_NUMBER), 0.f, 1.f);
 	GaitState.HipOffsetZ -= ReachLowerCm;
 	GaitState.HipForwardOffset = Interaction ? Interaction->GetReachHipForward() * ActorScale : 0.f;
-	GaitState.HipOffsetZ -= StanceHipLowerCm * StanceAlpha;
+	GaitState.HipOffsetZ -= StanceHipLowerCm * SinkAlpha;
 
 	// Crouching shrinks the capsule, so the pelvis drops by the same amount and the camera boom stays on the body.
 	const float CrouchDropCm = FMath::Max(CreatureOwner->GetDefaultHalfHeight() - MovementComponent->GetCrouchedHalfHeight(), 0.f) * ActorScale;
@@ -587,6 +595,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	UpdateClutch(DeltaTime, Combat, Interaction, ActorTransform);
 	LogWrists();
+	LogLegs();
 	ResolveArmReach(EAedirHand::Left, Combat, Interaction, ActorTransform, ProtectiveLeftTarget, ProtectiveAlpha, LeftReachTarget, LeftReachAlpha);
 	ResolveArmReach(EAedirHand::Right, Combat, Interaction, ActorTransform, ProtectiveRightTarget, ProtectiveAlpha, RightReachTarget, RightReachAlpha);
 
@@ -772,10 +781,16 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmAlpha[0]);
 		GaitState.FistAlphaRight = FMath::Max(GaitState.FistAlphaRight, GaitState.FistArmAlpha[1]);
 	}
+	// A broken arm's hand hangs open: it closes on nothing.
+	if (const UAedirWoundComponent* HandWounds = CreatureOwner->Wounds.Get())
+	{
+		GaitState.FistAlphaLeft = HandWounds->HasUselessArm(true) ? 0.f : GaitState.FistAlphaLeft;
+		GaitState.FistAlphaRight = HandWounds->HasUselessArm(false) ? 0.f : GaitState.FistAlphaRight;
+	}
 	// Loose arms hang straight while standing; the elbows start to break with the walking and running speed.
 	GaitState.ElbowBend = FMath::Lerp(ElbowBendWalkDegrees, ElbowBendRunDegrees, SpeedAlpha * SpeedAlpha) * ArmBlend;
 	GaitState.KneeBend = FMath::Max(Lift[0], Lift[1]) * KneeBendMaxDegrees + ReachLowerAlpha * KneeBendMaxDegrees;
-	GaitState.KneeBend += StanceKneeBendDegrees * StanceAlpha;
+	GaitState.KneeBend += StanceKneeBendDegrees * SinkAlpha;
 
 	// Breathing, idle sway, weight shift and inertia. Every term is zero while dead.
 	const bool bDead = CreatureOwner->Stats && CreatureOwner->Stats->IsDead();
@@ -1255,6 +1270,79 @@ void UAedirGaitComponent::LogWrists() const
 		UE_LOG(LogAedir, Log, TEXT("[Wrist] %s %s: clutch %.2f%s, gap %.1f cm, bent %.0f deg from rest, hand simulating %d"), *Owner->GetName(), Slot == 0 ? TEXT("left") : TEXT("right"),
 			ClutchAlpha[Slot], bClutchFlinch[Slot] ? TEXT(" (flinch)") : TEXT(""), Gap, Bend, HandBody && HandBody->IsInstanceSimulatingPhysics() ? 1 : 0);
 	}
+}
+
+void UAedirGaitComponent::LogLegs()
+{
+	static IConsoleVariable* LegLog = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.LegLog"), 0, TEXT("Log the feet and knees against the body, each leg's length and how far each foot wandered, every this many frames."));
+	const ACharacter* Owner = Cast<ACharacter>(GetOwner());
+	const USkeletalMeshComponent* Mesh = Owner ? Owner->GetMesh() : nullptr;
+	const int32 Every = LegLog ? LegLog->GetInt() : 0;
+	if (Every <= 0 || !Mesh || !Mesh->GetSkeletalMeshAsset())
+	{
+		LegLogFrames = -1;
+		return;
+	}
+	const FTransform Body = Owner->GetActorTransform();
+	FVector Foot[2], Knee[2], Thigh[2];
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		Foot[Slot] = Mesh->GetBoneLocation(Slot == 0 ? TEXT("foot_l") : TEXT("foot_r"));
+		Knee[Slot] = Mesh->GetBoneLocation(Slot == 0 ? TEXT("calf_l") : TEXT("calf_r"));
+		Thigh[Slot] = Mesh->GetBoneLocation(Slot == 0 ? TEXT("thigh_l") : TEXT("thigh_r"));
+		if (LegLogFrames < 0)
+		{
+			LegLogLast[Slot] = Foot[Slot];
+			LegLogStart[Slot] = Foot[Slot];
+			LegLogPath[Slot] = 0.f;
+		}
+		LegLogPath[Slot] += static_cast<float>(FVector::Dist(Foot[Slot], LegLogLast[Slot]));
+		LegLogLast[Slot] = Foot[Slot];
+		// The shake: how far each joint's step this frame differs from its step the frame before, in the body's own frame.
+		const FVector KneeHere = Body.InverseTransformPositionNoScale(Knee[Slot]);
+		const FVector FootHere = Body.InverseTransformPositionNoScale(Foot[Slot]);
+		if (LegLogFrames >= 0)
+		{
+			LegLogShake[Slot] += static_cast<float>((KneeHere - 2.0 * LegLogKnee[Slot][0] + LegLogKnee[Slot][1]).Size());
+			LegLogShake[2 + Slot] += static_cast<float>((FootHere - 2.0 * LegLogFoot[Slot][0] + LegLogFoot[Slot][1]).Size());
+		}
+		else
+		{
+			LegLogKnee[Slot][0] = KneeHere;
+			LegLogFoot[Slot][0] = FootHere;
+		}
+		LegLogKnee[Slot][1] = LegLogKnee[Slot][0];
+		LegLogKnee[Slot][0] = KneeHere;
+		LegLogFoot[Slot][1] = LegLogFoot[Slot][0];
+		LegLogFoot[Slot][0] = FootHere;
+	}
+	// How far the shoulders are turned against the body: the line across them, seen from above.
+	const FVector Across = Body.InverseTransformVectorNoScale(Mesh->GetBoneLocation(TEXT("upperarm_r")) - Mesh->GetBoneLocation(TEXT("upperarm_l")));
+	const float ChestTurn = FMath::RadiansToDegrees(FMath::Atan2(static_cast<float>(-Across.X), static_cast<float>(Across.Y)));
+	LegLogChestMin = LegLogFrames <= 0 ? ChestTurn : FMath::Min(LegLogChestMin, ChestTurn);
+	LegLogChestMax = LegLogFrames <= 0 ? ChestTurn : FMath::Max(LegLogChestMax, ChestTurn);
+	LegLogFrames = FMath::Max(LegLogFrames, 0) + 1;
+	if (LegLogFrames < Every)
+	{
+		return;
+	}
+	const auto Local = [&Body](const FVector& World) { return Body.InverseTransformPositionNoScale(World); };
+	const FVector FL = Local(Foot[0]), FR = Local(Foot[1]), KL = Local(Knee[0]), KR = Local(Knee[1]);
+	UE_LOG(LogAedir, Log, TEXT("[Legs] %s stance %.2f fists %.2f lead %d dt %.5f | feet L %.1f %.1f R %.1f %.1f apart %.1f ahead %.1f | knees L %.1f R %.1f apart %.1f | thigh-calf %.1f %.1f calf-foot %.1f %.1f hip-foot %.1f %.1f | path %.2f %.2f net %.2f %.2f | shake knees %.2f %.2f feet %.2f %.2f | chest turn %.0f to %.0f"),
+		*Owner->GetName(), GaitState.StanceAlpha, FistStanceAlpha, CreatureOwner && CreatureOwner->Combat && CreatureOwner->Combat->IsLeadFootRight() ? 1 : 0, GetWorld()->GetDeltaSeconds(), FL.X, FL.Y, FR.X, FR.Y, FR.Y - FL.Y, FR.X - FL.X, KL.Y, KR.Y, KR.Y - KL.Y,
+		FVector::Dist(Thigh[0], Knee[0]), FVector::Dist(Thigh[1], Knee[1]), FVector::Dist(Knee[0], Foot[0]), FVector::Dist(Knee[1], Foot[1]), FVector::Dist(Thigh[0], Foot[0]), FVector::Dist(Thigh[1], Foot[1]),
+		LegLogPath[0], LegLogPath[1], FVector::Dist(Foot[0], LegLogStart[0]), FVector::Dist(Foot[1], LegLogStart[1]),
+		LegLogShake[0], LegLogShake[1], LegLogShake[2], LegLogShake[3], LegLogChestMin, LegLogChestMax);
+	for (float& Shake : LegLogShake)
+	{
+		Shake = 0.f;
+	}
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		LegLogPath[Slot] = 0.f;
+		LegLogStart[Slot] = Foot[Slot];
+	}
+	LegLogFrames = 0;
 }
 
 void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, const FVector& ProtectiveTargetWorld, float ProtectiveAlpha, FVector& OutTargetWorld, float& OutAlpha) const

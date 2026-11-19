@@ -2904,6 +2904,20 @@ void UAedirCombatComponent::UpdateLeadFoot()
 	// The foot opposite the weapon leads: with the blade on the right the left foot is forward, with it on the left the
 	// right one. Which side the blade is on is where the hands carrying it are; it changes over only once the hands are
 	// clearly across, so the feet do not shuffle while the weapon passes the middle.
+	// With the fists (or a blade swung as one) up, the foot on the other side from where the mouse is drawn goes forward.
+	if (const UAedirFistArms* Fists = Creature->FindComponentByClass<UAedirFistArms>(); Fists && FMath::Max(Fists->GetRaised(EAedirHand::Left), Fists->GetRaised(EAedirHand::Right)) > 0.f)
+	{
+		const float Across = static_cast<float>(Fists->GetMouseAim().X);
+		if (Across > Fists->LeadFootSwitchAcross)
+		{
+			bLeadFootRight = false;
+		}
+		else if (Across < -Fists->LeadFootSwitchAcross)
+		{
+			bLeadFootRight = true;
+		}
+		return;
+	}
 	const EAedirHand Carrying = GetGripHand();
 	if (!GetHeldItem(Carrying))
 	{

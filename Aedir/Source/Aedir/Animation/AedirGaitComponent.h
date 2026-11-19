@@ -434,7 +434,7 @@ public:
 	float StairFactorInterpSpeed = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float HipHalfWidthCm = 10.f;
+	float HipHalfWidthCm = 8.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float AnkleHeightCm = 8.f;
@@ -510,6 +510,14 @@ public:
 	// Forward shift in cm of the lead foot's home location at a full fighting stance. The rear foot moves back by half of it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
 	float StanceLeadFootForwardCm = 28.f;
+
+	// With the fists (or a blade swung as one) up, the feet take this share of the stance's lead and rear foot offsets, and the
+	// hips and knees this share of its drop and bend; the feet do not go wider.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
+	float FistStanceFootShare = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
+	float FistStanceBendShare = 0.4f;
 
 	// Walking stride multiplier at a full fighting stance. Running is not affected.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -887,6 +895,18 @@ private:
 	TSet<uint8> FlinchWoundsSeen;
 	bool bFlinchWoundsKnown = false;
 	void LogWrists() const;
+	// Dev: where each foot and knee stands against the body, how long each leg is, and how far each foot wanders (aedir.LegLog).
+	void LogLegs();
+	FVector LegLogLast[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float LegLogPath[2] = { 0.f, 0.f };
+	FVector LegLogStart[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	int32 LegLogFrames = -1;
+	// Each knee and foot over the last two frames, and how much their movement changed from frame to frame (a shake).
+	FVector LegLogKnee[2][2];
+	FVector LegLogFoot[2][2];
+	float LegLogShake[4] = { 0.f, 0.f, 0.f, 0.f };
+	float LegLogChestMin = 0.f;
+	float LegLogChestMax = 0.f;
 	void UpdateClutch(float DeltaTime,const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);
 
 	UPROPERTY(Transient)
@@ -935,6 +955,8 @@ private:
 	float ArmBlend = 0.f;
 	float DynamicHipOffset = 0.f;
 	float SmoothedSpineTwist = 0.f;
+	// How far the fists' guard is up, eased: the feet stagger and the knees bend with it.
+	float FistStanceAlpha = 0.f;
 	float SmoothedSwingTwist = 0.f;
 	float SmoothedSwingBend = 0.f;
 	float SmoothedPunchLean = 0.f;

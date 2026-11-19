@@ -8,6 +8,7 @@
 #include "GameFramework/Character.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemActor.h"
+#include "Wounds/AedirWoundComponent.h"
 
 namespace
 {
@@ -116,6 +117,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	{
 		const UAedirBalanceComponent* OwnBalance = GetOwner() ? GetOwner()->FindComponentByClass<UAedirBalanceComponent>() : nullptr;
 		bBodyDown = OwnBalance && (OwnBalance->IsRagdoll() || OwnBalance->IsGettingUp());
+		const AAedirCreature* OwnCreature = Cast<AAedirCreature>(GetOwner());
+		const UAedirWoundComponent* OwnWounds = OwnCreature ? OwnCreature->Wounds.Get() : nullptr;
+		bArmUseless[0] = OwnWounds && OwnWounds->HasUselessArm(true);
+		bArmUseless[1] = OwnWounds && OwnWounds->HasUselessArm(false);
 	}
 	FlinchLeft[0] = FMath::Max(FlinchLeft[0] - DeltaTime, 0.f);
 	FlinchLeft[1] = FMath::Max(FlinchLeft[1] - DeltaTime, 0.f);
@@ -442,6 +447,8 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	}
 	const bool bBladeUp = (HeldNow(0) && bArmed[0]) || (HeldNow(1) && bArmed[1]);
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * (bBladeUp ? BladeWaistForwardDegrees : WaistForwardDegrees)) * Raised;
-	WaistYaw = Across * WaistTurnDegrees * Raised;
+	// The punching arm's shoulder goes forward with the blow: the right one turns the waist left, the left one right.
+	const float PunchTurn = Punch * PunchWaistTurnDegrees * (bBoth ? (PunchSlot == 1 ? -1.f : 1.f) : (HeldNow(1) ? -1.f : 1.f));
+	WaistYaw = (Across * WaistTurnDegrees + PunchTurn) * Raised;
 	HipDrop = FMath::Max(-UpDown, 0.f) * (bBladeUp ? BladeDownHipDropCm : DownHipDropCm) * Raised;
 }

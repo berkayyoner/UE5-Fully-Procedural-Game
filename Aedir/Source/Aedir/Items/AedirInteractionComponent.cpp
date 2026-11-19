@@ -224,7 +224,8 @@ void UAedirInteractionComponent::StartReach(EAedirHand Hand)
 		return;
 	}
 
-	if (State != EAedirHandState::Idle)
+	// A broken arm's hand reaches for nothing.
+	if (State != EAedirHandState::Idle || IsHandUseless(Hand))
 	{
 		return;
 	}
@@ -470,7 +471,7 @@ int32 UAedirInteractionComponent::FindWaistWeaponSlot() const
 bool UAedirInteractionComponent::CanDrawWaistSlot(EAedirHand Hand, int32 SlotIndex) const
 {
 	const AAedirItemActor* Item = WaistItems.IsValidIndex(SlotIndex) ? WaistItems[SlotIndex].Get() : nullptr;
-	return Item && GetHandState(Hand) == EAedirHandState::Idle && HolsterMotion[static_cast<int32>(Hand)] == EAedirHolsterMotion::None;
+	return Item && GetHandState(Hand) == EAedirHandState::Idle && HolsterMotion[static_cast<int32>(Hand)] == EAedirHolsterMotion::None && !IsHandUseless(Hand);
 }
 
 void UAedirInteractionComponent::DrawWaistSlot(EAedirHand Hand, int32 SlotIndex)
@@ -685,7 +686,7 @@ void UAedirInteractionComponent::DrawFromBackpack(int32 Index, EAedirHand Hand)
 
 	const int32 HandIndex = static_cast<int32>(Hand);
 	AAedirItemActor* Item = Backpack.IsValidIndex(Index) ? Backpack[Index].Get() : nullptr;
-	if (!Item || GetHandState(Hand) != EAedirHandState::Idle || HolsterMotion[HandIndex] != EAedirHolsterMotion::None)
+	if (!Item || GetHandState(Hand) != EAedirHandState::Idle || HolsterMotion[HandIndex] != EAedirHolsterMotion::None || IsHandUseless(Hand))
 	{
 		return;
 	}
@@ -1080,16 +1081,16 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 	AAedirCreature* Creature = GetCreature();
 	FAedirHandSlot& Slot = GetSlot(Hand);
 	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
-	if (!Creature || !Item)
+	if (!Creature || !Item || IsHandUseless(Hand))
 	{
 		ResetSlot(Slot);
 		return;
 	}
 
-	// Both hands close on the item if it needs them or if both are already on their way to it.
+	// Both hands close on the item if it needs them or if both are already on their way to it; a broken arm's hand does not.
 	const bool bOtherOnThisItem = Other.State == EAedirHandState::Reaching && Other.Item.Get() == Item;
 	const bool bOtherHolds = Other.State == EAedirHandState::Holding && Other.Item.Get() == Item;
-	const bool bBothHands = (RequiresBothHands(Item) && Other.State == EAedirHandState::Idle) || bOtherOnThisItem || (bOtherHolds && RequiresBothHands(Item));
+	const bool bBothHands = !IsHandUseless(GetOtherHand(Hand)) && ((RequiresBothHands(Item) && Other.State == EAedirHandState::Idle) || bOtherOnThisItem || (bOtherHolds && RequiresBothHands(Item)));
 	if (!CanLift(Item))
 	{
 		ResetSlot(Slot);
@@ -1427,6 +1428,12 @@ FVector UAedirInteractionComponent::GetReachTargetWorld(EAedirHand Hand, const A
 	return Hand == ReachLeadHand ? Grip + Item->GetActorForwardVector() * Item->GripSpanCm : Grip;
 }
 
+bool UAedirInteractionComponent::IsHandUseless(EAedirHand Hand) const
+{
+	const AAedirCreature* Creature = GetCreature();
+	return Creature && Creature->Wounds && Creature->Wounds->HasUselessArm(Hand == EAedirHand::Left);
+}
+
 bool UAedirInteractionComponent::CanLift(const AAedirItemActor* Item) const
 {
 	const AAedirCreature* Creature = GetCreature();
@@ -1553,11 +1560,11 @@ void UAedirInteractionComponent::DrawFromWaist(EAedirHand Hand, AAedirCreature* 
 	const FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
 
 	AAedirItemActor* Item = WaistItems.IsValidIndex(SourceIndex) ? WaistItems[SourceIndex].Get() : nullptr;
-	if (!Item || Slot.State != EAedirHandState::Idle)
+	if (!Item || Slot.State != EAedirHandState::Idle || IsHandUseless(Hand))
 	{
 		return;
 	}
-	const bool bBothHands = RequiresBothHands(Item) && Other.State == EAedirHandState::Idle;
+	const bool bBothHands = RequiresBothHands(Item) && Other.State == EAedirHandState::Idle && !IsHandUseless(GetOtherHand(Hand));
 
 	WaistItems[SourceIndex] = nullptr;
 	const int32 Side = SourceIndex < WaistSlotsPerSide ? 0 : 1;
@@ -1761,8 +1768,8 @@ bool UAedirInteractionComponent::EquipImmediate(EAedirHand Hand, AAedirItemActor
 
 	FAedirHandSlot& Slot = GetSlot(Hand);
 	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
-	const bool bBothHands = RequiresBothHands(Item) && Other.State == EAedirHandState::Idle;
-	if (Slot.State != EAedirHandState::Idle)
+	const bool bBothHands = RequiresBothHands(Item) && Other.State == EAedirHandState::Idle && !IsHandUseless(GetOtherHand(Hand));
+	if (Slot.State != EAedirHandState::Idle || IsHandUseless(Hand))
 	{
 		return false;
 	}
@@ -1916,8 +1923,8 @@ void UAedirInteractionComponent::TakeFromBackpack(int32 Index, EAedirHand Hand)
 
 	FAedirHandSlot& Slot = GetSlot(Hand);
 	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
-	const bool bBothHands = RequiresBothHands(Item) && Other.State == EAedirHandState::Idle;
-	if (Slot.State != EAedirHandState::Idle || Item->Weight > Creature->GetCarryCapacity())
+	const bool bBothHands = RequiresBothHands(Item) && Other.State == EAedirHandState::Idle && !IsHandUseless(GetOtherHand(Hand));
+	if (Slot.State != EAedirHandState::Idle || IsHandUseless(Hand) || Item->Weight > Creature->GetCarryCapacity())
 	{
 		return;
 	}

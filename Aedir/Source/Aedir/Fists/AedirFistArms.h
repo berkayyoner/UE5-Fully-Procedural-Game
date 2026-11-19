@@ -116,7 +116,16 @@ public:
 
 	// The waist turns with the fists across: this many degrees with the mouse all the way to one side.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float WaistTurnDegrees = 30.f;
+	float WaistTurnDegrees = 45.f;
+
+	// A punch turns the waist on round the other way, the punching shoulder going forward: this many degrees at a full punch.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float PunchWaistTurnDegrees = 30.f;
+
+	// The foot on the other side from where the mouse is drawn steps forward; it changes over once the mouse is this share of
+	// its way out to the other side, so the feet do not shuffle while the fists pass the middle.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", ClampMax="1"))
+	float LeadFootSwitchAcross = 0.6f;
 
 	// Drawn round to its own side the fist turns over about the forearm this far, palm going down, as for a hook.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
@@ -510,7 +519,9 @@ private:
 	float HeldLeft[2] = { 0.f, 0.f };
 	// Down or getting up, no arm comes up into the fight.
 	bool bBodyDown = false;
-	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft[Slot] <= 0.f && !bBodyDown; }
+	// A broken (or lost) arm does not come up at all.
+	bool bArmUseless[2] = { false, false };
+	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft[Slot] <= 0.f && !bBodyDown && !bArmUseless[Slot]; }
 	float Alpha[2] = { 0.f, 0.f };
 	// How far each arm is the fists' to pose: up, or carried in both hands.
 	float ShownAlpha[2] = { 0.f, 0.f };
