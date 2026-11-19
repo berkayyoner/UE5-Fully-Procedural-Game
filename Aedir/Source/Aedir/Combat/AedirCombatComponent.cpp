@@ -4861,7 +4861,10 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	if (CVarAedirHitLog.GetValueOnGameThread() != 0 && GetWorld() && GetWorld()->GetTimeSeconds() >= NextAIKeepLogTime)
 	{
 		NextAIKeepLogTime = GetWorld()->GetTimeSeconds() + 0.5;
-		UE_LOG(LogAedir, Log, TEXT("[NpcKeep] %s is %.0f cm from %s, keeps %.0f, %s"), *Creature->GetName(), Distance, *AITarget->GetName(), KeepAt, bArmed ? *GetNameSafe(Weapon) : TEXT("bare-handed"));
+		const UAedirFistArms* GuardFists = Creature->FindComponentByClass<UAedirFistArms>();
+		UE_LOG(LogAedir, Log, TEXT("[NpcKeep] %s is %.0f cm from %s, keeps %.0f, %s, stamina %.0f%%%s, guard %d%d"), *Creature->GetName(), Distance, *AITarget->GetName(), KeepAt, bArmed ? *GetNameSafe(Weapon) : TEXT("bare-handed"),
+			Creature->Stats ? Creature->Stats->GetStaminaFraction() * 100.f : 0.f, bAIResting ? TEXT(", resting") : TEXT(""),
+			GuardFists && GuardFists->IsButtonHeld(EAedirHand::Left) ? 1 : IsGuardActive(EAedirHand::Left) ? 1 : 0, GuardFists && GuardFists->IsButtonHeld(EAedirHand::Right) ? 1 : IsGuardActive(EAedirHand::Right) ? 1 : 0);
 	}
 	const float Band = AIStandOffBandCm * Scale;
 	// Bare-handed and done waiting for the next blow, it steps right in to where the fist is thrown from instead of waiting
@@ -4882,14 +4885,15 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 			Creature->AddMovementInput(Creature->GetActorForwardVector(), -AedirAIBackOffInput * FMath::Clamp((KeepAt - Distance) / Band + 0.4f, 0.f, 1.f));
 		}
 	}
-	// Resting it only watches, its hands down.
+	// Resting it keeps its guard up and lays hold of no one; it strikes only a foe who has come within reach, and only once
+	// it has the breath for it.
 	if (bAIResting)
 	{
-		ReleaseAIFistArms();
 		ReleaseAIGrab();
-		SetGuardInternal(EAedirHand::Left, false);
-		SetGuardInternal(EAedirHand::Right, false);
-		return;
+		if (!bFistArms && !CanAIStrikeWhileResting())
+		{
+			return;
+		}
 	}
 
 	if (bFistArms)
@@ -4907,6 +4911,11 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	{
 		UpdateAIFistStrike(Distance, Reach, DeltaTime);
 	}
+}
+
+bool UAedirCombatComponent::CanAIStrikeWhileResting() const
+{
+	return Creature && Creature->Stats && Creature->Stats->GetStaminaFraction() > AIRestStrikeAboveStamina;
 }
 
 void UAedirCombatComponent::ReleaseAIFistArms()
@@ -5004,8 +5013,11 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 	{
 		Mind->SetControlRotation(FRotator(LookPitch, Creature->GetActorRotation().Yaw, 0.f));
 	}
-	// Now and then a hand takes hold of the one fought; the other goes on striking.
-	UpdateAIGrab(bArmed, Distance, DeltaTime);
+	// Now and then a hand takes hold of the one fought; the other goes on striking. Not while it rests.
+	if (!bAIResting)
+	{
+		UpdateAIGrab(bArmed, Distance, DeltaTime);
+	}
 	// The buttons: a blade's hand alone, bare fists both, but not a hand that holds on to the foe.
 	const bool bRightUp = AIGrabSlot != 1;
 	const bool bLeftUp = !bArmed && AIGrabSlot != 0;
@@ -5064,7 +5076,7 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 	{
 		// On guard, the mouse in the middle at the height of the chest, until the next blow.
 		MoveTo(FVector2D(0.f, HeightFor(1) * 0.5f), AedirAIMouseGuardSpeed);
-		const bool bTired = Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare;
+		const bool bTired = (Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare) || (bAIResting && !CanAIStrikeWhileResting());
 		if (CVarAedirHitLog.GetValueOnGameThread() != 0 && AIMouseTimer >= AIMouseWait && GFrameCounter % 20 == 0)
 		{
 			UE_LOG(LogAedir, Log, TEXT("[NpcWait] %s is ready but holds: tired %d, %.0f cm off"), *Creature->GetName(), bTired ? 1 : 0, Distance);
@@ -5089,7 +5101,8 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 			}
 			AIMousePhase = 1;
 			AIMouseTimer = 0.f;
-			UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s draws back to %s to throw to %s, %.0f cm from %s (reach %.0f)"), *Creature->GetName(), *AIMouseWindup.ToString(), *AIMouseStrike.ToString(), Distance, *GetNameSafe(AITarget), Reach);
+			UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s draws back to %s to throw to %s, %.0f cm from %s (reach %.0f), stamina %.0f%%%s"), *Creature->GetName(), *AIMouseWindup.ToString(), *AIMouseStrike.ToString(), Distance, *GetNameSafe(AITarget), Reach,
+				Creature->Stats ? Creature->Stats->GetStaminaFraction() * 100.f : 0.f, bAIResting ? TEXT(", resting") : TEXT(""));
 		}
 		break;
 	}
@@ -5192,7 +5205,7 @@ void UAedirCombatComponent::UpdateAIFistStrike(float Distance, float Reach, floa
 			Guard.PunchBlend = 0.f;
 			Guard.AimOffsetDeg = ComputeFistAimAt(Hand, GetAITargetPoint(0)) * FVector2D(0.5f, 1.f) + FVector2D(0.f, -10.f);
 		}
-		const bool bTired = Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare;
+		const bool bTired = (Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare) || (bAIResting && !CanAIStrikeWhileResting());
 		if (!bTired && Distance <= Reach + AedirAIContactRange * 0.25f && AIStrikeTimer >= AIAttackInterval)
 		{
 			// At grips a shove or a kick now and then.

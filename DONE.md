@@ -523,3 +523,7 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The face punch takes for 15%, 30% and 50% are the updated recordings.
 - A bone breaking plays one of the three recorded bone-break takes given for the game, chosen at random; the BreakLimb dev command is heard the same way.
 - Punches are clearly heard: their loudness follows the punch's speed (75% to 100%, PunchSoundLoudMin/Max) instead of the weight behind it, they are heard at full up to 4.5 m and fade out by 25 m, and the quieter punch recordings are raised to match the loudest (by up to 11 dB, none lowered).
+- Out of breath, an enemy backs off to rest with its guard still up, rests until it is back to 80% (AIRestUntilStamina), and strikes a foe who comes within reach meanwhile once it has more than half its stamina (AIRestStrikeAboveStamina).
+- A hand on its way to or from a hurt place (a blow to the head) no longer comes off the end of the forearm: an arm partly moved to where it reaches, or partly put in a fist's place, is solved through a hand put part of the way there instead of mixing the solved arm with the old one bone by bone, which shortened the forearm by up to 20 cm. aedir.WristLog logs the wrists.
+- Running costs 16 stamina a second instead of 10: a full breath lasts about 10 seconds of running instead of about 28.
+- Punches sound with only three of the given recordings: face-70 and face-90 in the face (the nearer by speed), arm-90 everywhere else.

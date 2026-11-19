@@ -602,9 +602,15 @@ void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, con
 		JointTarget = Mid + Pole.GetSafeNormal() * PoleSize;
 	}
 
+	// Part of the way there, the hand is put part of the way there and the arm solved through it, so it keeps its length: the
+	// solved arm and the one it came from mixed bone by bone draw the elbow and the wrist each along a straight line between
+	// the two, the forearm comes up short between them and the hand stands off the end of it, as if broken at the wrist.
+	const float Alpha = FMath::Clamp(ReachAlpha, 0.f, 1.f);
+	const FVector PartEffector = FMath::Lerp(EndPosition, Effector, static_cast<double>(Alpha));
+	const FVector PartJointTarget = FMath::Lerp(JointPosition, JointTarget, static_cast<double>(Alpha));
 	FVector SolvedJointPosition;
 	FVector SolvedEndPosition;
-	AnimationCore::SolveTwoBoneIK(RootPosition, JointPosition, EndPosition, JointTarget, Effector, SolvedJointPosition, SolvedEndPosition, false, 1.0, 1.0);
+	AnimationCore::SolveTwoBoneIK(RootPosition, JointPosition, EndPosition, PartJointTarget, PartEffector, SolvedJointPosition, SolvedEndPosition, false, 1.0, 1.0);
 
 	const FQuat HumerusDelta = SafeDeltaRotation(JointPosition - RootPosition, SolvedJointPosition - RootPosition);
 	const FQuat RadiusDelta = SafeDeltaRotation(HumerusDelta.RotateVector(EndPosition - JointPosition), SolvedEndPosition - SolvedJointPosition);
@@ -620,10 +626,9 @@ void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, con
 	SolvedHand.SetTranslation(SolvedEndPosition);
 	SolvedHand.SetRotation(RadiusDelta * HumerusDelta * HandTransform.GetRotation());
 
-	const float Alpha = FMath::Clamp(ReachAlpha, 0.f, 1.f);
-	CSPose.SetComponentSpaceTransform(Humerus, BlendBoneTransform(HumerusTransform, SolvedHumerus, Alpha));
-	CSPose.SetComponentSpaceTransform(Radius, BlendBoneTransform(RadiusTransform, SolvedRadius, Alpha));
-	CSPose.SetComponentSpaceTransform(Hand, BlendBoneTransform(HandTransform, SolvedHand, Alpha));
+	CSPose.SetComponentSpaceTransform(Humerus, SolvedHumerus);
+	CSPose.SetComponentSpaceTransform(Radius, SolvedRadius);
+	CSPose.SetComponentSpaceTransform(Hand, SolvedHand);
 }
 
 void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const TArray<FName>& FingerBoneNames, float FistAlpha, float CurlSign) const
@@ -894,9 +899,13 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 	const FVector Shoulder = HumerusTransform.GetLocation();
 	const FVector Elbow = RadiusTransform.GetLocation();
 	const FVector Wrist = HandTransform.GetLocation();
+	// Part of the way there the fist is put part of the way and the arm solved through it, so the forearm keeps its length
+	// (mixed bone by bone with the arm it came from, it would come up short and the hand stand off its end).
+	const float Share = FMath::Clamp(Alpha, 0.f, 1.f);
 	FVector SolvedElbow;
 	FVector SolvedWrist;
-	AnimationCore::SolveTwoBoneIK(Shoulder, Elbow, Wrist, MeshToWorld.InverseTransformPosition(ElbowWorld), MeshToWorld.InverseTransformPosition(FistWorld), SolvedElbow, SolvedWrist, false, 1.0, 1.0);
+	AnimationCore::SolveTwoBoneIK(Shoulder, Elbow, Wrist, FMath::Lerp(Elbow, MeshToWorld.InverseTransformPosition(ElbowWorld), static_cast<double>(Share)),
+		FMath::Lerp(Wrist, MeshToWorld.InverseTransformPosition(FistWorld), static_cast<double>(Share)), SolvedElbow, SolvedWrist, false, 1.0, 1.0);
 	const FQuat HumerusDelta = SafeDeltaRotation(Elbow - Shoulder, SolvedElbow - Shoulder);
 	const FQuat RadiusDelta = SafeDeltaRotation(HumerusDelta.RotateVector(Wrist - Elbow), SolvedWrist - SolvedElbow);
 	FTransform SolvedHumerus = HumerusTransform;
@@ -983,12 +992,12 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 				HandRotation = FQuat(PalmAxis, FMath::DegreesToRadians(WristUpDegrees)) * HandRotation;
 			}
 		}
-		SolvedHand.SetRotation(HandRotation);
+		// The hand turns the share of the way to the fist's own turn, from where the arm's turn has carried it.
+		SolvedHand.SetRotation(FQuat::Slerp(SolvedHand.GetRotation(), HandRotation, Share).GetNormalized());
 	}
-	const float Share = FMath::Clamp(Alpha, 0.f, 1.f);
-	CSPose.SetComponentSpaceTransform(Humerus, BlendBoneTransform(HumerusTransform, SolvedHumerus, Share));
-	CSPose.SetComponentSpaceTransform(Radius, BlendBoneTransform(RadiusTransform, SolvedRadius, Share));
-	CSPose.SetComponentSpaceTransform(Hand, BlendBoneTransform(HandTransform, SolvedHand, Share));
+	CSPose.SetComponentSpaceTransform(Humerus, SolvedHumerus);
+	CSPose.SetComponentSpaceTransform(Radius, SolvedRadius);
+	CSPose.SetComponentSpaceTransform(Hand, SolvedHand);
 }
 
 FVector FAedirProceduralAnimProxy::ApplyWeaponArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, const FVector& DirectionWorld, float Share, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const

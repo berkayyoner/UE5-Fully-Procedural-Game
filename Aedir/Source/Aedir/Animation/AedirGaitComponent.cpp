@@ -10,6 +10,7 @@
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/GameStateBase.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemActor.h"
@@ -585,6 +586,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const FVector ProtectiveRightTarget = ProtectiveGround + ActorRight2D * (ProtectiveArmSpreadCm * ActorScale);
 
 	UpdateClutch(DeltaTime, Combat, Interaction, ActorTransform);
+	LogWrists();
 	ResolveArmReach(EAedirHand::Left, Combat, Interaction, ActorTransform, ProtectiveLeftTarget, ProtectiveAlpha, LeftReachTarget, LeftReachAlpha);
 	ResolveArmReach(EAedirHand::Right, Combat, Interaction, ActorTransform, ProtectiveRightTarget, ProtectiveAlpha, RightReachTarget, RightReachAlpha);
 
@@ -1216,6 +1218,43 @@ FRotator UAedirGaitComponent::ComputeFootTilt(const FVector& GroundNormal, const
 	}
 
 	return FMath::RInterpTo(CurrentTilt, Tilt.Rotator(), DeltaTime, FootAlignInterpSpeed);
+}
+
+void UAedirGaitComponent::LogWrists() const
+{
+	static IConsoleVariable* WristLog = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.WristLog"), 0, TEXT("Log how far each hand has come from the end of its forearm and how far it is bent there, while a hand is held to a hurt place (1)."));
+	const ACharacter* Owner = Cast<ACharacter>(GetOwner());
+	const USkeletalMeshComponent* Mesh = Owner ? Owner->GetMesh() : nullptr;
+	if (!WristLog || WristLog->GetInt() == 0 || !Mesh || !Mesh->GetSkeletalMeshAsset())
+	{
+		return;
+	}
+	const FReferenceSkeleton& Ref = Mesh->GetSkeletalMeshAsset()->GetRefSkeleton();
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		if (ClutchAlpha[Slot] <= 0.02f)
+		{
+			continue;
+		}
+		const FName HandName = Slot == 0 ? TEXT("hand_l") : TEXT("hand_r");
+		const FName ForeName = Slot == 0 ? TEXT("lowerarm_l") : TEXT("lowerarm_r");
+		const int32 HandIndex = Ref.FindBoneIndex(HandName);
+		const int32 ForeIndex = Ref.FindBoneIndex(ForeName);
+		if (HandIndex == INDEX_NONE || ForeIndex == INDEX_NONE)
+		{
+			continue;
+		}
+		const FTransform HandWorld = Mesh->GetBoneTransform(HandIndex);
+		const FTransform ForeWorld = Mesh->GetBoneTransform(ForeIndex);
+		const float Scale = static_cast<float>(Mesh->GetComponentScale().X);
+		const float RefFore = static_cast<float>(Ref.GetRefBonePose()[HandIndex].GetTranslation().Size()) * Scale;
+		const float Gap = static_cast<float>(FVector::Dist(HandWorld.GetLocation(), ForeWorld.GetLocation())) - RefFore;
+		const FQuat Local = ForeWorld.GetRotation().Inverse() * HandWorld.GetRotation();
+		const float Bend = FMath::RadiansToDegrees(static_cast<float>(Local.AngularDistance(Ref.GetRefBonePose()[HandIndex].GetRotation())));
+		const FBodyInstance* HandBody = Mesh->GetBodyInstance(HandName);
+		UE_LOG(LogAedir, Log, TEXT("[Wrist] %s %s: clutch %.2f%s, gap %.1f cm, bent %.0f deg from rest, hand simulating %d"), *Owner->GetName(), Slot == 0 ? TEXT("left") : TEXT("right"),
+			ClutchAlpha[Slot], bClutchFlinch[Slot] ? TEXT(" (flinch)") : TEXT(""), Gap, Bend, HandBody && HandBody->IsInstanceSimulatingPhysics() ? 1 : 0);
+	}
 }
 
 void UAedirGaitComponent::ResolveArmReach(EAedirHand Hand, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform, const FVector& ProtectiveTargetWorld, float ProtectiveAlpha, FVector& OutTargetWorld, float& OutAlpha) const

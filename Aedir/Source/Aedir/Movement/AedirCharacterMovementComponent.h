@@ -45,7 +45,7 @@ public:
 	float MinStaminaToRun = 5.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Movement")
-	float RunStaminaPerSecond = 10.f;
+	float RunStaminaPerSecond = 16.f;
 
 	// Athletics gained per second of running.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Movement")

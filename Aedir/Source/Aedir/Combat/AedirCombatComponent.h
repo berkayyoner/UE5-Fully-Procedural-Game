@@ -362,12 +362,16 @@ public:
 	float AIStandOffBandCm = 10.f;
 
 	// Out of breath below AIRestBelowStamina of its stamina, it backs off AIRestBackOffCm past where it fights from and
-	// catches its breath, striking no more, until it is back to AIRestUntilStamina.
+	// catches its breath with its guard still up until it is back to AIRestUntilStamina; a foe who comes within reach
+	// meanwhile is struck at once it has more than AIRestStrikeAboveStamina.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIRestBelowStamina = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
-	float AIRestUntilStamina = 0.5f;
+	float AIRestUntilStamina = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIRestStrikeAboveStamina = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float AIRestBackOffCm = 250.f;
@@ -881,6 +885,8 @@ private:
 	// arm back to one side, or up, and throwing it across or down.
 	void UpdateAIFistArms(class UAedirFistArms* Fists, bool bArmed, float Distance, float Reach, float DeltaTime);
 	void ReleaseAIFistArms();
+	// Resting, it has the breath to strike a foe who has come within reach.
+	bool CanAIStrikeWhileResting() const;
 	bool bAIStandAside = false;
 	bool bAIResting = false;
 	int32 AIGrabSlot = INDEX_NONE;

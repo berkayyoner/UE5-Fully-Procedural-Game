@@ -46,9 +46,9 @@ namespace
 		// Wood cut.
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Wood_Chop_1-4") },
 		// A fist on the arms, the trunk or the legs, from the slowest blow to the hardest.
-		{ TEXT("/Game/Aedir/Sounds/S_PunchArm_10"), TEXT("/Game/Aedir/Sounds/S_PunchArm_20"), TEXT("/Game/Aedir/Sounds/S_PunchArm_30"), TEXT("/Game/Aedir/Sounds/S_PunchArm_40"), TEXT("/Game/Aedir/Sounds/S_PunchArm_50"), TEXT("/Game/Aedir/Sounds/S_PunchArm_60"), TEXT("/Game/Aedir/Sounds/S_PunchArm_70"), TEXT("/Game/Aedir/Sounds/S_PunchArm_80"), TEXT("/Game/Aedir/Sounds/S_PunchArm_90") },
+		{ TEXT("/Game/Aedir/Sounds/S_PunchArm_90") },
 		// A fist in the face.
-		{ TEXT("/Game/Aedir/Sounds/S_PunchFace_15"), TEXT("/Game/Aedir/Sounds/S_PunchFace_30"), TEXT("/Game/Aedir/Sounds/S_PunchFace_50"), TEXT("/Game/Aedir/Sounds/S_PunchFace_70"), TEXT("/Game/Aedir/Sounds/S_PunchFace_90") },
+		{ TEXT("/Game/Aedir/Sounds/S_PunchFace_70"), TEXT("/Game/Aedir/Sounds/S_PunchFace_90") },
 		// A body struck.
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_5-1"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_2-1"), TEXT("/Game/Free_Sounds_Pack/wav/Punch_2-1") },
 		// A cut into flesh.
@@ -68,8 +68,8 @@ namespace
 	const TArray<float> AedirSfxTakeSpeeds[] =
 	{
 		{}, {}, {}, {},
-		{ 10.f, 20.f, 30.f, 40.f, 50.f, 60.f, 70.f, 80.f, 90.f },
-		{ 15.f, 30.f, 50.f, 70.f, 90.f },
+		{ 90.f },
+		{ 70.f, 90.f },
 		{}, {}, {}, {}, {}, {},
 	};
 	static_assert(UE_ARRAY_COUNT(AedirSfxTakeSpeeds) == static_cast<int32>(EAedirSfx::Count), "A speed list for every kind of sound");

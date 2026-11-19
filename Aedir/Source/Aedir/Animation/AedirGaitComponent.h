@@ -886,7 +886,8 @@ private:
 	double FlinchBlowSeen = -1.0;
 	TSet<uint8> FlinchWoundsSeen;
 	bool bFlinchWoundsKnown = false;
-	void UpdateClutch(float DeltaTime, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);
+	void LogWrists() const;
+	void UpdateClutch(float DeltaTime,const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirCreature> CreatureOwner;
