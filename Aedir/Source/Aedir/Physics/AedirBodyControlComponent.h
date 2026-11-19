@@ -58,12 +58,17 @@ public:
 	// How hard the hips are lifted while getting up, against how hard they are held standing: the legs and arms do not yet
 	// carry the body, so the hips' muscles lift all of it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float RiseHipShare = 2.f;
+	float RiseHipShare = 0.25f;
 
 	// Getting up, the trunk, the head and the arms hold to the pose with only this share of their strength, so blows and
 	// the body's own moves show on them; the legs and the hips keep theirs to lift it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float RisingMuscleShare = 0.6f;
+	float RisingMuscleShare = 0.4f;
+
+	// Standing, the feet carry part of the body's weight (StandingGravity); getting up, this share of what they take off is
+	// given back to it, so the muscles lift a body that weighs what it does.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
+	float RisingWeightShare = 1.f;
 
 	// The trunk and the head hold to the pose with this share of their strength all the time, so blows move them.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -84,6 +89,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float DeadFadeSeconds = 3.f;
+
+	// Down or dead, the elbows and wrists keep only this share of what the rest of a loose arm keeps, so the forearms and
+	// hands hang and fall as weights instead of standing up in the air.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
+	float LimpForearmShare = 0.25f;
 
 	// What is left of the muscles of a limb whose bone is broken: it swings loose, still hanging together.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -217,6 +227,8 @@ private:
 	TArray<FName> RightArmControls;
 	TArray<FName> LeftHandControls;
 	TArray<FName> RightHandControls;
+	// The elbows' muscles (left, right), of the arm controls above.
+	TArray<FName> ForearmControls[2];
 	float TwoHandGrip = 0.f;
 	float BlowSoftness = 0.f;
 	TArray<FName> LegControls;

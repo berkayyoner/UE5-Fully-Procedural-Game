@@ -635,7 +635,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float LookYaw = MovementComponent->GetYawDeltaToControl();
 	const float LookPitch = FMath::Clamp(FRotator::NormalizeAxis(CreatureOwner->GetControlRotation().Pitch), -MaxLookPitchDegrees, MaxLookPitchDegrees);
 
-	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha + BalanceLean.Pitch + LookPitch * SpinePitchShare + TrunkInertia.X;
+	// The trunk leans the way the body runs, forward going forward and back going backwards, and rocks with the strides.
+	const float RunRock = FMath::Sin(4.f * UE_PI * Phase) * RunStridePitchDegrees * RunBlend * GaitSwagger;
+	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha * static_cast<float>(LocalDirection.X) - RunRock + BalanceLean.Pitch + LookPitch * SpinePitchShare + TrunkInertia.X;
 	GaitState.SpineLeanPitch -= ReachLean * (1.f - AedirReachHipHingeShare);
 	// Crouching bends the spine forward too, the body does not just sink on its legs.
 	GaitState.SpineLeanPitch -= CrouchSpineLeanDegrees * CrouchAlpha;
@@ -1412,6 +1414,11 @@ void UAedirGaitComponent::LogLegs()
 	}
 	LegLogChestLast = ChestTurn;
 	LegLogChestMin = LegLogFrames <= 0 ? ChestTurn : FMath::Min(LegLogChestMin, ChestTurn);
+	// How far the trunk leans forward (positive) from upright: the line from the hips to the neck, seen from the side.
+	const FVector TrunkLine = Body.InverseTransformVectorNoScale(Mesh->GetBoneLocation(TEXT("neck_01")) - Mesh->GetBoneLocation(TEXT("pelvis")));
+	const float TrunkLean = FMath::RadiansToDegrees(FMath::Atan2(static_cast<float>(TrunkLine.X), static_cast<float>(TrunkLine.Z)));
+	LegLogLeanMin = LegLogFrames <= 0 ? TrunkLean : FMath::Min(LegLogLeanMin, TrunkLean);
+	LegLogLeanMax = LegLogFrames <= 0 ? TrunkLean : FMath::Max(LegLogLeanMax, TrunkLean);
 	LegLogChestMax = LegLogFrames <= 0 ? ChestTurn : FMath::Max(LegLogChestMax, ChestTurn);
 	LegLogFrames = FMath::Max(LegLogFrames, 0) + 1;
 	if (LegLogFrames < Every)
@@ -1420,11 +1427,11 @@ void UAedirGaitComponent::LogLegs()
 	}
 	const auto Local = [&Body](const FVector& World) { return Body.InverseTransformPositionNoScale(World); };
 	const FVector FL = Local(Foot[0]), FR = Local(Foot[1]), KL = Local(Knee[0]), KR = Local(Knee[1]);
-	UE_LOG(LogAedir, Log, TEXT("[Legs] %s stance %.2f fists %.2f lead %d dt %.5f | feet L %.1f %.1f R %.1f %.1f apart %.1f ahead %.1f | knees L %.1f R %.1f apart %.1f | thigh-calf %.1f %.1f calf-foot %.1f %.1f hip-foot %.1f %.1f | path %.2f %.2f net %.2f %.2f | shake knees %.2f %.2f feet %.2f %.2f | chest turn %.0f to %.0f | ball low %.1f %.1f scrape %.1f %.1f | jitter %.3f %.3f lag %.2f %.2f | looked past %d | scrape swinging %.1f %.1f leash %.1f %.1f | stepping ball low pose %.1f %.1f body %.1f %.1f | chest speed %.0f"),
+	UE_LOG(LogAedir, Log, TEXT("[Legs] %s stance %.2f fists %.2f lead %d dt %.5f | feet L %.1f %.1f R %.1f %.1f apart %.1f ahead %.1f | knees L %.1f R %.1f apart %.1f | thigh-calf %.1f %.1f calf-foot %.1f %.1f hip-foot %.1f %.1f | path %.2f %.2f net %.2f %.2f | shake knees %.2f %.2f feet %.2f %.2f | chest turn %.0f to %.0f | ball low %.1f %.1f scrape %.1f %.1f | jitter %.3f %.3f lag %.2f %.2f | looked past %d | scrape swinging %.1f %.1f leash %.1f %.1f | stepping ball low pose %.1f %.1f body %.1f %.1f | chest speed %.0f | trunk lean %.1f to %.1f"),
 		*Owner->GetName(), GaitState.StanceAlpha, FistStanceAlpha, CreatureOwner && CreatureOwner->Combat && CreatureOwner->Combat->IsLeadFootRight() ? 1 : 0, GetWorld()->GetDeltaSeconds(), FL.X, FL.Y, FR.X, FR.Y, FR.Y - FL.Y, FR.X - FL.X, KL.Y, KR.Y, KR.Y - KL.Y,
 		FVector::Dist(Thigh[0], Knee[0]), FVector::Dist(Thigh[1], Knee[1]), FVector::Dist(Knee[0], Foot[0]), FVector::Dist(Knee[1], Foot[1]), FVector::Dist(Thigh[0], Foot[0]), FVector::Dist(Thigh[1], Foot[1]),
 		LegLogPath[0], LegLogPath[1], FVector::Dist(Foot[0], LegLogStart[0]), FVector::Dist(Foot[1], LegLogStart[1]),
-		LegLogShake[0], LegLogShake[1], LegLogShake[2], LegLogShake[3], LegLogChestMin, LegLogChestMax, LegLogBallLow[0], LegLogBallLow[1], LegLogScrape[0], LegLogScrape[1], LegLogJitter[0], LegLogJitter[1], LegLogLagSize[0], LegLogLagSize[1], LegLogLookedPast, LegLogScrapeSwinging[0], LegLogScrapeSwinging[1], LegLogLeash[0], LegLogLeash[1], LegLogSwingLowPose[0], LegLogSwingLowPose[1], LegLogSwingLowBody[0], LegLogSwingLowBody[1], LegLogChestSpeed);
+		LegLogShake[0], LegLogShake[1], LegLogShake[2], LegLogShake[3], LegLogChestMin, LegLogChestMax, LegLogBallLow[0], LegLogBallLow[1], LegLogScrape[0], LegLogScrape[1], LegLogJitter[0], LegLogJitter[1], LegLogLagSize[0], LegLogLagSize[1], LegLogLookedPast, LegLogScrapeSwinging[0], LegLogScrapeSwinging[1], LegLogLeash[0], LegLogLeash[1], LegLogSwingLowPose[0], LegLogSwingLowPose[1], LegLogSwingLowBody[0], LegLogSwingLowBody[1], LegLogChestSpeed, LegLogLeanMin, LegLogLeanMax);
 	LegLogChestSpeed = 0.f;
 	for (float& Shake : LegLogShake)
 	{

@@ -410,6 +410,19 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * (40.f * BodyScale);
 		// Round at the side the fist alone goes on up or down with the mouse; the elbow stays where it was.
 		FistWorld[Slot] += Up * (FMath::Abs(SinT) * (UpDown > 0.f ? UpDown * SideFistRiseCm : UpDown * SideFistDropCm) * BodyScale);
+		// A fist is never sent further than its own arm reaches: a shorter body's punch goes out to where its arm, straight,
+		// can put the fist, and the arm gets there, instead of straining after a place it cannot reach.
+		if (!bBlade && Mesh)
+		{
+			const FVector ElbowBone = Mesh->GetBoneLocation(Slot == 1 ? TEXT("lowerarm_r") : TEXT("lowerarm_l"));
+			const FVector HandBone = Mesh->GetBoneLocation(Slot == 1 ? TEXT("hand_r") : TEXT("hand_l"));
+			const float ArmLength = static_cast<float>(FVector::Dist(Shoulder, ElbowBone) + FVector::Dist(ElbowBone, HandBone)) * FistMaxReachShare;
+			const FVector FromShoulder = FistWorld[Slot] - Shoulder;
+			if (ArmLength > KINDA_SMALL_NUMBER && FromShoulder.Size() > ArmLength)
+			{
+				FistWorld[Slot] = Shoulder + FromShoulder.GetSafeNormal() * ArmLength;
+			}
+		}
 		ShownAlpha[Slot] = Alpha[Slot];
 		// In both hands and not raised, the blade is carried low before the hips, aslant across with its point out to the
 		// right and down, the elbow hanging out at its side; raised, it goes as in one hand.
@@ -447,6 +460,11 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	}
 	const bool bBladeUp = (HeldNow(0) && bArmed[0]) || (HeldNow(1) && bArmed[1]);
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * (bBladeUp ? BladeWaistForwardDegrees : WaistForwardDegrees)) * Raised;
+	// A bare fist thrown leans the chest in after it (forward is negative here).
+	if (!bBladeUp)
+	{
+		WaistPitch -= Punch * PunchLeanDegrees * Raised;
+	}
 	// The punching arm's shoulder goes forward with the blow: the right one turns the waist left, the left one right.
 	const float PunchTurn = Punch * PunchWaistTurnDegrees * (bBoth ? (PunchSlot == 1 ? -1.f : 1.f) : (HeldNow(1) ? -1.f : 1.f));
 	const float WaistWanted = (Across * WaistTurnDegrees + PunchTurn) * Raised;

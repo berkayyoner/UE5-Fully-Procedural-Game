@@ -495,6 +495,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
 	float GetUpWeakMuscleShare = 0.4f;
 
+	// Getting up the body is always physical, held to the moves by its muscles, even while aedir.DirectPose shows it posed
+	// on its feet.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	bool bPhysicalGetUp = true;
+
+	// The moves of getting up wait for the physical hips: trailing the pose by up to GetUpHipTrailFreeCm they go on at full
+	// pace, slower the further, and stop at GetUpHipTrailStopCm until the muscles have brought the hips up after them.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpHipTrailFreeCm = 4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpHipTrailStopCm = 14.f;
+
 	// Sunk back to the ground, the body can start getting up again after this many seconds.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float GetUpRetrySeconds = 0.6f;
@@ -927,6 +940,10 @@ private:
 	FVector GetUpKeyWay = FVector::ZeroVector;
 	FVector2D GetUpLean = FVector2D::ZeroVector;
 	float GetUpLift = 1.f;
+	float GetUpHipTrailMost = 0.f;
+	float GetUpWaitedSeconds = 0.f;
+	float GetUpHipTrailSum = 0.f;
+	float GetUpRiseSeconds = 0.f;
 	// Where the hips lay when getting up started.
 	FTransform GetUpStartPelvis = FTransform::Identity;
 	EAedirGetUpStyle ReadLyingStyle() const;

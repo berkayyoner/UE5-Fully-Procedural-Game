@@ -2550,6 +2550,10 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		bHipsInitialized = false;
 		// It sets out lifting itself with all it has.
 		GetUpLift = 1.f;
+		GetUpHipTrailMost = 0.f;
+		GetUpWaitedSeconds = 0.f;
+		GetUpHipTrailSum = 0.f;
+		GetUpRiseSeconds = 0.f;
 		GetUpLean = FVector2D::ZeroVector;
 		if (UAedirGaitComponent* Gait = CharacterOwner->FindComponentByClass<UAedirGaitComponent>())
 		{
@@ -2634,7 +2638,23 @@ void UAedirBalanceComponent::UpdateGetUp(float DeltaTime)
 		return;
 	}
 	GetUpLift = FMath::Min(GetUpLift + GetUpLiftRecoverPerSecond * DeltaTime, 1.f);
-	const float Pace = bHeld ? FMath::Lerp(-GetUpSinkPace, 1.f, GetUpLift) : -GetUpSinkPace;
+	float Pace = bHeld ? FMath::Lerp(-GetUpSinkPace, 1.f, GetUpLift) : -GetUpSinkPace;
+	// The moves go on only as fast as the hips are really lifted: the muscles pull the physical hips after the pose, and
+	// the further they trail below it, the slower the pose goes on, until it waits for them. Struck, or weak, the body
+	// rises the slower for it; it is the hips that get up, the rest following them.
+	const FBodyInstance* LiftedPelvis = BodyMesh ? BodyMesh->GetBodyInstance(PelvisBoneName) : nullptr;
+	if (BodyControl && LiftedPelvis && Pace > 0.f)
+	{
+		const float Trail = static_cast<float>(BodyControl->GetPoseLocation(PelvisBoneName).Z - LiftedPelvis->GetUnrealWorldTransform().GetLocation().Z);
+		const float Wait = FMath::Clamp((Trail - GetUpHipTrailFreeCm) / FMath::Max(GetUpHipTrailStopCm - GetUpHipTrailFreeCm, 1.f), 0.f, 1.f);
+		Pace *= 1.f - Wait;
+		GetUpHipTrailMost = FMath::Max(GetUpHipTrailMost, Trail);
+		GetUpHipTrailSum += Trail * DeltaTime;
+		UE_CLOG(GFrameCounter % 12 == 0, LogAedir, Verbose, TEXT("[GetUp] %s at %.0f%%: the pose has the hips at %.1f, the body at %.1f, the bone at %.1f"), *GetNameSafe(GetOwner()), GetGetUpProgress() * 100.f,
+			BodyControl->GetPoseLocation(PelvisBoneName).Z, LiftedPelvis->GetUnrealWorldTransform().GetLocation().Z, BodyMesh->GetBoneLocation(PelvisBoneName).Z);
+		GetUpRiseSeconds += DeltaTime;
+		GetUpWaitedSeconds += Wait * DeltaTime;
+	}
 	GetUpLeft = FMath::Clamp(GetUpLeft - DeltaTime * Pace, 0.f, GetUpTotal);
 	if (IsAuthoritative() && Pace < 0.f && GetUpLeft >= GetUpTotal)
 	{
@@ -2656,7 +2676,7 @@ void UAedirBalanceComponent::UpdateGetUp(float DeltaTime)
 	}
 	if (GetUpLeft <= 0.f)
 	{
-		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is up, lift %.2f, facing %.0f."), *GetNameSafe(GetOwner()), GetUpLift, CharacterOwner ? CharacterOwner->GetActorRotation().Yaw : 0.0);
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is up, lift %.2f, facing %.0f; the hips trailed the pose by %.0f cm on average, at most %.0f, and it waited for them %.2f s of %.2f."), *GetNameSafe(GetOwner()), GetUpLift, CharacterOwner ? CharacterOwner->GetActorRotation().Yaw : 0.0, GetUpRiseSeconds > 0.f ? GetUpHipTrailSum / GetUpRiseSeconds : 0.f, GetUpHipTrailMost, GetUpWaitedSeconds, GetUpRiseSeconds);
 	}
 	// The moves are over, but the hips never made it up: the body did not get up.
 	if (GetUpLeft <= 0.f && BodyControl && IsAuthoritative())
@@ -3321,8 +3341,9 @@ void UAedirBalanceComponent::UpdatePosedArms()
 		return;
 	}
 	// aedir.DirectPose: the body shown and moved as the pose has it, with no physics in it, to get the pose right before the
-	// physics is let back in.
-	BodyControl->SetWholePosed(CVarAedirDirectPose.GetValueOnGameThread() != 0 && !bIsRagdoll);
+	// physics is let back in. Getting up is never posed: the body lifts itself off the ground by its own muscles, its hips
+	// first, against its weight and the blows it takes (bPhysicalGetUp).
+	BodyControl->SetWholePosed(CVarAedirDirectPose.GetValueOnGameThread() != 0 && !bIsRagdoll && !(bPhysicalGetUp && IsGettingUp()));
 	const bool bLeft = Combat && !bIsRagdoll && Combat->WantsPosedArm(EAedirHand::Left);
 	const bool bRight = Combat && !bIsRagdoll && Combat->WantsPosedArm(EAedirHand::Right);
 	BodyControl->SetArmsPosed(bLeft, bRight);

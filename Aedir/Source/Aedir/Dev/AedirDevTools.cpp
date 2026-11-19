@@ -990,7 +990,7 @@ void UAedirDevTools::Help(AAedirPlayerCharacter* Player, const FString& Args)
 	DevToolsReport(TEXT("  SetStat <Strength|Athletism|Health|Stamina|Mana> <value>: change a stat to see how the body reacts"));
 	DevToolsReport(TEXT("  Stats: print the player's stats"));
 	DevToolsReport(TEXT("  Push <strength 0-1>: shove the player's balance forward, 1 is a knockdown push"));
-	DevToolsReport(TEXT("  Knockdown: drop the player to the ground"));
+	DevToolsReport(TEXT("  Knockdown [me|nearest|all] [forward|back|left|right]: throw bodies off their feet, the player by default"));
 	DevToolsReport(TEXT("  FallTest <height cm>: lift the player and let them fall"));
 	DevToolsReport(TEXT("  GaitInfo <seconds> [interval]: log foot heights, foot positions and reach to the output log"));
 	DevToolsReport(TEXT("  ReachTest <delay>, CrouchTest, AutoMove <forward> <right> [run], ShotCam <yaw> [dist] [height]|off, PlaceItem <Id> <forward> <right>"));
@@ -1074,11 +1074,65 @@ void UAedirDevTools::Push(AAedirPlayerCharacter* Player, const FString& Args)
 
 void UAedirDevTools::Knockdown(AAedirPlayerCharacter* Player, const FString& Args)
 {
-	if (Player->Balance)
+	// Knockdown [me|nearest|all] [forward|back|left|right]: throws a body off its feet the way given, the player's own by default.
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	FString Who = TEXT("me");
+	FString Way = TEXT("forward");
+	for (const FString& Token : Tokens)
 	{
-		Player->Balance->ApplyBalanceImpact(Player->GetActorForwardVector(), 2.f);
-		DevToolsReport(TEXT("Knocked down"));
+		const FString Word = Token.ToLower();
+		if (Word == TEXT("me") || Word == TEXT("nearest") || Word == TEXT("all"))
+		{
+			Who = Word;
+		}
+		else if (Word == TEXT("forward") || Word == TEXT("back") || Word == TEXT("left") || Word == TEXT("right"))
+		{
+			Way = Word;
+		}
+		else
+		{
+			DevToolsReport(TEXT("Usage: Knockdown [me|nearest|all] [forward|back|left|right]"));
+			return;
+		}
 	}
+	TArray<AAedirCreature*> Bodies;
+	if (Who == TEXT("me"))
+	{
+		Bodies.Add(Player);
+	}
+	else
+	{
+		AAedirCreature* Nearest = nullptr;
+		for (TActorIterator<AAedirCreature> It(Player->GetWorld()); It; ++It)
+		{
+			if (*It == Player || !It->Balance || (It->Stats && It->Stats->IsDead()))
+			{
+				continue;
+			}
+			if (Who == TEXT("all"))
+			{
+				Bodies.Add(*It);
+			}
+			else if (!Nearest || FVector::DistSquared(It->GetActorLocation(), Player->GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), Player->GetActorLocation()))
+			{
+				Nearest = *It;
+			}
+		}
+		if (Nearest)
+		{
+			Bodies.Add(Nearest);
+		}
+	}
+	for (AAedirCreature* Body : Bodies)
+	{
+		if (!Body || !Body->Balance)
+		{
+			continue;
+		}
+		const FVector Toward = Way == TEXT("back") ? -Body->GetActorForwardVector() : Way == TEXT("left") ? -Body->GetActorRightVector() : Way == TEXT("right") ? Body->GetActorRightVector() : Body->GetActorForwardVector();
+		Body->Balance->ApplyBalanceImpact(Toward, 2.f);
+	}
+	DevToolsReport(FString::Printf(TEXT("Knocked down %d %s"), Bodies.Num(), *Way));
 }
 
 void UAedirDevTools::GaitInfo(AAedirPlayerCharacter* Player, const FString& Args)

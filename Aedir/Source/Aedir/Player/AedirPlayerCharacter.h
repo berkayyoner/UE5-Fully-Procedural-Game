@@ -295,7 +295,7 @@ public:
 	void Push(float Strength);
 
 	UFUNCTION(Exec)
-	void Knockdown();
+	void Knockdown(const FString& Args);
 
 	// Diagnostics: logs gait, balance and reach state for the given number of seconds.
 	UFUNCTION(Exec)

@@ -46,7 +46,7 @@ namespace
 	constexpr float AedirAIMouseStrikeSpeed = 19.f;
 	// How often a blow goes for the head when the one fought holds a guard up.
 	constexpr float AedirAIMouseWindupAcross = 0.9f;
-	constexpr float AedirAIMouseFistThrough = 0.25f;
+	constexpr float AedirAIMouseFistThrough = 0.05f;
 	constexpr float AedirAIMouseBladeThrough = 0.7f;
 	constexpr float AedirAIMouseWaitMax = 1.f;
 	constexpr float AedirAIMouseHoldSeconds = 0.08f;
@@ -709,7 +709,8 @@ namespace
 	// while it is drawn back and thrown, as long as it is further off than this.
 	constexpr float AedirAIFistStrikeSlackCm = 6.f;
 	constexpr float AedirAIFistStepInput = 0.55f;
-	constexpr float AedirAIFistStepFromCm = 68.f;
+	// Through a throw it keeps stepping in until this share of AIFistStrikeInCm.
+	constexpr float AedirAIFistStepInShare = 0.9f;
 	// Further than this past where it fights from, it closes in at a run.
 	constexpr float AedirAIPressRunCm = 60.f;
 	constexpr float AedirAIKeepBandCm = 15.f;
@@ -859,7 +860,15 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 
 	if (bAuthority && !Creature->IsPlayerControlled())
 	{
+		bAIWantsStoop = false;
 		UpdateAI(DeltaTime);
+		// Bent over someone down, it stands up again as soon as it is no longer at that, however it left off: the fight
+		// over, the foe gone or up again, or gone after something else.
+		if (bAIStooped && !bAIWantsStoop && Creature && Creature->bIsCrouched)
+		{
+			Creature->UnCrouch();
+		}
+		bAIStooped &= bAIWantsStoop;
 	}
 
 	UpdateArms(DeltaTime);
@@ -4813,8 +4822,10 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		: AITarget->GetActorLocation();
 	const float Distance = static_cast<float>(FVector::Dist2D(OwnerLocation, TargetLocation));
 	const bool bStoop = bAITargetDown && Distance < AedirAIStoopCm * static_cast<float>(Creature->GetActorScale3D().X);
+	bAIWantsStoop = bStoop;
 	if (bStoop && !Creature->bIsCrouched && Creature->CanCrouch())
 	{
+		bAIStooped = true;
 		Creature->Crouch();
 	}
 	else if (!bStoop && Creature->bIsCrouched)
@@ -4910,15 +4921,15 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	{
 		NextAIKeepLogTime = GetWorld()->GetTimeSeconds() + 0.5;
 		const UAedirFistArms* GuardFists = Creature->FindComponentByClass<UAedirFistArms>();
-		UE_LOG(LogAedir, Log, TEXT("[NpcKeep] %s is %.0f cm from %s, keeps %.0f, %s, stamina %.0f%%%s, guard %d%d"), *Creature->GetName(), Distance, *AITarget->GetName(), KeepAt, bArmed ? *GetNameSafe(Weapon) : TEXT("bare-handed"),
+		UE_LOG(LogAedir, Log, TEXT("[NpcKeep] %s is %.0f cm from %s, keeps %.0f, %s, stamina %.0f%%%s, guard %d%d, crouched %d"), *Creature->GetName(), Distance, *AITarget->GetName(), KeepAt, bArmed ? *GetNameSafe(Weapon) : TEXT("bare-handed"),
 			Creature->Stats ? Creature->Stats->GetStaminaFraction() * 100.f : 0.f, bAIResting ? TEXT(", resting") : TEXT(""),
-			GuardFists && GuardFists->IsButtonHeld(EAedirHand::Left) ? 1 : IsGuardActive(EAedirHand::Left) ? 1 : 0, GuardFists && GuardFists->IsButtonHeld(EAedirHand::Right) ? 1 : IsGuardActive(EAedirHand::Right) ? 1 : 0);
+			GuardFists && GuardFists->IsButtonHeld(EAedirHand::Left) ? 1 : IsGuardActive(EAedirHand::Left) ? 1 : 0, GuardFists && GuardFists->IsButtonHeld(EAedirHand::Right) ? 1 : IsGuardActive(EAedirHand::Right) ? 1 : 0, Creature->bIsCrouched ? 1 : 0);
 	}
 	const float Band = AIStandOffBandCm * Scale;
 	// Bare-handed and done waiting for the next blow, it steps right in to where the fist is thrown from instead of waiting
 	// to drift there.
 	const bool bReadyToThrow = bFistArms && !bArmed && !bAIResting && AIMousePhase == 0 && AIMouseTimer >= AIMouseWait;
-	const float CloseInPast = bReadyToThrow ? (AIFistStandOffCm + AedirAIFistStrikeSlackCm - 2.f) * Scale : KeepAt + Band;
+	const float CloseInPast = bReadyToThrow ? (AIFistStrikeInCm + AedirAIFistStrikeSlackCm - 2.f) * Scale : KeepAt + Band;
 	if (Distance > CloseInPast)
 	{
 		// A foe driven back a step or more is gone after at a run, so the next blow is not long in coming.
@@ -4928,7 +4939,7 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	else
 	{
 		Creature->TurnBodyTo(FacingYaw, DeltaTime, AedirAITurnSpeed);
-		if (Distance < KeepAt - Band * 0.6f && !bAITargetDown)
+		if (Distance < KeepAt - Band * 0.6f && !bAITargetDown && !bReadyToThrow && (AIMousePhase == 0 || bArmed))
 		{
 			Creature->AddMovementInput(Creature->GetActorForwardVector(), -AedirAIBackOffInput * FMath::Clamp((KeepAt - Distance) / Band + 0.4f, 0.f, 1.f));
 		}
@@ -5114,7 +5125,7 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		}
 	}
 	// A fist is thrown stepping in to it.
-	if (!bArmed && AIMousePhase >= 1 && AIMousePhase <= 3 && Distance > AedirAIFistStepFromCm * static_cast<float>(Creature->GetActorScale3D().X))
+	if (!bArmed && AIMousePhase >= 1 && AIMousePhase <= 3 && Distance > AIFistStrikeInCm * AedirAIFistStepInShare * static_cast<float>(Creature->GetActorScale3D().X))
 	{
 		Creature->AddMovementInput(Creature->GetActorForwardVector(), AedirAIFistStepInput);
 	}
@@ -5129,8 +5140,14 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		Fists->GetArm(EAedirHand::Left, LeftFist, Elbow, Up);
 		Fists->GetArm(EAedirHand::Right, RightFist, Elbow, Up);
 		const float Chin = static_cast<float>(Body->GetBoneLocation(TEXT("head")).Z);
-		UE_LOG(LogAedir, Log, TEXT("[NpcGuard] %s mouse %.2f (wanted %.2f), fists %.0f and %.0f cm from the chin"), *Creature->GetName(), Fists->GetMouseAim().Y, GuardHeight,
-			LeftFist.Z - Chin, RightFist.Z - Chin);
+		// And where the hands really are, against the middle of the skull.
+		const FBodyInstance* Skull = Body->GetBodyInstance(TEXT("head"));
+		const float SkullZ = Skull ? static_cast<float>(Skull->GetBodyBounds().GetCenter().Z) : Chin;
+		const FVector Ahead = Creature->GetActorForwardVector();
+		const FVector LeftHand = Body->GetBoneLocation(TEXT("hand_l")) - Creature->GetActorLocation();
+		const FVector RightHand = Body->GetBoneLocation(TEXT("hand_r")) - Creature->GetActorLocation();
+		UE_LOG(LogAedir, Log, TEXT("[NpcGuard] %s mouse %.2f (wanted %.2f, lift %.2f), fists %.0f and %.0f cm from the chin; hands %.0f and %.0f cm from the skull's middle, %.0f and %.0f cm ahead"), *Creature->GetName(), Fists->GetMouseAim().Y, GuardHeight, AIFistGuardLift,
+			LeftFist.Z - Chin, RightFist.Z - Chin, Body->GetBoneLocation(TEXT("hand_l")).Z - SkullZ, Body->GetBoneLocation(TEXT("hand_r")).Z - SkullZ, FVector::DotProduct(LeftHand, Ahead), FVector::DotProduct(RightHand, Ahead));
 	}
 	switch (AIMousePhase)
 	{
@@ -5142,7 +5159,7 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		{
 			UE_LOG(LogAedir, Log, TEXT("[NpcWait] %s is ready but holds: tired %d, %.0f cm off"), *Creature->GetName(), bTired ? 1 : 0, Distance);
 		}
-		if (!bTired && Distance <= (bArmed ? Reach + AedirAIContactRange * 0.25f : AIFistStandOffCm + AedirAIFistStrikeSlackCm) && AIMouseTimer >= AIMouseWait)
+		if (!bTired && Distance <= (bArmed ? Reach + AedirAIContactRange * 0.25f : (AIFistStrikeInCm + AedirAIFistStrikeSlackCm) * static_cast<float>(Creature->GetActorScale3D().X)) && AIMouseTimer >= AIMouseWait)
 		{
 			// Mostly at the head; now and then into the body.
 			AIMousePart = bAITargetDown ? 1 : (FMath::FRand() < AIHeadChance ? 0 : 1);
@@ -5157,11 +5174,14 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 			}
 			else
 			{
-				AIMouseWindup = FVector2D(Side * AedirAIMouseWindupAcross, Height);
+				// A fist is drawn back only a little and below where it goes, so it is thrown out at the face straight ahead,
+				// not swung round from over the head; a blade is drawn back wide for its swing.
+				AIMouseWindup = bArmed ? FVector2D(Side * AedirAIMouseWindupAcross, Height) : FVector2D(Side * AIFistWindupAcross, FMath::Lerp(GuardHeight, Height, AIFistWindupHeightShare));
 				AIMouseStrike = FVector2D(-Side * (bArmed ? AedirAIMouseBladeThrough : AedirAIMouseFistThrough), Height);
 			}
 			AIMousePhase = 1;
 			AIMouseTimer = 0.f;
+			AINearestFistCm = UE_BIG_NUMBER;
 			UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s draws back to %s to throw to %s, %.0f cm from %s (reach %.0f), stamina %.0f%%%s"), *Creature->GetName(), *AIMouseWindup.ToString(), *AIMouseStrike.ToString(), Distance, *GetNameSafe(AITarget), Reach,
 				Creature->Stats ? Creature->Stats->GetStaminaFraction() * 100.f : 0.f, bAIResting ? TEXT(", resting") : TEXT(""));
 		}
@@ -5184,6 +5204,27 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		}
 		break;
 	case 3:
+		// For the hit log: the nearest the thrown fist's real hand comes to what it goes for.
+		if (Body)
+		{
+			const bool bRight = AIMouseStrike.X > 0.f;
+			const FVector Hand = Body->GetBoneLocation(bRight ? TEXT("hand_r") : TEXT("hand_l"));
+			const float Near = static_cast<float>(FVector::Dist(Hand, GetAITargetPoint(AIMousePart)));
+			if (Near < AINearestFistCm)
+			{
+				AINearestFistCm = Near;
+				// Then: how far the hand is from where the fists put it, and how far that is from the shoulder against how long
+				// the arm is.
+				FVector Fist, Elbow;
+				float Up = 0.f;
+				Fists->GetArm(bRight ? EAedirHand::Right : EAedirHand::Left, Fist, Elbow, Up);
+				const FVector Shoulder = Body->GetBoneLocation(bRight ? TEXT("upperarm_r") : TEXT("upperarm_l"));
+				const FVector ElbowBone = Body->GetBoneLocation(bRight ? TEXT("lowerarm_r") : TEXT("lowerarm_l"));
+				AINearestLag = static_cast<float>(FVector::Dist(Hand, Fist));
+				AINearestReach = static_cast<float>(FVector::Dist(Shoulder, Fist));
+				AIArmLength = static_cast<float>(FVector::Dist(Shoulder, ElbowBone) + FVector::Dist(ElbowBone, Hand));
+			}
+		}
 		// Thrown, and followed through until the arm itself, with its weight, has got there.
 		if ((MoveTo(AIMouseStrike, AedirAIMouseStrikeSpeed) && FVector2D::Distance(Fists->GetAim(), Fists->GetMouseAim()) < AedirAIMouseArrivedShare) || AIMouseTimer > AedirAIMouseStrikeMaxSeconds)
 		{
@@ -5197,8 +5238,8 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 				const EAedirHand Thrown = AIMouseStrike.X > 0.f ? EAedirHand::Right : EAedirHand::Left;
 				Fists->GetArm(Thrown, Fist, Elbow, Up);
 				const FVector Aimed = GetAITargetPoint(AIMousePart);
-				UE_LOG(LogAedir, Log, TEXT("[NpcAim] %s went for the %s: the fist came %.0f cm from it, %.0f cm above it, %.0f cm short"), *Creature->GetName(), AIMousePart == 0 ? TEXT("head") : TEXT("body"),
-					FVector::Dist(Fist, Aimed), Fist.Z - Aimed.Z, FVector::DotProduct(Aimed - Fist, (Aimed - Creature->GetActorLocation()).GetSafeNormal2D()));
+				UE_LOG(LogAedir, Log, TEXT("[NpcAim] %s went for the %s: the fist came %.0f cm from it, %.0f cm above it, %.0f cm short; the hand came nearest %.0f cm, then %.0f cm off the fist's mark, which was %.0f cm from the shoulder of an arm %.0f long"), *Creature->GetName(), AIMousePart == 0 ? TEXT("head") : TEXT("body"),
+					FVector::Dist(Fist, Aimed), Fist.Z - Aimed.Z, FVector::DotProduct(Aimed - Fist, (Aimed - Creature->GetActorLocation()).GetSafeNormal2D()), AINearestFistCm, AINearestLag, AINearestReach, AIArmLength);
 			}
 			AIMousePhase = 4;
 			AIMouseTimer = 0.f;
@@ -6024,13 +6065,18 @@ void UAedirCombatComponent::BeginKick()
 	// The leg goes where the camera looks, as far as a leg can turn from the body.
 	const FRotator View = Creature->Controller ? Creature->GetControlRotation() : Creature->GetActorRotation();
 	const double YawFromBody = FMath::Clamp(FRotator::NormalizeAxis(View.Yaw - Creature->GetActorRotation().Yaw), -AedirKickMaxYawDegrees, AedirKickMaxYawDegrees);
-	// The leg on the side the kick goes kicks: the nearer one. Straight ahead, the foot further back swings through.
-	const bool bLeftLeg = FMath::Abs(YawFromBody) > KickSideDeadDegrees ? YawFromBody < 0.0 : IsLeadFootRight();
+	// The foot further back from where the kick goes swings through and kicks, as a kicker does with the rear leg; the
+	// other stands. Feet level with each other, the one on the far side from the kick swings across.
+	const FVector KickWay = FRotator(0.0, Creature->GetActorRotation().Yaw + YawFromBody, 0.0).Vector();
+	const double LeftAhead = FVector::DotProduct(GetFootBoneWorld(true) - Creature->GetActorLocation(), KickWay);
+	const double RightAhead = FVector::DotProduct(GetFootBoneWorld(false) - Creature->GetActorLocation(), KickWay);
+	const bool bLeftLeg = FMath::Abs(LeftAhead - RightAhead) > KickRearFootLevelCm ? LeftAhead < RightAhead : YawFromBody > 0.0;
 	KickNet.bActive = true;
 	KickNet.bLeftLeg = bLeftLeg;
 	KickNet.Elapsed = 0.f;
 	KickNet.StartWorld = GetFootBoneWorld(bLeftLeg);
-	KickNet.Direction = FRotator(0.0, Creature->GetActorRotation().Yaw + YawFromBody, 0.0).Vector();
+	KickNet.Direction = KickWay;
+	UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicks with the %s leg %.0f degrees from straight ahead: the left foot %.0f cm towards it, the right %.0f"), *Creature->GetName(), bLeftLeg ? TEXT("left") : TEXT("right"), YawFromBody, LeftAhead, RightAhead);
 	KickNet.LiftCm = FMath::Clamp(AedirKickExtendCm * FMath::Sin(FMath::DegreesToRadians(static_cast<float>(FRotator::NormalizeAxis(View.Pitch)))), AedirKickMinLiftCm, AedirKickMaxLiftCm);
 	KickPrevFootWorld = KickNet.StartWorld;
 	bKickStruck = false;

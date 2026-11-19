@@ -122,6 +122,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float PunchWaistTurnDegrees = 30.f;
 
+	// A punch takes the chest forward after the fist, this many degrees at a full punch, so the blow reaches on with the
+	// body behind it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float PunchLeanDegrees = 14.f;
+
+	// A fist goes out no further from the shoulder than this share of the arm's own length.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0.5", ClampMax="1"))
+	float FistMaxReachShare = 0.97f;
+
 	// The waist goes round after where it is wanted as a weight on a spring of this many cycles a second, and never turns
 	// faster than this many degrees a second: a trunk is heavier than an arm, and the fists on it must not be flung with it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")

@@ -91,6 +91,8 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	ShoulderControls[0] = ShoulderControls[1] = NAME_None;
 	LeftHandControls.Reset();
 	RightHandControls.Reset();
+	ForearmControls[0].Reset();
+	ForearmControls[1].Reset();
 	LegControls.Reset();
 	LeftLegControls.Reset();
 	RightLegControls.Reset();
@@ -191,8 +193,20 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		switch (Part)
 		{
 		case EAedirBodyPart::Head: HeadControls.Add(Name); break;
-		case EAedirBodyPart::LeftArm: (bWrist ? LeftHandControls : LeftArmControls).Add(Name); break;
-		case EAedirBodyPart::RightArm: (bWrist ? RightHandControls : RightArmControls).Add(Name); break;
+		case EAedirBodyPart::LeftArm:
+			(bWrist ? LeftHandControls : LeftArmControls).Add(Name);
+			if (BoneText.StartsWith(TEXT("lowerarm")))
+			{
+				ForearmControls[0].Add(Name);
+			}
+			break;
+		case EAedirBodyPart::RightArm:
+			(bWrist ? RightHandControls : RightArmControls).Add(Name);
+			if (BoneText.StartsWith(TEXT("lowerarm")))
+			{
+				ForearmControls[1].Add(Name);
+			}
+			break;
 		case EAedirBodyPart::Leg:
 			LegControls.Add(Name);
 			(BoneText.EndsWith(TEXT("_l")) ? LeftLegControls : RightLegControls).Add(Name);
@@ -656,8 +670,15 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	}
 	// The wrists are looser than the arm above them, less so with both hands on one thing.
 	const float Wrist = FMath::Lerp(WristShare, TwoHandWristShare, TwoHandGrip);
-	Apply(LeftHandControls, LeftArmHz * Wrist, 0.f);
-	Apply(RightHandControls, RightArmHz * Wrist, 0.f);
+	// Down or dead, the elbows and the wrists go slacker still than the rest of the arm.
+	const float Slack = bLimp ? LimpForearmShare : 1.f;
+	Apply(LeftHandControls, LeftArmHz * Wrist * Slack, 0.f);
+	Apply(RightHandControls, RightArmHz * Wrist * Slack, 0.f);
+	if (bLimp)
+	{
+		Apply(ForearmControls[0], LeftArmHz * Soft * Slack, 0.f);
+		Apply(ForearmControls[1], RightArmHz * Soft * Slack, 0.f);
+	}
 	// Down, the hips are free; carried, the pose places them and the control rests.
 	const bool bHold = !bLimp && !bHipsCarried;
 	const float Hips = CVarAedirBodyHips.GetValueOnGameThread() >= 0.f ? CVarAedirBodyHips.GetValueOnGameThread() : HipLinearStrength;
@@ -687,7 +708,9 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	}
 	const float Weight = CVarAedirBodyGravity.GetValueOnGameThread() >= 0.f ? CVarAedirBodyGravity.GetValueOnGameThread() : StandingGravity;
 	// The feet carry part of the weight only while they stand on something; in the air it all falls alike.
-	Control->SetBodyModifiersInSetGravityMultiplier(TEXT("Body"), bLimp || bAirborne ? 1.f : FMath::Lerp(1.f, Weight, Upright));
+	// Getting up the body has the weight of a body lying down to lift: the muscles bring up all of it, not a lightened one.
+	const float Carried = bRising ? FMath::Lerp(1.f, Weight, Upright * (1.f - RisingWeightShare)) : FMath::Lerp(1.f, Weight, Upright);
+	Control->SetBodyModifiersInSetGravityMultiplier(TEXT("Body"), bLimp || bAirborne ? 1.f : Carried);
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
 		if (bArmLoose[Side])

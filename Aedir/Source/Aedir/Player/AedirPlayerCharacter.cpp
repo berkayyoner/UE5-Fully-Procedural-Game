@@ -1713,9 +1713,9 @@ void AAedirPlayerCharacter::Push(float Strength)
 	RunDevCommand(TEXT("Push"), FString::Printf(TEXT("%f"), Strength), true);
 }
 
-void AAedirPlayerCharacter::Knockdown()
+void AAedirPlayerCharacter::Knockdown(const FString& Args)
 {
-	RunDevCommand(TEXT("Knockdown"), FString(), true);
+	RunDevCommand(TEXT("Knockdown"), Args, true);
 }
 
 void AAedirPlayerCharacter::BoneAxes(const FString& Bones)

@@ -675,7 +675,11 @@ public:
 	float KneeBendMaxDegrees = 40.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float MaxRunForwardLeanDegrees = 8.f;
+	float MaxRunForwardLeanDegrees = 20.f;
+
+	// Running, the trunk rocks forward with each push off the ground and back as the body flies, this many degrees each way.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float RunStridePitchDegrees = 2.5f;
 
 	// Roll of the torso towards the side the body is travelling to, scaled by speed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
@@ -920,7 +924,7 @@ public:
 	float LimpKneeBendDegrees = 40.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
-	float LimpElbowBendDegrees = 45.f;
+	float LimpElbowBendDegrees = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
 	float LimpBackBowDegrees = 15.f;
@@ -1001,6 +1005,8 @@ private:
 	float LegLogChestMax = 0.f;
 	float LegLogChestLast = 0.f;
 	float LegLogChestSpeed = 0.f;
+	float LegLogLeanMin = 0.f;
+	float LegLogLeanMax = 0.f;
 	void UpdateClutch(float DeltaTime,const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);
 
 	UPROPERTY(Transient)

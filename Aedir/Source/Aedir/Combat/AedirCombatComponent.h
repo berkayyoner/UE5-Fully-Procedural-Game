@@ -177,9 +177,6 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Aedir|Combat")
 	FAedirKick OnKick;
 
-	// A kick aimed further than this to one side, in degrees from straight ahead, is thrown by the leg on that side.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float KickSideDeadDegrees = 8.f;
 
 	// A swing is heard cutting the air from this speed of its tip against the body that swings it, in cm/s, averaged over
 	// WhooshAverageSeconds; at the full speed it is heard at its loudest.
@@ -355,6 +352,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float AIFistStandOffCm = 74.f;
 
+	// Bare-handed, to throw a punch it steps in this close (the middles of the two bodies, for its size), and on in through
+	// the throw: from further a fist reaches only the shoulders and the chest.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AIFistStrikeInCm = 58.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIWeaponStandOffShare = 1.f;
 
@@ -397,6 +399,14 @@ public:
 	// arc is lower than in the middle, and the blow would land on the shoulder.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIHeadAimLift = 0.2f;
+
+	// Bare-handed, a punch is drawn back this share of the mouse's way to the side (a blade 0.9), and to this share of the
+	// way from the guard's height to the height it goes for, before it is thrown.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIFistWindupAcross = 0.45f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIFistWindupHeightShare = 0.3f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float AIApproachSpeedStopDistance = 110.f;
@@ -457,6 +467,10 @@ public:
 
 	// The wind-up of a kick: the foot is drawn this far back of the hip and up to this far below it, the knee bent, before the
 	// leg swings up through the front to where the camera looks.
+	// The rear foot towards where the kick goes kicks; feet nearer level than this the far one from the kick does.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickRearFootLevelCm = 4.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
 	float KickWindUpBackCm = 18.f;
 
@@ -810,6 +824,14 @@ private:
 		FVector To = FVector::ZeroVector;
 	};
 	TArray<FAedirStrikeTrace> StrikeTrail[2];
+	// Dev: the nearest a thrown fist came to what it went for.
+	float AINearestFistCm = 0.f;
+	// Whether the body bent down over someone down by itself, and whether it still wants to this frame.
+	bool bAIStooped = false;
+	bool bAIWantsStoop = false;
+	float AINearestLag = 0.f;
+	float AINearestReach = 0.f;
+	float AIArmLength = 0.f;
 	void ApplyRemoteArmState(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	void PublishArmState(EAedirHand Hand, const FAedirArmDynamics& Arm);
 	void SendArmAimToServer(float DeltaTime);
