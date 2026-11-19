@@ -291,7 +291,7 @@ void AAedirCatalogItem::ApplyWornLook()
 	const TArray<FSkeletalMaterial>& Slots = Model->GetMaterials();
 	for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
 	{
-		if (UMaterialInterface* Material = AedirScannedMaterial::Make(WornMesh, Slots[Slot].MaterialSlotName.ToString()))
+		if (UMaterialInterface* Material = AedirScannedMaterial::Make(WornMesh, Def->WornLookFolder.IsEmpty() ? Slots[Slot].MaterialSlotName.ToString() : Def->WornLookFolder))
 		{
 			WornMesh->SetMaterial(Slot, Material);
 		}
@@ -688,7 +688,7 @@ bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
 		const TArray<FSkeletalMaterial>& Slots = Model->GetMaterials();
 		for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
 		{
-			if (UMaterialInterface* Material = AedirScannedMaterial::Make(Piece, Slots[Slot].MaterialSlotName.ToString()))
+			if (UMaterialInterface* Material = AedirScannedMaterial::Make(Piece, Def.WornLookFolder.IsEmpty() ? Slots[Slot].MaterialSlotName.ToString() : Def.WornLookFolder))
 			{
 				Piece->SetMaterial(Slot, Material);
 			}

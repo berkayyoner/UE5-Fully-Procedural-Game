@@ -19,12 +19,111 @@
 #include "FileHelpers.h"
 #include "HAL/FileManager.h"
 #include "Misc/Paths.h"
+#include "ClothingAsset.h"
+#include "ClothingAssetFactoryInterface.h"
+#include "ClothingSystemEditorInterfaceModule.h"
+#include "Modules/ModuleManager.h"
+#include "PhysicsEngine/PhysicsAsset.h"
+#include "SkeletalMeshClothingSystemUtilities.h"
 
 namespace
 {
 	const TCHAR* const ImportBodyPath = TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple");
 	const TCHAR* const ImportSkeletonPath = TEXT("/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin");
 	const TCHAR* const ImportScannedPath = TEXT("/Game/Aedir/Materials/M_AedirScanned.M_AedirScanned");
+	const TCHAR* const ImportBodyPhysicsPath = TEXT("/Game/Characters/Mannequins/Rigs/PA_Mannequin.PA_Mannequin");
+
+	// A worn piece's first section is made cloth: skinned to the body where it lies on it, and let hang free of its skinned
+	// place by up to HemCm at the hem (below HemFromCm) and CuffCm at the ends of the sleeves (out past CuffFromCm across),
+	// the body's capsules keeping it off the body.
+	int32 MakeCloth(const FString& MeshPath, float HemFromCm, float HemCm, float CuffFromCm, float CuffCm)
+	{
+		USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath);
+		if (!Mesh)
+		{
+			UE_LOG(LogAedirEditor, Error, TEXT("No skeletal mesh %s"), *MeshPath);
+			return 1;
+		}
+		{
+			FScopedSkeletalMeshPostEditChange PostEdit(Mesh);
+			for (int32 Lod = 0; Lod < Mesh->GetImportedModel()->LODModels.Num(); ++Lod)
+			{
+				for (int32 Section = 0; Section < Mesh->GetImportedModel()->LODModels[Lod].Sections.Num(); ++Section)
+				{
+					FSkeletalMeshClothingSystemUtilities::RemoveClothingFromSection(Mesh, Lod, Section, nullptr);
+				}
+			}
+			for (int32 Index = Mesh->GetMeshClothingAssets().Num() - 1; Index >= 0; --Index)
+			{
+				Mesh->GetMeshClothingAssets().RemoveAt(Index);
+			}
+			FClothingSystemEditorInterfaceModule& ClothingEditor = FModuleManager::LoadModuleChecked<FClothingSystemEditorInterfaceModule>(TEXT("ClothingSystemEditorInterface"));
+			UClothingAssetFactoryBase* Factory = ClothingEditor.GetClothingAssetFactory();
+			FSkeletalMeshClothBuildParams Params;
+			Params.AssetName = FPaths::GetBaseFilename(MeshPath) + TEXT("_Cloth");
+			Params.LodIndex = 0;
+			Params.SourceSection = 0;
+			Params.bRemoveFromMesh = false;
+			Params.PhysicsAsset = TSoftObjectPtr<UPhysicsAsset>(FSoftObjectPath(ImportBodyPhysicsPath));
+			// The triangles the cloth cannot be made of, as they lie in the imported model.
+			{
+				const FSkeletalMeshLODModel& Model = Mesh->GetImportedModel()->LODModels[0];
+				const FSkelMeshSection& First = Model.Sections[0];
+				int32 Bad = 0;
+				for (uint32 Tri = 0; Tri < First.NumTriangles; ++Tri)
+				{
+					const uint32 Base = First.BaseIndex + Tri * 3;
+					const FVector A = (FVector)First.SoftVertices[Model.IndexBuffer[Base] - First.BaseVertexIndex].Position;
+					const FVector B = (FVector)First.SoftVertices[Model.IndexBuffer[Base + 1] - First.BaseVertexIndex].Position;
+					const FVector C = (FVector)First.SoftVertices[Model.IndexBuffer[Base + 2] - First.BaseVertexIndex].Position;
+					if (((B - A) ^ (C - A)).SizeSquared() <= SMALL_NUMBER && Bad++ < 5)
+					{
+						UE_LOG(LogAedirEditor, Display, TEXT("Bad triangle %u: %u %u %u at %s %s %s"), Tri, Model.IndexBuffer[Base], Model.IndexBuffer[Base + 1], Model.IndexBuffer[Base + 2], *A.ToString(), *B.ToString(), *C.ToString());
+					}
+				}
+				UE_LOG(LogAedirEditor, Display, TEXT("%d bad triangles of %u, %d vertices, %d sections"), Bad, First.NumTriangles, First.SoftVertices.Num(), Model.Sections.Num());
+			}
+			UClothingAssetCommon* Cloth = Cast<UClothingAssetCommon>(Factory ? Factory->CreateFromSkeletalMesh(Mesh, Params) : nullptr);
+			if (!Cloth || Cloth->LodData.IsEmpty())
+			{
+				UE_LOG(LogAedirEditor, Error, TEXT("Could not make cloth of %s"), *MeshPath);
+				return 1;
+			}
+			Mesh->AddClothingAsset(Cloth);
+			FClothPhysicalMeshData& Physical = Cloth->LodData[0].PhysicalMeshData;
+			FPointWeightMap& MaxDistance = Physical.FindOrAddWeightMap(EWeightMapTargetCommon::MaxDistance);
+			MaxDistance.Initialize(Physical.Vertices.Num());
+			int32 Loose = 0;
+			for (int32 Point = 0; Point < Physical.Vertices.Num(); ++Point)
+			{
+				const FVector3f& At = Physical.Vertices[Point];
+				const float Hem = FMath::Clamp((HemFromCm - At.Z) / 12.f, 0.f, 1.f) * HemCm;
+				const float Cuff = FMath::Clamp((FMath::Abs(At.X) - CuffFromCm) / 10.f, 0.f, 1.f) * CuffCm;
+				MaxDistance.Values[Point] = FMath::Max(Hem, Cuff);
+				Loose += MaxDistance.Values[Point] > 0.f ? 1 : 0;
+			}
+			Cloth->ApplyParameterMasks();
+			FString Error;
+			if (!FSkeletalMeshClothingSystemUtilities::AssignClothingToSection(Mesh, Cloth, 0, 0, 0, &Error))
+			{
+				UE_LOG(LogAedirEditor, Error, TEXT("Could not put the cloth on %s: %s"), *MeshPath, *Error);
+				return 1;
+			}
+			UE_LOG(LogAedirEditor, Display, TEXT("Made %s cloth: %d points, %d of them loose"), *MeshPath, Physical.Vertices.Num(), Loose);
+		}
+		TArray<UPackage*> ToSave = { Mesh->GetPackage() };
+		// The material scanned models wear is worn by cloth now as well.
+		if (UMaterial* Scanned = LoadObject<UMaterial>(nullptr, ImportScannedPath))
+		{
+			bool bNeedsRecompile = false;
+			if (!Scanned->GetUsageByFlag(MATUSAGE_Clothing))
+			{
+				Scanned->SetMaterialUsage(bNeedsRecompile, MATUSAGE_Clothing);
+				ToSave.Add(Scanned->GetPackage());
+			}
+		}
+		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
+	}
 }
 
 UAedirImportModelsCommandlet::UAedirImportModelsCommandlet()
@@ -91,6 +190,18 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 		return bDone ? 0 : 1;
 	}
 
+	// -Cloth=<skeletal mesh path> [-HemFrom=102 -Hem=5 -CuffFrom=36 -Cuff=6]: its first section made cloth.
+	FString ClothMesh;
+	if (FParse::Value(*Params, TEXT("Cloth="), ClothMesh))
+	{
+		float HemFrom = 102.f, Hem = 5.f, CuffFrom = 36.f, Cuff = 6.f;
+		FParse::Value(*Params, TEXT("HemFrom="), HemFrom);
+		FParse::Value(*Params, TEXT("Hem="), Hem);
+		FParse::Value(*Params, TEXT("CuffFrom="), CuffFrom);
+		FParse::Value(*Params, TEXT("Cuff="), Cuff);
+		return MakeCloth(ClothMesh, HemFrom, Hem, CuffFrom, Cuff);
+	}
+
 	FString Source;
 	if (!FParse::Value(*Params, TEXT("Source="), Source))
 	{
@@ -110,6 +221,7 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 	{
 		bool bNeedsRecompile = false;
 		Scanned->SetMaterialUsage(bNeedsRecompile, MATUSAGE_SkeletalMesh);
+		Scanned->SetMaterialUsage(bNeedsRecompile, MATUSAGE_Clothing);
 		ToSave.Add(Scanned->GetPackage());
 	}
 

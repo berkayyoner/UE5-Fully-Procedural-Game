@@ -27,6 +27,10 @@ public class AedirEditor : ModuleRules
 			"Landscape",
 			"MeshDescription",
 			"StaticMeshDescription",
+			"ClothingSystemEditorInterface",
+			"ClothingSystemRuntimeCommon",
+			"ClothingSystemRuntimeInterface",
+			"SkeletalMeshEditor",
 			"Aedir"
 		});
 	}

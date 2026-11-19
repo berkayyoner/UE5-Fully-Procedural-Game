@@ -75,6 +75,8 @@ namespace
 		Definitions.Add(CatalogMakeArmor(TEXT("LeatherArmor"), TEXT("Leather Armor"), 4.0f, EAedirBodyZone::Torso, 0.30f, TEXT("spine_03"), CatalogLeather, FVector(0.22, 0.36, 0.44)));
 		Definitions.Add(CatalogMakeArmor(TEXT("IronCuirass"), TEXT("Iron Cuirass"), 9.0f, EAedirBodyZone::Torso, 0.60f, TEXT("spine_03"), CatalogIron, FVector(0.24, 0.40, 0.50)));
 		Definitions.Add(CatalogMakeArmor(TEXT("Bracers"), TEXT("Bracers"), 1.2f, EAedirBodyZone::Arm, 0.30f, TEXT("lowerarm_l"), CatalogLeather, FVector(0.10, 0.10, 0.24)));
+		Definitions.Add(CatalogMakeArmor(TEXT("LinenShirt"), TEXT("Linen Shirt"), 0.4f, EAedirBodyZone::Torso, 0.05f, TEXT("spine_03"), FLinearColor(0.05f, 0.05f, 0.05f), FVector(0.30, 0.40, 0.06)));
+		Definitions.Add(CatalogMakeArmor(TEXT("LinenShirtWhite"), TEXT("White Linen Shirt"), 0.4f, EAedirBodyZone::Torso, 0.05f, TEXT("spine_03"), FLinearColor(0.80f, 0.77f, 0.70f), FVector(0.30, 0.40, 0.06)));
 		Definitions.Add(CatalogMakeArmor(TEXT("IronGreaves"), TEXT("Iron Greaves"), 3.5f, EAedirBodyZone::Leg, 0.45f, TEXT("thigh_l"), CatalogIron, FVector(0.13, 0.13, 0.42)));
 
 		// Miscellaneous items.
@@ -178,6 +180,16 @@ namespace
 		};
 		SetWorn(TEXT("IronCuirass"), TEXT("/Game/Megascans/3D_Assets/ManCuirass/SK_ManCuirass.SK_ManCuirass"));
 		SetWorn(TEXT("Bracers"), TEXT("/Game/Megascans/3D_Assets/ManBracers/SK_ManBracers.SK_ManBracers"));
+		// The lace-up linen shirt, its hem and the ends of its sleeves loose cloth; one model, a colour for each.
+		SetWorn(TEXT("LinenShirt"), TEXT("/Game/Megascans/3D_Assets/MedievalShirt/SK_MedievalShirt.SK_MedievalShirt"));
+		SetWorn(TEXT("LinenShirtWhite"), TEXT("/Game/Megascans/3D_Assets/MedievalShirt/SK_MedievalShirt.SK_MedievalShirt"));
+		for (FAedirItemDef& Item : Definitions)
+		{
+			if (Item.Id == FName(TEXT("LinenShirtWhite")))
+			{
+				Item.WornLookFolder = TEXT("MedievalShirtWhite");
+			}
+		}
 
 		SetGrip(TEXT("Dagger"), -21.f, 8.f, true);
 		SetGrip(TEXT("ShortSword"), -42.f, 8.f, true);
@@ -371,6 +383,10 @@ namespace
 		SetArmour(TEXT("LeatherArmor"), EAedirArmorMaterial::Soft, { TEXT("spine_01"), TEXT("spine_02"), TEXT("spine_03"), TEXT("spine_04"), TEXT("spine_05") });
 		SetArmour(TEXT("IronCuirass"), EAedirArmorMaterial::Plate, { TEXT("spine_01"), TEXT("spine_02"), TEXT("spine_03"), TEXT("spine_04"), TEXT("spine_05") });
 		SetArmour(TEXT("Bracers"), EAedirArmorMaterial::Soft, { TEXT("lowerarm_l"), TEXT("lowerarm_r") });
+		for (const TCHAR* Shirt : { TEXT("LinenShirt"), TEXT("LinenShirtWhite") })
+		{
+			SetArmour(Shirt, EAedirArmorMaterial::Soft, { TEXT("spine_01"), TEXT("spine_02"), TEXT("spine_03"), TEXT("spine_04"), TEXT("spine_05"), TEXT("clavicle_l"), TEXT("clavicle_r"), TEXT("upperarm_l"), TEXT("upperarm_r"), TEXT("lowerarm_l"), TEXT("lowerarm_r") });
+		}
 		SetArmour(TEXT("IronGreaves"), EAedirArmorMaterial::Plate, { TEXT("calf_l"), TEXT("calf_r") });
 		SetArmour(TEXT("RustyShoulders"), EAedirArmorMaterial::Plate, { TEXT("clavicle_l"), TEXT("clavicle_r"), TEXT("upperarm_l"), TEXT("upperarm_r") });
 		SetArmour(TEXT("RustyIronShield"), EAedirArmorMaterial::Plate, { TEXT("lowerarm_l"), TEXT("hand_l") });

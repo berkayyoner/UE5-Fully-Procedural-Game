@@ -572,3 +572,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Heal fills hunger and thirst too.
 - Knockdown with nothing after it throws down whatever is selected in the console, the player only when nothing is.
 - The console suggests the player's own commands as well (Heal, Knockdown, SpawnEnemy and the rest), with how each is written.
+- The lace-up linen shirt from Fab (Medieval Shirt Lace Up, Clothcraft Studio 3D) is in the game, fitted to the mannequin and skinned to its bones (AedirEditor/Scripts/fit_shirt.py), its hem and sleeve ends cloth that hangs and swings off the body (AedirImportModels -Cloth). It comes in its own dark cloth (LinenShirt) and a linen white gone a little grey and yellow (LinenShirtWhite), both lying by the leather armour near the start; it is worn like any armour, over or under the rest. One model takes any number of colours: a folder of textures per colour (WornLookFolder, AedirEditor/Scripts/shirt_colours.py).
