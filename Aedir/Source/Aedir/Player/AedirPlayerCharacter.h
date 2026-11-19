@@ -105,6 +105,8 @@ public:
 
 	// Blend of the subtle fight-stance camera drift, 0 outside the stance.
 	float FightCameraAlpha = 0.f;
+	// How far the view has drawn back for the fight, 0 to 1.
+	float FightPullBackAlpha = 0.f;
 	FRotator FightCameraSway = FRotator::ZeroRotator;
 
 	// How far through the view's shake it is (1 at its start, 0 still), how far it turns at its start and how long it lasts.
@@ -149,6 +151,14 @@ public:
 	// not down on him: a view looking down makes the hand pull the mouse up to see.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float FightArmLengthCm = 155.f;
+
+	// Going into a fight, a weapon's stance or the fists raised, the view draws back this far, eased in at
+	// FightCameraPullBackSpeed, so more of the fight is seen and it feels quicker.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float FightCameraPullBackCm = 45.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float FightCameraPullBackSpeed = 3.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	FVector FightShoulderOffset = FVector(0.f, 42.f, 2.f);
@@ -451,6 +461,10 @@ public:
 	// Holds the walking keys for this many seconds as the player would, forward and right each -1 to 1 (W is 1 0, D is 0 1).
 	UFUNCTION(Exec)
 	void HoldKeys(float Forward, float Right, float Seconds);
+
+	// Logs how long the camera arm is now and how far it has drawn back for a fight.
+	UFUNCTION(Exec)
+	void CamInfoLength();
 	FVector2D DevHeldKeys = FVector2D::ZeroVector;
 	float DevHeldKeysLeft = 0.f;
 

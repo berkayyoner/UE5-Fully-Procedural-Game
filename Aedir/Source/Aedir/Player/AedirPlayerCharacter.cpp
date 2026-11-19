@@ -830,7 +830,12 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 	{
 		// The fight stance draws the view in close and up over the shoulder; out of it the view goes back to where it was set.
 		const float FightAlpha = FMath::SmoothStep(0.f, 1.f, FightCameraAlpha);
-		const float WantedLength = bPhotoCamera ? PhotoArmLengthCm : (bHeadCamera ? HeadCameraArmLengthCm : FMath::Lerp(CameraZoomTargetCm, FightArmLengthCm, FightAlpha));
+		// Into a fight, with a weapon or the fists up, the view draws back a little.
+		const bool bFistsUp = FistArms && FMath::Max(FistArms->GetRaised(EAedirHand::Left), FistArms->GetRaised(EAedirHand::Right)) > 0.5f;
+		const bool bInFight = (Combat && Combat->IsInFightStance()) || bFistsUp;
+		FightPullBackAlpha = FMath::FInterpTo(FightPullBackAlpha, bInFight ? 1.f : 0.f, DeltaSeconds, FightCameraPullBackSpeed);
+		const float PullBack = FightCameraPullBackCm * FMath::SmoothStep(0.f, 1.f, FightPullBackAlpha);
+		const float WantedLength = bPhotoCamera ? PhotoArmLengthCm : (bHeadCamera ? HeadCameraArmLengthCm : FMath::Lerp(CameraZoomTargetCm, FightArmLengthCm, FightAlpha) + PullBack);
 		CameraBoom->TargetArmLength = bPhotoCamera ? WantedLength : FMath::FInterpTo(CameraBoom->TargetArmLength, WantedLength, DeltaSeconds, 10.f);
 		CameraBoom->SocketOffset = bHeadCamera ? HeadCameraOffset : FMath::Lerp(ThirdPersonShoulderOffset, FightShoulderOffset, FightAlpha);
 
@@ -2208,6 +2213,11 @@ void AAedirPlayerCharacter::ArmBones(const FString& Label)
 		Line += FString::Printf(TEXT(" | lead %d grip %d chest yaw %.0f pitch %.0f roll %.0f"), Combat && Combat->IsLeadFootRight() ? 1 : 0, Combat && Combat->IsTwoHandGrip() ? 1 : 0, Chest.Yaw, Chest.Pitch, Chest.Roll);
 	}
 	UE_LOG(LogAedir, Display, TEXT("[ArmBones] %s%s"), *Label, *Line);
+}
+
+void AAedirPlayerCharacter::CamInfoLength()
+{
+	UE_LOG(LogAedir, Display, TEXT("[Dev] Camera arm %.0f cm (fight pull-back %.2f)"), CameraBoom ? CameraBoom->TargetArmLength : 0.f, FightPullBackAlpha);
 }
 
 void AAedirPlayerCharacter::HoldKeys(float Forward, float Right, float Seconds)
