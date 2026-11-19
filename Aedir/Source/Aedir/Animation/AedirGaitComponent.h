@@ -25,6 +25,10 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	bool bLimpPose = false;
 
+	// Hauled up off the ground by the hips: how far the slack shape is straightened towards standing, 0 to 1.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float LimpStandShare = 0.f;
+
 	// Hip offset in cm along the creature up axis, negative = lowered.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float HipOffsetZ = 0.f;
@@ -528,7 +532,7 @@ public:
 
 	// Multiplier on the foot home half-width at a full fighting stance.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
-	float StanceFootWidthMultiplier = 2.2f;
+	float StanceFootWidthMultiplier = 2.6f;
 
 	// Forward shift in cm of the lead foot's home location at a full fighting stance. The rear foot moves back by half of it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -546,9 +550,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0"))
 	float StanceRearFootBackShare = 0.8f;
 
+	// Standing in the stance, the rear foot may be this many times further behind its place than any other foot may be off
+	// its own before it steps back up to it: it stays where it is, up on its toes.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="1"))
+	float StanceRearToeSlack = 2.5f;
+
 	// The feet spread this much wider with the fists' guard fully up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="1"))
-	float FistStanceWidthMultiplier = 1.6f;
+	float FistStanceWidthMultiplier = 3.f;
 
 	// Walking stride multiplier at a full fighting stance. Running is not affected.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -955,6 +964,7 @@ private:
 	FVector GetUpStartHand[2];
 	void AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength);
 	FRotator ComputeFootTilt(const FVector& GroundNormal, const FVector& ActorUp, const FRotator& CurrentTilt, float DeltaTime) const;
+	void LogStep(int32 Foot, const FVector& Landing, float Trigger) const;
 	void BeginStep(int32 Foot, float Seconds);
 	void BeginRecoverySwing(int32 Foot, const FVector& CatchWorld, float MaxStepCm, float Urgency, float BottomZ);
 	void CacheLegGeometry();

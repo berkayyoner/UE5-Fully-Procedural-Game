@@ -166,9 +166,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float FightViewPitch = -10.f;
 
-	// Locked on, the view looks at this much below the enemy's head, and never steeper down than this.
+	// Locked on, the view looks at this much below the enemy's head, tipped up by LockOnPitchLiftDegrees so it looks across
+	// at him rather than down from above, and never steeper down than LockOnSteepestPitch.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	float LockOnAimBelowHeadCm = 15.f;
+	float LockOnAimBelowHeadCm = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnPitchLiftDegrees = 4.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float LockOnSteepestPitch = -35.f;

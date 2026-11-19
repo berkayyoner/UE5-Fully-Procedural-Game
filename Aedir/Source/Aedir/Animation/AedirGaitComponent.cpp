@@ -170,6 +170,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	if (BalanceComponent && BalanceComponent->IsRagdoll())
 	{
 		ResetForRagdoll();
+		GaitState.LimpStandShare = BalanceComponent->GetHoistShare();
 		return;
 	}
 
@@ -326,9 +327,21 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const float Trigger = bFirstStep ? AedirSetOffStepTriggerCm * ActorScale : (bMoving ? StepTriggerCm : (bTurning ? AedirTurnStepTriggerCm : AedirRestStepTriggerCm) * ActorScale);
 		const float StepSeconds = bMoving ? MovingStepSeconds : AedirPlaceStepSeconds;
 
+		// In the stance the rear foot may stand further back than its place, up on its toes, without stepping back up to it:
+		// only standing still, and only behind its place, is the way back counted the less.
+		const FVector Ahead2D = CreatureOwner->GetActorForwardVector().GetSafeNormal2D();
+		const int32 RearFoot = bRightLead ? 0 : 1;
+		const float RearSlack = bMoving ? 1.f : FMath::Lerp(1.f, FMath::Max(StanceRearToeSlack, 1.f), StaggerAlpha);
 		const auto FootDistance = [&](int32 Foot)
 		{
-			return static_cast<float>((PlantedContact[Foot] - LandingLocation[Foot]).Size2D());
+			FVector Off = PlantedContact[Foot] - LandingLocation[Foot];
+			Off.Z = 0.f;
+			const double Along = FVector::DotProduct(Off, Ahead2D);
+			if (Foot == RearFoot && Along < 0.0)
+			{
+				Off -= Ahead2D * (Along * (1.0 - 1.0 / RearSlack));
+			}
+			return static_cast<float>(Off.Size());
 		};
 
 		// Normally one foot at a time. A foot the body is pulling away from may lift while the other is just coming down.
@@ -355,10 +368,12 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		}
 		else if (bNextMayStep && FootDistance(NextStepFoot) >= Trigger)
 		{
+			LogStep(NextStepFoot, LandingLocation[NextStepFoot], Trigger);
 			BeginStep(NextStepFoot, StepSeconds);
 		}
 		else if (!bFootInAir && bMayOverlap && FootDistance(1 - NextStepFoot) >= Trigger * AedirOutOfTurnStepShare)
 		{
+			LogStep(1 - NextStepFoot, LandingLocation[1 - NextStepFoot], Trigger * AedirOutOfTurnStepShare);
 			BeginStep(1 - NextStepFoot, StepSeconds);
 		}
 	}
@@ -1199,6 +1214,18 @@ void UAedirGaitComponent::CacheLegGeometry()
 		ThighRefLocation[Foot] = ThighRef;
 		LegLengthCm[Foot] = static_cast<float>((CalfRef - ThighRef).Size() + (FootRef - CalfRef).Size());
 		AnkleRefHeightCm = static_cast<float>(FootRef.Z);
+	}
+}
+
+void UAedirGaitComponent::LogStep(int32 Foot, const FVector& Landing, float Trigger) const
+{
+	static const IConsoleVariable* StepLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	if (StepLog && StepLog->GetInt() != 0 && CreatureOwner)
+	{
+		const FVector Off = PlantedContact[Foot] - Landing;
+		const FVector Ahead = CreatureOwner->GetActorForwardVector().GetSafeNormal2D();
+		UE_LOG(LogAedir, Log, TEXT("[Step] %s steps its %s foot: it stood %.1f cm from where it should (%.1f ahead of it, trigger %.1f), moving %.0f cm/s, stance %.2f, fists %.2f"), *GetNameSafe(GetOwner()), Foot == 0 ? TEXT("left") : TEXT("right"),
+			Off.Size2D(), FVector::DotProduct(Off, Ahead), Trigger, GetOwner()->GetVelocity().Size2D(), GaitState.StanceAlpha, FistStanceAlpha);
 	}
 }
 

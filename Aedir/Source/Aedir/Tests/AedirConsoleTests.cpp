@@ -19,5 +19,16 @@ bool FAedirConsoleSuggestionTest::RunTest(const FString& Parameters)
 
 	TestTrue(TEXT("The new commands are known"), AedirConsoleCommands::IsCommand(TEXT("player.removestats health 5")));
 	TestTrue(TEXT("Help lists every command"), AedirConsoleCommands::GetHelp().Num() >= 20);
+
+	// The player's own commands are offered too.
+	const auto Offers = [](const FString& Typed, const TCHAR* Command)
+	{
+		return AedirConsoleCommands::GetSuggestions(Typed).ContainsByPredicate([Command](const FString& Line) { return Line.StartsWith(Command); });
+	};
+	TestTrue(TEXT("he offers Heal"), Offers(TEXT("he"), TEXT("Heal")));
+	TestTrue(TEXT("knock offers Knockdown"), Offers(TEXT("knock"), TEXT("Knockdown")));
+	TestTrue(TEXT("spawne offers SpawnEnemy with its parameters"), Offers(TEXT("spawne"), TEXT("SpawnEnemy <Count>")));
+	TestTrue(TEXT("A typed player command shows how it is written"), Offers(TEXT("knockdown "), TEXT("Knockdown")));
+	TestFalse(TEXT("player.s still offers no player commands"), Offers(TEXT("player.s"), TEXT("ShowStats")));
 	return true;
 }

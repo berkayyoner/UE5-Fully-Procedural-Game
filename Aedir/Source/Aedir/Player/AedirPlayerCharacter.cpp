@@ -542,7 +542,9 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 	const FRotator Want = (Aim - ViewLocation).Rotation();
 	FRotator Control = PlayerController->GetControlRotation();
 	// Down at one lying on the ground, but never steeper than this.
-	const float WantPitch = FMath::Max(static_cast<float>(FRotator::NormalizeAxis(Want.Pitch)), LockOnSteepestPitch);
+	const float WantPitch = FMath::Max(static_cast<float>(FRotator::NormalizeAxis(Want.Pitch)) + LockOnPitchLiftDegrees, LockOnSteepestPitch);
+	static const IConsoleVariable* LockLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	UE_CLOG(GFrameCounter % 60 == 0 && LockLog && LockLog->GetInt() != 0, LogAedir, Log, TEXT("[LockOn] Looking at %s: wanted pitch %.1f, the view at %.1f"), *GetNameSafe(Target), WantPitch, static_cast<float>(FRotator::NormalizeAxis(Control.Pitch)));
 	const FRotator Turned = FMath::RInterpTo(Control, FRotator(FMath::Clamp(WantPitch, MinViewPitch, MaxViewPitch), Want.Yaw, Control.Roll), DeltaSeconds, LockOnTurnSpeed);
 	PlayerController->SetControlRotation(FRotator(Turned.Pitch, Turned.Yaw, Control.Roll));
 }

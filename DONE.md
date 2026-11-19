@@ -563,3 +563,12 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - An enemy bent over someone down stands up again as soon as it leaves off, whatever it leaves off for.
 - Getting up is physical even while aedir.DirectPose shows the standing body posed: the body lifts itself by its own muscles against its full weight, the hips lifted softly (RiseHipShare 0.25, RisingMuscleShare 0.4, RisingWeightShare), and the moves wait for the hips when they trail (GetUpHipTrailFreeCm, GetUpHipTrailStopCm, bPhysicalGetUp). Before, the posed body rose exactly as the moves had it, whatever its muscles.
 - Knockdown takes who and which way: Knockdown [me|nearest|all] [forward|back|left|right].
+- Bare-handed enemies throw whole punches: the fist is drawn right back to the side and swept across past the middle, as a player throws the mouse across (AIFistWindupAcross 1, AIFistThrough). Their punches now go all the way out (1.00 instead of half way); in 70 s they landed 108 times.
+- Bare-handed enemies watch the foe's guard: an arm drawn back past half way leaves that side open, and now and then (AIOpeningChance) they go for it at once with the other hand, round into the open side, mostly at the head; a foe under a tenth of its stamina is pressed harder, the blows coming sooner and more at the head (AIOpening*, AIFoeSpent*).
+- The feet stand wider with the fists up, 44 cm apart instead of 35 (FistStanceWidthMultiplier 3), and in the fight stance (StanceFootWidthMultiplier 2.6).
+- Getting up is a ragdoll hauled up by the hips: the body stays loose, its muscles weak (HoistMuscleShare, HoistLegShare), and a pull on the pelvis lifts it, up and over towards the keys and turning it to face them, the chest drawn up over the hips; a blow weakens the pull and the body sinks under its weight until it comes back, let go it falls back down (bHoistGetUp, Hoist*). Up, it stands where it is and its muscles take it into the standing pose.
+- Locked on, the view looks across at the enemy, not down at him (LockOnAimBelowHeadCm 0, LockOnPitchLiftDegrees).
+- In the stance the rear foot may stand further back than its place, up on its toes, without stepping again and again in the same place (StanceRearToeSlack).
+- Heal fills hunger and thirst too.
+- Knockdown with nothing after it throws down whatever is selected in the console, the player only when nothing is.
+- The console suggests the player's own commands as well (Heal, Knockdown, SpawnEnemy and the rest), with how each is written.

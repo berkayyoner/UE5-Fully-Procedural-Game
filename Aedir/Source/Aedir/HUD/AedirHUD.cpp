@@ -717,18 +717,19 @@ void AAedirHUD::DrawPrompt(const AAedirCreature* Creature)
 
 	// Down and able to get up: which key does it, for the way the body lies.
 	const UAedirBalanceComponent* BalanceComponent = Creature->Balance.Get();
-	if (BalanceComponent && BalanceComponent->bPlayerChoosesGetUp && BalanceComponent->IsReadyToGetUp())
+	if (BalanceComponent && BalanceComponent->bPlayerChoosesGetUp && BalanceComponent->IsReadyToGetUp() && !BalanceComponent->IsHoisting())
 	{
 		const float Scale = AedirUIStyle::ScaleForHeight(static_cast<float>(Canvas->SizeY));
 		const FSlateFontInfo Font = AedirUIStyle::RegularFont(HudPromptFontSize * 1.3f * Scale, 40);
-		const FString Hint = BalanceComponent->GetLyingStyle() == EAedirGetUpStyle::FromFront
+		const FString Hint = BalanceComponent->bHoistGetUp ? TEXT("Hold W A S D   Haul yourself up, towards the keys")
+			: BalanceComponent->GetLyingStyle() == EAedirGetUpStyle::FromFront
 			? TEXT("Hold W A S D   Push up on hands and knees")
 			: TEXT("Hold W A S D   Sit up and stand");
 		AedirUIStyle::DrawText(*Canvas, Hint, Font, FVector2f(static_cast<float>(Canvas->SizeX) * 0.5f, static_cast<float>(Canvas->SizeY) * 0.72f), AedirUIStyle::Ivory, EAedirTextAlign::Center, 1.f);
 	}
 
 	// Getting up: how hard the body still lifts itself, a bar that blows shorten.
-	if (BalanceComponent && BalanceComponent->bPlayerChoosesGetUp && BalanceComponent->IsGettingUp())
+	if (BalanceComponent && BalanceComponent->bPlayerChoosesGetUp && (BalanceComponent->IsGettingUp() || BalanceComponent->IsHoisting()))
 	{
 		const float Scale = AedirUIStyle::ScaleForHeight(static_cast<float>(Canvas->SizeY));
 		const float Lift = FMath::Clamp(BalanceComponent->GetGetUpLift(), 0.f, 1.f);

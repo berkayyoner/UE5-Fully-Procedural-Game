@@ -464,6 +464,48 @@ namespace
 		{ TEXT("physics"), TEXT("physics [0|1]  the bodies' physics on or off (off is how the game runs for now)") },
 	};
 
+	// The player's own console commands (its Exec functions: Heal, Knockdown, SpawnEnemy and the rest), each with how it is
+	// written and, where the build keeps it, the first line of what it does.
+	struct FConsoleExecHelp
+	{
+		FString Verb;
+		FString Usage;
+	};
+
+	const TArray<FConsoleExecHelp>& ConsoleExecCommands()
+	{
+		static TArray<FConsoleExecHelp> Commands;
+		if (!Commands.IsEmpty())
+		{
+			return Commands;
+		}
+		for (TFieldIterator<UFunction> It(AAedirPlayerCharacter::StaticClass(), EFieldIteratorFlags::IncludeSuper); It; ++It)
+		{
+			const UFunction* Function = *It;
+			if (!Function->HasAnyFunctionFlags(FUNC_Exec))
+			{
+				continue;
+			}
+			FString Usage = Function->GetName();
+			for (TFieldIterator<FProperty> Param(Function); Param && Param->HasAnyPropertyFlags(CPF_Parm) && !Param->HasAnyPropertyFlags(CPF_ReturnParm); ++Param)
+			{
+				Usage += FString::Printf(TEXT(" <%s>"), *Param->GetName());
+			}
+#if WITH_METADATA
+			FString Tip = Function->GetMetaData(TEXT("ToolTip"));
+			Tip.Split(TEXT("\n"), &Tip, nullptr);
+			Tip.ReplaceInline(TEXT("\r"), TEXT(""));
+			if (!Tip.IsEmpty())
+			{
+				Usage += TEXT("  ") + Tip.TrimStartAndEnd().Left(110);
+			}
+#endif
+			Commands.Add({ Function->GetName().ToLower(), Usage });
+		}
+		Commands.Sort([](const FConsoleExecHelp& A, const FConsoleExecHelp& B) { return A.Verb < B.Verb; });
+		return Commands;
+	}
+
 	const TCHAR* const ConsoleStatNames[] = { TEXT("health"), TEXT("stamina"), TEXT("magicka"), TEXT("strength"), TEXT("athletics"), TEXT("hunger"), TEXT("thirst"), TEXT("onehanded"), TEXT("twohanded"), TEXT("ranged"), TEXT("destruction"), TEXT("regeneration"), TEXT("illusion"), TEXT("metamorphosis"), TEXT("summon"), TEXT("heavyarmor"), TEXT("lightarmor"), TEXT("smelting"), TEXT("alchemy"), TEXT("enchanting") };
 }
 
@@ -471,6 +513,10 @@ TArray<FString> AedirConsoleCommands::GetHelp()
 {
 	TArray<FString> Lines;
 	for (const FConsoleCommandHelp& Entry : ConsoleCommandHelp)
+	{
+		Lines.Add(Entry.Usage);
+	}
+	for (const FConsoleExecHelp& Entry : ConsoleExecCommands())
 	{
 		Lines.Add(Entry.Usage);
 	}
@@ -498,6 +544,20 @@ TArray<FString> AedirConsoleCommands::GetSuggestions(const FString& Typed)
 				Lines.Add(Entry.Usage);
 			}
 		}
+		// Then the player's own commands, those that start with what is typed first.
+		TArray<FString> Containing;
+		for (const FConsoleExecHelp& Entry : ConsoleExecCommands())
+		{
+			if (Entry.Verb.StartsWith(First))
+			{
+				Lines.Add(Entry.Usage);
+			}
+			else if (!First.Contains(TEXT(".")) && Entry.Verb.Contains(First))
+			{
+				Containing.Add(Entry.Usage);
+			}
+		}
+		Lines.Append(Containing);
 		return Lines;
 	}
 
@@ -525,6 +585,13 @@ TArray<FString> AedirConsoleCommands::GetSuggestions(const FString& Typed)
 
 	// Otherwise how the command is written.
 	for (const FConsoleCommandHelp& Entry : ConsoleCommandHelp)
+	{
+		if (First == Entry.Verb)
+		{
+			Lines.Add(Entry.Usage);
+		}
+	}
+	for (const FConsoleExecHelp& Entry : ConsoleExecCommands())
 	{
 		if (First == Entry.Verb)
 		{

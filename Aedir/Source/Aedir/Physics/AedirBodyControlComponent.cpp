@@ -294,6 +294,12 @@ void UAedirBodyControlComponent::SetLimp(bool bInLimp)
 	}
 }
 
+void UAedirBodyControlComponent::SetHoist(float Share)
+{
+	Hoist = FMath::Clamp(Share, 0.f, 1.f);
+	ApplyMultipliers();
+}
+
 void UAedirBodyControlComponent::SetDead(bool bInDead)
 {
 	if (bDead != bInDead)
@@ -620,7 +626,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const auto Step = [](float Share) { return static_cast<double>(FMath::RoundToInt(Share * 50.f)); };
 	const float DeadNow = bDead ? GetDeadShareNow() : 0.f;
 	const double Key = (bLimp ? 1.0 : 0.0) + (bHipsCarried ? 2.0 : 0.0) + (bAirborne ? 4.0 : 0.0) + (bRising ? 8.0 : 0.0)
-		+ 16.0 * (Step(Upright) + 64.0 * (Step(LeftArmShare) + 64.0 * (Step(RightArmShare) + 64.0 * (Step(LeftLoadShare) + 64.0 * (Step(RightLoadShare) + 64.0 * Step(DeadNow * 10.f))))));
+		+ 16.0 * (Step(Upright) + 64.0 * (Step(LeftArmShare) + 64.0 * (Step(RightArmShare) + 64.0 * (Step(LeftLoadShare) + 64.0 * (Step(RightLoadShare) + 64.0 * Step(DeadNow * 10.f)))))) + 1.0e13 * Step(bLimp ? Hoist : 0.f);
 	// A tuning console variable changed counts as a change too.
 	const float Tuning = CVarAedirBodyPosture.GetValueOnGameThread() + 3.f * CVarAedirBodyGravity.GetValueOnGameThread() + 7.f * CVarAedirBodyFoot.GetValueOnGameThread()
 		+ 13.f * CVarAedirBodyHips.GetValueOnGameThread() + 17.f * CVarAedirBodyRise.GetValueOnGameThread() + 19.f * CVarAedirBodySpine.GetValueOnGameThread();
@@ -634,7 +640,9 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 
 	// A dead body keeps less of its muscles than a living one that is down.
 	const float Limp = bDead ? DeadNow : LimpShare;
-	const float Body = bLimp ? Limp : FMath::Lerp(0.35f, 1.f, Upright);
+	const float Hauled = bLimp && !bDead ? Hoist : 0.f;
+	const float Body = bLimp ? FMath::Lerp(Limp, HoistMuscleShare, Hauled) : FMath::Lerp(0.35f, 1.f, Upright);
+	const float LegBody = bLimp ? FMath::Lerp(Limp, HoistLegShare, Hauled) : Body;
 	const auto Apply = [this](const TArray<FName>& Names, float AngularHz, float LinearHz)
 	{
 		FPhysicsControlMultiplier Multiplier;
@@ -652,8 +660,8 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float Trunk = Soft * (bLimp ? 1.f : TrunkMuscleShare);
 	Apply(SpineControls, SpineHz * Body * Trunk, 0.f);
 	Apply(HeadControls, HeadStrength * Body * Trunk, 0.f);
-	Apply(LeftLegControls, LegStrength * Body * (bBroken[2] && !bLimp ? BrokenShare : 1.f), 0.f);
-	Apply(RightLegControls, LegStrength * Body * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
+	Apply(LeftLegControls, LegStrength * LegBody * (bBroken[2] && !bLimp ? BrokenShare : 1.f), 0.f);
+	Apply(RightLegControls, LegStrength * LegBody * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
 	// A broken arm swings loose; a hurt one keeps at least some of its strength.
 	const float LeftArmHz = ArmHz * (bLimp ? Limp : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);

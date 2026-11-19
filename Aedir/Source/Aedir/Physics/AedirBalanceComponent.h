@@ -512,6 +512,80 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float GetUpRetrySeconds = 0.6f;
 
+	// Getting up hauled up by the hips (bHoistGetUp): the body stays loose, a ragdoll with weak muscles, and a pull on the
+	// pelvis lifts it, up and over towards the way of the keys, turning it to face that way. The pull carries
+	// HoistWeightShare of the body's weight times the lift left after the blows (GetUpLift), plus a spring of
+	// HoistSpringPerSecondSq towards HoistHeightShare of the standing height of the hips, damped by HoistDampingPerSecond;
+	// struck, the lift drops and the body sinks under its own weight until it comes back. Let go, the pull fades over
+	// HoistRampSeconds and the body falls back down. Tired or hurt, the spring and the recovery go at down to
+	// HoistWeakestShare. The trunk is pulled upright at HoistUprightHz and the hips turned to the keys at HoistTurnHz.
+	// Up to HoistDoneHeightShare of the standing height, upright to HoistDoneUpright and slower than HoistDoneSpeedCm for
+	// HoistDoneHoldSeconds, the body is on its feet; its muscles then take it into the standing pose over HoistSettleSeconds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	bool bHoistGetUp = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistWeightShare = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistHeightShare = 0.95f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistSpringPerSecondSq = 18.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistDampingPerSecond = 8.f;
+
+	// The pull never speeds the hips up by more than this beyond carrying the weight, in cm/s².
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistMaxExtraAccel = 700.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistRampSeconds = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0.1", ClampMax="1"))
+	float HoistWeakestShare = 0.5f;
+
+	// How far over towards the keys the hips are pulled, in cm, and how hard across the ground (1/s²).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistKeyLeanCm = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistAcrossSpringPerSecondSq = 10.f;
+
+	// The chest is drawn up over the hips by a spring of HoistChestSpringPerSecondSq, carrying HoistChestCarryShare of the
+	// weight above the belly (the hips carry the rest).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistChestSpringPerSecondSq = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float HoistChestCarryShare = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistUprightHz = 1.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistTurnHz = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistDoneHeightShare = 0.86f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float HoistDoneUpright = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistDoneSpeedCm = 90.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistDoneHoldSeconds = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistSettleSeconds = 0.5f;
+
+	// While the hips are being hauled up: how far the pull has come in, 0 to 1.
+	float GetHoistShare() const { return bHoisting ? HoistDrive : 0.f; }
+	bool IsHoisting() const { return bHoisting; }
+
 	// How far the hips are over towards the way of the keys, in cm in the body frame (X forward, Y right); zero unless
 	// getting up.
 	FVector GetGetUpLeanLocal() const;
@@ -883,12 +957,25 @@ private:
 	void ApplyBodyContacts(bool bRagdoll);
 	void ApplyLegPhysics(bool bRagdoll);
 	void UpdateGetUp(float DeltaTime);
-	// Dev: for a moment after going down, how high the hips rise and how fast the parts move ([Fall] in the log).
+	void StartHoist();
+	void UpdateHoist(float DeltaTime);
+	void StopHoist(const TCHAR* Why);
+	bool bHoisting = false;
+	bool bHoistFinished = false;
+	float HoistDrive = 0.f;
+	float HoistDoneFor = 0.f;
+	float HoistRestFor = 0.f;
+	float ChestAboveHips = 40.f;
+	float HoistSeconds = 0.f;
+	float HoistHighest = 0.f;
+	float HoistSettleLeft = 0.f;
+	FVector HoistAnchor = FVector::ZeroVector;
+	// Dev:for a moment after going down, how high the hips rise and how fast the parts move ([Fall] in the log).
 	void WatchFall(float DeltaTime);
 	void SettleRagdollEntry(float DeltaTime);
 	void LiftLegsOutOfGround();
 	// The ground a body gets up on, under anything loose, any body and anything held or worn.
-	bool TraceStandingGround(const FVector& Start, const FVector& End, FVector& OutHitPoint) const;
+	bool TraceStandingGround(const FVector& Start, const FVector& End, FVector& OutHitPoint, bool bLog = true) const;
 	// Loose things a body stood up in the middle of, passed through until it is off them.
 	void IgnoreLooseThingsAtFeet();
 	void ForgetThingsSteppedOff();

@@ -1492,20 +1492,22 @@ void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, con
 			RotateBone(CSPose, Bone, ActorRotationToMesh(Rotation.Quaternion()));
 		}
 	};
-	const float BackPerBone = BoneNameSet.Spine.Num() > 0 ? LimpBackBowDegrees / BoneNameSet.Spine.Num() : 0.f;
+	// Hauled up by the hips, the muscles pull the hips, the knees, the back and the neck straight, towards standing.
+	const float Slack = 1.f - FMath::Clamp(GaitData.LimpStandShare, 0.f, 1.f) * 0.85f;
+	const float BackPerBone = BoneNameSet.Spine.Num() > 0 ? LimpBackBowDegrees * Slack / BoneNameSet.Spine.Num() : 0.f;
 	for (const FName& Spine : BoneNameSet.Spine)
 	{
 		Turn(Spine, FRotator(-BackPerBone, 0.f, 0.f));
 	}
-	Turn(BoneNameSet.Neck, FRotator(-LimpNeckBowDegrees, 0.f, 0.f));
+	Turn(BoneNameSet.Neck, FRotator(-LimpNeckBowDegrees * Slack, 0.f, 0.f));
 	Turn(BoneNameSet.LeftHumerus, FRotator(0.f, 0.f, ArmRestAdductionLeft));
 	Turn(BoneNameSet.RightHumerus, FRotator(0.f, 0.f, ArmRestAdductionRight));
 	Turn(BoneNameSet.LeftRadius, FRotator(LimpElbowBendDegrees, 0.f, 0.f));
 	Turn(BoneNameSet.RightRadius, FRotator(LimpElbowBendDegrees, 0.f, 0.f));
-	Turn(BoneNameSet.LeftFemur, FRotator(LimpHipBendDegrees, 0.f, 0.f));
-	Turn(BoneNameSet.RightFemur, FRotator(LimpHipBendDegrees, 0.f, 0.f));
-	Turn(BoneNameSet.LeftTibia, FRotator(-LimpKneeBendDegrees, 0.f, 0.f));
-	Turn(BoneNameSet.RightTibia, FRotator(-LimpKneeBendDegrees, 0.f, 0.f));
+	Turn(BoneNameSet.LeftFemur, FRotator(LimpHipBendDegrees * Slack, 0.f, 0.f));
+	Turn(BoneNameSet.RightFemur, FRotator(LimpHipBendDegrees * Slack, 0.f, 0.f));
+	Turn(BoneNameSet.LeftTibia, FRotator(-LimpKneeBendDegrees * Slack, 0.f, 0.f));
+	Turn(BoneNameSet.RightTibia, FRotator(-LimpKneeBendDegrees * Slack, 0.f, 0.f));
 }
 
 UAedirGaitComponent* UAedirProceduralAnimInstance::GetGaitComponent() const

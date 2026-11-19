@@ -790,6 +790,8 @@ void UAedirDevTools::Heal(AAedirPlayerCharacter* Player, const FString& Args)
 	}
 
 	Player->Stats->RestoreAll();
+	// Fed and watered as well.
+	Player->Stats->SetNeeds(100.f, 100.f);
 	// The body too: wounds closed, broken bones whole, limbs sound.
 	if (Player->Wounds)
 	{
@@ -802,7 +804,7 @@ void UAedirDevTools::Heal(AAedirPlayerCharacter* Player, const FString& Args)
 	{
 		Player->Combat->ClearLimbInjuries();
 	}
-	DevToolsReport(TEXT("Health, mana and stamina restored, wounds and broken bones healed"));
+	DevToolsReport(TEXT("Health, mana, stamina, hunger and thirst restored, wounds and broken bones healed"));
 }
 
 void UAedirDevTools::Hurt(AAedirPlayerCharacter* Player, const FString& Args)
@@ -978,7 +980,7 @@ void UAedirDevTools::Help(AAedirPlayerCharacter* Player, const FString& Args)
 	DevToolsReport(TEXT("  SpawnEnemy <count 1-6> <armed 0|1>: bandits facing the player"));
 	DevToolsReport(TEXT("  KillAll: lethal damage to every other creature"));
 	DevToolsReport(TEXT("  SetWeatherType <Sunny|ExtraSunny|Cloudy|Rainy|Stormy|Thunderstorm|Snowy>"));
-	DevToolsReport(TEXT("  Heal: refill health, mana and stamina"));
+	DevToolsReport(TEXT("  Heal: refill health, mana, stamina, hunger and thirst, close wounds"));
 	DevToolsReport(TEXT("  Hurt <amount>: damage through the stats component"));
 	DevToolsReport(TEXT("  God: toggle invulnerability"));
 	DevToolsReport(TEXT("  GiveSkill <SkillName or index> <amount>"));
@@ -990,7 +992,7 @@ void UAedirDevTools::Help(AAedirPlayerCharacter* Player, const FString& Args)
 	DevToolsReport(TEXT("  SetStat <Strength|Athletism|Health|Stamina|Mana> <value>: change a stat to see how the body reacts"));
 	DevToolsReport(TEXT("  Stats: print the player's stats"));
 	DevToolsReport(TEXT("  Push <strength 0-1>: shove the player's balance forward, 1 is a knockdown push"));
-	DevToolsReport(TEXT("  Knockdown [me|nearest|all] [forward|back|left|right]: throw bodies off their feet, the player by default"));
+	DevToolsReport(TEXT("  Knockdown [me|nearest|all|selected] [forward|back|left|right]: throw bodies off their feet, the clicked one or else the player by default"));
 	DevToolsReport(TEXT("  FallTest <height cm>: lift the player and let them fall"));
 	DevToolsReport(TEXT("  GaitInfo <seconds> [interval]: log foot heights, foot positions and reach to the output log"));
 	DevToolsReport(TEXT("  ReachTest <delay>, CrouchTest, AutoMove <forward> <right> [run], ShotCam <yaw> [dist] [height]|off, PlaceItem <Id> <forward> <right>"));
@@ -1074,14 +1076,16 @@ void UAedirDevTools::Push(AAedirPlayerCharacter* Player, const FString& Args)
 
 void UAedirDevTools::Knockdown(AAedirPlayerCharacter* Player, const FString& Args)
 {
-	// Knockdown [me|nearest|all] [forward|back|left|right]: throws a body off its feet the way given, the player's own by default.
+	// Knockdown [me|nearest|all|selected] [forward|back|left|right]: throws a body off its feet the way given; by default the
+	// one selected in the console (clicked on), or else the player's own.
 	const TArray<FString> Tokens = DevToolsTokens(Args);
-	FString Who = TEXT("me");
+	AAedirCreature* Selected = Cast<AAedirCreature>(Player->GetConsoleSelection());
+	FString Who = Selected ? TEXT("selected") : TEXT("me");
 	FString Way = TEXT("forward");
 	for (const FString& Token : Tokens)
 	{
 		const FString Word = Token.ToLower();
-		if (Word == TEXT("me") || Word == TEXT("nearest") || Word == TEXT("all"))
+		if (Word == TEXT("me") || Word == TEXT("nearest") || Word == TEXT("all") || (Word == TEXT("selected") && Selected))
 		{
 			Who = Word;
 		}
@@ -1091,7 +1095,7 @@ void UAedirDevTools::Knockdown(AAedirPlayerCharacter* Player, const FString& Arg
 		}
 		else
 		{
-			DevToolsReport(TEXT("Usage: Knockdown [me|nearest|all] [forward|back|left|right]"));
+			DevToolsReport(TEXT("Usage: Knockdown [me|nearest|all|selected] [forward|back|left|right] (selected needs something clicked)"));
 			return;
 		}
 	}
@@ -1099,6 +1103,10 @@ void UAedirDevTools::Knockdown(AAedirPlayerCharacter* Player, const FString& Arg
 	if (Who == TEXT("me"))
 	{
 		Bodies.Add(Player);
+	}
+	else if (Who == TEXT("selected"))
+	{
+		Bodies.Add(Selected);
 	}
 	else
 	{
@@ -1132,7 +1140,7 @@ void UAedirDevTools::Knockdown(AAedirPlayerCharacter* Player, const FString& Arg
 		const FVector Toward = Way == TEXT("back") ? -Body->GetActorForwardVector() : Way == TEXT("left") ? -Body->GetActorRightVector() : Way == TEXT("right") ? Body->GetActorRightVector() : Body->GetActorForwardVector();
 		Body->Balance->ApplyBalanceImpact(Toward, 2.f);
 	}
-	DevToolsReport(FString::Printf(TEXT("Knocked down %d %s"), Bodies.Num(), *Way));
+	DevToolsReport(FString::Printf(TEXT("Knocked down %d %s (%s)"), Bodies.Num(), *Way, Bodies.Num() == 1 && Bodies[0] ? *Bodies[0]->GetName() : *Who));
 }
 
 void UAedirDevTools::GaitInfo(AAedirPlayerCharacter* Player, const FString& Args)
