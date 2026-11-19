@@ -536,13 +536,18 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 	{
 		Aim = TargetMesh->GetBoneLocation(TEXT("head")) - FVector(0.f, 0.f, LockOnAimBelowHeadCm);
 	}
-	FVector ViewLocation;
-	FRotator ViewRotation;
-	PlayerController->GetPlayerViewPoint(ViewLocation, ViewRotation);
-	const FRotator Want = (Aim - ViewLocation).Rotation();
+	// Measured from the player's own head, not from the camera: the camera rises and sinks with the view's tilt, and
+	// measured from it the view would chase itself up or down.
+	const FVector Pivot = GetMesh() && GetMesh()->GetBoneIndex(TEXT("head")) != INDEX_NONE ? GetMesh()->GetBoneLocation(TEXT("head")) : GetPawnViewLocation();
+	// Close in, the height between the two counts as if seen from LockOnLevelDistanceCm away, or the view would tip down
+	// steeply at a foe at arm's length.
+	const FVector ToAim = Aim - Pivot;
+	const double Across = FMath::Max(ToAim.Size2D(), static_cast<double>(LockOnLevelDistanceCm));
+	FRotator Want = ToAim.Rotation();
+	Want.Pitch = FMath::RadiansToDegrees(FMath::Atan2(ToAim.Z, Across));
 	FRotator Control = PlayerController->GetControlRotation();
 	// Down at one lying on the ground, but never steeper than this.
-	const float WantPitch = FMath::Max(static_cast<float>(FRotator::NormalizeAxis(Want.Pitch)) + LockOnPitchLiftDegrees, LockOnSteepestPitch);
+	const float WantPitch = FMath::Clamp(static_cast<float>(FRotator::NormalizeAxis(Want.Pitch)) + LockOnPitchLiftDegrees, LockOnSteepestPitch, LockOnHighestPitch);
 	static const IConsoleVariable* LockLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
 	UE_CLOG(GFrameCounter % 60 == 0 && LockLog && LockLog->GetInt() != 0, LogAedir, Log, TEXT("[LockOn] Looking at %s: wanted pitch %.1f, the view at %.1f"), *GetNameSafe(Target), WantPitch, static_cast<float>(FRotator::NormalizeAxis(Control.Pitch)));
 	const FRotator Turned = FMath::RInterpTo(Control, FRotator(FMath::Clamp(WantPitch, MinViewPitch, MaxViewPitch), Want.Yaw, Control.Roll), DeltaSeconds, LockOnTurnSpeed);
@@ -2215,6 +2220,50 @@ void AAedirPlayerCharacter::ArmBones(const FString& Label)
 		Line += FString::Printf(TEXT(" | lead %d grip %d chest yaw %.0f pitch %.0f roll %.0f"), Combat && Combat->IsLeadFootRight() ? 1 : 0, Combat && Combat->IsTwoHandGrip() ? 1 : 0, Chest.Yaw, Chest.Pitch, Chest.Roll);
 	}
 	UE_LOG(LogAedir, Display, TEXT("[ArmBones] %s%s"), *Label, *Line);
+}
+
+void AAedirPlayerCharacter::ClothInfo()
+{
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (FVector::Dist(It->GetActorLocation(), GetActorLocation()) > 1500.f)
+		{
+			continue;
+		}
+		TArray<USkeletalMeshComponent*> Parts;
+		It->GetComponents<USkeletalMeshComponent>(Parts, true);
+		TArray<AActor*> Held;
+		It->GetAttachedActors(Held, true, true);
+		for (AActor* Thing : Held)
+		{
+			TArray<USkeletalMeshComponent*> More;
+			Thing->GetComponents<USkeletalMeshComponent>(More, true);
+			Parts.Append(More);
+		}
+		for (const USkeletalMeshComponent* Part : Parts)
+		{
+			const USkeletalMesh* Model = Part ? Part->GetSkeletalMeshAsset() : nullptr;
+			if (!Model || Model->GetMeshClothingAssets().IsEmpty())
+			{
+				continue;
+			}
+			const TMap<int32, FClothSimulData>& Sim = Part->GetCurrentClothingData_GameThread();
+			int32 Points = 0;
+			float Furthest = 0.f;
+			FVector Mean = FVector::ZeroVector;
+			for (const TPair<int32, FClothSimulData>& Entry : Sim)
+			{
+				Points += Entry.Value.Positions.Num();
+				for (const FVector3f& At : Entry.Value.Positions)
+				{
+					Mean += (FVector)At;
+				}
+			}
+			Mean /= FMath::Max(Points, 1);
+			UE_LOG(LogAedir, Display, TEXT("[Cloth] %s %s on %s: simulation %d, suspended %d, disabled %d, leader %s, visible %d, %d cloth points, their middle %s"), *It->GetName(), *Model->GetName(), *GetNameSafe(Part->GetOwner()),
+				Part->GetClothingSimulation() ? 1 : 0, Part->IsClothingSimulationSuspended() ? 1 : 0, Part->bDisableClothSimulation ? 1 : 0, *GetNameSafe(Part->LeaderPoseComponent.Get()), Part->IsVisible() ? 1 : 0, Points, *Mean.ToCompactString());
+		}
+	}
 }
 
 void AAedirPlayerCharacter::CamInfoLength()

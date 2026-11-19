@@ -33,9 +33,9 @@ namespace
 	const TCHAR* const ImportScannedPath = TEXT("/Game/Aedir/Materials/M_AedirScanned.M_AedirScanned");
 	const TCHAR* const ImportBodyPhysicsPath = TEXT("/Game/Characters/Mannequins/Rigs/PA_Mannequin.PA_Mannequin");
 
-	// A worn piece's first section is made cloth: skinned to the body where it lies on it, and let hang free of its skinned
-	// place by up to HemCm at the hem (below HemFromCm) and CuffCm at the ends of the sleeves (out past CuffFromCm across),
-	// the body's capsules keeping it off the body.
+	// A worn piece's first section is made cloth: held to the body at the top, and let hang free of its skinned place the
+	// more the further down (to HemCm at the hem, from HemFromCm) and out along the sleeves (to CuffCm at the cuffs, from
+	// CuffFromCm across), the body's capsules keeping it off the body.
 	int32 MakeCloth(const FString& MeshPath, float HemFromCm, float HemCm, float CuffFromCm, float CuffCm)
 	{
 		USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath);
@@ -97,8 +97,9 @@ namespace
 			for (int32 Point = 0; Point < Physical.Vertices.Num(); ++Point)
 			{
 				const FVector3f& At = Physical.Vertices[Point];
-				const float Hem = FMath::Clamp((HemFromCm - At.Z) / 12.f, 0.f, 1.f) * HemCm;
-				const float Cuff = FMath::Clamp((FMath::Abs(At.X) - CuffFromCm) / 10.f, 0.f, 1.f) * CuffCm;
+				// Held at the collar and shoulders, freer the further down the body and out along the sleeves.
+				const float Hem = FMath::Pow(FMath::Clamp((HemFromCm - At.Z) / FMath::Max(HemFromCm - 88.f, 1.f), 0.f, 1.f), 1.3f) * HemCm;
+				const float Cuff = FMath::Pow(FMath::Clamp((FMath::Abs(At.X) - CuffFromCm) / FMath::Max(48.f - CuffFromCm, 1.f), 0.f, 1.f), 1.2f) * CuffCm;
 				MaxDistance.Values[Point] = FMath::Max(Hem, Cuff);
 				Loose += MaxDistance.Values[Point] > 0.f ? 1 : 0;
 			}
@@ -190,11 +191,12 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 		return bDone ? 0 : 1;
 	}
 
-	// -Cloth=<skeletal mesh path> [-HemFrom=102 -Hem=5 -CuffFrom=36 -Cuff=6]: its first section made cloth.
+	// -Cloth=<skeletal mesh path> [-HemFrom=140 -Hem=8 -CuffFrom=22 -Cuff=8]: its first section made cloth, free of where its
+	// bones put it from nothing at HemFrom down to Hem cm at the hem, and from nothing at CuffFrom across to Cuff at the cuffs.
 	FString ClothMesh;
 	if (FParse::Value(*Params, TEXT("Cloth="), ClothMesh))
 	{
-		float HemFrom = 102.f, Hem = 5.f, CuffFrom = 36.f, Cuff = 6.f;
+		float HemFrom = 140.f, Hem = 8.f, CuffFrom = 22.f, Cuff = 8.f;
 		FParse::Value(*Params, TEXT("HemFrom="), HemFrom);
 		FParse::Value(*Params, TEXT("Hem="), Hem);
 		FParse::Value(*Params, TEXT("CuffFrom="), CuffFrom);

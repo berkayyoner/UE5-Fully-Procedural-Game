@@ -166,13 +166,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float FightViewPitch = -10.f;
 
-	// Locked on, the view looks at this much below the enemy's head, tipped up by LockOnPitchLiftDegrees so it looks across
-	// at him rather than down from above, and never steeper down than LockOnSteepestPitch.
+	// Locked on, the view looks from the player's head at this much below the enemy's head, tipped by
+	// LockOnPitchLiftDegrees (down when negative), never steeper down than LockOnSteepestPitch nor higher up than
+	// LockOnHighestPitch.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	float LockOnAimBelowHeadCm = 0.f;
+	float LockOnAimBelowHeadCm = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
-	float LockOnPitchLiftDegrees = 4.f;
+	float LockOnPitchLiftDegrees = -4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnHighestPitch = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnLevelDistanceCm = 220.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float LockOnSteepestPitch = -35.f;
@@ -469,6 +476,11 @@ public:
 	// Logs how long the camera arm is now and how far it has drawn back for a fight.
 	UFUNCTION(Exec)
 	void CamInfoLength();
+
+	// Dev: whether the clothes worn by the player and those near are simulated as cloth, and how far the loose cloth stands
+	// off where the bones alone would put it.
+	UFUNCTION(Exec)
+	void ClothInfo();
 	FVector2D DevHeldKeys = FVector2D::ZeroVector;
 	float DevHeldKeysLeft = 0.f;
 
