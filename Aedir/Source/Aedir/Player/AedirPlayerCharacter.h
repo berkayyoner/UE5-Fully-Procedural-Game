@@ -448,6 +448,12 @@ public:
 	UFUNCTION(Exec)
 	void ArmBones(const FString& Label);
 
+	// Holds the walking keys for this many seconds as the player would, forward and right each -1 to 1 (W is 1 0, D is 0 1).
+	UFUNCTION(Exec)
+	void HoldKeys(float Forward, float Right, float Seconds);
+	FVector2D DevHeldKeys = FVector2D::ZeroVector;
+	float DevHeldKeysLeft = 0.f;
+
 	// Presses (1) or lets go (0) a mouse button for the fists as the player would: left button 1, right button 0.
 	UFUNCTION(Exec)
 	void FistButton(int32 LeftButton, int32 Down);

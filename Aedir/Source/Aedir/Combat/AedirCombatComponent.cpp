@@ -4103,7 +4103,12 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 	if (!World || DeltaTime <= KINDA_SMALL_NUMBER || !GetStrikingSegment(Hand, From, To, Radius))
 	{
 		bStrikePrevValid[Index] = false;
+		StrikeTrail[Index].Reset();
 		return;
+	}
+	if (!bStrikePrevValid[Index] || StrikePrevItem[Index].Get() != Item)
+	{
+		StrikeTrail[Index].Reset();
 	}
 
 	// Only the path the real weapon took this frame strikes: it lands where it is seen to land, and nowhere short of it.
@@ -4132,8 +4137,25 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 		return;
 	}
 
-	const FVector FromVelocity = (From - PrevFrom) / DeltaTime;
-	const FVector ToVelocity = (To - PrevTo) / DeltaTime;
+	// The speed of each end over at least StrikeSpeedSpanSeconds: a real blow keeps its speed that long, while a part jumping
+	// in one frame, from a turn of the body or the physics putting it right, does not, and is not taken for a punch.
+	FVector FromVelocity = (From - PrevFrom) / DeltaTime;
+	FVector ToVelocity = (To - PrevTo) / DeltaTime;
+	{
+		const double Time = World->GetTimeSeconds();
+		TArray<FAedirStrikeTrace>& Trail = StrikeTrail[Index];
+		Trail.Add({ Time, From, To });
+		while (Trail.Num() > 2 && Time - Trail[1].Time >= StrikeSpeedSpanSeconds)
+		{
+			Trail.RemoveAt(0);
+		}
+		const double Span = Time - Trail[0].Time;
+		if (Trail.Num() > 1 && Span > KINDA_SMALL_NUMBER)
+		{
+			FromVelocity = (From - Trail[0].From) / Span;
+			ToVelocity = (To - Trail[0].To) / Span;
+		}
+	}
 	{
 		const double Time = World->GetTimeSeconds();
 		TArray<TPair<double, FVector>>& Recent = RecentStrikeVelocity[Index];

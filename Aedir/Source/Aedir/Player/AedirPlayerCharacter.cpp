@@ -341,21 +341,21 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		{
 			MoveLocal(MoveInput.GetClampedToMaxSize(1.0));
 		}
-		// Down on the ground the same keys get the body up: W off the back, S from face down. On the way up they keep the hips
-		// balanced over the feet, pushing them the way each key goes.
-		if (Balance && Balance->IsRagdoll() && FMath::Abs(MoveInput.Y) > 0.5)
+		// Down on the ground the walking keys get the body up: held, it lifts its hips up and over to the way they go, as seen
+		// from the camera, and turns round to face it; let go, it sinks back.
+		DevHeldKeysLeft = FMath::Max(DevHeldKeysLeft - DeltaSeconds, 0.f);
+		const FVector2D Keys = DevHeldKeysLeft > 0.f ? FVector2D(DevHeldKeys.Y, DevHeldKeys.X) : FVector2D(MoveInput.X, MoveInput.Y);
+		if (Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()) && Keys.Size() > 0.5)
 		{
-			Balance->RequestGetUp(MoveInput.Y > 0.0);
-		}
-		if (Balance && Balance->IsGettingUp())
-		{
-			Balance->SetGetUpSteer(FVector2D(MoveInput.Y, MoveInput.X).GetClampedToMaxSize(1.0));
+			const FRotator CameraYaw(0.f, GetControlRotation().Yaw, 0.f);
+			const FVector KeyWay = FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::X) * Keys.Y + FRotationMatrix(CameraYaw).GetUnitAxis(EAxis::Y) * Keys.X;
+			Balance->RequestGetUp(KeyWay.GetClampedToMaxSize(1.0));
 		}
 		// For tests left to run by themselves: the body gets up on its own whenever it can, the way it lies.
 		static const IConsoleVariable* AutoGetUp = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.AutoGetUp"));
 		if (AutoGetUp && AutoGetUp->GetInt() != 0 && Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()))
 		{
-			Balance->RequestGetUp(Balance->GetLyingStyle() != EAedirGetUpStyle::FromFront);
+			Balance->RequestGetUp(FVector::ZeroVector);
 		}
 	}
 
@@ -2208,6 +2208,13 @@ void AAedirPlayerCharacter::ArmBones(const FString& Label)
 		Line += FString::Printf(TEXT(" | lead %d grip %d chest yaw %.0f pitch %.0f roll %.0f"), Combat && Combat->IsLeadFootRight() ? 1 : 0, Combat && Combat->IsTwoHandGrip() ? 1 : 0, Chest.Yaw, Chest.Pitch, Chest.Roll);
 	}
 	UE_LOG(LogAedir, Display, TEXT("[ArmBones] %s%s"), *Label, *Line);
+}
+
+void AAedirPlayerCharacter::HoldKeys(float Forward, float Right, float Seconds)
+{
+	DevHeldKeys = FVector2D(Forward, Right);
+	DevHeldKeysLeft = Seconds;
+	UE_LOG(LogAedir, Display, TEXT("[Dev] Holding the keys forward %.1f right %.1f for %.1f s, camera yaw %.0f"), Forward, Right, Seconds, GetControlRotation().Yaw);
 }
 
 void AAedirPlayerCharacter::FistButton(int32 LeftButton, int32 Down)

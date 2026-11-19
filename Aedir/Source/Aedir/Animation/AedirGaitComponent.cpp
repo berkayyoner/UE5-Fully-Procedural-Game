@@ -1009,17 +1009,17 @@ void UAedirGaitComponent::PoseGetUp(const FTransform& ActorTransform, float Bott
 	}
 	const FRotator HipRotation = HipTurn.Rotator();
 	GaitState.HipOffsetZ = FMath::Lerp(GaitState.HipOffsetZ, static_cast<float>(HipOffset.Z), Weight);
-	// Off its balance the hips stand off to that side, and tip with it.
-	const FVector Sway = BalanceComponent->GetGetUpSwayLocal();
-	GaitState.HipForwardOffset = FMath::Lerp(GaitState.HipForwardOffset, static_cast<float>(HipOffset.X + Sway.X), Weight);
-	GaitState.HipLateralOffset = FMath::Lerp(GaitState.HipLateralOffset, static_cast<float>(HipOffset.Y + Sway.Y), Weight);
+	// Lifting towards the way of the keys, the hips go over that way, and the trunk leans after them.
+	const FVector Lean = BalanceComponent->GetGetUpLeanLocal();
+	GaitState.HipForwardOffset = FMath::Lerp(GaitState.HipForwardOffset, static_cast<float>(HipOffset.X + Lean.X), Weight);
+	GaitState.HipLateralOffset = FMath::Lerp(GaitState.HipLateralOffset, static_cast<float>(HipOffset.Y + Lean.Y), Weight);
 	GaitState.PelvisRotation = FMath::Lerp(GaitState.PelvisRotation, HipRotation, Weight);
 	GaitState.PelvisRollDegrees *= 1.f - Weight;
 	GaitState.SpineLeanPitch = FMath::Lerp(GaitState.SpineLeanPitch, Key.SpinePitch, Weight);
 	GaitState.SpineLeanRoll *= 1.f - Weight;
-	// The trunk leans the way the hips are going over, forward a negative pitch.
-	GaitState.SpineLeanRoll += static_cast<float>(Sway.Y) * GetUpSwayLeanDegreesPerCm * Weight;
-	GaitState.SpineLeanPitch -= static_cast<float>(Sway.X) * GetUpSwayLeanDegreesPerCm * Weight;
+	// Forward is a negative pitch.
+	GaitState.SpineLeanRoll += static_cast<float>(Lean.Y) * GetUpLeanDegreesPerCm * Weight;
+	GaitState.SpineLeanPitch -= static_cast<float>(Lean.X) * GetUpLeanDegreesPerCm * Weight;
 	GaitState.SpineTwistYaw *= 1.f - Weight;
 	GaitState.SpineCounterRollDegrees *= 1.f - Weight;
 	GaitState.HeadStabilizeRollDegrees *= 1.f - Weight;
@@ -1404,6 +1404,13 @@ void UAedirGaitComponent::LogLegs()
 	// How far the shoulders are turned against the body: the line across them, seen from above.
 	const FVector Across = Body.InverseTransformVectorNoScale(Mesh->GetBoneLocation(TEXT("upperarm_r")) - Mesh->GetBoneLocation(TEXT("upperarm_l")));
 	const float ChestTurn = FMath::RadiansToDegrees(FMath::Atan2(static_cast<float>(-Across.X), static_cast<float>(Across.Y)));
+	// How fast the chest turns at most, in degrees a second.
+	const float ChestDt = GetWorld()->GetDeltaSeconds();
+	if (LegLogFrames >= 0 && ChestDt > KINDA_SMALL_NUMBER)
+	{
+		LegLogChestSpeed = FMath::Max(LegLogChestSpeed, FMath::Abs(FMath::FindDeltaAngleDegrees(LegLogChestLast, ChestTurn)) / ChestDt);
+	}
+	LegLogChestLast = ChestTurn;
 	LegLogChestMin = LegLogFrames <= 0 ? ChestTurn : FMath::Min(LegLogChestMin, ChestTurn);
 	LegLogChestMax = LegLogFrames <= 0 ? ChestTurn : FMath::Max(LegLogChestMax, ChestTurn);
 	LegLogFrames = FMath::Max(LegLogFrames, 0) + 1;
@@ -1413,11 +1420,12 @@ void UAedirGaitComponent::LogLegs()
 	}
 	const auto Local = [&Body](const FVector& World) { return Body.InverseTransformPositionNoScale(World); };
 	const FVector FL = Local(Foot[0]), FR = Local(Foot[1]), KL = Local(Knee[0]), KR = Local(Knee[1]);
-	UE_LOG(LogAedir, Log, TEXT("[Legs] %s stance %.2f fists %.2f lead %d dt %.5f | feet L %.1f %.1f R %.1f %.1f apart %.1f ahead %.1f | knees L %.1f R %.1f apart %.1f | thigh-calf %.1f %.1f calf-foot %.1f %.1f hip-foot %.1f %.1f | path %.2f %.2f net %.2f %.2f | shake knees %.2f %.2f feet %.2f %.2f | chest turn %.0f to %.0f | ball low %.1f %.1f scrape %.1f %.1f | jitter %.3f %.3f lag %.2f %.2f | looked past %d | scrape swinging %.1f %.1f leash %.1f %.1f | stepping ball low pose %.1f %.1f body %.1f %.1f"),
+	UE_LOG(LogAedir, Log, TEXT("[Legs] %s stance %.2f fists %.2f lead %d dt %.5f | feet L %.1f %.1f R %.1f %.1f apart %.1f ahead %.1f | knees L %.1f R %.1f apart %.1f | thigh-calf %.1f %.1f calf-foot %.1f %.1f hip-foot %.1f %.1f | path %.2f %.2f net %.2f %.2f | shake knees %.2f %.2f feet %.2f %.2f | chest turn %.0f to %.0f | ball low %.1f %.1f scrape %.1f %.1f | jitter %.3f %.3f lag %.2f %.2f | looked past %d | scrape swinging %.1f %.1f leash %.1f %.1f | stepping ball low pose %.1f %.1f body %.1f %.1f | chest speed %.0f"),
 		*Owner->GetName(), GaitState.StanceAlpha, FistStanceAlpha, CreatureOwner && CreatureOwner->Combat && CreatureOwner->Combat->IsLeadFootRight() ? 1 : 0, GetWorld()->GetDeltaSeconds(), FL.X, FL.Y, FR.X, FR.Y, FR.Y - FL.Y, FR.X - FL.X, KL.Y, KR.Y, KR.Y - KL.Y,
 		FVector::Dist(Thigh[0], Knee[0]), FVector::Dist(Thigh[1], Knee[1]), FVector::Dist(Knee[0], Foot[0]), FVector::Dist(Knee[1], Foot[1]), FVector::Dist(Thigh[0], Foot[0]), FVector::Dist(Thigh[1], Foot[1]),
 		LegLogPath[0], LegLogPath[1], FVector::Dist(Foot[0], LegLogStart[0]), FVector::Dist(Foot[1], LegLogStart[1]),
-		LegLogShake[0], LegLogShake[1], LegLogShake[2], LegLogShake[3], LegLogChestMin, LegLogChestMax, LegLogBallLow[0], LegLogBallLow[1], LegLogScrape[0], LegLogScrape[1], LegLogJitter[0], LegLogJitter[1], LegLogLagSize[0], LegLogLagSize[1], LegLogLookedPast, LegLogScrapeSwinging[0], LegLogScrapeSwinging[1], LegLogLeash[0], LegLogLeash[1], LegLogSwingLowPose[0], LegLogSwingLowPose[1], LegLogSwingLowBody[0], LegLogSwingLowBody[1]);
+		LegLogShake[0], LegLogShake[1], LegLogShake[2], LegLogShake[3], LegLogChestMin, LegLogChestMax, LegLogBallLow[0], LegLogBallLow[1], LegLogScrape[0], LegLogScrape[1], LegLogJitter[0], LegLogJitter[1], LegLogLagSize[0], LegLogLagSize[1], LegLogLookedPast, LegLogScrapeSwinging[0], LegLogScrapeSwinging[1], LegLogLeash[0], LegLogLeash[1], LegLogSwingLowPose[0], LegLogSwingLowPose[1], LegLogSwingLowBody[0], LegLogSwingLowBody[1], LegLogChestSpeed);
+	LegLogChestSpeed = 0.f;
 	for (float& Shake : LegLogShake)
 	{
 		Shake = 0.f;

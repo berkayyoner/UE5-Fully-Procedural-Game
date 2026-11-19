@@ -451,6 +451,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
 	float KickCooldown = 1.2f;
 
+	// A fist's or a weapon's speed is taken over at least this many seconds, never from a single frame alone.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
+	float StrikeSpeedSpanSeconds = 0.025f;
+
 	// The wind-up of a kick: the foot is drawn this far back of the hip and up to this far below it, the knee bent, before the
 	// leg swings up through the front to where the camera looks.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
@@ -797,6 +801,15 @@ private:
 	// How fast the striking end of each hand went over the last frames, with when: a blow is counted at the speed it came
 	// in at, which the frame it is stopped against the body no longer shows.
 	TArray<TPair<double, FVector>> RecentStrikeVelocity[2];
+	// Where each hand's striking segment was over the last moments (time, near end, far end), so its speed is taken over a
+	// span long enough that a part jumping for a single frame is not taken for a blow.
+	struct FAedirStrikeTrace
+	{
+		double Time = 0.0;
+		FVector From = FVector::ZeroVector;
+		FVector To = FVector::ZeroVector;
+	};
+	TArray<FAedirStrikeTrace> StrikeTrail[2];
 	void ApplyRemoteArmState(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);
 	void PublishArmState(EAedirHand Hand, const FAedirArmDynamics& Arm);
 	void SendArmAimToServer(float DeltaTime);

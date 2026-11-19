@@ -37,11 +37,8 @@ namespace
 {
 	// How long after going down the fall is watched for the dev log.
 	constexpr float AedirFallWatchSeconds = 1.5f;
-	// A body nobody plays steers its hips back by itself: a share of full steer per cm off, and per cm/s it slips.
-	constexpr float AedirGetUpSelfSteerPerCm = 0.12f;
-	constexpr float AedirGetUpSelfSteerPerCmPerSecond = 0.05f;
-	// How fast the wandering push on the hips changes, in waves a second.
-	constexpr float AedirGetUpWanderRate = 0.7f;
+	// How fast the hips go over towards the way of the keys, and back.
+	constexpr float AedirGetUpLeanInterpSpeed = 4.f;
 	// How many loose things or bodies the ground a body stands up on is looked for past.
 	constexpr int32 AedirStandGroundTries = 6;
 	constexpr float AedirFallFlyingSpeed = 1000.f;
@@ -458,7 +455,8 @@ float UAedirBalanceComponent::GetUprightStrength() const
 	const float Health = Stats ? FMath::Clamp(Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f), 0.f, 1.f) : 1.f;
 	// The less breath it has left, all the way from full to none, the weaker it stands and holds its trunk.
 	return FMath::Lerp(UprightExhaustedShare, 1.f, Stamina) * FMath::Lerp(UprightDyingShare, 1.f, Health)
-		* (1.f - 0.5f * GetDazeFactor()) * FMath::Lerp(1.f, GetUpMuscleShare, GetGetUpShare());
+		* (1.f - 0.5f * GetDazeFactor()) * FMath::Lerp(1.f, GetUpMuscleShare, GetGetUpShare())
+		* (IsGettingUp() ? FMath::Lerp(GetUpWeakMuscleShare, 1.f, GetUpLift) : 1.f);
 }
 
 void UAedirBalanceComponent::HoldPelvis(float DeltaTime)
@@ -848,59 +846,37 @@ EAedirGetUpStyle UAedirBalanceComponent::ReadLyingStyle() const
 	return Belly.Z < 0.0 ? EAedirGetUpStyle::FromFront : EAedirGetUpStyle::FromBack;
 }
 
-void UAedirBalanceComponent::SetGetUpSteer(const FVector2D& Steer)
+FVector UAedirBalanceComponent::GetGetUpLeanLocal() const
 {
-	if (IsAuthoritative())
-	{
-		GetUpSteer = Steer;
-	}
-	else if (!Steer.Equals(GetUpSteer, 0.05))
-	{
-		GetUpSteer = Steer;
-		ServerSetGetUpSteer(Steer);
-	}
+	return IsGettingUp() ? FVector(GetUpLean.X, GetUpLean.Y, 0.f) * GetUpLeanCm : FVector::ZeroVector;
 }
 
-void UAedirBalanceComponent::ServerSetGetUpSteer_Implementation(FVector2D Steer)
+void UAedirBalanceComponent::RequestGetUp(const FVector& KeyWay)
 {
-	GetUpSteer = Steer.GetClampedToMaxSize(1.0);
-}
-
-FVector UAedirBalanceComponent::GetGetUpSwayLocal() const
-{
-	return IsGettingUp() ? FVector(GetUpSway.X, GetUpSway.Y, 0.f) : FVector::ZeroVector;
-}
-
-void UAedirBalanceComponent::RequestGetUp(bool bForwardKey)
-{
-	// Down, the key starts getting up; on the way up the keys keep the hips balanced instead (SetGetUpSteer).
 	if (!bIsRagdoll && !IsGettingUp())
 	{
 		return;
 	}
 	if (IsAuthoritative())
 	{
-		ServerRequestGetUp_Implementation(bForwardKey);
+		ServerRequestGetUp_Implementation(KeyWay);
 		return;
 	}
-	// Held down, the key would be sent every frame; a few times a second is enough to keep the request alive.
+	// Held down, the keys would be sent every frame; a few times a second is enough to keep them alive.
 	const UWorld* World = GetWorld();
 	const double Now = World ? World->GetTimeSeconds() : 0.0;
 	if (Now - LastGetUpRequestSent >= 0.1)
 	{
 		LastGetUpRequestSent = Now;
-		ServerRequestGetUp(bForwardKey);
+		ServerRequestGetUp(KeyWay);
 	}
 }
 
-void UAedirBalanceComponent::ServerRequestGetUp_Implementation(bool bForwardKey)
+void UAedirBalanceComponent::ServerRequestGetUp_Implementation(FVector KeyWay)
 {
 	const UWorld* World = GetWorld();
 	GetUpRequestTime = World ? World->GetTimeSeconds() : 0.0;
-	RequestedGetUpStyle = bForwardKey ? EAedirGetUpStyle::FromBack : EAedirGetUpStyle::FromFront;
-	UE_LOG(LogAedir, Verbose, TEXT("[GetUp] %s asked to get up %s, lies %s, ready %d, balance %.2f."), *GetNameSafe(GetOwner()),
-		bForwardKey ? TEXT("off its back") : TEXT("from face down"), LyingStyle == EAedirGetUpStyle::FromFront ? TEXT("face down") : TEXT("on its back"),
-		bReadyToGetUp ? 1 : 0, Balance);
+	GetUpKeyWay = FVector(KeyWay.X, KeyWay.Y, 0.f).GetClampedToMaxSize(1.0);
 }
 
 bool UAedirBalanceComponent::GetGetUpStartHips(FVector& OutOffset, FQuat& OutTurn) const
@@ -1076,18 +1052,12 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	const bool bKnockedDown = Impact.EnergyJoules >= GetKnockdownEnergy(Impact.Zone) * FMath::Lerp(HealthyKnockdownShare, LowHealthKnockdownShare, GetHurtShare()) * FMath::Lerp(1.f, TiredKnockdownShare, GetTiredShare());
 	bool bStaggered = false;
 
-	// Struck hard while still getting up, it goes down again.
-	if (!bKnockedDown && !bIsRagdoll && IsGettingUp() && Loss >= GetUpKnockLoss)
+	// Struck while getting up, the body is not felled outright: it lifts itself the less, and may sink back under it.
+	if (!bKnockedDown && !bIsRagdoll && IsGettingUp())
 	{
-		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is struck down again while getting up, losing %.2f of its balance"), *GetNameSafe(GetOwner()), Loss);
-		GetUpLeft = 0.f;
-		EnterRagdoll(MinRagdollSeconds);
-		const FVector PlanarDirection = FVector(Impact.Direction.X, Impact.Direction.Y, 0.f).GetSafeNormal();
-		if (!PlanarDirection.IsNearlyZero())
-		{
-			MulticastTopple(PlanarDirection * (ComputeStaggerSpeed(Impact.EnergyJoules) * KnockdownToppleShare));
-		}
-		OnHitReaction.Broadcast(Impact.Zone, Impact.EnergyJoules, false, true);
+		GetUpLift = FMath::Max(GetUpLift - Loss * GetUpBlowLiftLoss, 0.f);
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is struck getting up, losing %.2f of its balance: lift %.2f"), *GetNameSafe(GetOwner()), Loss, GetUpLift);
+		OnHitReaction.Broadcast(Impact.Zone, Impact.EnergyJoules, false, false);
 		return;
 	}
 
@@ -1948,7 +1918,7 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 		}
 		// A player gets up when told to, and only the way the body lies allows; anyone else as soon as it can.
 		const bool bChooses = bPlayerChoosesGetUp && CharacterOwner && CharacterOwner->IsPlayerControlled();
-		const bool bTold = Now - GetUpRequestTime <= AedirGetUpRequestHoldSeconds && RequestedGetUpStyle == LyingStyle;
+		const bool bTold = Now - GetUpRequestTime <= AedirGetUpRequestHoldSeconds;
 		if (bReadyToGetUp && (!bChooses || bTold))
 		{
 			GetUpStyle = LyingStyle;
@@ -2356,8 +2326,20 @@ void UAedirBalanceComponent::WatchFall(float DeltaTime)
 		if (Pelvis->GetUnrealWorldVelocity().Z > AedirFallFlyingSpeed)
 		{
 			const UAedirStatsComponent* FlyingStats = FindStats();
-			UE_LOG(LogAedir, Log, TEXT("[Fall] %s's hips fly up at %.0f cm/s, %.2f s in: down %d, getting up %d (%.2f), dead %d, simulating %d, kinematic %d, mesh on capsule %d"), *GetOwner()->GetName(), Pelvis->GetUnrealWorldVelocity().Z, AedirFallWatchSeconds - FallWatchLeft,
-				bIsRagdoll ? 1 : 0, IsGettingUp() ? 1 : 0, GetGetUpProgress(), FlyingStats && FlyingStats->IsDead() ? 1 : 0, Pelvis->IsInstanceSimulatingPhysics() ? 1 : 0, Pelvis->IsInstanceSimulatingPhysics() ? 0 : 1, BodyMesh->GetAttachParent() == BodyCapsule ? 1 : 0);
+			// What the body is in or against just then.
+			FString Touching;
+			if (UWorld* FlyWorld = GetWorld())
+			{
+				TArray<FOverlapResult> Overlaps;
+				FCollisionQueryParams FlyParams(SCENE_QUERY_STAT(AedirFlying), false, GetOwner());
+				FlyWorld->OverlapMultiByObjectType(Overlaps, Pelvis->GetUnrealWorldTransform().GetLocation(), FQuat::Identity, FCollisionObjectQueryParams(FCollisionObjectQueryParams::AllObjects), FCollisionShape::MakeSphere(60.f), FlyParams);
+				for (const FOverlapResult& Overlap : Overlaps)
+				{
+					Touching += FString::Printf(TEXT(" %s/%s"), *GetNameSafe(Overlap.GetActor()), *GetNameSafe(Overlap.GetComponent()));
+				}
+			}
+			UE_LOG(LogAedir, Log, TEXT("[Fall] %s's hips fly up at %.0f cm/s, %.2f s in: down %d, getting up %d (%.2f), dead %d, simulating %d, kinematic %d, mesh on capsule %d, near:%s"), *GetOwner()->GetName(), Pelvis->GetUnrealWorldVelocity().Z, AedirFallWatchSeconds - FallWatchLeft,
+				bIsRagdoll ? 1 : 0, IsGettingUp() ? 1 : 0, GetGetUpProgress(), FlyingStats && FlyingStats->IsDead() ? 1 : 0, Pelvis->IsInstanceSimulatingPhysics() ? 1 : 0, Pelvis->IsInstanceSimulatingPhysics() ? 0 : 1, BodyMesh->GetAttachParent() == BodyCapsule ? 1 : 0, *Touching);
 		}
 	}
 	for (const FBodyInstance* Body : BodyMesh->Bodies)
@@ -2566,14 +2548,9 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s gets up in %.2f s (stamina gone %.2f, health gone %.2f), its feet at %.1f"), *GetOwner()->GetName(), GetUpTotal, Tired, Hurt, CharacterOwner->GetActorLocation().Z - BodyCapsule->GetScaledCapsuleHalfHeight());
 		GetUpLeft = GetUpTotal;
 		bHipsInitialized = false;
-		// The hips set out a little off their balance, one way or another.
-		GetUpSwaySeed = FMath::FRandRange(0.f, 100.f);
-		GetUpSwayClock = 0.f;
-		GetUpSway = FVector2D(FMath::FRandRange(-1.f, 1.f), FMath::FRandRange(-1.f, 1.f)).GetSafeNormal() * GetUpSwayStartCm;
-		GetUpSwayRate = FVector2D::ZeroVector;
-		GetUpSwayLow = 0.f;
-		GetUpPace = 1.f;
-		GetUpSteer = FVector2D::ZeroVector;
+		// It sets out lifting itself with all it has.
+		GetUpLift = 1.f;
+		GetUpLean = FVector2D::ZeroVector;
 		if (UAedirGaitComponent* Gait = CharacterOwner->FindComponentByClass<UAedirGaitComponent>())
 		{
 			Gait->BeginGetUpPose();
@@ -2644,41 +2621,42 @@ void UAedirBalanceComponent::UpdateGetUp(float DeltaTime)
 	{
 		return;
 	}
-	// Getting up, the body has to be kept balanced over its hips on the way: they tip away from where they should be, the
-	// more the higher they are, a tired or hurt body more, and are steered back (the player with W, A, S and D, anyone else
-	// by itself). Kept near the middle it rises at full pace; slipping, slower; slipped too far, it goes down again.
-	if (IsAuthoritative() && DeltaTime <= AedirBodyHitchSeconds)
+	// The body lifts itself as long as the keys are held (a body nobody plays, always), at the pace of what lift it still has
+	// after the blows it took; let go, or with no lift left, it sinks back, and back on the ground it lies down again.
+	static const IConsoleVariable* AutoGetUp = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.AutoGetUp"));
+	const bool bChooses = bPlayerChoosesGetUp && CharacterOwner && CharacterOwner->IsPlayerControlled() && !(AutoGetUp && AutoGetUp->GetInt() != 0);
+	const UWorld* World = GetWorld();
+	const double Now = World ? World->GetTimeSeconds() : 0.0;
+	const bool bHeld = !bChooses || Now - GetUpRequestTime <= AedirGetUpRequestHoldSeconds;
+	// A long frame is neither a let-go nor a rise: the keys could not be read in it.
+	if (DeltaTime > AedirBodyHitchSeconds)
 	{
-		// Tests left to run by themselves (aedir.AutoGetUp) keep a player's balance for it too.
-		static const IConsoleVariable* AutoGetUp = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.AutoGetUp"));
-		const bool bChooses = bPlayerChoosesGetUp && CharacterOwner && CharacterOwner->IsPlayerControlled() && !(AutoGetUp && AutoGetUp->GetInt() != 0);
-		const UAedirStatsComponent* SwayStats = FindStats();
-		const float Tired = SwayStats ? 1.f - FMath::Clamp(SwayStats->GetStaminaFraction(), 0.f, 1.f) : 0.f;
-		const float Hurt = SwayStats ? 1.f - FMath::Clamp(SwayStats->GetHealth() / FMath::Max(SwayStats->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
-		const float Unsteady = FMath::Clamp(Tired * GetUpTiredShare + Hurt * GetUpHurtShare, 0.f, 1.f);
-		const float Height = FMath::Lerp(GetUpSwayLowShare, 1.f, GetGetUpProgress());
-		const FVector2D Steer = bChooses ? GetUpSteer.GetClampedToMaxSize(1.0) : FVector2D(-(GetUpSway * AedirGetUpSelfSteerPerCm + GetUpSwayRate * AedirGetUpSelfSteerPerCmPerSecond)).GetClampedToMaxSize(1.0);
-		// A push that wanders, as a body unsure of its feet: two slow waves each way.
-		GetUpSwayClock += DeltaTime;
-		const FVector2D Wander(FMath::PerlinNoise1D(GetUpSwayClock * AedirGetUpWanderRate + GetUpSwaySeed), FMath::PerlinNoise1D(GetUpSwayClock * AedirGetUpWanderRate + GetUpSwaySeed + 31.f));
-		const FVector2D Push = GetUpSway * (GetUpSwayTipping * Height) + Wander * (FMath::Lerp(GetUpSwayWanderMin, GetUpSwayWanderMax, Unsteady) * Height)
-			+ Steer * GetUpSteerPush - GetUpSwayRate * GetUpSwayDamping;
-		GetUpSwayRate += Push * DeltaTime;
-		GetUpSway += GetUpSwayRate * DeltaTime;
-		const float Off = static_cast<float>(GetUpSway.Size());
-		if (Off > GetUpSwayFallCm)
-		{
-			UE_LOG(LogAedir, Log, TEXT("[GetUp] %s lost its balance getting up, %.0f%% of the way, the hips %.0f cm off."), *GetNameSafe(GetOwner()), GetGetUpProgress() * 100.f, Off);
-			EnterRagdoll(MinRagdollSeconds);
-			return;
-		}
-		GetUpPace = FMath::Lerp(1.f, GetUpUnsteadyPace, FMath::Clamp((Off - GetUpSteadyCm) / FMath::Max(GetUpSwayFallCm - GetUpSteadyCm, 1.f), 0.f, 1.f));
-		GetUpSwayLow = FMath::Max(GetUpSwayLow, Off);
+		return;
 	}
-	GetUpLeft = FMath::Max(GetUpLeft - DeltaTime * GetUpPace, 0.f);
+	GetUpLift = FMath::Min(GetUpLift + GetUpLiftRecoverPerSecond * DeltaTime, 1.f);
+	const float Pace = bHeld ? FMath::Lerp(-GetUpSinkPace, 1.f, GetUpLift) : -GetUpSinkPace;
+	GetUpLeft = FMath::Clamp(GetUpLeft - DeltaTime * Pace, 0.f, GetUpTotal);
+	if (IsAuthoritative() && Pace < 0.f && GetUpLeft >= GetUpTotal)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s sank back to the ground (%s)."), *GetNameSafe(GetOwner()), bHeld ? TEXT("no lift left") : TEXT("let go"));
+		GetUpLeft = 0.f;
+		EnterRagdoll(GetUpRetrySeconds);
+		return;
+	}
+	// Towards the way of the keys: the hips go over that way, and the body turns round to face it as it rises.
+	const FVector KeyWay = bChooses && bHeld ? GetUpKeyWay : FVector::ZeroVector;
+	const FVector KeyLocal = CharacterOwner ? CharacterOwner->GetActorTransform().InverseTransformVectorNoScale(KeyWay) : FVector::ZeroVector;
+	GetUpLean = FMath::Vector2DInterpTo(GetUpLean, FVector2D(KeyLocal.X, KeyLocal.Y) * FMath::Max(Pace, 0.f), DeltaTime, AedirGetUpLeanInterpSpeed);
+	if (IsAuthoritative() && CharacterOwner && !KeyWay.IsNearlyZero() && Pace > 0.f)
+	{
+		const float Wanted = static_cast<float>(KeyWay.Rotation().Yaw);
+		const float Yaw = static_cast<float>(CharacterOwner->GetActorRotation().Yaw);
+		const float Turned = FMath::FixedTurn(Yaw, Wanted, GetUpTurnDegreesPerSecond * Pace * DeltaTime);
+		CharacterOwner->SetActorRotation(FRotator(0.f, Turned, 0.f), ETeleportType::None);
+	}
 	if (GetUpLeft <= 0.f)
 	{
-		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is up: the hips were at most %.0f cm off on the way."), *GetNameSafe(GetOwner()), GetUpSwayLow);
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is up, lift %.2f, facing %.0f."), *GetNameSafe(GetOwner()), GetUpLift, CharacterOwner ? CharacterOwner->GetActorRotation().Yaw : 0.0);
 	}
 	// The moves are over, but the hips never made it up: the body did not get up.
 	if (GetUpLeft <= 0.f && BodyControl && IsAuthoritative())

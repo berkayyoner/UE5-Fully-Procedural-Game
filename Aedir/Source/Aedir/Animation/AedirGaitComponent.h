@@ -928,9 +928,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
 	float LimpNeckBowDegrees = 10.f;
 
-	// Getting up off its balance, the trunk leans this many degrees the way the hips are going over for each cm they are off.
+	// Getting up, the trunk leans this many degrees the way the hips go over for each cm they go.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|GetUp")
-	float GetUpSwayLeanDegreesPerCm = 0.8f;
+	float GetUpLeanDegreesPerCm = 0.8f;
 
 	// Backward torso lean in degrees at a full kick pose.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
@@ -999,6 +999,8 @@ private:
 	float LegLogSwingLowBody[2] = { 99.f, 99.f };
 	float LegLogChestMin = 0.f;
 	float LegLogChestMax = 0.f;
+	float LegLogChestLast = 0.f;
+	float LegLogChestSpeed = 0.f;
 	void UpdateClutch(float DeltaTime,const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);
 
 	UPROPERTY(Transient)

@@ -122,6 +122,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float PunchWaistTurnDegrees = 30.f;
 
+	// The waist goes round after where it is wanted as a weight on a spring of this many cycles a second, and never turns
+	// faster than this many degrees a second: a trunk is heavier than an arm, and the fists on it must not be flung with it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float WaistTurnHz = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float WaistTurnMaxDegreesPerSecond = 360.f;
+
 	// The foot on the other side from where the mouse is drawn steps forward; it changes over once the mouse is this share of
 	// its way out to the other side, so the feet do not shuffle while the fists pass the middle.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", ClampMax="1"))
@@ -541,6 +549,7 @@ private:
 	int32 PunchSlot = 1;
 	float WaistPitch = 0.f;
 	float WaistYaw = 0.f;
+	float WaistYawRate = 0.f;
 	float FistTurn[2] = { 0.f, 0.f };
 	bool bArmed[2] = { false, false };
 	float BladeAhead[2] = { 0.f, 0.f };

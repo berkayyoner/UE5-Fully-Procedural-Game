@@ -449,6 +449,16 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * (bBladeUp ? BladeWaistForwardDegrees : WaistForwardDegrees)) * Raised;
 	// The punching arm's shoulder goes forward with the blow: the right one turns the waist left, the left one right.
 	const float PunchTurn = Punch * PunchWaistTurnDegrees * (bBoth ? (PunchSlot == 1 ? -1.f : 1.f) : (HeldNow(1) ? -1.f : 1.f));
-	WaistYaw = (Across * WaistTurnDegrees + PunchTurn) * Raised;
+	const float WaistWanted = (Across * WaistTurnDegrees + PunchTurn) * Raised;
+	// The waist follows on its own heavier spring, never faster than a trunk turns.
+	const float WaistW = UE_TWO_PI * FMath::Max(WaistTurnHz, 0.5f);
+	const int32 WaistSteps = FMath::Clamp(FMath::CeilToInt(DeltaTime * WaistW / 0.25f), 1, 32);
+	const float WaistStep = DeltaTime / WaistSteps;
+	for (int32 Index = 0; Index < WaistSteps; ++Index)
+	{
+		WaistYawRate += ((WaistWanted - WaistYaw) * WaistW * WaistW - WaistYawRate * 2.f * WaistW) * WaistStep;
+		WaistYawRate = FMath::Clamp(WaistYawRate, -WaistTurnMaxDegreesPerSecond, WaistTurnMaxDegreesPerSecond);
+		WaistYaw += WaistYawRate * WaistStep;
+	}
 	HipDrop = FMath::Max(-UpDown, 0.f) * (bBladeUp ? BladeDownHipDropCm : DownHipDropCm) * Raised;
 }

@@ -470,49 +470,40 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
 	float GetUpHurtShare = 0.5f;
 
-	// Getting up the hips have to be kept balanced (the player with W, A, S and D): they tip away from the middle by
-	// GetUpSwayTipping (per second squared) times how far they are off, are pushed about by a wandering push of Min cm/s² for
-	// a fresh body to Max for one with no stamina or health left, are slowed by GetUpSwayDamping (per second) and steered
-	// back by GetUpSteerPush (cm/s² at a full key). Low down, on the hands and knees, all of it is GetUpSwayLowShare as much.
+	// Getting up is the body lifting its own hips, as long as the player holds W, A, S or D (anyone else, always): up, and
+	// over to the way the key goes, the body turning round to face that way as it rises (GetUpTurnDegreesPerSecond). Let go
+	// it sinks back down at GetUpSinkPace of its rising pace, and lies down again once it is back on the ground.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpSwayTipping = 15.f;
+	float GetUpTurnDegreesPerSecond = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float GetUpSinkPace = 0.6f;
+
+	// The hips go this far over towards the way of the keys while lifting, and the trunk leans after them.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpLeanCm = 10.f;
+
+	// How hard the body lifts itself, 0 to 1: full at the start; a blow on the way up takes GetUpBlowLiftLoss times the
+	// balance it cost off it, and it comes back at GetUpLiftRecoverPerSecond. The rise goes at the pace of the lift, and with
+	// none left the body sinks even with the key held; its muscles hold it with no less than GetUpWeakMuscleShare.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpBlowLiftLoss = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpSwayWanderMin = 40.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpSwayWanderMax = 100.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpSwayDamping = 1.5f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpSteerPush = 260.f;
+	float GetUpLiftRecoverPerSecond = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
-	float GetUpSwayLowShare = 0.35f;
+	float GetUpWeakMuscleShare = 0.4f;
 
-	// The hips set out this far off at the start of getting up.
+	// Sunk back to the ground, the body can start getting up again after this many seconds.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpSwayStartCm = 4.f;
+	float GetUpRetrySeconds = 0.6f;
 
-	// Within GetUpSteadyCm of the middle the body rises at full pace, slower the further off, down to GetUpUnsteadyPace of it
-	// just short of GetUpSwayFallCm, where it goes down again.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpSteadyCm = 6.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpSwayFallCm = 22.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
-	float GetUpUnsteadyPace = 0.25f;
-
-	// The player's keys while getting up: X forward, Y right, each -1 to 1.
-	void SetGetUpSteer(const FVector2D& Steer);
-
-	// How far the hips are off their balance getting up, in cm in the body's frame (X forward, Y right); zero otherwise.
-	FVector GetGetUpSwayLocal() const;
-	float GetGetUpSwayFallCm() const { return GetUpSwayFallCm; }
+	// How far the hips are over towards the way of the keys, in cm in the body frame (X forward, Y right); zero unless
+	// getting up.
+	FVector GetGetUpLeanLocal() const;
+	// How hard the body still lifts itself getting up, 0 to 1.
+	float GetGetUpLift() const { return GetUpLift; }
 
 	// How weak the muscles are at the start of getting up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
@@ -707,7 +698,9 @@ public:
 	EAedirGetUpStyle GetLyingStyle() const { return LyingStyle; }
 
 	// The player's movement keys while down: forward (W) gets a body up off its back, back (S) one lying face down.
-	void RequestGetUp(bool bForwardKey);
+	// The keys held while down or getting up, as a way across the ground (zero for none in particular): down, they start
+	// getting up; on the way up they keep the body lifting, towards that way.
+	void RequestGetUp(const FVector& KeyWay);
 
 	// Height of the hips above the ground when standing.
 	float GetPelvisStandHeight() const;
@@ -931,22 +924,16 @@ private:
 	void BumpInto(class AAedirCreature* Other, const FHitResult& Hit);
 	float GetUpLeft = 0.f;
 	float GetUpTotal = 0.f;
-	FVector2D GetUpSway = FVector2D::ZeroVector;
-	FVector2D GetUpSwayRate = FVector2D::ZeroVector;
-	FVector2D GetUpSteer = FVector2D::ZeroVector;
-	float GetUpSwayClock = 0.f;
-	float GetUpSwaySeed = 0.f;
-	float GetUpSwayLow = 0.f;
-	float GetUpPace = 1.f;
+	FVector GetUpKeyWay = FVector::ZeroVector;
+	FVector2D GetUpLean = FVector2D::ZeroVector;
+	float GetUpLift = 1.f;
 	// Where the hips lay when getting up started.
 	FTransform GetUpStartPelvis = FTransform::Identity;
 	EAedirGetUpStyle ReadLyingStyle() const;
 	UFUNCTION(Server, Unreliable)
-	void ServerRequestGetUp(bool bForwardKey);
-	UFUNCTION(Server, Unreliable)
-	void ServerSetGetUpSteer(FVector2D Steer);
+	void ServerRequestGetUp(FVector KeyWay);
+
 	double GetUpRequestTime = -100.0;
-	EAedirGetUpStyle RequestedGetUpStyle = EAedirGetUpStyle::None;
 	double LastGetUpRequestSent = -100.0;
 	UPROPERTY(Replicated)
 	EAedirGetUpStyle GetUpStyle = EAedirGetUpStyle::None;
