@@ -531,14 +531,14 @@ public:
 	float HoistHeightShare = 0.95f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistSpringPerSecondSq = 18.f;
+	float HoistSpringPerSecondSq = 9.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistDampingPerSecond = 8.f;
+	float HoistDampingPerSecond = 11.f;
 
 	// The pull never speeds the hips up by more than this beyond carrying the weight, in cm/s².
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistMaxExtraAccel = 700.f;
+	float HoistMaxExtraAccel = 300.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistRampSeconds = 0.35f;
@@ -564,6 +564,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistHandReachSeconds = 0.35f;
 
+	// The second hand goes down this long after the first; both palms are turned flat to the ground at HoistPalmHz.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistSecondHandLateSeconds = 0.18f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistPalmHz = 7.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistHandSpringPerSecondSq = 250.f;
 
@@ -583,16 +590,16 @@ public:
 	float HoistHandAheadCm = 12.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
-	float HoistHandLetGoShare = 0.62f;
+	float HoistHandLetGoShare = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistLiftDelaySeconds = 0.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistLiftRampSeconds = 0.9f;
+	float HoistLiftRampSeconds = 1.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="1"))
-	float HoistLiftRampPower = 2.f;
+	float HoistLiftRampPower = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0.1", ClampMax="1"))
 	float HoistWeakestShare = 0.5f;
@@ -1020,6 +1027,8 @@ private:
 	int32 HoistHand = -1;
 	float HoistHandLeft = 1.f;
 	FVector HoistFaceLocal = FVector(0.f, 1.f, 0.f);
+	FVector HoistPalmLocal[2] = { FVector(-1.f, 0.f, 0.f), FVector(1.f, 0.f, 0.f) };
+	float HoistPalmDownLogged = 0.f;
 	float ChestAboveHips = 40.f;
 	float HoistSeconds = 0.f;
 	float HoistHighest = 0.f;

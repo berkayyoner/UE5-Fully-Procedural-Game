@@ -96,12 +96,16 @@ public:
 	float LimpForearmShare = 0.25f;
 
 	// Hauled up off the ground by the hips, a body still down keeps these shares of its muscles for the trunk and the head,
-	// and for the legs, pulling it weakly towards standing; the arms stay as loose as lying.
+	// and for the legs, pulling it weakly towards standing.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
 	float HoistMuscleShare = 0.15f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
 	float HoistLegShare = 0.25f;
+
+	// And for the arms, which push the body up off the ground.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
+	float HoistArmShare = 0.3f;
 
 	// What is left of the muscles of a limb whose bone is broken: it swings loose, still hanging together.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")

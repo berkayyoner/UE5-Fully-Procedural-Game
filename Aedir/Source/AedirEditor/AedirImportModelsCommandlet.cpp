@@ -104,14 +104,14 @@ namespace
 			for (int32 Point = 0; Point < Physical.Vertices.Num(); ++Point)
 			{
 				const FVector3f& At = Physical.Vertices[Point];
-				// Held only at the collar; a little free over the chest and the shoulders, more down the body to the hem and
-				// out along the sleeves to the cuffs.
+				// Held at the collar, the shoulders and the upper arms, where it lies close on the body; free from the lower
+				// chest down to the hem and from the elbows out to the cuffs.
 				const float Across = FMath::Abs(At.X);
 				const bool bCollar = At.Z > PinAboveCm && Across < 14.f;
 				const float Down = FMath::Clamp((TorsoFromCm - At.Z) / FMath::Max(TorsoFromCm - 88.f, 1.f), 0.f, 1.f);
 				const float Out = FMath::Clamp((Across - SleeveFromCm) / FMath::Max(48.f - SleeveFromCm, 1.f), 0.f, 1.f);
 				const float Torso = BaseCm + FMath::Pow(Down, 1.6f) * (TorsoCm - BaseCm);
-				const float Sleeve = Across > SleeveFromCm ? BaseCm * 1.5f + FMath::Pow(Out, 1.2f) * (SleeveCm - BaseCm * 1.5f) : 0.f;
+				const float Sleeve = Across > SleeveFromCm ? BaseCm + FMath::Pow(Out, 1.2f) * (SleeveCm - BaseCm) : 0.f;
 				Mask->Values[Point] = bCollar ? 0.f : FMath::Max(Torso, Sleeve);
 			}
 			Cloth->ApplyParameterMasks();
@@ -231,7 +231,7 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 	FString ClothMesh;
 	if (FParse::Value(*Params, TEXT("Cloth="), ClothMesh))
 	{
-		float Pin = 146.f, TorsoFrom = 145.f, Base = 1.5f, Torso = 9.f, SleeveFrom = 16.f, Sleeve = 9.f, Bend = 0.3f;
+		float Pin = 146.f, TorsoFrom = 133.f, Base = 0.f, Torso = 9.f, SleeveFrom = 26.f, Sleeve = 9.f, Bend = 0.3f;
 		FParse::Value(*Params, TEXT("Pin="), Pin);
 		FParse::Value(*Params, TEXT("TorsoFrom="), TorsoFrom);
 		FParse::Value(*Params, TEXT("Base="), Base);

@@ -664,8 +664,9 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	Apply(RightLegControls, LegStrength * LegBody * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
 	// A broken arm swings loose; a hurt one keeps at least some of its strength.
-	const float LeftArmHz = ArmHz * (bLimp ? Limp : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
-	const float RightArmHz = ArmHz * (bLimp ? Limp : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
+	const float LimpArm = FMath::Lerp(Limp, HoistArmShare, Hauled);
+	const float LeftArmHz = ArmHz * (bLimp ? LimpArm : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
+	const float RightArmHz = ArmHz * (bLimp ? LimpArm : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
 	Apply(LeftArmControls, LeftArmHz * Soft, 0.f);
 	Apply(RightArmControls, RightArmHz * Soft, 0.f);
 	// A broken arm's shoulder still holds it hanging.

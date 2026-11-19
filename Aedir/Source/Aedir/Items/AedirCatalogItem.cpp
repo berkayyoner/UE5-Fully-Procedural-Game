@@ -1,4 +1,5 @@
 #include "Items/AedirCatalogItem.h"
+#include "EngineUtils.h"
 #include "Game/AedirClasses.h"
 
 #include "AnimationRuntime.h"
@@ -245,6 +246,26 @@ void AAedirCatalogItem::WearSplitParts(const FAedirItemDef& Def)
 	}
 }
 
+static TAutoConsoleVariable<int32> CVarAedirCloth(TEXT("aedir.Cloth"), 1, TEXT("Worn clothes hang and swing as cloth (1) or only follow the bones (0); the physics command sets it too."));
+
+bool AAedirCatalogItem::IsClothOn()
+{
+	return CVarAedirCloth.GetValueOnGameThread() != 0;
+}
+
+void AAedirCatalogItem::SetClothOn(UWorld* World, bool bOn)
+{
+	CVarAedirCloth->Set(bOn ? 1 : 0, ECVF_SetByConsole);
+	for (TActorIterator<AAedirCatalogItem> It(World); It; ++It)
+	{
+		if (USkeletalMeshComponent* Worn = It->WornMesh.Get())
+		{
+			Worn->bDisableClothSimulation = !bOn;
+			Worn->RecreateClothingActors();
+		}
+	}
+}
+
 void AAedirCatalogItem::ApplyWornLook()
 {
 	const FAedirItemDef* Def = UAedirItemCatalog::Find(CatalogId);
@@ -287,6 +308,7 @@ void AAedirCatalogItem::ApplyWornLook()
 	WornMesh->SetupAttachment(Body);
 	WornMesh->RegisterComponent();
 	WornMesh->SetLeaderPoseComponent(Body);
+	WornMesh->bDisableClothSimulation = !IsClothOn();
 	// Each section wears the scanned material with the textures named after it.
 	const TArray<FSkeletalMaterial>& Slots = Model->GetMaterials();
 	for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)

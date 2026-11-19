@@ -62,6 +62,7 @@ print("[fit] body half width %.1f depth %.1f; shirt %.1f %.1f; scale %.2f %.2f, 
 TORSO_WIDEN = 1.045
 SHOULDER_NARROW = 0.965
 SLEEVE_SLIM = 0.92
+DECIMATE_RATIO = 0.5
 def torso_map(v):
     z = v.z + dz
     shoulder = max(0.0, min(1.0, (z - 132.0) / 12.0))
@@ -97,17 +98,19 @@ def sleeve_mapper(side):
         share = max(0.0, min(1.0, (along - (L1 - 2.0) + 6.0) / 12.0))
         rot = rot1.slerp(rot2, share * share * (3 - 2 * share))
         p = start + d1 * along if along < L1 - 2.0 else E + d2 * (along - (L1 - 2.0))
-        return p + rot @ (off * SLEEVE_SLIM), t
+        slim = SLEEVE_SLIM + (1.0 - SLEEVE_SLIM) * max(0.0, min(1.0, (t - 0.4) / 0.4))
+        return p + rot @ (off * slim), t
     return mapper
 maps = {1: sleeve_mapper(1.0), -1: sleeve_mapper(-1.0)}
 
 def smooth(x, a, b):
     t = max(0.0, min(1.0, (x - a) / (b - a)))
     return t * t * (3 - 2 * t)
-out, sleeve_share = [], []
+out, sleeve_share, sleeve_t = [], [], []
 for v in src:
     side = 1 if v.x > 0 else -1
     pt, t = maps[side](v)
+    sleeve_t.append(t)
     pt_t = torso_map(v)
     # Out past the side of the torso, and above the waist, it is sleeve.
     s = smooth(abs(v.x), 17.0, 24.0) * (smooth(v.z, 98.0, 104.0) if abs(v.x) < 30.0 else 1.0)
@@ -117,12 +120,18 @@ for v in src:
 # ---- push out of the body, the clearance growing towards the loose hem and the sleeve ends
 probe = bvh.find_nearest(Vector((0, ymid_b - 40, bone_pos("spine_03").z)), 60.0)
 NSIGN = 1.0 if probe[1].y < 0 else -1.0
+def room(i, base):
+    z = out[i].z
+    waist = smooth(z, 88.0, 100.0) * (1.0 - smooth(z, 108.0, 128.0)) * (1.0 - sleeve_share[i])
+    forearm = sleeve_share[i] * smooth(sleeve_t[i], 0.4, 0.75)
+    return base + 0.9 * waist + 1.0 * forearm
 def push(points, margin):
     n = 0
     for i, v in enumerate(points):
         hit = bvh.find_nearest(v, 30.0)
-        if hit[0] is not None and (v - hit[0]).dot(hit[1] * NSIGN) < margin:
-            points[i] = hit[0] + hit[1] * NSIGN * margin
+        m = room(i, margin)
+        if hit[0] is not None and (v - hit[0]).dot(hit[1] * NSIGN) < m:
+            points[i] = hit[0] + hit[1] * NSIGN * m
             n += 1
     return n
 # Pushed out once, the shift each point got is spread to its neighbours so nothing is left flattened, and pushed again.
@@ -138,6 +147,28 @@ for _ in range(6):
 out = [before[i] + shift[i] for i in range(len(out))]
 pushed += push(out, 1.8)
 print("[fit] pushed out", pushed, "of", len(out))
+TIGHT_MARGIN_TORSO = 1.8
+TIGHT_MARGIN_ARM = 1.2
+tight = []
+for i, v in enumerate(out):
+    up_torso = smooth(v.z, 127.0, 138.0) * (1.0 - sleeve_share[i])
+    up_arm = sleeve_share[i] * (1.0 - smooth(sleeve_t[i], 0.25, 0.45))
+    tight.append(max(up_torso, up_arm))
+drawn = 0
+for i, v in enumerate(out):
+    w = tight[i]
+    if w <= 0.0:
+        continue
+    hit = bvh.find_nearest(v, 15.0)
+    if hit[0] is None:
+        continue
+    # Close, but with room for the chest and the shoulders to move and breathe under it.
+    margin = TIGHT_MARGIN_TORSO + (TIGHT_MARGIN_ARM - TIGHT_MARGIN_TORSO) * sleeve_share[i]
+    target = hit[0] + hit[1] * NSIGN * margin
+    if (v - hit[0]).dot(hit[1] * NSIGN) > margin:
+        out[i] = v.lerp(target, 0.8 * w)
+        drawn += 1
+print("[fit] drawn in close", drawn)
 
 # ---- weights
 def tree_of(allowed):
@@ -149,6 +180,8 @@ def tree_of(allowed):
     return t, ids
 tree_torso, ids_torso = tree_of(TORSO)
 tree_arm, ids_arm = tree_of(ARMSKIN)
+# Over the shoulders and round the front and back of the armpits the skin follows the arm as well as the trunk.
+tree_all, ids_all = tree_of(TORSO | ARMSKIN)
 def weigh(v, tree, ids):
     total = {}
     for co, n, dist in tree.find_n(v, 8):
@@ -199,7 +232,13 @@ me.materials[0].name = "MedievalShirt"
 groups = {}
 for i, v in enumerate(out):
     s = sleeve_share[i]
-    wt = weigh(v, tree_torso, ids_torso) if s < 0.999 else {}
+    shoulder = smooth(v.z, 122.0, 132.0)
+    wt = {}
+    if s < 0.999:
+        low = weigh(v, tree_torso, ids_torso)
+        high = weigh(v, tree_all, ids_all) if shoulder > 0.0 else {}
+        for b in set(low) | set(high):
+            wt[b] = low.get(b, 0.0) * (1.0 - shoulder) + high.get(b, 0.0) * shoulder
     wa = weigh(v, tree_arm, ids_arm) if s > 0.001 else {}
     mix = {}
     for b, w in wt.items():
@@ -219,6 +258,18 @@ mod = shirt.modifiers.new("Armature", "ARMATURE")
 mod.object = arm_obj
 print("[fit] bones", sorted(names[b] for b in groups))
 
+# Half the points, the shape and the texture kept: the cloth simulates every point, on every body wearing it.
+dec = shirt.modifiers.new("Fewer", "DECIMATE")
+dec.decimate_type = "COLLAPSE"
+dec.ratio = DECIMATE_RATIO
+dec.use_collapse_triangulate = True
+bpy.ops.object.select_all(action="DESELECT")
+shirt.select_set(True)
+bpy.context.view_layer.objects.active = shirt
+before_points = len(shirt.data.vertices)
+bpy.ops.object.modifier_move_to_index(modifier="Fewer", index=0)
+bpy.ops.object.modifier_apply(modifier="Fewer")
+print("[fit] decimated %d points to %d" % (before_points, len(shirt.data.vertices)))
 # Points that ended up on top of each other are one, and triangles with no area are gone: cloth cannot be made of them.
 bpy.ops.object.select_all(action="DESELECT")
 shirt.select_set(True)

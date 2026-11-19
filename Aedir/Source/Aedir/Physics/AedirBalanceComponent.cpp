@@ -2699,6 +2699,34 @@ void UAedirBalanceComponent::StartHoist()
 	HoistHeldSeconds = 0.f;
 	HoistHand = -1;
 	HoistHandLeft = 1.f;
+	// Which way each palm faces from its hand bone: in the rest pose the palms face in towards the thighs, the normal of the
+	// plane of the knuckles.
+	if (const USkeletalMesh* Model = BodyMesh->GetSkeletalMeshAsset())
+	{
+		const FReferenceSkeleton& Bones = Model->GetRefSkeleton();
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
+			const int32 Hand = Bones.FindBoneIndex(FName(FString(TEXT("hand")) + Suffix));
+			const int32 Middle = Bones.FindBoneIndex(FName(FString(TEXT("middle_metacarpal")) + Suffix));
+			const int32 Index = Bones.FindBoneIndex(FName(FString(TEXT("index_metacarpal")) + Suffix));
+			const int32 Pinky = Bones.FindBoneIndex(FName(FString(TEXT("pinky_metacarpal")) + Suffix));
+			if (Hand == INDEX_NONE || Middle == INDEX_NONE || Index == INDEX_NONE || Pinky == INDEX_NONE)
+			{
+				continue;
+			}
+			const FTransform HandRef = FAnimationRuntime::GetComponentSpaceTransformRefPose(Bones, Hand);
+			const FVector Along = FAnimationRuntime::GetComponentSpaceTransformRefPose(Bones, Middle).GetLocation() - HandRef.GetLocation();
+			const FVector Across = FAnimationRuntime::GetComponentSpaceTransformRefPose(Bones, Index).GetLocation() - FAnimationRuntime::GetComponentSpaceTransformRefPose(Bones, Pinky).GetLocation();
+			FVector Normal = FVector::CrossProduct(Along, Across).GetSafeNormal();
+			// In towards the middle of the body (the left hand lies on +X).
+			if (Normal.X * (Side == 0 ? 1.f : -1.f) > 0.f)
+			{
+				Normal = -Normal;
+			}
+			HoistPalmLocal[Side] = HandRef.GetRotation().UnrotateVector(Normal);
+		}
+	}
 	// Which way the face looks from the head bone: the body faces along the mesh's +Y in its rest pose.
 	if (const USkeletalMesh* Model = BodyMesh->GetSkeletalMeshAsset())
 	{
@@ -2866,53 +2894,73 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 		HeadBody->AddTorqueInRadians((Axis.GetSafeNormal() * (Angle * Wh * Wh) - HeadBody->GetUnrealWorldAngularVelocityInRadians() * (2.f * Wh)) * HeadShare, true, true);
 	}
 
-	// Then the hand nearer the ground goes down to it under its shoulder and leans on it, until the hips are well up.
+	// Then both hands go down to the ground beside the shoulders, the nearer one first, palms flat on it, and the body leans
+	// on them until the hips are well up.
 	const float HandShare = bHeld ? FMath::Clamp((HoistHeldSeconds - HoistHandDelaySeconds) / FMath::Max(HoistHandReachSeconds, 0.01f), 0.f, 1.f) : 0.f;
 	if (HoistHand < 0 && HandShare > 0.f)
 	{
 		HoistHand = BodyMesh->GetBoneLocation(TEXT("hand_l")).Z <= BodyMesh->GetBoneLocation(TEXT("hand_r")).Z ? 0 : 1;
-		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s reaches its %s hand to the ground."), *GetNameSafe(GetOwner()), HoistHand == 0 ? TEXT("left") : TEXT("right"));
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s puts its hands to the ground, the %s first."), *GetNameSafe(GetOwner()), HoistHand == 0 ? TEXT("left") : TEXT("right"));
 	}
 	HoistHandLeft = Height >= Stand * HoistHandLetGoShare ? FMath::FInterpConstantTo(HoistHandLeft, 0.f, DeltaTime, 3.f) : FMath::FInterpConstantTo(HoistHandLeft, 1.f, DeltaTime, 3.f);
 	float HandOff = 0.f;
-	if (HoistHand >= 0 && HandShare * HoistHandLeft > 0.f)
+	float PalmDown = 0.f;
+	for (int32 Side = 0; HoistHand >= 0 && Side < 2; ++Side)
 	{
-		const FName HandName = HoistHand == 0 ? TEXT("hand_l") : TEXT("hand_r");
-		FBodyInstance* HandBody = BodyMesh->GetBodyInstance(HandName);
-		if (HandBody && HandBody->IsInstanceSimulatingPhysics())
+		// The other hand follows the first a moment later.
+		const float Late = Side == HoistHand ? 0.f : HoistSecondHandLateSeconds;
+		const float Share = (bHeld ? FMath::Clamp((HoistHeldSeconds - HoistHandDelaySeconds - Late) / FMath::Max(HoistHandReachSeconds, 0.01f), 0.f, 1.f) : 0.f) * HoistHandLeft;
+		const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
+		FBodyInstance* HandBody = BodyMesh->GetBodyInstance(FName(FString(TEXT("hand")) + Suffix));
+		if (Share <= 0.f || !HandBody || !HandBody->IsInstanceSimulatingPhysics())
 		{
-			// Beside the shoulder, out from the chest and a little towards the head: not under the body lying on it.
-			const FVector RawShoulder = BodyMesh->GetBoneLocation(HoistHand == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r"));
-			const FVector Outward = (RawShoulder - BodyMesh->GetBoneLocation(TEXT("spine_05"))).GetSafeNormal2D();
-			const FVector Headward = (BodyMesh->GetBoneLocation(HeadBoneName) - BodyMesh->GetBoneLocation(PelvisBoneName)).GetSafeNormal2D();
-			const FVector Shoulder = RawShoulder + (Outward * HoistHandOutCm + Headward * HoistHandAheadCm) * Scale;
-			FVector Under;
-			if (!TraceStandingGround(Shoulder + FVector(0.f, 0.f, 10.f), Shoulder - FVector(0.f, 0.f, 200.f), Under, false))
+			continue;
+		}
+		// Beside the shoulder, out from the chest and a little towards the head: not under the body lying on it.
+		const FVector RawShoulder = BodyMesh->GetBoneLocation(FName(FString(TEXT("upperarm")) + Suffix));
+		const FVector Outward = (RawShoulder - BodyMesh->GetBoneLocation(TEXT("spine_05"))).GetSafeNormal2D();
+		const FVector Headward = (BodyMesh->GetBoneLocation(HeadBoneName) - BodyMesh->GetBoneLocation(PelvisBoneName)).GetSafeNormal2D();
+		const FVector Shoulder = RawShoulder + (Outward * HoistHandOutCm + Headward * HoistHandAheadCm) * Scale;
+		FVector Under;
+		if (!TraceStandingGround(Shoulder + FVector(0.f, 0.f, 10.f), Shoulder - FVector(0.f, 0.f, 200.f), Under, false))
+		{
+			Under = FVector(Shoulder.X, Shoulder.Y, Ground.Z);
+		}
+		const FVector Spot = Under + FVector(0.f, 0.f, 4.f * Scale);
+		const FVector HandAt = HandBody->GetUnrealWorldTransform().GetLocation();
+		HandOff = FMath::Max(HandOff, static_cast<float>(FVector::Dist(Spot, HandAt)));
+		// The higher the hips, the more the hands only rest on the ground and the less they hold the body down to it.
+		const float Hk = HoistHandSpringPerSecondSq * FMath::Lerp(1.f, 0.25f, FMath::Clamp(Height / (Stand * FMath::Max(HoistHandLetGoShare, 0.1f)), 0.f, 1.f));
+		const FVector HandAccel = ((Spot - HandAt) * Hk - HandBody->GetUnrealWorldVelocity() * (2.f * FMath::Sqrt(Hk)) + FVector(0.f, 0.f, Gravity * 0.5f)) * Share;
+		// The hand carries the arm after it: the force is for the whole arm's weight.
+		float ArmMass = 0.f;
+		for (const TCHAR* Part : { TEXT("hand"), TEXT("lowerarm"), TEXT("upperarm") })
+		{
+			if (const FBodyInstance* Piece = BodyMesh->GetBodyInstance(FName(FString(Part) + Suffix)))
 			{
-				Under = FVector(Shoulder.X, Shoulder.Y, Ground.Z);
-			}
-			const FVector Spot = Under + FVector(0.f, 0.f, 4.f * Scale);
-			const FVector HandAt = HandBody->GetUnrealWorldTransform().GetLocation();
-			HandOff = static_cast<float>(FVector::Dist(Spot, HandAt));
-			const float Hk = HoistHandSpringPerSecondSq;
-			const FVector HandAccel = ((Spot - HandAt) * Hk - HandBody->GetUnrealWorldVelocity() * (2.f * FMath::Sqrt(Hk)) + FVector(0.f, 0.f, Gravity * 0.5f)) * (HandShare * HoistHandLeft);
-			// The hand carries the arm after it: the force is for the whole arm's weight.
-			float ArmMass = 0.f;
-			for (const TCHAR* Part : { TEXT("hand"), TEXT("lowerarm"), TEXT("upperarm") })
-			{
-				if (const FBodyInstance* Piece = BodyMesh->GetBodyInstance(FName(FString(Part) + (HoistHand == 0 ? TEXT("_l") : TEXT("_r")))))
-				{
-					ArmMass += Piece->GetBodyMass();
-				}
-			}
-			HandBody->AddForce(HandAccel.GetClampedToMaxSize(HoistHandMaxAccel) * FMath::Max(ArmMass, HandBody->GetBodyMass()), true, false);
-			// Leaning on the hand the chest comes up off the ground a little, before the hips are hauled up.
-			if (Chest && Chest->IsInstanceSimulatingPhysics())
-			{
-				Chest->AddForce(FVector(0.f, 0.f, Gravity * HoistHandPushShare * UpperMass * HandShare * HoistHandLeft * (1.f - HoistDrive)), true, false);
+				ArmMass += Piece->GetBodyMass();
 			}
 		}
+		HandBody->AddForce(HandAccel.GetClampedToMaxSize(HoistHandMaxAccel) * FMath::Max(ArmMass, HandBody->GetBodyMass()), true, false);
+		// The palm is turned flat to the ground.
+		const FVector Palm = HandBody->GetUnrealWorldTransform().GetRotation().RotateVector(HoistPalmLocal[Side]);
+		const FVector PalmAxis = FVector::CrossProduct(Palm, -Up);
+		const float PalmAngle = FMath::Atan2(static_cast<float>(PalmAxis.Size()), static_cast<float>(FVector::DotProduct(Palm, -Up)));
+		const float Wp = UE_TWO_PI * HoistPalmHz;
+		HandBody->AddTorqueInRadians((PalmAxis.GetSafeNormal() * (PalmAngle * Wp * Wp) - HandBody->GetUnrealWorldAngularVelocityInRadians() * (2.f * Wp)) * Share, true, true);
+		// The forearm turns with it, as it does to lay a hand flat.
+		if (FBodyInstance* Forearm = BodyMesh->GetBodyInstance(FName(FString(TEXT("lowerarm")) + Suffix)); Forearm && Forearm->IsInstanceSimulatingPhysics())
+		{
+			Forearm->AddTorqueInRadians((PalmAxis.GetSafeNormal() * (PalmAngle * Wp * Wp) - Forearm->GetUnrealWorldAngularVelocityInRadians() * (2.f * Wp)) * (Share * 0.5f), true, true);
+		}
+		PalmDown += static_cast<float>(-Palm.Z) * 0.5f;
+		// Leaning on the hands the chest comes up off the ground a little, before the hips are hauled up.
+		if (Chest && Chest->IsInstanceSimulatingPhysics())
+		{
+			Chest->AddForce(FVector(0.f, 0.f, Gravity * HoistHandPushShare * 0.5f * UpperMass * Share * (1.f - HoistDrive)), true, false);
+		}
 	}
+	HoistPalmDownLogged = PalmDown;
 	// And turned round to face the keys.
 	const FVector Facing = FVector::CrossProduct(BodyMesh->GetBoneLocation(TEXT("thigh_r")) - BodyMesh->GetBoneLocation(TEXT("thigh_l")), Up).GetSafeNormal2D();
 	if (!KeyWay.IsNearlyZero() && !Facing.IsNearlyZero())
@@ -2929,8 +2977,8 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 	{
 		const FBodyInstance* HeadNow = BodyMesh->GetBodyInstance(HeadBoneName);
 		const FVector FaceNow = HeadNow ? HeadNow->GetUnrealWorldTransform().GetRotation().RotateVector(HoistFaceLocal) : FVector::ZeroVector;
-		UE_LOG(LogAedir, Log, TEXT("[Hoist] %s %.2f s held: hips %.0f of %.0f cm (%.0f%%), rising %.0f cm/s, pull %.2f (lift %.2f, keys %d), chest up %.2f, head %.2f facing the camera %.2f up %.2f, hand %.2f %.0f cm off the ground spot"), *GetNameSafe(GetOwner()), HoistHeldSeconds, Height, Stand, Height / Stand * 100.f, HipsSpeed.Z, Pull, GetUpLift, bHeld ? 1 : 0, ChestUp,
-			HeadShare, FVector::DotProduct(FaceNow.GetSafeNormal2D(), CharacterOwner->GetControlRotation().Vector().GetSafeNormal2D()), FaceNow.Z, HandShare * HoistHandLeft, HandOff);
+		UE_LOG(LogAedir, Log, TEXT("[Hoist] %s %.2f s held: hips %.0f of %.0f cm (%.0f%%), rising %.0f cm/s, pull %.2f (lift %.2f, keys %d), chest up %.2f, head %.2f facing the camera %.2f up %.2f, hands %.2f, the furthest %.0f cm off its spot, palms down %.2f"), *GetNameSafe(GetOwner()), HoistHeldSeconds, Height, Stand, Height / Stand * 100.f, HipsSpeed.Z, Pull, GetUpLift, bHeld ? 1 : 0, ChestUp,
+			HeadShare, FVector::DotProduct(FaceNow.GetSafeNormal2D(), CharacterOwner->GetControlRotation().Vector().GetSafeNormal2D()), FaceNow.Z, HandShare * HoistHandLeft, HandOff, HoistPalmDownLogged);
 	}
 
 	// Up, upright and steady for a moment: on its feet.

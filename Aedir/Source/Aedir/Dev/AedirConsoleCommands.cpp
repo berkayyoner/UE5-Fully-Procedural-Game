@@ -461,7 +461,7 @@ namespace
 		{ TEXT("setweather"), TEXT("setweather <Sunny|ExtraSunny|Cloudy|Rainy|Stormy|Thunderstorm|Snowy>  changes the weather (sw)") },
 		{ TEXT("settime"), TEXT("settime <hour> [minute]  puts the clock at that time of day, 0-23 and 0-59") },
 		{ TEXT("noclip"), TEXT("noclip  fly through everything, Space up, Ctrl down, Shift faster; again to land (tcl)") },
-		{ TEXT("physics"), TEXT("physics [0|1]  the bodies' physics on or off (off is how the game runs for now)") },
+		{ TEXT("physics"), TEXT("physics [0|1]  the bodies' physics and the clothes' cloth on or off (aedir.Cloth for the cloth alone)") },
 	};
 
 	// The player's own console commands (its Exec functions: Heal, Knockdown, SpawnEnemy and the rest), each with how it is

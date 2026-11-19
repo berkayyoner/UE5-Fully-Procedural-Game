@@ -38,6 +38,10 @@ public:
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+	// Whether worn clothes are simulated as cloth, and turning it on or off for every one in the world at once.
+	static bool IsClothOn();
+	static void SetClothOn(UWorld* World, bool bOn);
+
 	// Armor is worn on the server. Every other item uses the base behaviour.
 	virtual void Use_Implementation(AAedirCreature* User) override;
 

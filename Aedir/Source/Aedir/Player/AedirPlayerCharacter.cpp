@@ -2324,6 +2324,8 @@ void AAedirPlayerCharacter::Physics(int32 On)
 	{
 		It->ApplyBodyMask();
 	}
+	// The clothes' cloth goes with the bodies' physics.
+	AAedirCatalogItem::SetClothOn(GetWorld(), bPhysics);
 	// The hands' bodies go over to the physics on the next frames; a weapon is welded to a hand only once it simulates.
 	FTimerHandle Refresh;
 	GetWorldTimerManager().SetTimer(Refresh, FTimerDelegate::CreateWeakLambda(this, [this]()
@@ -2333,7 +2335,7 @@ void AAedirPlayerCharacter::Physics(int32 On)
 			It->RefreshHeldPhysics();
 		}
 	}), 0.25f, false);
-	const FString Message = bPhysics ? TEXT("Physics on: the bodies are held to their poses by their muscles, held weapons are solid.") : TEXT("Physics off: the bodies are posed directly.");
+	const FString Message = bPhysics ? TEXT("Physics on: the bodies are held to their poses by their muscles, held weapons are solid, clothes are cloth.") : TEXT("Physics off: the bodies are posed directly, clothes only follow the bones.");
 	UE_LOG(LogAedir, Display, TEXT("[Physics] %s"), *Message);
 	UAedirDevTools::OnReported().Broadcast(Message);
 }
