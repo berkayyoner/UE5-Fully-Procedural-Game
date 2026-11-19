@@ -532,7 +532,7 @@ public:
 
 	// Multiplier on the foot home half-width at a full fighting stance.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
-	float StanceFootWidthMultiplier = 2.6f;
+	float StanceFootWidthMultiplier = 2.35f;
 
 	// Forward shift in cm of the lead foot's home location at a full fighting stance. The rear foot moves back by half of it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -557,7 +557,7 @@ public:
 
 	// The feet spread this much wider with the fists' guard fully up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="1"))
-	float FistStanceWidthMultiplier = 3.f;
+	float FistStanceWidthMultiplier = 2.6f;
 
 	// Walking stride multiplier at a full fighting stance. Running is not affected.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
