@@ -281,6 +281,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float PunchSoundSpeedMax = 1300.f;
 
+	// How loud a punch sound is (share of its full loudness) for the slowest punch and for one at 100% of the speed above.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float PunchSoundLoudMin = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float PunchSoundLoudMax = 1.f;
+
 	float GetStrengthBlowScale() const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")

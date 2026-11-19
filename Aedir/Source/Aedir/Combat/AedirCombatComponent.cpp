@@ -4606,6 +4606,8 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		// A fist sounds by where it landed, the face or the rest of the body, and by how fast it came in.
 		const EAedirSfx FistSound = Zone == EAedirBodyZone::Head ? EAedirSfx::PunchFace : EAedirSfx::PunchBody;
 		const float FistSpeedShare = FMath::Clamp((RelativeSpeed - PunchSoundSpeedMin) / FMath::Max(PunchSoundSpeedMax - PunchSoundSpeedMin, 1.f), 0.f, 1.f);
+		// A punch is as loud as it is fast, not as the weight behind it: even a light one is clearly heard.
+		const float FistLoud = FMath::Lerp(PunchSoundLoudMin, PunchSoundLoudMax, FistSpeedShare);
 		if (!bEdged)
 		{
 			if (HeldItem)
@@ -4614,7 +4616,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 			}
 			else
 			{
-				UAedirSfxSubsystem::Play(this, FistSound, At, Loud, FistSpeedShare);
+				UAedirSfxSubsystem::Play(this, FistSound, At, FistLoud, FistSpeedShare);
 			}
 		}
 		else if (bGlance)

@@ -23,8 +23,8 @@ namespace
 		{ TEXT("MetalHit"), 0.7f, 250.f, 2500.f },
 		{ TEXT("WoodHit"), 0.7f, 200.f, 2000.f },
 		{ TEXT("WoodCut"), 0.8f, 200.f, 2200.f },
-		{ TEXT("PunchBody"), 0.85f, 160.f, 1600.f },
-		{ TEXT("PunchFace"), 0.85f, 160.f, 1600.f },
+		{ TEXT("PunchBody"), 1.f, 450.f, 2500.f },
+		{ TEXT("PunchFace"), 1.f, 450.f, 2500.f },
 		{ TEXT("BodyImpact"), 0.8f, 200.f, 2000.f },
 		{ TEXT("Cut"), 0.8f, 150.f, 1500.f },
 		{ TEXT("Stab"), 0.8f, 150.f, 1500.f },
@@ -188,5 +188,5 @@ void UAedirSfxSubsystem::PlayAt(EAedirSfx Kind, const FVector& Location, float S
 	const float Volume = Info.Volume * FMath::Lerp(0.35f, 1.f, Strength) * UAedirSettingsSubsystem::GetValues().EffectsVolume;
 	const float Pitch = FMath::FRandRange(0.92f, 1.08f) * FMath::Lerp(1.08f, 0.92f, Strength);
 	UGameplayStatics::PlaySoundAtLocation(World, Sound, Location, FRotator::ZeroRotator, Volume, Pitch, 0.f, Attenuation, nullptr);
-	UE_CLOG(CVarAedirSfxLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Sfx] %s at %s, strength %.2f, speed %.0f%% -> %s"), Info.Name, *Location.ToCompactString(), Strength, SpeedShare * 100.f, *Sound->GetName());
+	UE_CLOG(CVarAedirSfxLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Sfx] %s at %s, strength %.2f, speed %.0f%%, volume %.2f -> %s"), Info.Name, *Location.ToCompactString(), Strength, SpeedShare * 100.f, Volume, *Sound->GetName());
 }
