@@ -432,9 +432,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Upright")
 	float PelvisTipLeverCm = 90.f;
 
-	// Seconds a fresh body takes to get up off the ground.
+	// Seconds it takes to get up off the ground: Min for a body fresh and whole, Max for one with no stamina and no health left,
+	// and in between by how much of each is gone (GetUpTiredShare and GetUpHurtShare of the way each).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpBaseSeconds = 3.f;
+	float GetUpSecondsMin = 1.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpSecondsMax = 4.5f;
 
 	// A player's body stays down until it is told to get up: S face down, W on the back. Bodies nobody plays get up by themselves.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
@@ -459,13 +463,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float GetUpFromBackStandCm = 32.f;
 
-	// How much longer it takes with no stamina left, as a share.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpTiredShare = 0.6f;
+	// How far towards GetUpSecondsMax getting up slows with no stamina left, and with no health left; the two add up.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float GetUpTiredShare = 0.5f;
 
-	// How much longer it takes with no health left, as a share.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpHurtShare = 0.9f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float GetUpHurtShare = 0.5f;
 
 	// How weak the muscles are at the start of getting up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")

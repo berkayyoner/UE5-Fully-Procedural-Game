@@ -2307,9 +2307,10 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 
 		// The pose takes the body up from the ground the way it lies, slower for a tired or hurt body.
 		const UAedirStatsComponent* StatsComponent = FindStats();
-		const float Tired = StatsComponent ? StatsComponent->GetFatigue() : 0.f;
+		const float Tired = StatsComponent ? 1.f - FMath::Clamp(StatsComponent->GetStaminaFraction(), 0.f, 1.f) : 0.f;
 		const float Hurt = StatsComponent ? 1.f - FMath::Clamp(StatsComponent->GetHealth() / FMath::Max(StatsComponent->GetMaxHealth(), 1.f), 0.f, 1.f) : 0.f;
-		GetUpTotal = GetUpBaseSeconds * (1.f + Tired * GetUpTiredShare + Hurt * GetUpHurtShare);
+		GetUpTotal = FMath::Lerp(GetUpSecondsMin, GetUpSecondsMax, FMath::Clamp(Tired * GetUpTiredShare + Hurt * GetUpHurtShare, 0.f, 1.f));
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s gets up in %.2f s (stamina gone %.2f, health gone %.2f)"), *GetOwner()->GetName(), GetUpTotal, Tired, Hurt);
 		GetUpLeft = GetUpTotal;
 		bHipsInitialized = false;
 		if (UAedirGaitComponent* Gait = CharacterOwner->FindComponentByClass<UAedirGaitComponent>())

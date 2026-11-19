@@ -682,18 +682,16 @@ namespace
 	constexpr float AedirKickMinBalance = 0.4f;
 	constexpr float AedirKickPoseRiseSeconds = 0.3f;
 	constexpr float AedirKickPoseFallSeconds = 0.35f;
-	constexpr float AedirKickChamberTime = 0.5f;
+	constexpr float AedirKickChamberTime = 0.42f;
 	constexpr float AedirKickExtendTime = 0.62f;
-	constexpr float AedirKickChamberAheadCm = 20.f;
 	constexpr float AedirKickChamberRightCm = 6.f;
-	constexpr float AedirKickChamberBelowHipCm = -40.f;
 	constexpr float AedirKickExtendCm = 85.f;
 	constexpr float AedirKickMaxYawDegrees = 70.f;
 	constexpr float AedirKickMinLiftCm = -15.f;
 	constexpr float AedirKickMaxLiftCm = 55.f;
-	constexpr float AedirKickSoleStartTime = 0.2f;
-	constexpr float AedirKickSoleFullTime = 0.5f;
-	constexpr float AedirKickSoleEndTime = 0.9f;
+	constexpr float AedirKickPointStartTime = 0.2f;
+	constexpr float AedirKickPointFullTime = 0.55f;
+	constexpr float AedirKickPointEndTime = 0.9f;
 	constexpr float AedirKickGroundBelowHipCm = 90.f;
 	constexpr float AedirKickExtendHeightCm = 55.f;
 
@@ -5649,7 +5647,7 @@ float UAedirCombatComponent::ComputeShoveEnergy(float Strength, float StaminaFra
 	return (AedirShoveBaseJoules + FMath::Max(Strength, 0.f) * AedirShoveStrengthJoules) * StaminaScale;
 }
 
-FVector UAedirCombatComponent::EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm)
+FVector UAedirCombatComponent::EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm, float WindUpBackCm, float WindUpBelowHipCm)
 {
 	FVector Ahead = Forward.GetSafeNormal2D();
 	if (Ahead.IsNearlyZero())
@@ -5658,19 +5656,24 @@ FVector UAedirCombatComponent::EvaluateKickArc(const FVector& Start, const FVect
 	}
 
 	const FVector Right = FVector::CrossProduct(FVector::UpVector, Ahead);
-	// The chamber: the knee is drawn up towards the belly, the foot hanging just in front of and below the hip.
-	const FVector Chamber = Hip + Ahead * AedirKickChamberAheadCm + Right * AedirKickChamberRightCm + FVector(0.f, 0.f, AedirKickChamberBelowHipCm);
+	// The wind-up: the foot drawn back and off the ground, the knee bent, under and a little behind the hip.
+	const FVector WindUp = Hip - Ahead * WindUpBackCm + Right * AedirKickChamberRightCm - FVector(0.f, 0.f, WindUpBelowHipCm);
 	const FVector Extension = Hip + Ahead * AedirKickExtendCm + FVector(0.f, 0.f, AedirKickExtendHeightCm - AedirKickGroundBelowHipCm + LiftCm);
 	const float T = FMath::Clamp(T01, 0.f, 1.f);
 
 	if (T < AedirKickChamberTime)
 	{
-		return FMath::Lerp(Start, Chamber, CombatSmoothStep01(T / AedirKickChamberTime));
+		return FMath::Lerp(Start, WindUp, CombatSmoothStep01(T / AedirKickChamberTime));
 	}
 
 	if (T < AedirKickExtendTime)
 	{
-		return FMath::Lerp(Chamber, Extension, CombatSmoothStep01((T - AedirKickChamberTime) / (AedirKickExtendTime - AedirKickChamberTime)));
+		// The leg swings round the hip, the foot rising through the front on the way to the mark, not pushed out straight.
+		const float Swing = CombatSmoothStep01((T - AedirKickChamberTime) / (AedirKickExtendTime - AedirKickChamberTime));
+		const FVector From = WindUp - Hip;
+		const FVector To = Extension - Hip;
+		const FQuat Turn = FQuat::Slerp(FQuat::Identity, FQuat::FindBetweenVectors(From, To), Swing);
+		return Hip + Turn.RotateVector(From.GetSafeNormal()) * FMath::Lerp(From.Size(), To.Size(), Swing);
 	}
 
 	return FMath::Lerp(Extension, Start, CombatSmoothStep01((T - AedirKickExtendTime) / (1.f - AedirKickExtendTime)));
@@ -5692,25 +5695,22 @@ bool UAedirCombatComponent::GetKickPose(bool& bOutLeftLeg, FVector& OutFootTarge
 	}
 
 	const float T01 = FMath::Clamp(KickNet.Elapsed / AedirKickDuration, 0.f, 1.f);
-	OutFootTargetWorld = EvaluateKickArc(KickNet.StartWorld, GetPelvisWorld(), KickNet.Direction, T01, KickNet.LiftCm);
+	OutFootTargetWorld = EvaluateKickArc(KickNet.StartWorld, GetPelvisWorld(), KickNet.Direction, T01, KickNet.LiftCm, KickWindUpBackCm, KickWindUpBelowHipCm);
 	return true;
 }
 
-bool UAedirCombatComponent::GetKickSole(FVector& OutDirectionWorld, float& OutAlpha) const
+float UAedirCombatComponent::GetKickToePoint() const
 {
 	if (!Creature || KickPoseAlpha <= KINDA_SMALL_NUMBER)
 	{
-		return false;
+		return 0.f;
 	}
 
-	// The foot turns toes up on the way out, so that the sole lands on the target.
+	// The foot stretches as the leg swings out, and loosens again on the way back.
 	const float T01 = FMath::Clamp(KickNet.Elapsed / AedirKickDuration, 0.f, 1.f);
-	const float Rise = CombatSmoothStep01((T01 - AedirKickSoleStartTime) / (AedirKickSoleFullTime - AedirKickSoleStartTime));
-	const float Fall = 1.f - CombatSmoothStep01((T01 - AedirKickExtendTime) / (AedirKickSoleEndTime - AedirKickExtendTime));
-	OutAlpha = FMath::Min(Rise, Fall) * FMath::Clamp(KickPoseAlpha, 0.f, 1.f);
-	const FVector Ahead = KickNet.Direction.GetSafeNormal2D();
-	OutDirectionWorld = (Ahead * AedirKickExtendCm + FVector(0.f, 0.f, AedirKickExtendHeightCm - AedirKickGroundBelowHipCm + KickNet.LiftCm)).GetSafeNormal();
-	return OutAlpha > KINDA_SMALL_NUMBER;
+	const float Rise = CombatSmoothStep01((T01 - AedirKickPointStartTime) / (AedirKickPointFullTime - AedirKickPointStartTime));
+	const float Fall = 1.f - CombatSmoothStep01((T01 - AedirKickExtendTime) / (AedirKickPointEndTime - AedirKickExtendTime));
+	return FMath::Min(Rise, Fall) * FMath::Clamp(KickPoseAlpha, 0.f, 1.f) * KickToePointShare;
 }
 
 bool UAedirCombatComponent::StartShove()

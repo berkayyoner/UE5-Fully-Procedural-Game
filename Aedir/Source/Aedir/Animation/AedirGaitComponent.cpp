@@ -17,6 +17,7 @@
 #include "Items/AedirItemTypes.h"
 #include "Movement/AedirCharacterMovementComponent.h"
 #include "Physics/AedirBalanceComponent.h"
+#include "Physics/AedirBodyControlComponent.h"
 #include "Wounds/AedirWoundComponent.h"
 
 namespace
@@ -211,7 +212,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	}
 	// How far the feet are set one before the other, and the hips and knees sunk: by the fight stance, or the fists' guard.
 	const float StaggerAlpha = FMath::Max(StanceAlpha, FistStanceAlpha * FistStanceFootShare);
-	const float SinkAlpha = FMath::Max(StanceAlpha, FistStanceAlpha * FistStanceBendShare);
+	// Crouched, the body is already low: the stance bends it no further.
+	const float SinkAlpha = FMath::Max(StanceAlpha, FistStanceAlpha * FistStanceBendShare) * (1.f - CrouchAlpha);
 
 	// Kick: the rear leg throws the kick while the lead leg holds the body up.
 	bool bKickLeftLeg = false;
@@ -260,14 +262,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const UAedirInteractionComponent* WidenInteraction = CreatureOwner->Interaction.Get();
 	const float ReachWidenAlpha = FMath::Clamp((WidenInteraction ? WidenInteraction->GetPelvisLowerZ() : 0.f) / ReachLowerMaxCm, 0.f, 1.f);
 	const float PostureWidthScale = 1.f + (CrouchFootWidenShare * CrouchAlpha) + (CrouchFootWidenShare * ReachWidenAlpha);
-	const float StanceWidthScale = FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha) * PostureWidthScale;
+	const float StanceWidthScale = FMath::Max(FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha), FMath::Lerp(1.f, FistStanceWidthMultiplier, FistStanceAlpha)) * PostureWidthScale;
 	const float StanceLeadForwardCm = StanceLeadFootForwardCm * StaggerAlpha * ActorScale;
 	for (int32 Foot = 0; Foot < 2; ++Foot)
 	{
 		const float Side = Foot == 0 ? -1.f : 1.f;
-		// Foot 1 is the right foot. The lead foot moves forward, the rear foot back by half as much.
+		// Foot 1 is the right foot. The lead foot moves forward, the rear foot back by a share of that.
 		const bool bLeadFoot = (Foot == 1) == bRightLead;
-		const float StanceForwardCm = StanceLeadForwardCm * (bLeadFoot ? 1.f : -0.5f);
+		const float StanceForwardCm = StanceLeadForwardCm * (bLeadFoot ? 1.f : -StanceRearFootBackShare);
 		// Side-stepping: the foot on the far side crosses in front of the leading foot, which stays behind, so the feet never collide.
 		const float StrafeSign = LocalDirection.Y < 0.f ? -1.f : 1.f;
 		const float StrafeStaggerCm = bMoving ? -Side * StrafeSign * StrafeFootStaggerCm * SideAlpha * ActorScale : 0.f;
@@ -409,7 +411,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			SwingElapsed[Foot] += DeltaTime;
 			const float T = FMath::Clamp(SwingElapsed[Foot] / FMath::Max(SwingDuration[Foot], KINDA_SMALL_NUMBER), 0.f, 1.f);
 			const float Smooth = T * T * (3.f - 2.f * T);
-			const float Arc = FMath::Sin(UE_PI * T);
+			// The foot comes up off the ground early in the step and is let down more slowly, so the toes leaving it behind
+			// clear it at once and do not slide along.
+			const float Arc = FMath::Sin(UE_PI * FMath::Pow(T, FMath::Clamp(StepLiftEarlyExponent, 0.3f, 1.f)));
 			const FVector& Target = bSwingFixedTarget[Foot] ? FixedLandingWorld[Foot] : LandingLocation[Foot];
 			const FVector& TargetUp = bSwingFixedTarget[Foot] ? FixedLandingNormal[Foot] : LandingNormal[Foot];
 			const float Rise = bSwingFixedTarget[Foot] ? static_cast<float>(FMath::Abs(Target.Z - SwingStartContact[Foot].Z)) : RiseCm[Foot];
@@ -465,6 +469,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			if (AwayDistance > LeashCm)
 			{
 				const FVector Pull = Away / AwayDistance * (AwayDistance - LeashCm);
+				LegLogLeash[Foot] += static_cast<float>(Pull.Size());
 				AnkleWorld[Foot] -= Pull;
 				Contact[Foot] -= Pull;
 				PlantedContact[Foot] -= FVector(Pull.X, Pull.Y, 0.f);
@@ -485,6 +490,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	GaitState.LeftFootWorld = AnkleWorld[0];
 	GaitState.RightFootWorld = AnkleWorld[1];
+	GaitState.LeftGroundZ = bAirborne || (bKicking && KickFoot == 0) ? -UE_BIG_NUMBER : static_cast<float>(Contact[0].Z);
+	GaitState.RightGroundZ = bAirborne || (bKicking && KickFoot == 1) ? -UE_BIG_NUMBER : static_cast<float>(Contact[1].Z);
 	GaitState.LeftFootLift = Lift[0];
 	GaitState.RightFootLift = Lift[1];
 	GaitState.LeftFootRot = ComputeFootTilt(TargetNormal[0], ActorUp, GaitState.LeftFootRot, DeltaTime);
@@ -615,7 +622,12 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		LoadRoll = FMath::FInterpTo(LoadRoll, RollTarget, DeltaTime, AedirLoadRollInterpSpeed);
 	}
 	const FRotator BalanceLean = BalanceComponent ? BalanceComponent->GetPelvisLean() : FRotator::ZeroRotator;
-	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * PelvisYawSwingDegrees * GaitIntensity;
+	// The stride turn of the hips and, against them, of the chest; held back in a fighting stance and when stepping sideways
+	// or back.
+	const float StrideTurnScale = ArmBlend * GaitSwagger * FMath::Lerp(1.f, StanceStrideTurnShare, FMath::Max(StanceAlpha, FistStanceAlpha))
+		* FMath::Lerp(1.f, ArmSideScale, SideAlpha) * FMath::Lerp(1.f, ArmBackScale, BackAlpha);
+	const float PelvisYaw = FMath::Sin(2.f * UE_PI * Phase) * FMath::Lerp(WalkPelvisTurnDegrees, RunPelvisTurnDegrees, RunBlend) * StrideTurnScale;
+	const float ChestStrideYaw = -FMath::Sin(2.f * UE_PI * (Phase - ArmPhaseLag)) * FMath::Lerp(WalkChestTurnDegrees, RunChestTurnDegrees, RunBlend) * StrideTurnScale;
 	// A low reach hinges at the hips as well as along the spine: half of the bend tips the pelvis forward.
 	const float ReachLean = Interaction ? Interaction->GetReachLeanDegrees() : 0.f;
 	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch - ReachLean * AedirReachHipHingeShare, PelvisYaw + SmoothedSwingTwist * AedirSwingPelvisShare + BalanceLean.Yaw, BalanceLean.Roll + TrunkInertia.Y + LoadRoll);
@@ -627,7 +639,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineLeanPitch -= ReachLean * (1.f - AedirReachHipHingeShare);
 	// Crouching bends the spine forward too, the body does not just sink on its legs.
 	GaitState.SpineLeanPitch -= CrouchSpineLeanDegrees * CrouchAlpha;
-	GaitState.SpineLeanPitch -= StanceSpineLeanDegrees * StanceAlpha;
+	GaitState.SpineLeanPitch -= StanceSpineLeanDegrees * StanceAlpha * (1.f - CrouchAlpha);
 	GaitState.SpineLeanPitch -= ProtectiveSpineLeanDegrees * ProtectiveAlpha;
 	// Backward positive: the torso leans back to bring the kicking leg up.
 	GaitState.SpineLeanPitch += KickSpineLeanDegrees * KickAlpha;
@@ -640,6 +652,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	SmoothedSpineTwist = FMath::FInterpTo(SmoothedSpineTwist, TwistTarget, DeltaTime, LookInterpSpeed);
 	SmoothedSwingTwist = FMath::FInterpTo(SmoothedSwingTwist, Combat ? Combat->GetSwingTwistDegrees() : 0.f, DeltaTime, AedirSwingTwistInterpSpeed);
 	GaitState.SpineTwistYaw = SmoothedSpineTwist + SmoothedSwingTwist + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f);
+	// The spine carries the chest from the hips' turn round to its own.
+	GaitState.SpineTwistYaw += ChestStrideYaw - PelvisYaw;
 
 	const FRotator HeadTarget(
 		LookPitch * HeadPitchShare + TrunkInertia.X * AedirInertiaHeadShare,
@@ -652,7 +666,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	// The chest turns with a swing, a punch or a reach, and the neck and head turn back against it: the eyes stay on the
 	// enemy ahead, not on the weapon.
 	const UAedirFistArms* WaistFists = CreatureOwner ? CreatureOwner->FindComponentByClass<UAedirFistArms>() : nullptr;
-	const float ChestTurn = SmoothedSwingTwist * (1.f + AedirSwingPelvisShare) + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f) + (WaistFists ? WaistFists->GetWaistYaw() : 0.f);
+	const float ChestTurn = SmoothedSwingTwist * (1.f + AedirSwingPelvisShare) + (Interaction ? Interaction->GetReachTwistDegrees() : 0.f) + (WaistFists ? WaistFists->GetWaistYaw() : 0.f) + ChestStrideYaw;
 	const FRotator HeadKept(HeadTarget.Pitch, HeadTarget.Yaw - ChestTurn * AedirHeadKeepsAheadShare, HeadTarget.Roll);
 	const FRotator NeckKept(NeckTarget.Pitch, NeckTarget.Yaw - ChestTurn * (1.f - AedirHeadKeepsAheadShare), NeckTarget.Roll);
 	GaitState.HeadLookRotation = FMath::RInterpTo(GaitState.HeadLookRotation, HeadKept, DeltaTime, LookInterpSpeed);
@@ -660,7 +674,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 
 	ArmBlend = FMath::FInterpTo(ArmBlend, bMoving ? 1.f : 0.f, DeltaTime, ArmBlendInterpSpeed);
 	const float DirectionalArmScale = FMath::Lerp(1.f, ArmSideScale, SideAlpha) * FMath::Lerp(1.f, ArmBackScale, BackAlpha);
-	const float ArmAmplitude = FMath::Lerp(MaxArmSwingWalkDegrees, MaxArmSwingRunDegrees, SpeedAlpha * SpeedAlpha) * DirectionalArmScale * ArmBlend;
+	const float ArmAmplitude = FMath::Lerp(MaxArmSwingWalkDegrees, MaxArmSwingRunDegrees, SpeedAlpha * SpeedAlpha) * DirectionalArmScale * ArmBlend * GaitSwagger;
 	// The arms follow the legs: their swing is a little behind the stride phase.
 	GaitState.ArmSwingLeft = FMath::Sin(2.f * UE_PI * (Phase + 0.5f - ArmPhaseLag)) * ArmAmplitude;
 	GaitState.ArmSwingRight = FMath::Sin(2.f * UE_PI * (Phase - ArmPhaseLag)) * ArmAmplitude;
@@ -726,11 +740,10 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.LeftArmLedShare = FMath::FInterpConstantTo(GaitState.LeftArmLedShare, Combat ? Combat->GetArmLedShare(EAedirHand::Left) : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.RightArmLedShare = FMath::FInterpConstantTo(GaitState.RightArmLedShare, Combat ? Combat->GetArmLedShare(EAedirHand::Right) : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.KickLeftLeg = bKickLeftLeg;
-	GaitState.KickSoleAlpha = 0.f;
+	GaitState.KickToePoint = Combat ? Combat->GetKickToePoint() : 0.f;
 	GaitState.ObjectAlpha = 0.f;
 	if (Combat)
 	{
-		Combat->GetKickSole(GaitState.KickSoleDirWorld, GaitState.KickSoleAlpha);
 		Combat->GetObjectCarry(GaitState.ObjectCenterWorld, GaitState.ObjectRadiusCm, GaitState.ObjectAlpha);
 	}
 	EAedirHand GripSecondary = EAedirHand::Left;
@@ -1041,7 +1054,7 @@ void UAedirGaitComponent::PoseGetUp(const FTransform& ActorTransform, float Bott
 	GaitState.LeftElbowHintAlpha *= 1.f - Weight;
 	GaitState.RightElbowHintAlpha *= 1.f - Weight;
 	GaitState.ObjectAlpha *= 1.f - Weight;
-	GaitState.KickSoleAlpha *= 1.f - Weight;
+	GaitState.KickToePoint *= 1.f - Weight;
 }
 
 void UAedirGaitComponent::BeginGetUpPose()
@@ -1091,6 +1104,7 @@ void UAedirGaitComponent::FillBoneNames(FAedirGaitBoneNames& OutNames) const
 	OutNames.LeftFemur = LeftFemurBoneName;
 	OutNames.LeftTibia = LeftTibiaBoneName;
 	OutNames.LeftFoot = LeftFootBoneName;
+	OutNames.LeftBall = LeftBallBoneName;
 	OutNames.RightClavicle = RightClavicleBoneName;
 	OutNames.RightHumerus = RightHumerusBoneName;
 	OutNames.RightRadius = RightRadiusBoneName;
@@ -1098,6 +1112,13 @@ void UAedirGaitComponent::FillBoneNames(FAedirGaitBoneNames& OutNames) const
 	OutNames.RightFemur = RightFemurBoneName;
 	OutNames.RightTibia = RightTibiaBoneName;
 	OutNames.RightFoot = RightFootBoneName;
+	OutNames.RightBall = RightBallBoneName;
+}
+
+namespace
+{
+	// How many people standing over one spot a ground trace looks past.
+	constexpr int32 AedirGroundTraceTries = 4;
 }
 
 bool UAedirGaitComponent::SampleGround(const FVector& WorldXY, float BottomZ, FVector& OutLocation, FVector& OutNormal) const
@@ -1107,9 +1128,21 @@ bool UAedirGaitComponent::SampleGround(const FVector& WorldXY, float BottomZ, FV
 	const FVector End(WorldXY.X, WorldXY.Y, BottomZ - GroundTraceDownCm);
 
 	FHitResult Hit;
-	const FCollisionQueryParams Params(FName(TEXT("AedirGaitGround")), false, GetOwner());
-	if (World && World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params))
+	FCollisionQueryParams Params(FName(TEXT("AedirGaitGround")), false, GetOwner());
+	// A foot never steps onto someone still on their feet: the trace looks on past them. One lying down, out cold or dead is
+	// ground like any other.
+	for (int32 Try = 0; World && Try < AedirGroundTraceTries && World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params); ++Try)
 	{
+		// Someone, or something someone holds or wears.
+		AActor* HitActor = Hit.GetActor();
+		const AAedirCreature* Standing = Cast<AAedirCreature>(HitActor ? HitActor->GetAttachParentActor() ? HitActor->GetAttachParentActor() : HitActor : nullptr);
+		const bool bLyingDown = Standing && ((Standing->Balance && Standing->Balance->IsRagdoll()) || (Standing->Stats && (Standing->Stats->IsDead() || Standing->Stats->IsKnockedOut())));
+		if (Standing && !bLyingDown)
+		{
+			++LegLogLookedPast;
+			Params.AddIgnoredActor(HitActor);
+			continue;
+		}
 		OutLocation = Hit.ImpactPoint;
 		OutNormal = Hit.ImpactNormal.GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
 		return true;
@@ -1123,6 +1156,7 @@ bool UAedirGaitComponent::SampleGround(const FVector& WorldXY, float BottomZ, FV
 void UAedirGaitComponent::ResetForRagdoll()
 {
 	GaitState = FAedirGaitState();
+	GaitState.bLimpPose = true;
 	bFeetInitialized = false;
 	bSwinging[0] = false;
 	bSwinging[1] = false;
@@ -1272,6 +1306,14 @@ void UAedirGaitComponent::LogWrists() const
 	}
 }
 
+namespace
+{
+	// The ball of a foot this near the ground touches it: it stands 1.8 cm off it flat.
+	constexpr float AedirLegLogTouchCm = 2.3f;
+	// The very start and end of a step, when the foot is still at or already on the ground, are left out of how low it comes.
+	constexpr float AedirLegLogSwingSkipSeconds = 0.06f;
+}
+
 void UAedirGaitComponent::LogLegs()
 {
 	static IConsoleVariable* LegLog = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.LegLog"), 0, TEXT("Log the feet and knees against the body, each leg's length and how far each foot wandered, every this many frames."));
@@ -1315,6 +1357,44 @@ void UAedirGaitComponent::LogLegs()
 		LegLogKnee[Slot][0] = KneeHere;
 		LegLogFoot[Slot][1] = LegLogFoot[Slot][0];
 		LegLogFoot[Slot][0] = FootHere;
+		// The scrape: how far the ball of the foot slides along while it touches the ground.
+		const FVector Ball = Mesh->GetBoneLocation(Slot == 0 ? TEXT("ball_l") : TEXT("ball_r"));
+		FVector Ground, GroundNormal;
+		SampleGround(Ball, Owner->GetActorLocation().Z - Owner->GetCapsuleComponent()->GetScaledCapsuleHalfHeight(), Ground, GroundNormal);
+		const float BallHeight = static_cast<float>(Ball.Z - Ground.Z);
+		LegLogBallLow[Slot] = LegLogFrames <= 0 ? BallHeight : FMath::Min(LegLogBallLow[Slot], BallHeight);
+		if (LegLogFrames >= 0 && BallHeight < AedirLegLogTouchCm)
+		{
+			LegLogScrape[Slot] += static_cast<float>(FVector::Dist2D(Ball, LegLogBall[Slot]));
+			LegLogScrapeSwinging[Slot] += bSwinging[Slot] ? static_cast<float>(FVector::Dist2D(Ball, LegLogBall[Slot])) : 0.f;
+		}
+		LegLogBall[Slot] = Ball;
+		// While stepping: how low the ball of the foot comes, as posed and as the body really has it.
+		if (bSwinging[Slot] && SwingElapsed[Slot] > AedirLegLogSwingSkipSeconds && SwingElapsed[Slot] < SwingDuration[Slot] - AedirLegLogSwingSkipSeconds)
+		{
+			const UAedirBodyControlComponent* Posed = Owner->FindComponentByClass<UAedirBodyControlComponent>();
+			const float PosedHeight = Posed ? static_cast<float>(Posed->GetPoseLocation(Slot == 0 ? TEXT("ball_l") : TEXT("ball_r")).Z - Ground.Z) : BallHeight;
+			LegLogSwingLowPose[Slot] = FMath::Min(LegLogSwingLowPose[Slot], PosedHeight);
+			LegLogSwingLowBody[Slot] = FMath::Min(LegLogSwingLowBody[Slot], BallHeight);
+		}
+		// The jitter: how much the physical knee's lag behind the pose changes from frame to frame. The pose itself moving
+		// smoothly does not count, only the bodies shaking about it.
+		if (const UAedirBodyControlComponent* Physical = Owner->FindComponentByClass<UAedirBodyControlComponent>())
+		{
+			const FName KneeBone = Slot == 0 ? TEXT("calf_l") : TEXT("calf_r");
+			const FVector Lag = Mesh->GetBoneLocation(KneeBone) - Physical->GetPoseLocation(KneeBone);
+			if (LegLogFrames >= 0)
+			{
+				LegLogJitter[Slot] += static_cast<float>((Lag - 2.0 * LegLogLag[Slot][0] + LegLogLag[Slot][1]).Size());
+			}
+			else
+			{
+				LegLogLag[Slot][0] = Lag;
+			}
+			LegLogLag[Slot][1] = LegLogLag[Slot][0];
+			LegLogLag[Slot][0] = Lag;
+			LegLogLagSize[Slot] = static_cast<float>(Lag.Size());
+		}
 	}
 	// How far the shoulders are turned against the body: the line across them, seen from above.
 	const FVector Across = Body.InverseTransformVectorNoScale(Mesh->GetBoneLocation(TEXT("upperarm_r")) - Mesh->GetBoneLocation(TEXT("upperarm_l")));
@@ -1328,11 +1408,11 @@ void UAedirGaitComponent::LogLegs()
 	}
 	const auto Local = [&Body](const FVector& World) { return Body.InverseTransformPositionNoScale(World); };
 	const FVector FL = Local(Foot[0]), FR = Local(Foot[1]), KL = Local(Knee[0]), KR = Local(Knee[1]);
-	UE_LOG(LogAedir, Log, TEXT("[Legs] %s stance %.2f fists %.2f lead %d dt %.5f | feet L %.1f %.1f R %.1f %.1f apart %.1f ahead %.1f | knees L %.1f R %.1f apart %.1f | thigh-calf %.1f %.1f calf-foot %.1f %.1f hip-foot %.1f %.1f | path %.2f %.2f net %.2f %.2f | shake knees %.2f %.2f feet %.2f %.2f | chest turn %.0f to %.0f"),
+	UE_LOG(LogAedir, Log, TEXT("[Legs] %s stance %.2f fists %.2f lead %d dt %.5f | feet L %.1f %.1f R %.1f %.1f apart %.1f ahead %.1f | knees L %.1f R %.1f apart %.1f | thigh-calf %.1f %.1f calf-foot %.1f %.1f hip-foot %.1f %.1f | path %.2f %.2f net %.2f %.2f | shake knees %.2f %.2f feet %.2f %.2f | chest turn %.0f to %.0f | ball low %.1f %.1f scrape %.1f %.1f | jitter %.3f %.3f lag %.2f %.2f | looked past %d | scrape swinging %.1f %.1f leash %.1f %.1f | stepping ball low pose %.1f %.1f body %.1f %.1f"),
 		*Owner->GetName(), GaitState.StanceAlpha, FistStanceAlpha, CreatureOwner && CreatureOwner->Combat && CreatureOwner->Combat->IsLeadFootRight() ? 1 : 0, GetWorld()->GetDeltaSeconds(), FL.X, FL.Y, FR.X, FR.Y, FR.Y - FL.Y, FR.X - FL.X, KL.Y, KR.Y, KR.Y - KL.Y,
 		FVector::Dist(Thigh[0], Knee[0]), FVector::Dist(Thigh[1], Knee[1]), FVector::Dist(Knee[0], Foot[0]), FVector::Dist(Knee[1], Foot[1]), FVector::Dist(Thigh[0], Foot[0]), FVector::Dist(Thigh[1], Foot[1]),
 		LegLogPath[0], LegLogPath[1], FVector::Dist(Foot[0], LegLogStart[0]), FVector::Dist(Foot[1], LegLogStart[1]),
-		LegLogShake[0], LegLogShake[1], LegLogShake[2], LegLogShake[3], LegLogChestMin, LegLogChestMax);
+		LegLogShake[0], LegLogShake[1], LegLogShake[2], LegLogShake[3], LegLogChestMin, LegLogChestMax, LegLogBallLow[0], LegLogBallLow[1], LegLogScrape[0], LegLogScrape[1], LegLogJitter[0], LegLogJitter[1], LegLogLagSize[0], LegLogLagSize[1], LegLogLookedPast, LegLogScrapeSwinging[0], LegLogScrapeSwinging[1], LegLogLeash[0], LegLogLeash[1], LegLogSwingLowPose[0], LegLogSwingLowPose[1], LegLogSwingLowBody[0], LegLogSwingLowBody[1]);
 	for (float& Shake : LegLogShake)
 	{
 		Shake = 0.f;
@@ -1341,6 +1421,12 @@ void UAedirGaitComponent::LogLegs()
 	{
 		LegLogPath[Slot] = 0.f;
 		LegLogStart[Slot] = Foot[Slot];
+		LegLogScrape[Slot] = 0.f;
+		LegLogJitter[Slot] = 0.f;
+		LegLogScrapeSwinging[Slot] = 0.f;
+		LegLogLeash[Slot] = 0.f;
+		LegLogSwingLowPose[Slot] = 99.f;
+		LegLogSwingLowBody[Slot] = 99.f;
 	}
 	LegLogFrames = 0;
 }

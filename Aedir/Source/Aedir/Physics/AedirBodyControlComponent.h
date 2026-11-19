@@ -71,16 +71,16 @@ public:
 
 	// What is left of every muscle in a body that is down.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float LimpShare = 0.04f;
+	float LimpShare = 0.07f;
 
 	// What is left of every muscle in a dead body. At the moment of death the muscles still hold the shape the body had
 	// then with DeadStartShare of their strength, and give way to DeadShare over DeadFadeSeconds: the body goes down as a
 	// whole and settles, its joints still resisting being folded, rather than flowing to the ground like dough.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float DeadStartShare = 0.06f;
+	float DeadStartShare = 0.09f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float DeadShare = 0.02f;
+	float DeadShare = 0.03f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float DeadFadeSeconds = 3.f;

@@ -21,6 +21,10 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	bool bProceduralActive = false;
 
+	// A body down and loose: its weak muscles pull it to a slack, half-bent shape, not to the stiff reference pose.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	bool bLimpPose = false;
+
 	// Hip offset in cm along the creature up axis, negative = lowered.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float HipOffsetZ = 0.f;
@@ -35,6 +39,11 @@ struct AEDIR_API FAedirGaitState
 
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	FVector RightFootWorld = FVector::ZeroVector;
+
+	// The height of the ground under each foot, world Z; the toes are never put below it. Far below while there is none to keep
+	// to (in the air, kicking, down).
+	float LeftGroundZ = -UE_BIG_NUMBER;
+	float RightGroundZ = -UE_BIG_NUMBER;
 
 	// World-space sole tilt that aligns the foot with the ground normal. Applied on top of the rest foot pose.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
@@ -109,12 +118,9 @@ struct AEDIR_API FAedirGaitState
 	float ObjectRadiusCm = 0.f;
 	float ObjectAlpha = 0.f;
 
-	// The sole of a kicking foot faces this way.
+	// How far a kicking foot is stretched, its toes pointed on along the shin.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
-	FVector KickSoleDirWorld = FVector::ForwardVector;
-
-	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
-	float KickSoleAlpha = 0.f;
+	float KickToePoint = 0.f;
 
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	bool KickLeftLeg = false;
@@ -269,6 +275,7 @@ struct FAedirGaitBoneNames
 	FName LeftFemur;
 	FName LeftTibia;
 	FName LeftFoot;
+	FName LeftBall;
 	FName RightClavicle;
 	FName RightHumerus;
 	FName RightRadius;
@@ -276,6 +283,7 @@ struct FAedirGaitBoneNames
 	FName RightFemur;
 	FName RightTibia;
 	FName RightFoot;
+	FName RightBall;
 };
 
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
@@ -329,6 +337,9 @@ public:
 	FName LeftFootBoneName = FName(TEXT("foot_l"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
+	FName LeftBallBoneName = FName(TEXT("ball_l"));
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
 	FName RightClavicleBoneName = FName(TEXT("clavicle_r"));
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
@@ -348,6 +359,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
 	FName RightFootBoneName = FName(TEXT("foot_r"));
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Gait|Bones")
+	FName RightBallBoneName = FName(TEXT("ball_r"));
 
 	// On a broken leg the body limps: while that leg takes the weight the hips sink this far and roll towards it, the trunk
 	// leans the other way to spare it, and the broken foot is lifted only this share as high and set down short.
@@ -406,6 +420,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MaxStepHeightCm = 45.f;
+
+	// A stepping foot's toes are kept off the ground by at least this share of how high its ankle has been lifted, so a foot
+	// swung through from behind does not drag them along with the foot hanging toes down.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait", meta=(ClampMin="0", ClampMax="1"))
+	float SwingToeClearanceShare = 0.6f;
+
+	// How early in a step the foot is highest: 1 halfway, less sooner (0.7 at about 37% of the step).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait", meta=(ClampMin="0.3", ClampMax="1"))
+	float StepLiftEarlyExponent = 0.7f;
 
 	// Crouched, the feet are lifted this much higher (cm, all of it fully down), so they clear the ground under bent knees
 	// instead of shuffling along it.
@@ -518,6 +541,14 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
 	float FistStanceBendShare = 0.4f;
+
+	// How far back the rear foot of the stance stands, as a share of how far forward the lead foot goes.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0"))
+	float StanceRearFootBackShare = 0.8f;
+
+	// The feet spread this much wider with the fists' guard fully up.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="1"))
+	float FistStanceWidthMultiplier = 1.25f;
 
 	// Walking stride multiplier at a full fighting stance. Running is not affected.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -693,8 +724,28 @@ public:
 	// 0 standing, 1 fully crouched. Lags the instant capsule change so the pelvis and camera lower gradually.
 	float GetCrouchAlpha() const { return CrouchAlpha; }
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float PelvisYawSwingDegrees = 0.f;
+	// The hips turn with the stride, the hip of the leg going forward with it, and the chest turns back against them with the
+	// arms: a little in a walk, more in a run. Degrees each way.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Spine")
+	float WalkPelvisTurnDegrees = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Spine")
+	float RunPelvisTurnDegrees = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Spine")
+	float WalkChestTurnDegrees = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Spine")
+	float RunChestTurnDegrees = 8.f;
+
+	// Share of the stride turn left with the fists' guard or a weapon stance fully up: a fighter keeps the trunk square.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Spine", meta=(ClampMin="0", ClampMax="1"))
+	float StanceStrideTurnShare = 0.3f;
+
+	// How showily the body walks: scales the stride turn of the hips and chest and the swing of the arms. 1 is the plain walk;
+	// a swaggering, cocky one is more, a timid one less.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Spine", meta=(ClampMin="0"))
+	float GaitSwagger = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HeadYawScale = 0.45f;
@@ -855,6 +906,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Reflex")
 	float ProtectiveSpineLeanDegrees = 10.f;
 
+	// The slack shape the weak muscles of a body that is down pull it to (falling, knocked down, out cold): the hips and the
+	// knees a little bent, the arms down at the sides with the elbows bent, the back and the neck bowed forward. Degrees.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpHipBendDegrees = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpKneeBendDegrees = 40.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpElbowBendDegrees = 45.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpBackBowDegrees = 15.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Limp")
+	float LimpNeckBowDegrees = 10.f;
+
 	// Backward torso lean in degrees at a full kick pose.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
 	float KickSpineLeanDegrees = 6.f;
@@ -905,6 +973,19 @@ private:
 	FVector LegLogKnee[2][2];
 	FVector LegLogFoot[2][2];
 	float LegLogShake[4] = { 0.f, 0.f, 0.f, 0.f };
+	FVector LegLogBall[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float LegLogBallLow[2] = { 0.f, 0.f };
+	float LegLogScrape[2] = { 0.f, 0.f };
+	FVector LegLogLag[2][2];
+	float LegLogJitter[2] = { 0.f, 0.f };
+	float LegLogLagSize[2] = { 0.f, 0.f };
+	// How many times the ground under a foot was looked for past someone standing on it.
+	mutable int32 LegLogLookedPast = 0;
+	// Of the scrape, how much was while the foot was stepping; and how far each foot was dragged after the body by the leash.
+	float LegLogScrapeSwinging[2] = { 0.f, 0.f };
+	float LegLogLeash[2] = { 0.f, 0.f };
+	float LegLogSwingLowPose[2] = { 99.f, 99.f };
+	float LegLogSwingLowBody[2] = { 99.f, 99.f };
 	float LegLogChestMin = 0.f;
 	float LegLogChestMax = 0.f;
 	void UpdateClutch(float DeltaTime,const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);

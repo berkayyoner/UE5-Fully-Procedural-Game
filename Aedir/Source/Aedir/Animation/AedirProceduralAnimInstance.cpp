@@ -147,6 +147,9 @@ namespace
 		return FQuat::FindBetweenNormals(FromDirection, ToDirection);
 	}
 
+	// The most a foot is turned toes up to keep them out of the ground.
+	constexpr float AedirToeLiftMaxDegrees = 60.f;
+
 	void RotateBone(FCSPose<FCompactPose>& CSPose, const FCompactPoseBoneIndex& Bone, const FQuat& MeshSpaceDelta)
 	{
 		FTransform BoneTransform = CSPose.GetComponentSpaceTransform(Bone);
@@ -199,6 +202,12 @@ void FAedirProceduralAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float D
 	BreathChestDegrees = Gait->BreathChestDegrees;
 	BreathClavicleDegrees = Gait->BreathClavicleDegrees;
 	BreathNeckCounterDegrees = Gait->BreathNeckCounterDegrees;
+	LimpHipBendDegrees = Gait->LimpHipBendDegrees;
+	SwingToeClearanceShare = Gait->SwingToeClearanceShare;
+	LimpKneeBendDegrees = Gait->LimpKneeBendDegrees;
+	LimpElbowBendDegrees = Gait->LimpElbowBendDegrees;
+	LimpBackBowDegrees = Gait->LimpBackBowDegrees;
+	LimpNeckBowDegrees = Gait->LimpNeckBowDegrees;
 
 	MeshToWorld = Mesh->GetComponentTransform();
 	const FQuat ActorToWorld = Owner->GetActorQuat();
@@ -214,6 +223,13 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 
 	if (!GaitData.bProceduralActive)
 	{
+		if (GaitData.bLimpPose)
+		{
+			FCSPose<FCompactPose> LimpPose;
+			LimpPose.InitPose(Output.Pose);
+			ApplyLimpPose(LimpPose, GetRequiredBones());
+			FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(LimpPose, Output.Pose);
+		}
 		return true;
 	}
 
@@ -296,8 +312,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
 
 	const FVector ForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
-	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, GaitData.LeftFootWorld, GaitData.LeftFootRot, ForwardMesh, GaitData.LeftFootLift, GaitData.KickLeftLeg ? GaitData.KickSoleAlpha : 0.f);
-	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.RightFemur, BoneNameSet.RightTibia, BoneNameSet.RightFoot, GaitData.RightFootWorld, GaitData.RightFootRot, ForwardMesh, GaitData.RightFootLift, GaitData.KickLeftLeg ? 0.f : GaitData.KickSoleAlpha);
+	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, BoneNameSet.LeftBall, GaitData.LeftFootWorld, GaitData.LeftGroundZ, GaitData.LeftFootRot, ForwardMesh, GaitData.LeftFootLift, GaitData.KickLeftLeg ? GaitData.KickToePoint : 0.f);
+	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.RightFemur, BoneNameSet.RightTibia, BoneNameSet.RightFoot, BoneNameSet.RightBall, GaitData.RightFootWorld, GaitData.RightGroundZ, GaitData.RightFootRot, ForwardMesh, GaitData.RightFootLift, GaitData.KickLeftLeg ? 0.f : GaitData.KickToePoint);
 
 	// Where the pose has each arm, for the body to put an arm back on it that got caught off it.
 	for (int32 Slot = 0; Slot < 2; ++Slot)
@@ -1359,7 +1375,7 @@ void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCS
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
 }
 
-void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift, float KickSoleAlpha) const
+void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FName& BallName, const FVector& FootWorld, float GroundZ, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift, float KickToePoint) const
 {
 	const FCompactPoseBoneIndex Femur = ResolveCompactBone(Bones, FemurName);
 	const FCompactPoseBoneIndex Tibia = ResolveCompactBone(Bones, TibiaName);
@@ -1429,15 +1445,67 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<
 	const FQuat ShinFootRotation = TibiaDelta * FemurDelta * FootTransform.GetRotation();
 	const float LooseAlpha = FMath::Max(FMath::Clamp(FootLift * AedirFootLooseGain, 0.f, 1.f), HeelAlpha);
 	FQuat FootRotation = FQuat::Slerp(FlatFootRotation, ShinFootRotation, LooseAlpha);
-	// A kick lands on the sole: the flat foot turned toes up until its underside faces the target.
-	if (KickSoleAlpha > AedirReachAlphaThreshold)
+	// A kick lands with the instep and the shin: the foot is stretched, its toes pointed on along the shin.
+	if (KickToePoint > AedirReachAlphaThreshold)
 	{
-		const FVector SoleDirection = MeshToWorld.InverseTransformVectorNoScale(GaitData.KickSoleDirWorld);
-		const FQuat SoleRotation = SafeDeltaRotation(DownMeshDirection, SoleDirection) * RefCSPose.GetComponentSpaceTransform(Foot).GetRotation();
-		FootRotation = FQuat::Slerp(FootRotation, SoleRotation, FMath::Clamp(KickSoleAlpha, 0.f, 1.f));
+		const FVector ShinDirection = (SolvedEndPosition - SolvedJointPosition).GetSafeNormal();
+		const FQuat PointedRotation = SafeDeltaRotation(ForwardMesh, ShinDirection) * RefCSPose.GetComponentSpaceTransform(Foot).GetRotation();
+		FootRotation = FQuat::Slerp(FootRotation, PointedRotation, FMath::Clamp(KickToePoint, 0.f, 1.f));
+	}
+	// The toes never go into the ground: a heel peeling up behind the body, or a foot swung through low, turns its toes up
+	// about the ankle just enough to keep the ball of the foot as high off the ground as it stands flat.
+	const FCompactPoseBoneIndex Ball = ResolveCompactBone(Bones, BallName);
+	if (Ball.IsValid() && GroundZ > -UE_BIG_NUMBER * 0.5f)
+	{
+		const FVector BallInFoot = CSPose.GetLocalSpaceTransform(Ball).GetLocation();
+		const FVector ToBall = FootRotation.RotateVector(BallInFoot);
+		const FVector GroundMesh = MeshToWorld.InverseTransformPosition(FVector(FootWorld.X, FootWorld.Y, GroundZ));
+		const float BallRest = FMath::Max(static_cast<float>(FVector::DotProduct(RefCSPose.GetComponentSpaceTransform(Ball).GetLocation(), UpMeshDirection)), 0.f);
+		const float BallHeight = static_cast<float>(FVector::DotProduct(SolvedEndPosition + ToBall - GroundMesh, UpMeshDirection));
+		// A foot stepping through keeps its toes up with it: they rise this share of what the ankle has risen.
+		const float AnkleRest = static_cast<float>(FVector::DotProduct(RefCSPose.GetComponentSpaceTransform(Foot).GetLocation(), UpMeshDirection));
+		const float AnkleRise = FMath::Max(static_cast<float>(FVector::DotProduct(SolvedEndPosition - GroundMesh, UpMeshDirection)) - AnkleRest, 0.f);
+		const float BallLowest = FMath::Max(BallRest, 0.f) + AnkleRise * SwingToeClearanceShare;
+		const float Reach = static_cast<float>(ToBall.Size());
+		const FVector Axis = FVector::CrossProduct(ToBall, UpMeshDirection).GetSafeNormal();
+		if (BallHeight < BallLowest && Reach > KINDA_SMALL_NUMBER && !Axis.IsNearlyZero())
+		{
+			const float Up = static_cast<float>(FVector::DotProduct(ToBall, UpMeshDirection)) / Reach;
+			const float Wanted = FMath::Clamp(Up + (BallLowest - BallHeight) / Reach, -1.f, 1.f);
+			const float Angle = FMath::Min(FMath::Asin(Wanted) - FMath::Asin(FMath::Clamp(Up, -1.f, 1.f)), FMath::DegreesToRadians(AedirToeLiftMaxDegrees));
+			FootRotation = FQuat(Axis, Angle) * FootRotation;
+		}
 	}
 	NewFoot.SetRotation(FootRotation.GetNormalized());
 	CSPose.SetComponentSpaceTransform(Foot, NewFoot);
+}
+
+void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const
+{
+	// Every turn is in the body's own frame, forward bends a positive pitch for the limbs hanging down and a negative one for
+	// the back; each bone is turned after its parent, on top of what it inherited.
+	const auto Turn = [&](const FName& Name, const FRotator& Rotation)
+	{
+		const FCompactPoseBoneIndex Bone = ResolveCompactBone(Bones, Name);
+		if (Bone.IsValid())
+		{
+			RotateBone(CSPose, Bone, ActorRotationToMesh(Rotation.Quaternion()));
+		}
+	};
+	const float BackPerBone = BoneNameSet.Spine.Num() > 0 ? LimpBackBowDegrees / BoneNameSet.Spine.Num() : 0.f;
+	for (const FName& Spine : BoneNameSet.Spine)
+	{
+		Turn(Spine, FRotator(-BackPerBone, 0.f, 0.f));
+	}
+	Turn(BoneNameSet.Neck, FRotator(-LimpNeckBowDegrees, 0.f, 0.f));
+	Turn(BoneNameSet.LeftHumerus, FRotator(0.f, 0.f, ArmRestAdductionLeft));
+	Turn(BoneNameSet.RightHumerus, FRotator(0.f, 0.f, ArmRestAdductionRight));
+	Turn(BoneNameSet.LeftRadius, FRotator(LimpElbowBendDegrees, 0.f, 0.f));
+	Turn(BoneNameSet.RightRadius, FRotator(LimpElbowBendDegrees, 0.f, 0.f));
+	Turn(BoneNameSet.LeftFemur, FRotator(LimpHipBendDegrees, 0.f, 0.f));
+	Turn(BoneNameSet.RightFemur, FRotator(LimpHipBendDegrees, 0.f, 0.f));
+	Turn(BoneNameSet.LeftTibia, FRotator(-LimpKneeBendDegrees, 0.f, 0.f));
+	Turn(BoneNameSet.RightTibia, FRotator(-LimpKneeBendDegrees, 0.f, 0.f));
 }
 
 UAedirGaitComponent* UAedirProceduralAnimInstance::GetGaitComponent() const

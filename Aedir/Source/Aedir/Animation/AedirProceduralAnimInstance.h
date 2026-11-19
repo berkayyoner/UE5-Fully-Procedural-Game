@@ -74,7 +74,7 @@ private:
 	void ApplyForearmTwist(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix) const;
 	void ApplyObjectHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, bool bLeft, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
 	void ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
-	void ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FVector& FootWorld, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift, float KickSoleAlpha) const;
+	void ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FName& BallName, const FVector& FootWorld, float GroundZ, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift, float KickToePoint) const;
 
 	FAedirGaitState GaitData;
 	FAedirGaitBoneNames BoneNameSet;
@@ -96,6 +96,14 @@ private:
 	float BulkScale = 1.f;
 	float BreathClavicleDegrees = 0.f;
 	float BreathNeckCounterDegrees = 0.f;
+	float LimpHipBendDegrees = 0.f;
+	float SwingToeClearanceShare = 0.f;
+	float LimpKneeBendDegrees = 0.f;
+	float LimpElbowBendDegrees = 0.f;
+	float LimpBackBowDegrees = 0.f;
+	float LimpNeckBowDegrees = 0.f;
+	// The slack shape of a body that is down, which its weak muscles pull it to.
+	void ApplyLimpPose(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
 };
 
 UCLASS()

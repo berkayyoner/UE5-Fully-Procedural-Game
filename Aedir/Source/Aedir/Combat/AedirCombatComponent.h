@@ -446,6 +446,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
 	float KickCooldown = 1.2f;
 
+	// The wind-up of a kick: the foot is drawn this far back of the hip and up to this far below it, the knee bent, before the
+	// leg swings up through the front to where the camera looks.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickWindUpBackCm = 18.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickWindUpBelowHipCm = 70.f;
+
+	// How far the kicking foot is stretched, its toes pointed on along the shin so the instep and the shin strike: 0 the foot
+	// keeps its rest angle to the shin, 1 the toes in line with it.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0", ClampMax="1"))
+	float KickToePointShare = 0.6f;
+
 	// Minimum tip speed in cm/s for a contact to count as a hit rather than a touch.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
 	float MinImpactSpeed = 250.f;
@@ -671,8 +684,8 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Combat|Kick")
 	bool GetKickPose(bool& bOutLeftLeg, FVector& OutFootTargetWorld, float& OutAlpha) const;
 
-	// Where the sole of the kicking foot faces, and how far the foot has turned to it.
-	bool GetKickSole(FVector& OutDirectionWorld, float& OutAlpha) const;
+	// How far the kicking foot is stretched and pointed along its shin, 0 to KickToePointShare.
+	float GetKickToePoint() const;
 
 	// Pure helpers used by the impact model and by tests.
 	static float ComputeImpactEnergy(float MassKg, float SpeedCmPerSec);
@@ -684,8 +697,9 @@ public:
 	// Energy in joules of a shove. Scales with strength and with the stamina fraction, between half and full.
 	static float ComputeShoveEnergy(float Strength, float StaminaFraction);
 
-	// Foot target of the kick arc. T01 is 0 at the start, 0.25 at the chamber, 0.5 at the full extension and 1 back at the start.
-	static FVector EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm = 0.f);
+	// Foot target of the kick arc. T01 is 0 at the start; the foot is drawn back and up to the wind-up by 0.42, swings round the
+	// hip up through the front to the full extension at 0.62, and is back at the start at 1.
+	static FVector EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm = 0.f, float WindUpBackCm = 18.f, float WindUpBelowHipCm = 70.f);
 
 private:
 	bool IsAuthoritative() const;
