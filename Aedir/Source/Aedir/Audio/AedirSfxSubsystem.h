@@ -16,10 +16,11 @@ enum class EAedirSfx : uint8
 	MetalHit,
 	WoodHit,
 	WoodCut,
-	// A fist on the arms, the trunk or the legs, and a fist in the face; each take belongs to a share of the full speed of a
-	// punch, and the one nearest the blow's speed is played.
+	// A fist on the trunk, the upper arms or the legs, one in the face, and one on a forearm, wrist or hand; each take
+	// belongs to a share of the full speed of a punch, and the one nearest the blow's speed is played.
 	PunchBody,
 	PunchFace,
+	PunchForearm,
 	BodyImpact,
 	Cut,
 	Stab,

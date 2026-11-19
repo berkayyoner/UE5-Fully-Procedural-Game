@@ -4603,8 +4603,12 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 		{
 			UAedirSfxSubsystem::Play(this, EAedirSfx::Armour, At, Loud);
 		}
-		// A fist sounds by where it landed, the face or the rest of the body, and by how fast it came in.
-		const EAedirSfx FistSound = Zone == EAedirBodyZone::Head ? EAedirSfx::PunchFace : EAedirSfx::PunchBody;
+		// A fist sounds by where it landed, the face, a forearm (wrist and hand with it) or the rest of the body, and by how fast
+		// it came in.
+		const FString StruckBone = Bone.ToString();
+		const bool bForearm = StruckBone.Contains(TEXT("lowerarm")) || StruckBone.StartsWith(TEXT("hand_")) || StruckBone.StartsWith(TEXT("thumb_"))
+			|| StruckBone.StartsWith(TEXT("index_")) || StruckBone.StartsWith(TEXT("middle_")) || StruckBone.StartsWith(TEXT("ring_")) || StruckBone.StartsWith(TEXT("pinky_"));
+		const EAedirSfx FistSound = Zone == EAedirBodyZone::Head ? EAedirSfx::PunchFace : bForearm ? EAedirSfx::PunchForearm : EAedirSfx::PunchBody;
 		const float FistSpeedShare = FMath::Clamp((RelativeSpeed - PunchSoundSpeedMin) / FMath::Max(PunchSoundSpeedMax - PunchSoundSpeedMin, 1.f), 0.f, 1.f);
 		// A punch is as loud as it is fast, not as the weight behind it: even a light one is clearly heard.
 		const float FistLoud = FMath::Lerp(PunchSoundLoudMin, PunchSoundLoudMax, FistSpeedShare);
@@ -5070,12 +5074,25 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 	{
 		Creature->AddMovementInput(Creature->GetActorForwardVector(), AedirAIFistStepInput);
 	}
+	// On guard the mouse is held in the middle, high: bare fists up before the face so the head is covered, a blade at the
+	// height of the chest as before.
+	const float GuardHeight = bArmed ? HeightFor(1) * 0.5f : FMath::Clamp(FMath::Lerp(HeightFor(1) * 0.5f, HeightFor(0), AIFistGuardHeadShare) + AIFistGuardLift, -1.f, 1.f);
+	if (CVarAedirHitLog.GetValueOnGameThread() != 0 && !bArmed && AIMousePhase == 0 && GFrameCounter % 30 == 0 && Body)
+	{
+		// For the hit log: how high the fists stand against the chin of the one holding them.
+		FVector LeftFist, RightFist, Elbow;
+		float Up = 0.f;
+		Fists->GetArm(EAedirHand::Left, LeftFist, Elbow, Up);
+		Fists->GetArm(EAedirHand::Right, RightFist, Elbow, Up);
+		const float Chin = static_cast<float>(Body->GetBoneLocation(TEXT("head")).Z);
+		UE_LOG(LogAedir, Log, TEXT("[NpcGuard] %s mouse %.2f (wanted %.2f), fists %.0f and %.0f cm from the chin"), *Creature->GetName(), Fists->GetMouseAim().Y, GuardHeight,
+			LeftFist.Z - Chin, RightFist.Z - Chin);
+	}
 	switch (AIMousePhase)
 	{
 	case 0:
 	{
-		// On guard, the mouse in the middle at the height of the chest, until the next blow.
-		MoveTo(FVector2D(0.f, HeightFor(1) * 0.5f), AedirAIMouseGuardSpeed);
+		MoveTo(FVector2D(0.f, GuardHeight), AedirAIMouseGuardSpeed);
 		const bool bTired = (Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare) || (bAIResting && !CanAIStrikeWhileResting());
 		if (CVarAedirHitLog.GetValueOnGameThread() != 0 && AIMouseTimer >= AIMouseWait && GFrameCounter % 20 == 0)
 		{
@@ -5145,7 +5162,7 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		break;
 	default:
 		// Back to the guard, and a breath before the next.
-		MoveTo(FVector2D(0.f, HeightFor(1) * 0.5f), AedirAIMouseGuardSpeed);
+		MoveTo(FVector2D(0.f, GuardHeight), AedirAIMouseGuardSpeed);
 		if (AIMouseTimer >= AedirAIMouseRecoverSeconds)
 		{
 			AIMousePhase = 0;

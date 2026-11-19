@@ -376,6 +376,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float AIRestBackOffCm = 250.f;
 
+	// Bare-handed on guard, the mouse is held this share of the way from the chest (0) to the foe's head (1), and
+	// AIFistGuardLift higher still (a share of the mouse's way up), so the fists cover the face.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIFistGuardHeadShare = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="-1", ClampMax="1"))
+	float AIFistGuardLift = 0.35f;
+
 	// How often a swing goes for the head rather than the body.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIHeadChance = 0.75f;
