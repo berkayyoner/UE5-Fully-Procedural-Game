@@ -66,6 +66,8 @@ namespace
 	constexpr float AedirSetOffStandSeconds = 0.25f;
 	constexpr float AedirTurnStepTriggerCm = 10.f;
 	constexpr float AedirRestStepTriggerCm = 14.f;
+	// Moving with both feet down, the foot further from its place than the other by this much is the next to step.
+	constexpr float AedirTrailingFootFirstCm = 12.f;
 	constexpr float AedirOutOfTurnStepShare = 1.4f;
 	constexpr float AedirMinStepSeconds = 0.14f;
 	constexpr float AedirMaxStepSeconds = 0.38f;
@@ -344,6 +346,19 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			return static_cast<float>(Off.Size());
 		};
 
+		// Setting off or walking on, the foot furthest from where it should be goes first: a rear foot left back in the
+		// stance is not stretched after the body while the other steps.
+		if (bMoving && !bFootInAir)
+		{
+			const float Off0 = FootDistance(0);
+			const float Off1 = FootDistance(1);
+			const int32 Furthest = Off0 > Off1 ? 0 : 1;
+			if (Furthest != NextStepFoot && FMath::Abs(Off0 - Off1) > AedirTrailingFootFirstCm * ActorScale)
+			{
+				NextStepFoot = Furthest;
+			}
+		}
+
 		// Normally one foot at a time. A foot the body is pulling away from may lift while the other is just coming down.
 		const int32 LaterFoot = 1 - NextStepFoot;
 		const bool bLaterLanding = bSwinging[LaterFoot] && SwingElapsed[LaterFoot] / FMath::Max(SwingDuration[LaterFoot], KINDA_SMALL_NUMBER) > AedirLandingOverlapStart;
@@ -371,7 +386,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			LogStep(NextStepFoot, LandingLocation[NextStepFoot], Trigger);
 			BeginStep(NextStepFoot, StepSeconds);
 		}
-		else if (!bFootInAir && bMayOverlap && FootDistance(1 - NextStepFoot) >= Trigger * AedirOutOfTurnStepShare)
+		else if (!bFootInAir && bMayOverlap && FootDistance(1 - NextStepFoot) >= Trigger * AedirOutOfTurnStepShare && FootDistance(1 - NextStepFoot) >= FootDistance(NextStepFoot))
 		{
 			LogStep(1 - NextStepFoot, LandingLocation[1 - NextStepFoot], Trigger * AedirOutOfTurnStepShare);
 			BeginStep(1 - NextStepFoot, StepSeconds);

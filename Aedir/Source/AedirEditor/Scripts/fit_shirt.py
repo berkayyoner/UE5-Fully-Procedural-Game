@@ -58,8 +58,16 @@ SX = max(1.0, bw * 1.06 / sw)
 SY = max(1.0, (by_hi - by_lo) * 1.08 / (sy_hi - sy_lo))
 ymid_s, ymid_b = (sy_lo + sy_hi) / 2, (by_lo + by_hi) / 2
 print("[fit] body half width %.1f depth %.1f; shirt %.1f %.1f; scale %.2f %.2f, down %.1f" % (bw, by_hi - by_lo, sw, sy_hi - sy_lo, SX, SY, -dz))
+# The body a touch wider than the shirt's own cut below the arms, the shoulders a touch narrower.
+TORSO_WIDEN = 1.045
+SHOULDER_NARROW = 0.965
+SLEEVE_SLIM = 0.92
 def torso_map(v):
-    return Vector((v.x * SX, (v.y - ymid_s) * SY + ymid_b, v.z + dz))
+    z = v.z + dz
+    shoulder = max(0.0, min(1.0, (z - 132.0) / 12.0))
+    fx = TORSO_WIDEN + (SHOULDER_NARROW - TORSO_WIDEN) * shoulder
+    fy = TORSO_WIDEN + (1.0 - TORSO_WIDEN) * shoulder
+    return Vector((v.x * SX * fx, (v.y - ymid_s) * SY * fy + ymid_b, z))
 
 # ---- sleeves: the sleeve's own axis laid along upper arm and forearm.
 def sleeve_mapper(side):
@@ -78,7 +86,7 @@ def sleeve_mapper(side):
     d1, d2 = (E - S).normalized(), (W - E).normalized()
     rot1, rot2 = axis.rotation_difference(d1), axis.rotation_difference(d2)
     # The sleeve starts where the arm leaves the shoulder, a share of its way in from the bone's head.
-    start = S + d1 * 2.0
+    start = S + d1 * 2.0 - Vector((side * 1.0, 0, 0))
     total = L1 + L2 - 2.0
     print("[fit] sleeve", side, "shirt length %.1f -> arm %.1f, axis %s" % (length, total, tuple(round(c, 2) for c in axis)))
     def mapper(v):
@@ -89,7 +97,7 @@ def sleeve_mapper(side):
         share = max(0.0, min(1.0, (along - (L1 - 2.0) + 6.0) / 12.0))
         rot = rot1.slerp(rot2, share * share * (3 - 2 * share))
         p = start + d1 * along if along < L1 - 2.0 else E + d2 * (along - (L1 - 2.0))
-        return p + rot @ off, t
+        return p + rot @ (off * SLEEVE_SLIM), t
     return mapper
 maps = {1: sleeve_mapper(1.0), -1: sleeve_mapper(-1.0)}
 
@@ -218,14 +226,14 @@ bpy.context.view_layer.objects.active = shirt
 nv = len(shirt.data.vertices)
 bpy.ops.object.mode_set(mode="EDIT")
 bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.mesh.remove_doubles(threshold=0.01)
+bpy.ops.mesh.remove_doubles(threshold=0.1)
 bpy.ops.mesh.select_all(action="SELECT")
 bpy.ops.mesh.delete_loose(use_verts=True, use_edges=True, use_faces=False)
 bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.mesh.dissolve_degenerate(threshold=0.01)
+bpy.ops.mesh.dissolve_degenerate(threshold=0.1)
 bpy.ops.mesh.select_all(action="SELECT")
 bpy.ops.mesh.quads_convert_to_tris()
-bpy.ops.mesh.dissolve_degenerate(threshold=0.01)
+bpy.ops.mesh.dissolve_degenerate(threshold=0.1)
 bpy.ops.object.mode_set(mode="OBJECT")
 print("[fit] merged %d points into %d" % (nv, len(shirt.data.vertices)))
 bpy.ops.object.select_all(action="DESELECT")

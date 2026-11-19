@@ -25,6 +25,7 @@
 #include "Modules/ModuleManager.h"
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "SkeletalMeshClothingSystemUtilities.h"
+#include "ChaosCloth/ChaosClothConfig.h"
 
 namespace
 {
@@ -33,10 +34,9 @@ namespace
 	const TCHAR* const ImportScannedPath = TEXT("/Game/Aedir/Materials/M_AedirScanned.M_AedirScanned");
 	const TCHAR* const ImportBodyPhysicsPath = TEXT("/Game/Characters/Mannequins/Rigs/PA_Mannequin.PA_Mannequin");
 
-	// A worn piece's first section is made cloth: held to the body at the top, and let hang free of its skinned place the
-	// more the further down (to HemCm at the hem, from HemFromCm) and out along the sleeves (to CuffCm at the cuffs, from
-	// CuffFromCm across), the body's capsules keeping it off the body.
-	int32 MakeCloth(const FString& MeshPath, float HemFromCm, float HemCm, float CuffFromCm, float CuffCm)
+	// A worn piece's first section is made cloth: held at the collar, and let hang free of its skinned place the more the
+	// further down the body and out along the sleeves, the body's capsules keeping it off the body.
+	int32 MakeCloth(const FString& MeshPath, float PinAboveCm, float TorsoFromCm, float BaseCm, float TorsoCm, float SleeveFromCm, float SleeveCm, float BendStiffness)
 	{
 		USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath);
 		if (!Mesh)
@@ -90,20 +90,54 @@ namespace
 				return 1;
 			}
 			Mesh->AddClothingAsset(Cloth);
-			FClothPhysicalMeshData& Physical = Cloth->LodData[0].PhysicalMeshData;
-			FPointWeightMap& MaxDistance = Physical.FindOrAddWeightMap(EWeightMapTargetCommon::MaxDistance);
-			MaxDistance.Initialize(Physical.Vertices.Num());
-			int32 Loose = 0;
+			FClothLODDataCommon& ClothLod = Cloth->LodData[0];
+			FClothPhysicalMeshData& Physical = ClothLod.PhysicalMeshData;
+			// The values go in the LOD's painted mask: applying the masks copies them over the simulated mesh's own.
+			FPointWeightMap* Mask = ClothLod.PointWeightMaps.FindByPredicate([](const FPointWeightMap& Map) { return Map.CurrentTarget == static_cast<uint8>(EWeightMapTargetCommon::MaxDistance); });
+			if (!Mask)
+			{
+				Mask = &ClothLod.PointWeightMaps.AddDefaulted_GetRef();
+			}
+			Mask->Initialize(Physical.Vertices.Num());
+			Mask->CurrentTarget = static_cast<uint8>(EWeightMapTargetCommon::MaxDistance);
+			Mask->bEnabled = true;
 			for (int32 Point = 0; Point < Physical.Vertices.Num(); ++Point)
 			{
 				const FVector3f& At = Physical.Vertices[Point];
-				// Held at the collar and shoulders, freer the further down the body and out along the sleeves.
-				const float Hem = FMath::Pow(FMath::Clamp((HemFromCm - At.Z) / FMath::Max(HemFromCm - 88.f, 1.f), 0.f, 1.f), 1.3f) * HemCm;
-				const float Cuff = FMath::Pow(FMath::Clamp((FMath::Abs(At.X) - CuffFromCm) / FMath::Max(48.f - CuffFromCm, 1.f), 0.f, 1.f), 1.2f) * CuffCm;
-				MaxDistance.Values[Point] = FMath::Max(Hem, Cuff);
-				Loose += MaxDistance.Values[Point] > 0.f ? 1 : 0;
+				// Held only at the collar; a little free over the chest and the shoulders, more down the body to the hem and
+				// out along the sleeves to the cuffs.
+				const float Across = FMath::Abs(At.X);
+				const bool bCollar = At.Z > PinAboveCm && Across < 14.f;
+				const float Down = FMath::Clamp((TorsoFromCm - At.Z) / FMath::Max(TorsoFromCm - 88.f, 1.f), 0.f, 1.f);
+				const float Out = FMath::Clamp((Across - SleeveFromCm) / FMath::Max(48.f - SleeveFromCm, 1.f), 0.f, 1.f);
+				const float Torso = BaseCm + FMath::Pow(Down, 1.6f) * (TorsoCm - BaseCm);
+				const float Sleeve = Across > SleeveFromCm ? BaseCm * 1.5f + FMath::Pow(Out, 1.2f) * (SleeveCm - BaseCm * 1.5f) : 0.f;
+				Mask->Values[Point] = bCollar ? 0.f : FMath::Max(Torso, Sleeve);
 			}
 			Cloth->ApplyParameterMasks();
+			// Read back from what the simulation will use.
+			const FPointWeightMap* Used = Physical.FindWeightMap(EWeightMapTargetCommon::MaxDistance);
+			int32 Loose = 0;
+			float Most = 0.f;
+			for (int32 Point = 0; Used && Point < Used->Values.Num(); ++Point)
+			{
+				Loose += Used->Values[Point] > 0.f ? 1 : 0;
+				Most = FMath::Max(Most, Used->Values[Point]);
+			}
+			UE_LOG(LogAedirEditor, Display, TEXT("The simulated mesh lets %d points move, up to %.1f cm"), Loose, Most);
+			// Linen: it does not stretch, bends easily, and swings a little behind the body.
+			for (const TPair<FName, TObjectPtr<UClothConfigBase>>& Config : Cloth->ClothConfigs)
+			{
+				if (UChaosClothConfig* Chaos = Cast<UChaosClothConfig>(Config.Value))
+				{
+					Chaos->EdgeStiffnessWeighted = { 1.f, 1.f };
+					Chaos->BendingStiffnessWeighted = { BendStiffness, BendStiffness };
+					Chaos->DampingCoefficient = 0.06f;
+					Chaos->AnimDriveStiffness = { 0.f, 0.f };
+					Chaos->LinearVelocityScale = FVector(0.6f);
+					UE_LOG(LogAedirEditor, Display, TEXT("Cloth config %s: bending %.2f"), *Config.Key.ToString(), BendStiffness);
+				}
+			}
 			FString Error;
 			if (!FSkeletalMeshClothingSystemUtilities::AssignClothingToSection(Mesh, Cloth, 0, 0, 0, &Error))
 			{
@@ -191,17 +225,21 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 		return bDone ? 0 : 1;
 	}
 
-	// -Cloth=<skeletal mesh path> [-HemFrom=140 -Hem=8 -CuffFrom=22 -Cuff=8]: its first section made cloth, free of where its
-	// bones put it from nothing at HemFrom down to Hem cm at the hem, and from nothing at CuffFrom across to Cuff at the cuffs.
+	// -Cloth=<skeletal mesh path> [-Pin=146 -TorsoFrom=145 -Base=1.5 -Torso=9 -SleeveFrom=16 -Sleeve=9 -Bend=0.3]: its first
+	// section made cloth, held at the collar above Pin, Base cm free over the chest, to Torso cm at the hem from TorsoFrom
+	// down, and to Sleeve cm at the cuffs from SleeveFrom across; Bend is how stiffly it bends.
 	FString ClothMesh;
 	if (FParse::Value(*Params, TEXT("Cloth="), ClothMesh))
 	{
-		float HemFrom = 140.f, Hem = 8.f, CuffFrom = 22.f, Cuff = 8.f;
-		FParse::Value(*Params, TEXT("HemFrom="), HemFrom);
-		FParse::Value(*Params, TEXT("Hem="), Hem);
-		FParse::Value(*Params, TEXT("CuffFrom="), CuffFrom);
-		FParse::Value(*Params, TEXT("Cuff="), Cuff);
-		return MakeCloth(ClothMesh, HemFrom, Hem, CuffFrom, Cuff);
+		float Pin = 146.f, TorsoFrom = 145.f, Base = 1.5f, Torso = 9.f, SleeveFrom = 16.f, Sleeve = 9.f, Bend = 0.3f;
+		FParse::Value(*Params, TEXT("Pin="), Pin);
+		FParse::Value(*Params, TEXT("TorsoFrom="), TorsoFrom);
+		FParse::Value(*Params, TEXT("Base="), Base);
+		FParse::Value(*Params, TEXT("Torso="), Torso);
+		FParse::Value(*Params, TEXT("SleeveFrom="), SleeveFrom);
+		FParse::Value(*Params, TEXT("Sleeve="), Sleeve);
+		FParse::Value(*Params, TEXT("Bend="), Bend);
+		return MakeCloth(ClothMesh, Pin, TorsoFrom, Base, Torso, SleeveFrom, Sleeve, Bend);
 	}
 
 	FString Source;

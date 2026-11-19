@@ -31,6 +31,7 @@ public class AedirEditor : ModuleRules
 			"ClothingSystemRuntimeCommon",
 			"ClothingSystemRuntimeInterface",
 			"SkeletalMeshEditor",
+			"ChaosCloth",
 			"Aedir"
 		});
 	}
