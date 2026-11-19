@@ -521,3 +521,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Stamina weakens the body all the way from full to none, not only below half: the legs and trunk down to half their strength and the arms to three quarters, in proportion.
 - Punch sounds are the recorded ones given for the game: a fist in the face (or the neck) plays one of five face takes and a fist on the arms, trunk or legs one of nine body takes, each made for a share of a punch's full speed (180 cm/s is 0%, 1300 cm/s is 100%, PunchSoundSpeedMin/Max), the nearest one to the blow's; the made punch takes and their script are gone.
 - The face punch takes for 15%, 30% and 50% are the updated recordings.
+- A bone breaking plays one of the three recorded bone-break takes given for the game, chosen at random; the BreakLimb dev command is heard the same way.

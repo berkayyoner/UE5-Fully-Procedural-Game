@@ -56,7 +56,7 @@ namespace
 		// A stab.
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Stab_4-1"), TEXT("/Game/SmallSoundKit/SSKWav/DarkWav/Impact_Guts_Gore_01") },
 		// A bone breaking.
-		{ TEXT("/Game/SmallSoundKit/SSKWav/DarkWav/Breaking_Bones_01"), TEXT("/Game/SmallSoundKit/SSKWav/DarkWav/Blood_Bone_Smash_01") },
+		{ TEXT("/Game/Aedir/Sounds/S_BoneBreak_1"), TEXT("/Game/Aedir/Sounds/S_BoneBreak_2"), TEXT("/Game/Aedir/Sounds/S_BoneBreak_3") },
 		// Armour struck.
 		{ TEXT("/Game/Free_Sounds_Pack/wav/Shield_Metal_Impact_1-3"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_5-1") },
 		// Whoosh: the game's own.

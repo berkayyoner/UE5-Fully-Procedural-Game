@@ -1,5 +1,6 @@
 #include "AedirPlayerCharacter.h"
 #include "Aedir.h"
+#include "Audio/AedirSfxSubsystem.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
@@ -2359,6 +2360,11 @@ void AAedirPlayerCharacter::BreakLimb(int32 Limb, int32 Near)
 		}
 	}
 	const bool bBroken = Target && Target->Wounds && Limb >= 0 && Limb < 4 && Target->Wounds->BreakLimb(static_cast<EAedirLimb>(Limb));
+	if (bBroken)
+	{
+		// Heard as a bone broken in a fight is.
+		UAedirSfxSubsystem::Play(this, EAedirSfx::Bone, Target->GetActorLocation(), 1.f);
+	}
 	UE_LOG(LogAedir, Display, TEXT("[Dev] Limb %d of %s %s"), Limb, *GetNameSafe(Target), bBroken ? TEXT("broken") : TEXT("not broken"));
 }
 
