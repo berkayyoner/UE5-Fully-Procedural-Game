@@ -1,29 +1,45 @@
-﻿# blender -b --python fit_shirt.py -- shirt.fbx manny.json out.fbx preview_prefix
-# Fits the A-posed linen shirt onto the UE5 mannequin's bind pose and skins it, keeping the garment's own cut:
+﻿# blender -b --python fit_shirt.py -- shirt.fbx body.json out.fbx preview_prefix [skeleton.json [face.json ...]]
+# Fits the A-posed linen shirt onto the bind pose of the body the creatures wear (exported with AedirImportModels
+# -ExportBody=) and skins it, keeping the garment's own cut. With skeleton.json (a body exported on the skeleton the shirt
+# is imported onto) only that skeleton's bones are used, the body's extra ones (correctives, twists) given to the nearest
+# of them above; the further meshes (the face, with the neck) are only kept out of the cloth.
 # - the torso is only moved down to the neck and widened as a whole, by one scale across and one front to back, just
 #   enough for the body to fit inside it everywhere, so it still falls straight from the chest as it was made;
 # - each sleeve is laid along the arm's bones, its own shape kept;
-# - where the body still shows through, the cloth is eased out by a broad, smooth shift spread over its neighbours, never
-#   dented point by point;
-# - weights come from the skin under it (trunk skin for the trunk, arm skin for the sleeves, both over the shoulders);
+# - then it is laid onto the body as a sheet: round after round each point moves toward where it belongs, the moves
+#   spread over its neighbours, never dented point by point: out of the body to a little room everywhere, and in onto the
+#   skin over the arms, shoulders, back of the neck and upper back, where a shirt sits close; the chest and belly in
+#   front keep their own fall;
+# - weights come from the skin right under it (trunk skin for the trunk, arm skin for the sleeves, both over the
+#   tops of the shoulders);
 # - the cloth is simulated on a sparser copy (the ClothProxy section) that the garment drawn follows.
 import bpy, sys, json
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
-from mathutils.kdtree import KDTree
 argv = sys.argv[sys.argv.index("--") + 1:]
 SRC, BODY, OUT, PREVIEW = argv[0], argv[1], argv[2], argv[3]
+SKELETON = argv[4] if len(argv) > 4 else None
+EXTRA = argv[5:]
 
 CLEARANCE = 0.6          # cm the body keeps inside the shirt
 FIT_SHARE = 0.7          # share of the chest's bands the widening fits as it is
-SHOW_THROUGH_ROOM = 1.2  # cm a point the body still reaches is eased out to
+SHOW_THROUGH_ROOM = 1.2  # cm the cloth stands off the skin at the least
 HIP_ROOM = 2.0           # cm more of it round the hips
-EASE_STEPS = 90          # how far that easing is spread over the cloth
 PROXY_RATIO = 0.3        # share of the points the simulated copy keeps
 SHOULDER_SCALE = 0.92    # how much wider the shoulders are made than the shirt's own
 COLLAR_SCALE = 0.88      # and the collar, drawn in round the neck
 SLEEVE_SCALE = 0.84      # how much of its width the sleeve keeps round the arm
-MAX_EASE_GAIN = 2.5      # how much the spread easing is scaled back up
+# Laid onto the body: over these parts, where the shirt stands off the skin by more than this (cm), it is drawn in onto
+# it, the pull spread over the neighbours so the folds keep their shape. The chest and belly in front keep their own fall.
+SLEEVE_GAP = 2.2
+SHOULDER_GAP = 1.4
+UPPER_BACK_GAP = 1.6
+NECK_BACK_GAP = 1.0
+SIDE_ROOM = 1.6          # cm more room down the sides of the chest under the arms, which the arms press into
+CONFORM_ROUNDS = 40
+CONFORM_SPREAD = 4       # how many neighbours over the pull is spread each round
+SMOOTH_STEPS = 24        # the cloth is smoothed this much once laid on, so the body's own shapes (the muscles, the
+SMOOTH_FLOOR = 0.8       # joints of the mannequin) do not show in it: fully where it was drawn in, this much elsewhere
 
 d = json.load(open(BODY))
 names = [b["name"] for b in d["bones"]]
@@ -31,20 +47,34 @@ idx = {n: i for i, n in enumerate(names)}
 FLIP = lambda v: Vector((v[0], -v[1], v[2]))
 def bone_pos(n):
     return FLIP(d["bones"][idx[n]]["m"][12:15])
+allowed = {b["name"] for b in json.load(open(SKELETON))["bones"]} if SKELETON else set(names)
+def kept_of(i):
+    while i >= 0 and names[i] not in allowed:
+        i = d["bones"][i]["parent"]
+    return i
+KEPT = [kept_of(i) for i in range(len(names))]
 verts = [FLIP(v[:3]) for v in d["verts"]]
 weights = []
 for v in d["verts"]:
     w = {}
     rest = v[3:]
     for i in range(0, len(rest), 2):
-        w[rest[i]] = w.get(rest[i], 0) + rest[i + 1]
+        b = KEPT[rest[i]]
+        w[b] = w.get(b, 0) + rest[i + 1]
     weights.append(w)
 top = [max(w, key=w.get) for w in weights]
 tris = [tuple(d["tris"][i:i + 3]) for i in range(0, len(d["tris"]), 3)]
 ARMSKIN = {i for i, n in enumerate(names) if n.startswith(("upperarm", "lowerarm", "hand"))}
 TORSO = {i for i, n in enumerate(names) if n.startswith(("pelvis", "spine", "neck", "clavicle"))}
 HANDS = {i for i, n in enumerate(names) if n.startswith(("hand", "thumb", "index", "middle", "ring", "pinky"))}
-bvh = BVHTree.FromPolygons(verts, [t for t in tris if not any(top[k] in HANDS for k in t)], all_triangles=True)
+collide = list(verts)
+collide_tris = [t for t in tris if not any(top[k] in HANDS for k in t)]
+for path in EXTRA:
+    e = json.load(open(path))
+    base = len(collide)
+    collide += [FLIP(v[:3]) for v in e["verts"]]
+    collide_tris += [tuple(base + k for k in e["tris"][i:i + 3]) for i in range(0, len(e["tris"]), 3)]
+bvh = BVHTree.FromPolygons(collide, collide_tris, all_triangles=True)
 
 def smooth(x, a, b):
     t = max(0.0, min(1.0, (x - a) / (b - a)))
@@ -143,71 +173,140 @@ for v in src:
     out.append(torso_map(v).lerp(pt, s))
     sleeve_share.append(s)
 
-# ---- where the body still shows through, eased out broadly.
 probe = bvh.find_nearest(Vector((0, cy_body - 40, bone_pos("spine_03").z)), 60.0)
 NSIGN = 1.0 if probe[1].y < 0 else -1.0
 nbrs = [[] for _ in out]
 for e in shirt.data.edges:
     a, b = e.vertices
     nbrs[a].append(b); nbrs[b].append(a)
-def inside_shift():
-    shift = [Vector() for _ in out]
+
+# ---- laid onto the body over the arms, shoulders, the back of the neck and the upper back.
+def region_of(i, v):
+    # Which part of the shirt a point is, by where it lies on the body (the front of the body is -Y here).
+    if sleeve_share[i] > 0.5:
+        return "sleeve"
+    back = v.y > cy_body
+    if v.z > neck.z - 6.0:
+        return "neck_back" if back else "collar"
+    if v.z > 132.0:
+        return "shoulder"
+    if back and v.z > 112.0:
+        return "upper_back"
+    if abs(v.x) > 11.0 and v.z > 108.0:
+        return "chest_side"
+    return "chest" if not back else "lower_back"
+def target_gap(i, v):
+    # How close the cloth is drawn in, and how much of the way (0 keeps the shirt's own fall).
+    s = sleeve_share[i]
+    back = smooth(v.y - cy_body, -4.0, 2.0)
+    upper_back = back * smooth(v.z, 108.0, 118.0)
+    shoulder = smooth(v.z, 128.0, 136.0)
+    neck_back = back * smooth(v.z, neck.z - 10.0, neck.z - 4.0)
+    pulls = ((s, SLEEVE_GAP), (shoulder * (1.0 - s), SHOULDER_GAP), (upper_back * (1.0 - s), UPPER_BACK_GAP), (neck_back, NECK_BACK_GAP))
+    w = max(p for p, _ in pulls)
+    if w <= 0.0:
+        return None, 0.0
+    gap = sum(p * g for p, g in pulls) / max(sum(p for p, _ in pulls), 1e-6)
+    return gap, w
+def gap_report(label):
+    gaps = {}
+    for i, v in enumerate(out):
+        hit = bvh.find_nearest(v, 40.0)
+        if hit[0] is None:
+            continue
+        gaps.setdefault(region_of(i, v), []).append((v - hit[0]).dot(hit[1] * NSIGN))
+    parts = []
+    for r in sorted(gaps):
+        g = sorted(gaps[r])
+        parts.append("%s med %.1f p90 %.1f min %.1f" % (r, g[len(g) // 2], g[int(len(g) * 0.9)], g[0]))
+    print("[fit] gaps %s: %s" % (label, "; ".join(parts)))
+gap_report("before")
+def room_of(i, v):
+    # The least the cloth stands off the skin anywhere: more round the hips, which move most under the hem, and down the
+    # sides of the chest under the arms, which the arms press into.
+    t = 1.0 - sleeve_share[i]
+    room = SHOW_THROUGH_ROOM + HIP_ROOM * (1.0 - smooth(v.z, 100.0, 110.0)) * t
+    side = smooth(abs(v.x), 9.0, 13.0) * (1.0 - smooth(abs(v.y - cy_body), 5.0, 9.0))
+    room += SIDE_ROOM * side * smooth(v.z, 106.0, 112.0) * (1.0 - smooth(v.z, 128.0, 134.0)) * t
+    return room
+# Each round every point is moved toward where it belongs, the moves spread a little over its neighbours so the cloth
+# moves as a sheet: points inside the body or too near it go out to their room, and over the arms, shoulders, back of the
+# neck and upper back points standing off too far come in to the gap asked there. Elsewhere the shirt keeps its fall.
+def lay_on(rounds):
+    for rnd in range(rounds):
+        move = [Vector() for _ in out]
+        n_in = 0
+        for i, v in enumerate(out):
+            hit = bvh.find_nearest(v, 40.0)
+            if hit[0] is None:
+                continue
+            nrm = hit[1] * NSIGN
+            gap = (v - hit[0]).dot(nrm)
+            room = room_of(i, v)
+            want, w = target_gap(i, v)
+            # Where it is drawn in it also stands off by the gap asked, not closer.
+            if want is not None:
+                room += max(want - room, 0.0) * w
+            if gap < room:
+                move[i] = nrm * (room - gap)
+                n_in += 1
+            elif want is not None and gap > room:
+                move[i] = -nrm * (gap - room) * w * 0.6
+        for _ in range(CONFORM_SPREAD):
+            move = [move[i] * 0.5 + (sum((move[j] for j in nbrs[i]), Vector()) / max(len(nbrs[i]), 1)) * 0.5 for i in range(len(out))]
+        out[:] = [out[i] + move[i] for i in range(len(out))]
+        if rnd % 5 == 0:
+            print("[fit] round %d: %d points too near the body" % (rnd, n_in))
+lay_on(CONFORM_ROUNDS)
+# Smoothed without shrinking (a step in, then a slightly larger step back out), then laid on again for what that moved.
+pull_w = [max(target_gap(i, v)[1], SMOOTH_FLOOR) for i, v in enumerate(out)]
+for _ in range(SMOOTH_STEPS):
+    for k in (0.5, -0.53):
+        avg = [sum((out[j] for j in nbrs[i]), Vector()) / len(nbrs[i]) if nbrs[i] else out[i] for i in range(len(out))]
+        out = [out[i] + (avg[i] - out[i]) * (k * pull_w[i]) for i in range(len(out))]
+lay_on(CONFORM_ROUNDS // 2)
+# The last few still in are set out exactly.
+for _ in range(3):
     n = 0
     for i, v in enumerate(out):
         hit = bvh.find_nearest(v, 20.0)
         if hit[0] is not None:
-            gap = (v - hit[0]).dot(hit[1] * NSIGN)
-            # More room round the hips, which move most under the hem.
-            room = SHOW_THROUGH_ROOM + HIP_ROOM * (1.0 - smooth(v.z, 100.0, 110.0)) * (1.0 - sleeve_share[i])
+            nrm = hit[1] * NSIGN
+            gap = (v - hit[0]).dot(nrm)
+            room = SHOW_THROUGH_ROOM * 0.7
             if gap < room:
-                shift[i] = hit[1] * NSIGN * (room - gap)
+                out[i] = v + nrm * (room - gap)
                 n += 1
-    return shift, n
-for rnd in range(6):
-    shift, n = inside_shift()
-    print("[fit] round %d: %d points too close to the body" % (rnd, n))
-    if n == 0:
-        break
-    # Spread out, then scaled back up so the points that were in are out, the rest moved with them gently.
-    peak = [s.length for s in shift]
-    for _ in range(EASE_STEPS):
-        shift = [shift[i] * 0.5 + (sum((shift[j] for j in nbrs[i]), Vector()) / max(len(nbrs[i]), 1)) * 0.5 for i in range(len(out))]
-    gain = max((peak[i] / shift[i].length for i in range(len(out)) if peak[i] > 0.0 and shift[i].length > 1e-6), default=1.0)
-    gain = min(gain, MAX_EASE_GAIN)
-    out = [out[i] + shift[i] * gain for i in range(len(out))]
-# The last few are eased out over a few neighbours at a time, then set out exactly.
-for rnd in range(5):
-    shift, n = inside_shift()
-    if n == 0:
-        break
-    peak = [x.length for x in shift]
-    for _ in range(6):
-        shift = [shift[i] * 0.5 + (sum((shift[j] for j in nbrs[i]), Vector()) / max(len(nbrs[i]), 1)) * 0.5 for i in range(len(out))]
-    gain = min(max((peak[i] / shift[i].length for i in range(len(out)) if peak[i] > 0.0 and shift[i].length > 1e-6), default=1.0), 2.0)
-    out = [out[i] + shift[i] * gain for i in range(len(out))]
-shift, n = inside_shift()
-out = [out[i] + shift[i] for i in range(len(out))]
 print("[fit] %d points set out at the end" % n)
+gap_report("final")
 
-# ---- weights
-def tree_of(allowed):
-    ids = [i for i in range(len(verts)) if top[i] in allowed]
-    t = KDTree(len(ids))
-    for k, i in enumerate(ids):
-        t.insert(verts[i], k)
-    t.balance()
-    return t, ids
-tree_torso, ids_torso = tree_of(TORSO)
-tree_arm, ids_arm = tree_of(ARMSKIN)
-tree_all, ids_all = tree_of(TORSO | ARMSKIN)
-def weigh(v, tree, ids):
+# ---- weights: each point takes the weights of the skin right under it, read off the nearest point of the body's surface
+# (between the three corners of the triangle there), not off the nearest few corners, which on a sparse body reach over
+# to the inside of the arm from the side of the chest.
+FINGERS = HANDS - {i for i, n in enumerate(names) if n.startswith("hand")}
+def surface_of(allowed):
+    keep = [t for t in tris if any(top[k] in allowed for k in t) and not any(top[k] in FINGERS for k in t)]
+    return BVHTree.FromPolygons(verts, keep, all_triangles=True), keep
+surf_torso = surface_of(TORSO)
+surf_arm = surface_of(ARMSKIN)
+surf_all = surface_of(TORSO | ARMSKIN)
+def weigh(v, surf):
+    tree, keep = surf
+    loc, _, face, _ = tree.find_nearest(v)
+    a, b, c = (verts[k] for k in keep[face])
+    # Barycentric share of each corner at the nearest point.
+    v0, v1, v2 = b - a, c - a, loc - a
+    d00, d01, d11, d20, d21 = v0.dot(v0), v0.dot(v1), v1.dot(v1), v2.dot(v0), v2.dot(v1)
+    den = d00 * d11 - d01 * d01
+    wb = (d11 * d20 - d01 * d21) / den if den > 1e-9 else 1.0 / 3.0
+    wc = (d00 * d21 - d01 * d20) / den if den > 1e-9 else 1.0 / 3.0
+    shares = (max(1.0 - wb - wc, 0.0), max(wb, 0.0), max(wc, 0.0))
     total = {}
-    for co, k, dist in tree.find_n(v, 8):
-        f = 1.0 / (dist * dist + 1.0)
-        for b, w in weights[ids[k]].items():
-            total[b] = total.get(b, 0) + w * f
+    for k, f in zip(keep[face], shares):
+        for bone, w in weights[k].items():
+            total[bone] = total.get(bone, 0) + w * f
     s = sum(total.values())
-    return {b: w / s for b, w in total.items()}
+    return {bone: w / s for bone, w in total.items()}
 
 for o in [o for o in bpy.data.objects if o.type != "MESH"]:
     bpy.data.objects.remove(o)
@@ -216,18 +315,20 @@ arm_obj = bpy.data.objects.new("Armature", arm_data)
 bpy.context.scene.collection.objects.link(arm_obj)
 bpy.context.view_layer.objects.active = arm_obj
 bpy.ops.object.mode_set(mode="EDIT")
-ebs = []
-for b in d["bones"]:
+ebs = {}
+for bi, b in enumerate(d["bones"]):
+    if KEPT[bi] != bi:
+        continue
     m = b["m"]
     pos = FLIP(m[12:15])
     x, y, z = FLIP(m[0:3]), -FLIP(m[4:7]), FLIP(m[8:11])
     eb = arm_data.edit_bones.new(b["name"])
     eb.head = pos
     eb.tail = pos + y * 5.0
-    ebs.append((eb, x, y, z, pos))
+    ebs[bi] = (eb, x, y, z, pos)
     if b["parent"] >= 0:
-        eb.parent = ebs[b["parent"]][0]
-for eb, x, y, z, pos in ebs:
+        eb.parent = ebs[KEPT[b["parent"]]][0]
+for eb, x, y, z, pos in ebs.values():
     eb.matrix = Matrix(((x[0], y[0], z[0], pos[0]), (x[1], y[1], z[1], pos[1]), (x[2], y[2], z[2], pos[2]), (0, 0, 0, 1)))
     eb.length = 5.0
 bpy.ops.object.mode_set(mode="OBJECT")
@@ -249,15 +350,15 @@ me.materials[0].name = "MedievalShirt"
 groups = {}
 for i, v in enumerate(out):
     s = sleeve_share[i]
-    # Over the shoulders, and down the sides under the arms (the wings, which the arm lifts), the skin follows the arm too.
-    shoulder = max(smooth(v.z, 122.0, 132.0), smooth(abs(v.x), 11.0, 16.0) * smooth(v.z, 106.0, 116.0))
+    # Over the tops of the shoulders the skin under it may be the arm's (the deltoid); down the sides it is the trunk's.
+    shoulder = smooth(v.z, 128.0, 138.0)
     wt = {}
     if s < 0.999:
-        low = weigh(v, tree_torso, ids_torso)
-        high = weigh(v, tree_all, ids_all) if shoulder > 0.0 else {}
+        low = weigh(v, surf_torso)
+        high = weigh(v, surf_all) if shoulder > 0.0 else {}
         for b in set(low) | set(high):
             wt[b] = low.get(b, 0.0) * (1.0 - shoulder) + high.get(b, 0.0) * shoulder
-    wa = weigh(v, tree_arm, ids_arm) if s > 0.001 else {}
+    wa = weigh(v, surf_arm) if s > 0.001 else {}
     mix = {}
     for b, w in wt.items():
         mix[b] = mix.get(b, 0) + w * (1 - s)
@@ -323,7 +424,7 @@ bpy.ops.export_scene.fbx(filepath=OUT, use_selection=True, object_types={"ARMATU
 # ---- preview: the original shirt beside the fitted one on the body, front and side.
 proxy.hide_render = True
 bme = bpy.data.meshes.new("Body")
-bme.from_pydata([tuple(v) for v in verts], [], tris)
+bme.from_pydata([tuple(v) for v in collide], [], collide_tris)
 bme.update()
 bo = bpy.data.objects.new("Body", bme)
 bpy.context.scene.collection.objects.link(bo)

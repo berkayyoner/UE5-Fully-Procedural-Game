@@ -31,8 +31,9 @@
 
 namespace
 {
-	const TCHAR* const ImportBodyPath = TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple");
-	const TCHAR* const ImportSkeletonPath = TEXT("/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin");
+	// The body the creatures wear in the game, the one clothes are fitted to.
+	const TCHAR* const WornBodyPath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Body/SKM_MHC_AedirMan_BodyMesh.SKM_MHC_AedirMan_BodyMesh");
+	const TCHAR* const ImportSkeletonPath =TEXT("/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin");
 	const TCHAR* const ImportScannedPath = TEXT("/Game/Aedir/Materials/M_AedirScanned.M_AedirScanned");
 	const TCHAR* const ImportBodyPhysicsPath = TEXT("/Game/Characters/Mannequins/Rigs/PA_Mannequin.PA_Mannequin");
 
@@ -226,11 +227,18 @@ UAedirImportModelsCommandlet::UAedirImportModelsCommandlet()
 
 int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 {
-	// The body comes out for fitting clothes to it outside the editor.
+	// The body comes out for fitting clothes to it outside the editor: the body the creatures wear (-BodyMesh= another).
 	FString BodyFile;
 	if (FParse::Value(*Params, TEXT("ExportBody="), BodyFile))
 	{
-		USkeletalMesh* Body = LoadObject<USkeletalMesh>(nullptr, ImportBodyPath);
+		FString BodyPath = WornBodyPath;
+		FParse::Value(*Params, TEXT("BodyMesh="), BodyPath);
+		USkeletalMesh* Body = LoadObject<USkeletalMesh>(nullptr, *BodyPath);
+		if (!Body)
+		{
+			UE_LOG(LogAedirEditor, Error, TEXT("No body at %s"), *BodyPath);
+			return 1;
+		}
 		const FSkeletalMeshLODModel& Lod = Body->GetImportedModel()->LODModels[0];
 		const FReferenceSkeleton& Bones = Body->GetRefSkeleton();
 		TArray<FTransform> InModel;
@@ -286,7 +294,7 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 	FString ClothMesh;
 	if (FParse::Value(*Params, TEXT("Cloth="), ClothMesh))
 	{
-		float Pin = 146.f, TorsoFrom = 120.f, Base = 0.f, Torso = 9.f, SleeveFrom = 26.f, Sleeve = 9.f, Bend = 0.3f, Drive = 0.25f, BackRadius = 30.f, BackDistance = 0.5f;
+		float Pin = 146.f, TorsoFrom = 120.f, Base = 0.f, Torso = 9.f, SleeveFrom = 26.f, Sleeve = 4.f, Bend = 0.3f, Drive = 0.25f, BackRadius = 30.f, BackDistance = 0.5f;
 		FParse::Value(*Params, TEXT("Pin="), Pin);
 		FParse::Value(*Params, TEXT("TorsoFrom="), TorsoFrom);
 		FParse::Value(*Params, TEXT("Base="), Base);
