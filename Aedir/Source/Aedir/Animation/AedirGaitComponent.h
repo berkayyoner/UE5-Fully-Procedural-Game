@@ -541,7 +541,7 @@ public:
 	// With the fists (or a blade swung as one) up, the feet take this share of the stance's lead and rear foot offsets, and the
 	// hips and knees this share of its drop and bend; the feet do not go wider.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
-	float FistStanceFootShare = 1.f;
+	float FistStanceFootShare = 0.7f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
 	float FistStanceBendShare = 0.4f;
