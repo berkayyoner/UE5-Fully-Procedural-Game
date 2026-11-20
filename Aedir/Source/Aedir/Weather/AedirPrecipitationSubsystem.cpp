@@ -25,7 +25,6 @@ namespace
 	constexpr float PrecipRainSideways = 40.f;
 	constexpr float PrecipSnowSideways = 60.f;
 	constexpr float PrecipWindCmPerShare = 500.f;
-	constexpr float PrecipWindYaw = 35.f;
 	constexpr float PrecipFadeSpeed = 1.2f;
 	constexpr float PrecipRoofSeconds = 0.5f;
 	constexpr float PrecipRoofLookCm = 3000.f;
@@ -303,10 +302,8 @@ void UAedirPrecipitationSubsystem::Tick(float DeltaTime)
 	}
 	const float WantedRain = FMath::Clamp(Manager->GetRainIntensity(), 0.f, 1.f);
 	const float WantedSnow = FMath::Clamp(Manager->GetSnowIntensity(), 0.f, 1.f);
-	if (WantedRain <= 0.f && WantedSnow <= 0.f && !Holder)
-	{
-		return;
-	}
+	// The rain and snow are made ready from the start, not on the first frame it rains: made then, their loading and first
+	// drawing would stall that frame and the view would flicker as the rain begins.
 	EnsureMeshes();
 	if (!Holder)
 	{
@@ -322,7 +319,7 @@ void UAedirPrecipitationSubsystem::Tick(float DeltaTime)
 		bUnderRoof = World->LineTraceTestByChannel(Eye, Eye + FVector(0.f, 0.f, PrecipRoofLookCm), ECC_Visibility, Params);
 	}
 
-	const FVector Wind = FRotator(0.f, PrecipWindYaw, 0.f).Vector() * (Manager->GetWindShare() * PrecipWindCmPerShare);
+	const FVector Wind = FRotator(0.f, AAedirWeatherManager::WeatherWindYawDegrees, 0.f).Vector() * (Manager->GetWindShare() * PrecipWindCmPerShare);
 	Step(Rain, RainMesh, RainMaterial, WantedRain, DeltaTime, Eye, Wind, PrecipRainSpeed, PrecipRainSideways, PrecipRainSize, true);
 	Step(Snow, SnowMesh, SnowMaterial, WantedSnow, DeltaTime, Eye, Wind * 0.6f, PrecipSnowSpeed, PrecipSnowSideways, PrecipSnowSize, false);
 	StepSplashes(DeltaTime, Eye);

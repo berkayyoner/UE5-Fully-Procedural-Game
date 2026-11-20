@@ -350,12 +350,12 @@ public:
 	// the head), armed AIWeaponStandOffShare of the weapon's reach; it closes in past AIStandOffBandCm further and backs off
 	// nearer than that much closer.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float AIFistStandOffCm = 74.f;
+	float AIFistStandOffCm = 88.f;
 
 	// Bare-handed, to throw a punch it steps in this close (the middles of the two bodies, for its size), and on in through
 	// the throw: from further a fist reaches only the shoulders and the chest.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float AIFistStrikeInCm = 66.f;
+	float AIFistStrikeInCm = 76.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIWeaponStandOffShare = 1.f;
@@ -401,8 +401,9 @@ public:
 	float AIHeadAimLift = 0.2f;
 
 	// Bare-handed, a punch is drawn back this share of the mouse's way to the side (a blade 0.9), and to this share of the
-	// way from the guard's height to the height it goes for, before it is thrown; it is thrown across past the middle to
-	// AIFistThrough of the way to the other side, as a player sweeps the mouse right across.
+	// way from the guard's height to the height it goes for, before it is thrown; it is thrown in to just past the middle,
+	// AIFistThrough of the way to the other side, so the arm, swinging after the mouse, stops straight out before the body
+	// instead of sweeping on round to the other side.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIFistWindupAcross = 1.f;
 
@@ -410,7 +411,15 @@ public:
 	float AIFistWindupHeightShare = 0.3f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
-	float AIFistThrough = 0.2f;
+	float AIFistThrough = 0.05f;
+
+	// How fast the mouse is thrown in a strike, in shares of its field a second: bare-handed slow enough for the arm, with
+	// its weight and muscles, to follow it all the way round and out (a player's fast throw is about 7); a blade faster.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="1"))
+	float AIFistStrikeSpeed = 9.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="1"))
+	float AIBladeStrikeSpeed = 19.f;
 
 	// Not every punch comes across level: AIFistRisingChance of them are drawn back low and come up across (from low right
 	// to high left, or low left to high right), AIFistFallingChance drawn back high and come down across; each starts
@@ -509,7 +518,19 @@ public:
 
 	// Stamina paid for a kick.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
-	float KickStaminaCost = 10.f;
+	float KickStaminaCost = 18.f;
+
+	// A kick strikes as a fist does, by the foot's speed into the body where it lands, with this weight behind it.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0.1"))
+	float KickBlowMassKg = 2.5f;
+
+	// At the end of its swing the foot is this far above the level 90 cm below the hip, with the view level; looking up
+	// lifts it up to KickMaxLiftCm more.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickExtendHeightCm = 80.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickMaxLiftCm = 55.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
 	float KickCooldown = 1.2f;
@@ -775,7 +796,7 @@ public:
 
 	// Foot target of the kick arc. T01 is 0 at the start; the foot is drawn back and up to the wind-up by 0.42, swings round the
 	// hip up through the front to the full extension at 0.62, and is back at the start at 1.
-	static FVector EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm = 0.f, float WindUpBackCm = 18.f, float WindUpBelowHipCm = 70.f);
+	static FVector EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm = 0.f, float WindUpBackCm = 18.f, float WindUpBelowHipCm = 70.f, float ExtendHeightCm = 80.f);
 
 private:
 	bool IsAuthoritative() const;

@@ -218,7 +218,7 @@ public:
 	TObjectPtr<class UGroomComponent> Hair;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
-	FSoftObjectPath HairGroom = FSoftObjectPath(TEXT("/Game/Grooms/Male_ClassicCrewCut/Male_ClassicCrewCut/Male_ClassicCrewCut.Male_ClassicCrewCut"));
+	FSoftObjectPath HairGroom = FSoftObjectPath(TEXT("/Game/Grooms/SC_Hairstyle_Male_11/SC_Hairstyle_Male_11/SC_Hairstyle_Male_11.SC_Hairstyle_Male_11"));
 
 	// Its colour: how dark (0 fair, 1 black) and how red.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look", meta=(ClampMin="0", ClampMax="1"))
@@ -228,7 +228,15 @@ public:
 	float HairRedness = 0.15f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
-	FSoftObjectPath HairBinding = FSoftObjectPath(TEXT("/Game/Grooms/Male_ClassicCrewCut/GB_AedirMan_ClassicCrewCut.GB_AedirMan_ClassicCrewCut"));
+	FSoftObjectPath HairBinding = FSoftObjectPath(TEXT("/Game/Grooms/SC_Hairstyle_Male_11/GB_AedirMan_Hairstyle11.GB_AedirMan_Hairstyle11"));
+
+	// The look of the hair's strands, coloured by HairMelanin and HairRedness; it takes the place of the groom's own.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	FSoftObjectPath HairMaterial = FSoftObjectPath(TEXT("/Game/Grooms/Male_ClassicCrewCut/Male_ClassicCrewCut/Materials/MI_Hair.MI_Hair"));
+
+	// Under a helmet the hair is not drawn: it would stand out through the metal.
+	void UpdateHairUnderHelmet();
+	FTimerHandle HairHelmetTimer;
 
 	// Bare-handed fighting, rebuilt step by step (see UAedirFistArms).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Fists")
@@ -382,6 +390,15 @@ public:
 
 	UFUNCTION(Exec)
 	void PoseArm(const FString& PoseArgs);
+
+	// Logs the mean and the worst frame over that many seconds, and how long the game thread, the drawing thread and the
+	// graphics card took on average: for a look at what a setting costs.
+	UFUNCTION(Exec)
+	void FrameProbe(float Seconds, const FString& Label);
+
+	// Worn clothes swing as cloth (1) or only follow the bones (0), as the Cloth physics setting does.
+	UFUNCTION(Exec)
+	void ClothOn(int32 bOn);
 
 	UFUNCTION(Exec)
 	void OffHandFree(const FString& FreeArgs);

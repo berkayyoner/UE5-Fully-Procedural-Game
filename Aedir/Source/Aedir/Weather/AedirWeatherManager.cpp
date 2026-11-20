@@ -52,7 +52,10 @@ namespace
 	const FLinearColor WeatherMoonColor(0.55f, 0.68f, 1.f);
 	constexpr float WeatherNightSkyShare = 0.06f;
 	constexpr float WeatherManagerSceneSearchInterval = 5.f;
-	constexpr float WeatherManagerSkyLightApplyInterval = 0.25f;
+	// The sky light's brightness follows the weather in small steps; only its brightness is set, the light is never
+	// rebuilt (rebuilt, a sky light that captures the sky as it is drawn lights the scene with nothing for a frame or two,
+	// and the world goes dark for a moment as the weather turns).
+	constexpr float WeatherManagerSkyLightApplyInterval = 0.05f;
 	// The engine's cloud material and how the weather's cover maps onto its controls, as measured: about -0.4 leaves a few
 	// wisps, -0.2 fair-weather clouds, 0.1 a sky mostly covered, and with the layer brought down low 0.2 to 0.4 a grey
 	// overcast (0.3 at its heaviest). Denser than a few hundredths, or with its storm switch on, the material thins the clouds away instead, and
@@ -73,7 +76,7 @@ namespace
 	const FLinearColor WeatherManagerCloudStormAlbedo(0.8f, 0.8f, 0.82f);
 	// The sky's blue in the haze is taken out under an overcast, leaving it grey.
 	const FLinearColor WeatherManagerOvercastFogTint(1.f, 0.62f, 0.34f);
-	constexpr float WeatherManagerSkyLightChangeFraction = 0.03f;
+	constexpr float WeatherManagerSkyLightChangeFraction = 0.005f;
 	constexpr float WeatherManagerLightningFlashDuration = 0.35f;
 	constexpr float WeatherManagerLightningSkyOffset = 30000.f;
 	// The drawn bolt: the glowing shape it is drawn with, how wide its main channel is, how bright, how long it lasts and how
@@ -394,8 +397,8 @@ float AAedirWeatherManager::GetSnowIntensity() const
 
 FVector AAedirWeatherManager::GetWindVector() const
 {
-	const float Yaw = FMath::DegreesToRadians(RandomSeed * 360.f);
-	const FVector Direction(FMath::Cos(Yaw), FMath::Sin(Yaw), 0.f);
+	// One wind for everything it moves: the trees and the grass, the rain meshes and the rain effect blow the same way.
+	const FVector Direction = FRotator(0.f, WeatherWindYawDegrees, 0.f).Vector();
 	return Direction * GetBlendedProfile().WindSpeed;
 }
 
@@ -1032,7 +1035,6 @@ void AAedirWeatherManager::ApplySceneLighting(const FAedirWeatherProfile& Profil
 			if (bChangedNotably && WorldTime >= NextSkyLightApplyTime)
 			{
 				SkyComponent->SetIntensity(Wanted * WeatherManagerSkyBrightnessScale);
-				SkyComponent->MarkRenderStateDirty();
 				AppliedSkyLightIntensity = Wanted;
 				NextSkyLightApplyTime = WorldTime + WeatherManagerSkyLightApplyInterval;
 			}

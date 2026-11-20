@@ -96,6 +96,13 @@ public:
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
 	float FaceBluntShare = 2.2f;
 
+	// A bruise on the skin is this wide (its radius, in cm) from the lightest blow to the hardest.
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt", meta=(ClampMin="0.5"))
+	float BruiseRadiusMinCm = 4.f;
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt", meta=(ClampMin="0.5"))
+	float BruiseRadiusMaxCm = 10.f;
+
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
 	float BluntBruiseJoules = 90.f;
 

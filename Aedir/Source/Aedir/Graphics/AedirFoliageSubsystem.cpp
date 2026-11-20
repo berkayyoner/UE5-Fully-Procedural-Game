@@ -80,9 +80,31 @@ namespace
 	constexpr float FoliageTreeLookCm = 800.f;
 	constexpr float FoliageTreeSpacingCm = 450.f;
 	constexpr float FoliageTrunkRadiusCm = 22.f;
+	// The tree wind is worked out for eight ways a tree can face (every 45 degrees); each tree takes the one it faces, so
+	// the wind bends them all the same way in the world. Planted trees face one of the eight, give or take this much.
+	constexpr int32 FoliageWindSlices = 8;
+	constexpr float FoliageTreeYawJitterDegrees = 6.f;
+
+	int32 FoliageWindSliceForYaw(double YawDegrees)
+	{
+		return FMath::RoundToInt(FRotator::ClampAxis(YawDegrees) / (360.0 / FoliageWindSlices)) % FoliageWindSlices;
+	}
+
+	// Gives every tree of these the wind of the way it faces.
+	void FoliageFaceTreesIntoWind(UInstancedSkinnedMeshComponent* Trees)
+	{
+		for (int32 Index = 0; Index < Trees->GetInstanceCount(); ++Index)
+		{
+			const FPrimitiveInstanceId Id = Trees->GetInstanceId(Index);
+			FTransform Placed;
+			if (Trees->GetInstanceTransform(Id, Placed, true))
+			{
+				Trees->SetInstanceAnimationIndex(Id, FoliageWindSliceForYaw(Placed.Rotator().Yaw));
+			}
+		}
+	}
 	constexpr float FoliageTrunkHalfCm = 200.f;
 	constexpr float FoliageWindExtentsCm = 100000.f;
-	constexpr float FoliageWindYaw = 35.f;
 
 	// Grass is too small and too many to light the world around it: kept out of Lumen's scene and the ray-traced one, or every
 	// stirred blade has the whole meadow re-captured into the surface cache.
@@ -219,6 +241,7 @@ void UAedirFoliageSubsystem::OnWorldBeginPlay(UWorld& InWorld)
 		for (UInstancedSkinnedMeshComponent* Tree : Trees)
 		{
 			Tree->SetTransformProvider(Cast<UTransformProviderData>(TreeWindData));
+			FoliageFaceTreesIntoWind(Tree);
 			TreeMeshes.AddUnique(Tree);
 			TreeCount += Tree->GetInstanceCount();
 		}
@@ -284,7 +307,9 @@ void UAedirFoliageSubsystem::PlantTrees(const FVector& Around, float InnerCm, fl
 			TreeMeshes.Add(Trees);
 		}
 		const float Scale = Random.FRandRange(0.85f, 1.15f);
-		Trees->AddInstance(FTransform(FRotator(0.f, Random.FRandRange(0.f, 360.f), 0.f), Ground, FVector(Scale)), 0, true);
+		const int32 Facing = Random.RandHelper(FoliageWindSlices);
+		const float Yaw = Facing * (360.f / FoliageWindSlices) + Random.FRandRange(-FoliageTreeYawJitterDegrees, FoliageTreeYawJitterDegrees);
+		Trees->AddInstance(FTransform(FRotator(0.f, Yaw, 0.f), Ground, FVector(Scale)), FoliageWindSliceForYaw(Yaw), true);
 
 		// The trunk stops whoever walks into it. The branches give way.
 		UCapsuleComponent* Trunk = NewObject<UCapsuleComponent>(MeadowActor);
@@ -565,7 +590,7 @@ void UAedirFoliageSubsystem::UpdateWind(float DeltaTime)
 		FDynamicWindParameters Parameters;
 		Parameters.SimulationCenter = Viewer && Viewer->GetPawn() ? Viewer->GetPawn()->GetActorLocation() : FVector::ZeroVector;
 		Parameters.SimulationExtents = FoliageWindExtentsCm;
-		Parameters.WindDirection = FRotator(0.f, FoliageWindYaw, 0.f).Vector();
+		Parameters.WindDirection = FRotator(0.f, AAedirWeatherManager::WeatherWindYawDegrees, 0.f).Vector();
 		// Even a storm only sways a spruce and bends its crown a little; a gale that lays trees over is beyond any weather here.
 		Parameters.WindSpeed = FMath::Lerp(3.f, 16.f, WindNow);
 		Parameters.WindAmplitude = FMath::Lerp(0.4f, 0.9f, WindNow);

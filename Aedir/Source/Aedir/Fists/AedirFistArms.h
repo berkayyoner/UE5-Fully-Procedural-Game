@@ -90,6 +90,26 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float PunchBackRate = 2.2f;
 
+	// The mouse up, a fist's elbow is lifted by this much of the way to straight up (the fist itself stays where it was), so a
+	// rising punch comes in round from the side rather than up from below.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", ClampMax="3"))
+	float RisingElbowRaise = 0.6f;
+
+	// The mouse down, a fist's far points at the sides come this share nearer the body and FallingSideBackCm further back, and
+	// its elbow is lifted by FallingElbowRaise, so a falling punch comes straight down rather than across from up high.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", ClampMax="0.9"))
+	float FallingSideInShare = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float FallingSideBackCm = 12.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", ClampMax="3"))
+	float FallingElbowRaise = 0.35f;
+
+	// A punch thrown stays out while the arm is still coming in to the middle and this long after, before it comes back.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0"))
+	float PunchHoldSeconds = 0.12f;
+
 	// The mouse all the way up or down takes the whole guard round an arc about the chest this many degrees up or down, the
 	// fists keeping their shape and distance, and bends the waist back or forward this much.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
@@ -130,15 +150,15 @@ public:
 
 	// A fist goes out no further from the shoulder than this share of the arm's own length.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0.5", ClampMax="1"))
-	float FistMaxReachShare = 0.97f;
+	float FistMaxReachShare = 0.99f;
 
 	// The waist goes round after where it is wanted as a weight on a spring of this many cycles a second, and never turns
 	// faster than this many degrees a second: a trunk is heavier than an arm, and the fists on it must not be flung with it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float WaistTurnHz = 3.f;
+	float WaistTurnHz = 5.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float WaistTurnMaxDegreesPerSecond = 360.f;
+	float WaistTurnMaxDegreesPerSecond = 720.f;
 
 	// The foot on the other side from where the mouse is drawn steps forward; it changes over once the mouse has stayed this
 	// share of its way out to the other side for LeadFootSwitchHoldSeconds, so the feet do not shuffle with every punch drawn
@@ -171,7 +191,7 @@ public:
 
 	// A whole punch thrown out costs this much stamina; without enough left, it only goes out as far as what is left pays for.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float PunchStaminaCost = 14.f;
+	float PunchStaminaCost = 9.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistBackDegrees = 8.f;
@@ -519,8 +539,14 @@ public:
 	// How far an arm is up in the guard, apart from the second hand holding on.
 	float GetRaised(EAedirHand Hand) const { return Alpha[Index(Hand)]; }
 	float GetPunch() const { return Punch; }
+	// The arm the punch now goes out with (0 left, 1 right).
+	int32 GetPunchSlot() const { return PunchSlot; }
 	// The furthest the punch went out since this was last asked, and where the mouse stood then.
 	float TakePeakPunch(FVector2D& OutAimThen) { const float Peak = PeakPunch; OutAimThen = PeakAim; PeakPunch = 0.f; return Peak; }
+	// How straight an arm got since this was last asked: shoulder to wrist over the length of the arm (1 = straight).
+	float TakePeakStraight(EAedirHand Hand) { const float Peak = PeakStraight[Index(Hand)]; PeakStraight[Index(Hand)] = 0.f; return Peak; }
+	// How far ahead of the chest the wrist got since this was last asked, in cm along the body's facing.
+	float TakePeakAhead(EAedirHand Hand) { const float Peak = PeakAhead[Index(Hand)]; PeakAhead[Index(Hand)] = 0.f; return Peak; }
 	// For pictures: holds the mouse and the punch where they are put (bFrozen), until let go.
 	void DevSetPose(const FVector2D& InAim, float InPunch, bool bFrozen) { Aim = InAim; MouseAim = InAim; AimSpeed = FVector2D::ZeroVector; Punch = InPunch; bDevFrozen = bFrozen; }
 
@@ -575,6 +601,9 @@ private:
 	bool bOffHandOut = false;
 	float GripAlpha = 0.f;
 	float PeakPunch = 0.f;
+	float PeakStraight[2] = { 0.f, 0.f };
+	float PeakAhead[2] = { 0.f, 0.f };
+	float PunchHoldLeft = 0.f;
 	FVector2D PeakAim = FVector2D::ZeroVector;
 	bool bDevFrozen = false;
 	float HipDrop = 0.f;

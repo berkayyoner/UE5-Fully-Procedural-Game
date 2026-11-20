@@ -663,10 +663,11 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	Apply(LeftLegControls, LegStrength * LegBody * (bBroken[2] && !bLimp ? BrokenShare : 1.f), 0.f);
 	Apply(RightLegControls, LegStrength * LegBody * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
-	// A broken arm swings loose; a hurt one keeps at least some of its strength.
+	// A broken arm hangs as a limp body's arm does, the muscle in it still there (LimpShare, its forearm and wrist slacker
+	// as a limp one's); a hurt one keeps at least some of its strength.
 	const float LimpArm = FMath::Lerp(Limp, HoistArmShare, Hauled);
-	const float LeftArmHz = ArmHz * (bLimp ? LimpArm : bBroken[0] ? BrokenShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
-	const float RightArmHz = ArmHz * (bLimp ? LimpArm : bBroken[1] ? BrokenShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
+	const float LeftArmHz = ArmHz * (bLimp ? LimpArm : bBroken[0] ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
+	const float RightArmHz = ArmHz * (bLimp ? LimpArm : bBroken[1] ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
 	Apply(LeftArmControls, LeftArmHz * Soft, 0.f);
 	Apply(RightArmControls, RightArmHz * Soft, 0.f);
 	// A broken arm's shoulder still holds it hanging.
@@ -680,13 +681,15 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// The wrists are looser than the arm above them, less so with both hands on one thing.
 	const float Wrist = FMath::Lerp(WristShare, TwoHandWristShare, TwoHandGrip);
 	// Down or dead, the elbows and the wrists go slacker still than the rest of the arm.
-	const float Slack = bLimp ? LimpForearmShare : 1.f;
-	Apply(LeftHandControls, LeftArmHz * Wrist * Slack, 0.f);
-	Apply(RightHandControls, RightArmHz * Wrist * Slack, 0.f);
-	if (bLimp)
+	const float Slack[2] = { bLimp || bBroken[0] ? LimpForearmShare : 1.f, bLimp || bBroken[1] ? LimpForearmShare : 1.f };
+	Apply(LeftHandControls, LeftArmHz * Wrist * Slack[0], 0.f);
+	Apply(RightHandControls, RightArmHz * Wrist * Slack[1], 0.f);
+	for (int32 Side = 0; Side < 2; ++Side)
 	{
-		Apply(ForearmControls[0], LeftArmHz * Soft * Slack, 0.f);
-		Apply(ForearmControls[1], RightArmHz * Soft * Slack, 0.f);
+		if (bLimp || bBroken[Side])
+		{
+			Apply(ForearmControls[Side], (Side == 0 ? LeftArmHz : RightArmHz) * Soft * Slack[Side], 0.f);
+		}
 	}
 	// Down, the hips are free; carried, the pose places them and the control rests.
 	const bool bHold = !bLimp && !bHipsCarried;

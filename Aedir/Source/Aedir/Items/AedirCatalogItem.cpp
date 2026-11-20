@@ -38,8 +38,8 @@ namespace
 	constexpr float CatalogItemPommelSize = 3.f;
 	constexpr float CatalogItemGuardThickness = 1.4f;
 
-	// Armour laid on the ground is this share as thick as it is deep when worn.
-	constexpr float CatalogLaidThickShare = 0.6f;
+	// Armour laid on the ground lies on a body at least this many cm on each side.
+	constexpr float CatalogLaidMinSizeCm = 2.f;
 
 	EAedirCatalogShape CatalogItemRootShape(FName Id)
 	{
@@ -259,7 +259,7 @@ bool AAedirCatalogItem::IsClothOn()
 
 void AAedirCatalogItem::SetClothOn(UWorld* World, bool bOn)
 {
-	CVarAedirCloth->Set(bOn ? 1 : 0, ECVF_SetByConsole);
+	CVarAedirCloth->Set(bOn ? 1 : 0, ECVF_SetByCode);
 	bOn = IsClothOn();
 	for (TActorIterator<AAedirCatalogItem> It(World); It; ++It)
 	{
@@ -645,7 +645,6 @@ bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
 	{
 		return false;
 	}
-	const FReferenceSkeleton& Skeleton = Model->GetRefSkeleton();
 
 	// The whole model is laid down once: a pair worn on both arms or legs lies as the pair it is, not as two copies of it
 	// (a scanned pair is skinned to both sides at once, so hiding one side does not take it away).
@@ -654,15 +653,11 @@ bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
 	// The body faces +Y in the model and stands along +Z: laid on its back, its front looks up and its head points along
 	// the item's length.
 	const FRotator OnItsBack = FMatrix(FVector(0.f, 1.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(1.f, 0.f, 0.f), FVector::ZeroVector).Rotator();
-	const FVector Size = Def.BodyScale * 100.f;
-	// A pair lies as wide as the two sides stand apart.
-	float PairSpan = 0.f;
-	if (Def.ArmorAttachBone.ToString().EndsWith(TEXT("_l")) || Def.ArmorAttachBone.ToString().EndsWith(TEXT("_r")))
-	{
-		const int32 SideIndex = Skeleton.FindBoneIndex(Def.ArmorAttachBone);
-		PairSpan = SideIndex == INDEX_NONE ? 0.f : 2.f * FMath::Abs(static_cast<float>(FAnimationRuntime::GetComponentSpaceTransformRefPose(Skeleton, SideIndex).GetLocation().X));
-	}
-	BodyScale = FVector(Size.Z, Size.Y * Pieces.Num() + PairSpan, Size.X * CatalogLaidThickShare) / 100.f;
+	// The body it lies on the ground with is the model's own box, laid down: the whole garment rests on the ground with it,
+	// none of it reaching below (a box sized from the item's worn bulk would leave most of a shirt hanging through the floor).
+	const FBox ModelBox = Model->GetImportedBounds().GetBox();
+	const FBox LaidBox = ModelBox.IsValid ? ModelBox.TransformBy(FTransform(OnItsBack)) : FBox(FVector(-Def.BodyScale * 50.f), FVector(Def.BodyScale * 50.f));
+	BodyScale = FVector::Max(LaidBox.GetSize(), FVector(CatalogLaidMinSizeCm)) / 100.f;
 	Mesh->SetStaticMesh(GetShapeMesh(EAedirCatalogShape::Cube));
 	Mesh->SetMaterial(0, nullptr);
 	Mesh->SetRelativeScale3D(BodyScale);
@@ -670,41 +665,14 @@ bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
 
 	for (int32 Index = 0; Index < Pieces.Num(); ++Index)
 	{
-		const int32 BoneIndex = Skeleton.FindBoneIndex(Pieces[Index]);
-		if (BoneIndex == INDEX_NONE)
-		{
-			continue;
-		}
-		// The middle of the piece: halfway down the limb to the next joint, or the bone itself on the trunk.
-		FVector Middle = FAnimationRuntime::GetComponentSpaceTransformRefPose(Skeleton, BoneIndex).GetLocation();
-		const FString Name = Pieces[Index].ToString();
-		const TCHAR* const Joints[][2] = { { TEXT("lowerarm"), TEXT("hand") }, { TEXT("upperarm"), TEXT("lowerarm") }, { TEXT("thigh"), TEXT("calf") }, { TEXT("calf"), TEXT("foot") } };
-		for (const auto& Joint : Joints)
-		{
-			if (Name.StartsWith(Joint[0]))
-			{
-				const int32 Next = Skeleton.FindBoneIndex(FName(Name.Replace(Joint[0], Joint[1])));
-				if (Next != INDEX_NONE)
-				{
-					Middle = (Middle + FAnimationRuntime::GetComponentSpaceTransformRefPose(Skeleton, Next).GetLocation()) * 0.5;
-				}
-			}
-		}
-		// A pair lies with its middle between the two sides.
-		if (Name.EndsWith(TEXT("_l")) || Name.EndsWith(TEXT("_r")))
-		{
-			Middle.X = 0.0;
-		}
-
 		UPoseableMeshComponent* Piece = NewObject<UPoseableMeshComponent>(this, NAME_None, RF_Transient);
 		Piece->SetSkinnedAssetAndUpdate(Model);
 		Piece->SetupAttachment(Mesh);
 		Piece->SetAbsolute(false, false, true);
 		Piece->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Piece->SetCastShadow(true);
-		const float Side = Pieces.Num() > 1 ? (Index == 0 ? -0.5f : 0.5f) * Size.Y : 0.f;
 		Piece->SetRelativeRotation(OnItsBack);
-		Piece->SetRelativeLocation((FVector(0.f, Side, 0.f) - OnItsBack.RotateVector(Middle)) / BodyScale);
+		Piece->SetRelativeLocation(-LaidBox.GetCenter() / BodyScale);
 		Piece->RegisterComponent();
 		for (int32 Other = 0; Other < Pieces.Num(); ++Other)
 		{

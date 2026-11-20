@@ -669,6 +669,13 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	// Dying, the body goes down as the dead do: what muscle it has left only holds its shape a while longer.
 	BodyControl->SetDead(Creature && Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying()));
 	const UAedirWoundComponent* Wounds = Creature ? Creature->Wounds.Get() : nullptr;
+	// A broken arm turns as far as a limp body's does: its joints go back to the limits of the physics asset.
+	const uint8 BrokenArmsNow = (Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftArm) ? 1 : 0) | (Wounds && Wounds->IsLimbBroken(EAedirLimb::RightArm) ? 2 : 0);
+	if (BrokenArmsNow != BrokenArmJoints)
+	{
+		BrokenArmJoints = BrokenArmsNow;
+		ApplyJointLimits(IsRagdoll());
+	}
 	BodyControl->SetBrokenLimbs(Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftArm), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightArm),
 		Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftLeg), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightLeg));
 	const bool bGettingUp = IsGettingUp();
@@ -3214,10 +3221,10 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll)
 
 	// Standing, the living pose gets more room than the limp one, but a joint still never turns the way it cannot: a
 	// shoulder does not go over backwards, a neck does not turn the head round, whatever the muscles or a blow ask of it.
-	const auto Living = [bRagdoll](EAngularConstraintMotion Motion, float Degrees, float& OutDegrees)
+	const auto Living = [](bool bLimpJoint, EAngularConstraintMotion Motion, float Degrees, float& OutDegrees)
 	{
 		OutDegrees = Degrees;
-		if (bRagdoll || Motion == ACM_Free)
+		if (bLimpJoint || Motion == ACM_Free)
 		{
 			return Motion;
 		}
@@ -3232,12 +3239,17 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll)
 		float Swing1 = 0.f;
 		float Swing2 = 0.f;
 		float Twist = 0.f;
-		const EAngularConstraintMotion Swing1Motion = Living(Loose.ConeLimit.Swing1Motion, Loose.ConeLimit.Swing1LimitDegrees, Swing1);
-		const EAngularConstraintMotion Swing2Motion = Living(Loose.ConeLimit.Swing2Motion, Loose.ConeLimit.Swing2LimitDegrees, Swing2);
-		const EAngularConstraintMotion TwistMotion = Living(Loose.TwistLimit.TwistMotion, Loose.TwistLimit.TwistLimitDegrees, Twist);
+		// The joints of a broken arm (from the shoulder down) keep the limp limits standing too.
+		const FString JointName = Joint->JointName.ToString();
+		const bool bBrokenArm = (JointName.StartsWith(TEXT("upperarm")) || JointName.StartsWith(TEXT("lowerarm")) || JointName.StartsWith(TEXT("hand")))
+			&& ((JointName.EndsWith(TEXT("_l")) && (BrokenArmJoints & 1)) || (JointName.EndsWith(TEXT("_r")) && (BrokenArmJoints & 2)));
+		const bool bLimpJoint = bRagdoll || bBrokenArm;
+		const EAngularConstraintMotion Swing1Motion = Living(bLimpJoint, Loose.ConeLimit.Swing1Motion, Loose.ConeLimit.Swing1LimitDegrees, Swing1);
+		const EAngularConstraintMotion Swing2Motion = Living(bLimpJoint, Loose.ConeLimit.Swing2Motion, Loose.ConeLimit.Swing2LimitDegrees, Swing2);
+		const EAngularConstraintMotion TwistMotion = Living(bLimpJoint, Loose.TwistLimit.TwistMotion, Loose.TwistLimit.TwistLimitDegrees, Twist);
 		// A living wrist and forearm turn a held weapon much further than the limp ones of the asset: the weapon's poses ask it.
 		static IConsoleVariable* WideArmJoints = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.WideArmJoints"), 1, TEXT("Living wrists and forearms turn further than the limp limits (1) or not (0)."));
-		if (!bRagdoll && WideArmJoints->GetInt() != 0)
+		if (!bLimpJoint && WideArmJoints->GetInt() != 0)
 		{
 			const FString Name = Joint->JointName.ToString();
 			if (Name.StartsWith(TEXT("hand")))

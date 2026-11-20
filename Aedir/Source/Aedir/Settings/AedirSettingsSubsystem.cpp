@@ -7,6 +7,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/GameUserSettings.h"
 #include "Graphics/AedirUpscalerSubsystem.h"
+#include "Items/AedirCatalogItem.h"
 #include "HAL/IConsoleManager.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/App.h"
@@ -40,7 +41,9 @@ namespace
 		{ TEXT("Bloom"), { 1, 2, 3, 4 } },
 		{ TEXT("Anisotropy"), { 2, 3, 4, 4 } },
 		{ TEXT("GrassShadows"), { 0, 1, 2, 3 } },
-		{ TEXT("GrassDistance"), { 0, 1, 2, 3 } }
+		{ TEXT("GrassDistance"), { 0, 1, 2, 3 } },
+		{ TEXT("ClothPhysics"), { 0, 1, 1, 1 } },
+		{ TEXT("HairPhysics"), { 0, 1, 1, 1 } }
 	};
 	const TArray<FString> SettingsPercentNames = { TEXT("0%"), TEXT("10%"), TEXT("25%"), TEXT("50%"), TEXT("75%"), TEXT("100%") };
 	const TArray<float> SettingsPercentValues = { 0.f, 0.1f, 0.25f, 0.5f, 0.75f, 1.f };
@@ -517,7 +520,31 @@ void UAedirSettingsSubsystem::BuildQualityOptions()
 			Physics->MaxSubstepDeltaTime = 1.f / RateValues[Index];
 			Physics->MaxSubsteps = 16;
 		});
-	AddCVar(TEXT("ClothPhysics"), TEXT("Cloth physics"), TEXT("Simulated cloth on characters."), TEXT("p.ClothPhysics"), SettingsOffOn, { 0.f, 1.f });
+	// Worn clothes swing as cloth, or only follow the bones (aedir.Cloth); every worn garment in play changes at once.
+	AddChoice(EAedirSettingsPage::Graphics, TEXT("ClothPhysics"), TEXT("Cloth physics"), TEXT("Worn clothes hang and swing as cloth. Off, they follow the body without simulation, which is cheaper."), SettingsOffOn,
+		[]()
+		{
+			const IConsoleVariable* Cloth = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.Cloth"));
+			return Cloth && Cloth->GetInt() != 0 ? 1 : 0;
+		},
+		[](int32 Index)
+		{
+			if (IConsoleVariable* Cloth = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.Cloth")))
+			{
+				Cloth->Set(Index != 0 ? 1 : 0, ECVF_SetByCode);
+			}
+			if (GEngine)
+			{
+				for (const FWorldContext& Context : GEngine->GetWorldContexts())
+				{
+					if (Context.World() && Context.World()->IsGameWorld())
+					{
+						AAedirCatalogItem::SetClothOn(Context.World(), Index != 0);
+					}
+				}
+			}
+		});
+	AddCVar(TEXT("HairPhysics"), TEXT("Hair physics"), TEXT("Hair strands swing under their own physics. Off, the hair keeps its combed shape on the head, which is cheaper."), TEXT("r.HairStrands.Simulation"), SettingsOffOn, { 0.f, 1.f });
 }
 
 void UAedirSettingsSubsystem::BuildAudioOptions()

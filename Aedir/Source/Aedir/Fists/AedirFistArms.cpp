@@ -226,7 +226,15 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	}
 
 	// Fast in towards the middle the arc reaches out; slow, still or let go, it comes back in to the guard.
-	const float PunchWanted = bSteering ? FMath::Clamp((Inward - PunchSlowSpeed) / FMath::Max(PunchFastSpeed - PunchSlowSpeed, KINDA_SMALL_NUMBER), 0.f, 1.f) : 0.f;
+	float PunchWanted = bSteering ? FMath::Clamp((Inward - PunchSlowSpeed) / FMath::Max(PunchFastSpeed - PunchSlowSpeed, KINDA_SMALL_NUMBER), 0.f, 1.f) : 0.f;
+	// Thrown, the punch stays out while the arm, behind the mouse on its spring, is still coming round in to the middle, and
+	// PunchHoldSeconds after: it lands straight out in front instead of spending itself at the side on the way in.
+	const bool bArmComingIn = bSteering && Punch > 0.f && FMath::Abs(static_cast<float>(Aim.X)) > CenterDeadZone && FMath::Sign(AimSpeed.X) == -FMath::Sign(Aim.X);
+	PunchHoldLeft = bArmComingIn ? PunchHoldSeconds : FMath::Max(PunchHoldLeft - DeltaTime, 0.f);
+	if (bSteering && PunchHoldLeft > 0.f)
+	{
+		PunchWanted = FMath::Max(PunchWanted, Punch);
+	}
 	if (!bDevFrozen)
 	{
 		const float Before = Punch;
@@ -266,6 +274,19 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	const FVector Right = Yaw.RotateVector(FVector::RightVector);
 	const FVector Up = FVector::UpVector;
 	const USkeletalMeshComponent* Mesh = Owner->GetMesh();
+	if (Mesh)
+	{
+		for (int32 Arm = 0; Arm < 2; ++Arm)
+		{
+			const FVector ShoulderAt = Mesh->GetBoneLocation(Arm == 1 ? TEXT("upperarm_r") : TEXT("upperarm_l"));
+			const FVector ElbowAt = Mesh->GetBoneLocation(Arm == 1 ? TEXT("lowerarm_r") : TEXT("lowerarm_l"));
+			const FVector WristAt = Mesh->GetBoneLocation(Arm == 1 ? TEXT("hand_r") : TEXT("hand_l"));
+			const double Length = FVector::Dist(ShoulderAt, ElbowAt) + FVector::Dist(ElbowAt, WristAt);
+			PeakStraight[Arm] = FMath::Max(PeakStraight[Arm], Length > KINDA_SMALL_NUMBER ? static_cast<float>(FVector::Dist(ShoulderAt, WristAt) / Length) : 0.f);
+			const FVector ChestAt = (Mesh->GetBoneLocation(TEXT("upperarm_l")) + Mesh->GetBoneLocation(TEXT("upperarm_r"))) * 0.5;
+			PeakAhead[Arm] = FMath::Max(PeakAhead[Arm], static_cast<float>(FVector::DotProduct(WristAt - ChestAt, Owner->GetActorForwardVector())));
+		}
+	}
 	const FVector ShoulderL = Mesh ? Mesh->GetBoneLocation(TEXT("upperarm_l")) : Owner->GetActorLocation() - Right * 18.f + Up * 45.f;
 	const FVector ShoulderR = Mesh ? Mesh->GetBoneLocation(TEXT("upperarm_r")) : Owner->GetActorLocation() + Right * 18.f + Up * 45.f;
 	const FVector Chest = (ShoulderL + ShoulderR) * 0.5;
@@ -309,7 +330,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float CosT = FMath::Cos(ArmTheta);
 		// A blade is held further out, and reaches up further over the head.
 		// In both hands, drawn to its own side, it stays nearer the chest, where the second arm reaches it.
-		const float OwnSideRadius = FMath::Lerp(SideRadiusCm, TwoHandSideRadiusCm, Slot == 1 && bBlade ? GripAlpha : 0.f);
+		const float FistLower = bBlade ? 0.f : FMath::Max(-UpDown, 0.f);
+		const float FistRaise = bBlade ? 0.f : Raise;
+		// Lowered, a fist's far points at the sides come in nearer the body (FallingSideInShare), so it comes down from there.
+		const float OwnSideRadius = FMath::Lerp(SideRadiusCm, TwoHandSideRadiusCm, Slot == 1 && bBlade ? GripAlpha : 0.f) * (1.f - FistLower * FallingSideInShare);
 		const float Radius = FMath::Lerp(bBlade ? BladeGuardForwardCm : GuardForwardCm, bBlade && Theta * Side < 0.f ? BladeCrossRadiusCm : OwnSideRadius, FMath::Abs(SinT)) + ArmPunch * PunchReachCm * (bBlade && Slot == 1 ? FMath::Lerp(1.f, TwoHandPunchReachShare, GripAlpha) : 1.f) * CosT * CosT + (bBlade ? Raise * BladeUpReachCm + ArmPunch * BladeLookUpPunchCm * FMath::Clamp(ViewPitch / FMath::Max(BladeLookUpFullDegrees, 1.f), 0.f, 1.f) + FMath::Max(-UpDown, 0.f) * BladeDownReachCm : FMath::Max(-UpDown, 0.f) * FistDownReachCm);
 		const FVector Out = Forward * CosT + Right * SinT;
 		const FVector Along = -Forward * SinT + Right * CosT;
@@ -331,7 +355,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		};
 		// A blade held up in the middle is lower, before the chest; raised or drawn round it comes up to the fist's height.
 		const float Height = GuardHeightCm - (bBlade ? BladeGuardDropCm * (1.f - FMath::Abs(SinT)) * (1.f - Raise) : 0.f);
-		const FVector FistFromChest = Tip(Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * Height);
+		// Lowered, round at the sides the fist is drawn further back too (FallingSideBackCm), so it is brought down from above
+		// and behind rather than swept across from up high.
+		const FVector FistFromChest = Tip(Out * Radius + Along * (Side * GuardGapCm * 0.5f) + Up * Height) - Forward * (FMath::Abs(SinT) * FistLower * FallingSideBackCm);
 		const FVector GuardPole = -Forward * 0.25f + Right * (Side * FMath::Sin(HalfSpread)) - Up * FMath::Cos(HalfSpread);
 		const float LiftAngle = FMath::DegreesToRadians(bBlade ? BladeElbowLiftDegrees : ElbowLiftDegrees);
 		// Lifted, the elbow goes back and out behind the fist, about level.
@@ -341,6 +367,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float PunchLift = PunchElbowLift * (bBlade ? FMath::Lerp(1.f, TwoHandPunchElbowLiftShare, GripAlpha) : 1.f);
 		const float OwnLift = FMath::Max(AimSide == Side ? Lift : 0.f, ArmPunch * PunchLift);
 		FVector PoleLevel = FMath::Lerp(GuardPole.GetSafeNormal(), LiftPole.GetSafeNormal(), OwnLift).GetSafeNormal();
+		// Raised the elbow is held higher (RisingElbowRaise), so a fist going up comes in round from the side and not from
+		// below; lowered it is held a little higher too (FallingElbowRaise), so the fist comes straight down. The fist itself
+		// stays where it was.
+		PoleLevel = (PoleLevel + Up * (FistRaise * RisingElbowRaise + FistLower * FallingElbowRaise)).GetSafeNormal();
 		// One arm alone brought across past the middle turns its elbow out from the shoulder, so the arm goes round the body
 		// and not into it.
 		if (!bBoth && AimSide != 0.f && AimSide != Side)

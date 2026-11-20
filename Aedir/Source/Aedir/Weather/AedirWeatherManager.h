@@ -68,6 +68,8 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Weather")
 	FVector GetWindVector() const;
+	// The way the wind blows, the same for the trees, the grass and the rain (degrees of yaw).
+	static constexpr float WeatherWindYawDegrees = 35.f;
 
 	UFUNCTION(NetMulticast, Unreliable)
 	void MulticastLightning(FVector StrikeLocation, float Seed);

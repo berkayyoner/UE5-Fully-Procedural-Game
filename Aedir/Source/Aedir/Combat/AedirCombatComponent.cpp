@@ -43,7 +43,6 @@ namespace
 	// the end of the draw, gives each part its time at most, and now and then raises a blade overhead instead.
 	constexpr float AedirAIMouseGuardSpeed = 4.f;
 	constexpr float AedirAIMouseWindupSpeed = 5.f;
-	constexpr float AedirAIMouseStrikeSpeed = 19.f;
 	// How often a blow goes for the head when the one fought holds a guard up.
 	constexpr float AedirAIMouseWindupAcross = 0.9f;
 	constexpr float AedirAIMouseBladeThrough = 0.7f;
@@ -675,8 +674,6 @@ namespace
 	constexpr float AedirKickStrikeStart = 0.56f;
 	constexpr float AedirKickStrikeEnd = 0.8f;
 	constexpr float AedirKickHitRadius = 8.f;
-	constexpr float AedirKickMassKg = 10.f;
-	constexpr float AedirKickEnergyScale = 1.f;
 	constexpr float AedirKickMaxFootSpeed = 1200.f;
 	constexpr float AedirKickRecoilBalance = 0.04f;
 	constexpr float AedirKickMinBalance = 0.4f;
@@ -688,12 +685,10 @@ namespace
 	constexpr float AedirKickExtendCm = 85.f;
 	constexpr float AedirKickMaxYawDegrees = 70.f;
 	constexpr float AedirKickMinLiftCm = -15.f;
-	constexpr float AedirKickMaxLiftCm = 55.f;
 	constexpr float AedirKickPointStartTime = 0.2f;
 	constexpr float AedirKickPointFullTime = 0.55f;
 	constexpr float AedirKickPointEndTime = 0.9f;
 	constexpr float AedirKickGroundBelowHipCm = 90.f;
-	constexpr float AedirKickExtendHeightCm = 55.f;
 
 	// A fight starts some way off: first the stance, then closing to the length of the arm and the weapon, then the blow.
 	constexpr float AedirAIArmReachCm = 62.f;
@@ -5229,6 +5224,10 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 			AIMousePhase = 1;
 			AIMouseTimer = 0.f;
 			AINearestFistCm = UE_BIG_NUMBER;
+			Fists->TakePeakStraight(EAedirHand::Left);
+			Fists->TakePeakStraight(EAedirHand::Right);
+			Fists->TakePeakAhead(EAedirHand::Left);
+			Fists->TakePeakAhead(EAedirHand::Right);
 			UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s draws back to %s to throw to %s, %.0f cm from %s (reach %.0f), stamina %.0f%%%s%s"), *Creature->GetName(), *AIMouseWindup.ToString(), *AIMouseStrike.ToString(), Distance, *GetNameSafe(AITarget), Reach,
 				Creature->Stats ? Creature->Stats->GetStaminaFraction() * 100.f : 0.f, bAIResting ? TEXT(", resting") : TEXT(""), bFoeSpent ? TEXT(", the foe is spent") : TEXT(""));
 		}
@@ -5251,6 +5250,13 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		}
 		break;
 	case 3:
+		if (CVarAedirHitLog.GetValueOnGameThread() >= 2 && Body)
+		{
+			const FVector ChestAt = (Body->GetBoneLocation(TEXT("upperarm_l")) + Body->GetBoneLocation(TEXT("upperarm_r"))) * 0.5;
+			const bool bTraceRight = AIMouseStrike.X > 0.f;
+			UE_LOG(LogAedir, Log, TEXT("[NpcTrace] %s t %.3f mouse %s aim %s punch %.2f slot %d hand ahead %.0f cm"), *Creature->GetName(), AIMouseTimer, *Fists->GetMouseAim().ToString(), *Fists->GetAim().ToString(), Fists->GetPunch(), Fists->GetPunchSlot(),
+				FVector::DotProduct(Body->GetBoneLocation(bTraceRight ? TEXT("hand_r") : TEXT("hand_l")) - ChestAt, Creature->GetActorForwardVector()));
+		}
 		// For the hit log: the nearest the thrown fist's real hand comes to what it goes for.
 		if (Body)
 		{
@@ -5273,7 +5279,7 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 			}
 		}
 		// Thrown, and followed through until the arm itself, with its weight, has got there.
-		if ((MoveTo(AIMouseStrike, AedirAIMouseStrikeSpeed) && FVector2D::Distance(Fists->GetAim(), Fists->GetMouseAim()) < AedirAIMouseArrivedShare) || AIMouseTimer > AedirAIMouseStrikeMaxSeconds)
+		if ((MoveTo(AIMouseStrike, bArmed ? AIBladeStrikeSpeed : AIFistStrikeSpeed) && FVector2D::Distance(Fists->GetAim(), Fists->GetMouseAim()) < AedirAIMouseArrivedShare) || AIMouseTimer > AedirAIMouseStrikeMaxSeconds)
 		{
 			FVector2D Then;
 			UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s threw: the punch went out %.2f, the aim now %s"), *Creature->GetName(), Fists->TakePeakPunch(Then), *Fists->GetAim().ToString());
@@ -5297,6 +5303,11 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		MoveTo(FVector2D(0.f, GuardHeight), AedirAIMouseGuardSpeed);
 		if (AIMouseTimer >= AedirAIMouseRecoverSeconds)
 		{
+			// How far the thrown arm went out, from the draw back to now: straight from the shoulder (1 = all the way), and
+			// ahead of the chest.
+			const EAedirHand Thrown = AIMouseStrike.X > 0.f ? EAedirHand::Right : EAedirHand::Left;
+			UE_CLOG(CVarAedirHitLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[NpcReach] %s threw at %s, now %.0f cm off: the arm went %.3f straight, %.0f cm ahead of the chest"), *Creature->GetName(), *GetNameSafe(AITarget),
+				AITarget ? FVector::Dist2D(Creature->GetActorLocation(), AITarget->GetActorLocation()) : 0.f, Fists->TakePeakStraight(Thrown), Fists->TakePeakAhead(Thrown));
 			AIMousePhase = 0;
 			AIMouseTimer = 0.f;
 			AIMouseWait = FMath::Clamp(AISwingWaitSeconds * FMath::FRandRange(0.8f, 1.2f), 0.1f, AedirAIMouseWaitMax);
@@ -5767,7 +5778,7 @@ float UAedirCombatComponent::ComputeShoveEnergy(float Strength, float StaminaFra
 	return (AedirShoveBaseJoules + FMath::Max(Strength, 0.f) * AedirShoveStrengthJoules) * StaminaScale;
 }
 
-FVector UAedirCombatComponent::EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm, float WindUpBackCm, float WindUpBelowHipCm)
+FVector UAedirCombatComponent::EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm, float WindUpBackCm, float WindUpBelowHipCm, float ExtendHeightCm)
 {
 	FVector Ahead = Forward.GetSafeNormal2D();
 	if (Ahead.IsNearlyZero())
@@ -5778,7 +5789,7 @@ FVector UAedirCombatComponent::EvaluateKickArc(const FVector& Start, const FVect
 	const FVector Right = FVector::CrossProduct(FVector::UpVector, Ahead);
 	// The wind-up: the foot drawn back and off the ground, the knee bent, under and a little behind the hip.
 	const FVector WindUp = Hip - Ahead * WindUpBackCm + Right * AedirKickChamberRightCm - FVector(0.f, 0.f, WindUpBelowHipCm);
-	const FVector Extension = Hip + Ahead * AedirKickExtendCm + FVector(0.f, 0.f, AedirKickExtendHeightCm - AedirKickGroundBelowHipCm + LiftCm);
+	const FVector Extension = Hip + Ahead * AedirKickExtendCm + FVector(0.f, 0.f, ExtendHeightCm - AedirKickGroundBelowHipCm + LiftCm);
 	const float T = FMath::Clamp(T01, 0.f, 1.f);
 
 	if (T < AedirKickChamberTime)
@@ -5815,7 +5826,7 @@ bool UAedirCombatComponent::GetKickPose(bool& bOutLeftLeg, FVector& OutFootTarge
 	}
 
 	const float T01 = FMath::Clamp(KickNet.Elapsed / AedirKickDuration, 0.f, 1.f);
-	OutFootTargetWorld = EvaluateKickArc(KickNet.StartWorld, GetPelvisWorld(), KickNet.Direction, T01, KickNet.LiftCm, KickWindUpBackCm, KickWindUpBelowHipCm);
+	OutFootTargetWorld = EvaluateKickArc(KickNet.StartWorld, GetPelvisWorld(), KickNet.Direction, T01, KickNet.LiftCm, KickWindUpBackCm, KickWindUpBelowHipCm, KickExtendHeightCm);
 	return true;
 }
 
@@ -6124,7 +6135,7 @@ void UAedirCombatComponent::BeginKick()
 	KickNet.StartWorld = GetFootBoneWorld(bLeftLeg);
 	KickNet.Direction = KickWay;
 	UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicks with the %s leg %.0f degrees from straight ahead: the left foot %.0f cm towards it, the right %.0f"), *Creature->GetName(), bLeftLeg ? TEXT("left") : TEXT("right"), YawFromBody, LeftAhead, RightAhead);
-	KickNet.LiftCm = FMath::Clamp(AedirKickExtendCm * FMath::Sin(FMath::DegreesToRadians(static_cast<float>(FRotator::NormalizeAxis(View.Pitch)))), AedirKickMinLiftCm, AedirKickMaxLiftCm);
+	KickNet.LiftCm = FMath::Clamp(AedirKickExtendCm * FMath::Sin(FMath::DegreesToRadians(static_cast<float>(FRotator::NormalizeAxis(View.Pitch)))), AedirKickMinLiftCm, KickMaxLiftCm);
 	KickPrevFootWorld = KickNet.StartWorld;
 	bKickStruck = false;
 	KickCooldownRemaining = KickCooldown;
@@ -6202,21 +6213,38 @@ void UAedirCombatComponent::ResolveKickSweep(const FVector& From, const FVector&
 
 void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitResult& Hit, const FVector& FootMotion, float FootSpeed)
 {
+	// A kick lands as a punch does: by how fast the foot comes into the body where it meets it, with the weight of a blow
+	// (KickBlowMassKg, grown with strength), harming only where it lands and pushing the body no harder than a fist would.
 	const FName Bone = Hit.BoneName;
-	EAedirBodyZone Zone = ClassifyBodyZone(Bone);
-	if (Zone != EAedirBodyZone::Leg)
-	{
-		Zone = EAedirBodyZone::Torso;
-	}
-
-	const float Energy = ComputeImpactEnergy(AedirKickMassKg, FootSpeed) * AedirKickEnergyScale;
+	const EAedirBodyZone Zone = ClassifyBodyZone(Bone);
+	const FVector FootVelocity = FootMotion.GetSafeNormal() * FootSpeed;
+	const float RelativeSpeed = FMath::Min(FMath::Max(0.f, static_cast<float>(FVector::DotProduct(FootVelocity - Victim->GetVelocity(), -Hit.ImpactNormal))), AedirKickMaxFootSpeed);
+	const float MassEff = KickBlowMassKg * GetStrengthBlowScale();
+	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
 	if (Creature->IsFriendOf(Victim))
 	{
-		PushFriend(Victim, Bone, Zone, Hit.ImpactPoint, FootMotion, Energy, AedirKickMassKg, FootSpeed);
+		PushFriend(Victim, Bone, Zone, Hit.ImpactPoint, FootMotion, Energy, MassEff, RelativeSpeed);
 		return;
 	}
-	const float VictimZoneProtection = Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f;
-	const float Damage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(EAedirDamageType::Blunt, 0.f) * GetZoneDamageMultiplier(Zone) * (1.f - VictimZoneProtection);
+	if (RelativeSpeed < FMath::Min(MinImpactSpeed, AedirFistMinImpactSpeed))
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Kick] %s's foot touched %s on %s at %.0f cm/s: too slow to count"), *Creature->GetName(), *Victim->GetName(), *Bone.ToString(), RelativeSpeed);
+		return;
+	}
+	const float ArmorFactor = 1.f - (Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f);
+	if (Zone == EAedirBodyZone::Head && Victim->Stats)
+	{
+		Victim->Stats->LoseConsciousness(FMath::Max(Energy * ArmorFactor - SensesFreeJoules, 0.f) * SensesPerJoule);
+	}
+	const float Harm = FMath::SmoothStep(FistNoHarmJoules, FMath::Max(FistFullHarmJoules, FistNoHarmJoules + 1.f), Energy * ArmorFactor);
+	const float FistShare = Zone == EAedirBodyZone::Head ? FistHeadShare : Zone == EAedirBodyZone::Arm ? FistArmShare : Zone == EAedirBodyZone::Leg ? FistLegShare : FistTrunkShare;
+	if (Zone == EAedirBodyZone::Torso && Victim->Stats && IsAuthoritative())
+	{
+		Victim->Stats->ConsumeStamina(FMath::Min(Energy * ArmorFactor * FistBodyStaminaPerJoule, Victim->Stats->GetStamina()));
+	}
+	const float RawDamage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(EAedirDamageType::Blunt, 0.f) * GetZoneDamageMultiplier(Zone) * ArmorFactor * Harm * FistShare + FistDamage * Harm * FistShare;
+	const float MaxShare = Zone == EAedirBodyZone::Head ? AedirImpactMaxHealthShareHead : AedirImpactMaxHealthShare;
+	const float Damage = !Victim->Stats ? RawDamage : FMath::Min(RawDamage, Victim->Stats->GetMaxHealth() * MaxShare);
 	const float KickDamage = Victim->ReceiveCreatureDamage(Damage);
 	if (AAedirPlayerCharacter* Kicker = Cast<AAedirPlayerCharacter>(Creature))
 	{
@@ -6235,18 +6263,24 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 		Impact.Bone = Bone;
 		Impact.Zone = Zone;
 		const float Knock = CombatKnockbackScale(nullptr, true);
-		Impact.EnergyJoules = Energy * Knock;
+		Impact.EnergyJoules = Energy * AedirImpactBodyEnergyShare * Knock;
 		Impact.Direction = FootMotion.GetSafeNormal();
 		Impact.Location = Hit.ImpactPoint;
-		Impact.MassKg = AedirKickMassKg;
-		Impact.RelativeSpeed = FootSpeed * Knock;
+		Impact.MassKg = MassEff;
+		Impact.RelativeSpeed = RelativeSpeed * Knock;
 		Victim->Balance->ApplyHitReaction(Impact);
 	}
 
 	if (Victim->Wounds)
 	{
-		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, EAedirDamageType::Blunt, Energy, VictimZoneProtection, FootMotion, FootSpeed);
+		Victim->Wounds->AddWound(Bone, Hit.ImpactPoint, Hit.ImpactNormal, EAedirDamageType::Blunt, Energy, 1.f - ArmorFactor, FootMotion, RelativeSpeed);
 	}
+	if (AAedirNpc* VictimNpc = Cast<AAedirNpc>(Victim))
+	{
+		VictimNpc->OnAttackedBy(Creature);
+	}
+	UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicked %s on %s, %.0f cm/s, %.1f kg, %.0f J, %.1f damage, balance %.2f, down %d"), *Creature->GetName(), *Victim->GetName(), *Bone.ToString(), RelativeSpeed, MassEff, Energy, KickDamage,
+		Victim->Balance ? Victim->Balance->GetBalance() : 1.f, Victim->Balance && Victim->Balance->IsRagdoll() ? 1 : 0);
 
 	OnKick.Broadcast(Victim);
 }

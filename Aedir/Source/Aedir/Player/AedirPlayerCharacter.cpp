@@ -7,6 +7,8 @@
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Misc/App.h"
+#include "RenderTimer.h"
+#include "RHI.h"
 #include "Travel/AedirTravelSubsystem.h"
 #include "EngineUtils.h"
 #include "Rendering/SkeletalMeshRenderData.h"
@@ -199,15 +201,21 @@ void AAedirPlayerCharacter::BeginPlay()
 	{
 		// It swings under the physics set on the groom itself.
 		Hair->SetGroomAsset(Groom, Binding);
+		UMaterialInterface* HairLook = Cast<UMaterialInterface>(HairMaterial.TryLoad());
 		for (int32 Slot = 0; Slot < Hair->GetNumMaterials(); ++Slot)
 		{
+			if (HairLook)
+			{
+				Hair->SetMaterial(Slot, HairLook);
+			}
 			if (UMaterialInstanceDynamic* Look = Hair->CreateDynamicMaterialInstance(Slot))
 			{
 				Look->SetScalarParameterValue(TEXT("hairMelanin"), HairMelanin);
 				Look->SetScalarParameterValue(TEXT("hairRedness"), HairRedness);
 			}
 		}
-		UE_LOG(LogAedir, Log, TEXT("[Hair] %s grows %s on %s"), *GetName(), *Groom->GetName(), *Head->GetSkeletalMeshAsset()->GetName());
+		UE_LOG(LogAedir, Log, TEXT("[Hair] %s grows %s on %s, %d material slots, look %s"), *GetName(), *Groom->GetName(), *Head->GetSkeletalMeshAsset()->GetName(), Hair->GetNumMaterials(), *GetNameSafe(HairLook));
+		GetWorldTimerManager().SetTimer(HairHelmetTimer, this, &AAedirPlayerCharacter::UpdateHairUnderHelmet, 0.25f, true);
 	}
 	else if (Hair)
 	{
@@ -1983,6 +1991,59 @@ void AAedirPlayerCharacter::PoseArm(const FString& PoseArgs)
 	RunDevCommand(TEXT("PoseArm"), PoseArgs, true);
 }
 
+void AAedirPlayerCharacter::UpdateHairUnderHelmet()
+{
+	if (!Hair || !Interaction || !Face)
+	{
+		return;
+	}
+	const FAedirArmorHit OnHead = Interaction->GetArmorAt(TEXT("head"), Face->GetBoneLocation(TEXT("head")), EAedirDamageType::Blunt);
+	const bool bShown = !OnHead.bCovered;
+	if (Hair->IsVisible() != bShown)
+	{
+		Hair->SetVisibility(bShown);
+		UE_LOG(LogAedir, Log, TEXT("[Hair] %s's hair %s"), *GetName(), bShown ? TEXT("shows again") : TEXT("is under a helmet"));
+	}
+}
+
+void AAedirPlayerCharacter::ClothOn(int32 bOn)
+{
+	AAedirCatalogItem::SetClothOn(GetWorld(), bOn != 0);
+	UE_LOG(LogAedir, Display, TEXT("[Dev] Cloth %s"), AAedirCatalogItem::IsClothOn() ? TEXT("on") : TEXT("off"));
+}
+
+void AAedirPlayerCharacter::FrameProbe(float Seconds, const FString& Label)
+{
+	struct FProbe
+	{
+		double Elapsed = 0.0, Worst = 0.0, Game = 0.0, Draw = 0.0, Gpu = 0.0;
+		int32 Frames = 0;
+	};
+	TSharedRef<FProbe> Probe = MakeShared<FProbe>();
+	TSharedRef<FTimerHandle> Timer = MakeShared<FTimerHandle>();
+	const FString Name = Label;
+	FTimerManagerTimerParameters Params;
+	Params.bLoop = true;
+	Params.bMaxOncePerFrame = true;
+	GetWorldTimerManager().SetTimer(*Timer, FTimerDelegate::CreateWeakLambda(this, [this, Probe, Timer, Seconds, Name]()
+	{
+		const double Delta = FApp::GetDeltaTime();
+		Probe->Elapsed += Delta;
+		Probe->Worst = FMath::Max(Probe->Worst, Delta);
+		Probe->Game += FPlatformTime::ToMilliseconds(GGameThreadTime);
+		Probe->Draw += FPlatformTime::ToMilliseconds(GRenderThreadTime);
+		Probe->Gpu += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles());
+		++Probe->Frames;
+		if (Probe->Elapsed >= Seconds && Probe->Frames > 0)
+		{
+			const double N = Probe->Frames;
+			UE_LOG(LogAedir, Display, TEXT("[FrameProbe] %s: %.1f fps (%.2f ms a frame, worst %.1f ms), game %.2f ms, drawing %.2f ms, graphics card %.2f ms, over %d frames"), *Name,
+				N / Probe->Elapsed, Probe->Elapsed * 1000.0 / N, Probe->Worst * 1000.0, Probe->Game / N, Probe->Draw / N, Probe->Gpu / N, Probe->Frames);
+			GetWorldTimerManager().ClearTimer(*Timer);
+		}
+	}), 0.001f, Params);
+}
+
 void AAedirPlayerCharacter::OffHandFree(const FString& FreeArgs)
 {
 	RunDevCommand(TEXT("OffHandFree"), FreeArgs, true);
@@ -2862,6 +2923,11 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 		const FTransform& Body = GetActorTransform();
 		FVector2D PeakAim;
 		const float Peak = FistArms->TakePeakPunch(PeakAim);
+		const float StraightLeft = FistArms->TakePeakStraight(EAedirHand::Left);
+		const float StraightRight = FistArms->TakePeakStraight(EAedirHand::Right);
+		const float AheadLeft = FistArms->TakePeakAhead(EAedirHand::Left);
+		const float AheadRight = FistArms->TakePeakAhead(EAedirHand::Right);
+		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s straightest since last: left %.3f right %.3f; furthest ahead of the chest: left %.0f cm right %.0f cm"), *Label, StraightLeft, StraightRight, AheadLeft, AheadRight);
 		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s aim %.2f %.2f punch %.2f peak %.2f at %.2f one turn %.2f | L %.2f fist %s | R %.2f fist %s"), *Label, FistArms->GetAim().X, FistArms->GetAim().Y, FistArms->GetPunch(), Peak, PeakAim.X, FistArms->GetOneTurn(),
 			Alpha[0], *Body.InverseTransformPositionNoScale(Fist[0]).ToCompactString(), Alpha[1], *Body.InverseTransformPositionNoScale(Fist[1]).ToCompactString());
 		if (const USkeletalMeshComponent* ArmBody = GetMesh())
@@ -3095,6 +3161,10 @@ void AAedirPlayerCharacter::MouseFlick(int32 RightHand, float DeltaX, float Delt
 		if (Combat)
 		{
 			Combat->AddSwingInput(Hand, FVector2D(DeltaX, DeltaY), Step);
+		}
+		if (FistArms && FistArms->IsSteering())
+		{
+			FistArms->AddMouse(FVector2D(DeltaX, DeltaY));
 		}
 		*Left -= Step;
 		if (*Left <= 0.f)

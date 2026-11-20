@@ -1233,4 +1233,7 @@ private:
 	float LastFallSpeed = 0.f;
 	float PelvisRestHeight = 0.f;
 	bool bWasFalling = false;
+
+	// The arms whose joints were last given the limp limits for being broken (1 left, 2 right).
+	uint8 BrokenArmJoints = 0;
 };

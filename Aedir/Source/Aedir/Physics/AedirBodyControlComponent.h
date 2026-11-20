@@ -107,7 +107,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
 	float HoistArmShare = 0.3f;
 
-	// What is left of the muscles of a limb whose bone is broken: it swings loose, still hanging together.
+	// What is left of the muscles of a leg whose bone is broken: it swings loose, still hanging together. A broken arm keeps
+	// what a limp body's arm has (LimpShare).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float BrokenShare = 0.02f;
 
@@ -119,13 +120,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float BrokenArmOutDegrees = 12.f;
 
-	// A broken arm's joints are damped this many times more than a whole arm's, and dragged on by the body it hangs from
-	// (extra damping), so it swings as a weight and does not stream out behind a running body.
+	// A broken arm's joints are damped this many times as much as a whole arm's, and dragged on by the body it hangs from
+	// (extra damping): as a limp body's arm is, so it swings as a weight of muscle, not as a stick on a string.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float BrokenArmDampingShare = 3.f;
+	float BrokenArmDampingShare = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float BrokenArmDrag = 8.f;
+	float BrokenArmDrag = 2.f;
 
 	// Damping of the muscles, 1 for no overshoot.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")

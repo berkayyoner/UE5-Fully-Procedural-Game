@@ -603,3 +603,17 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Bare-handed, the mouse down no longer takes the body down; NPCs crouch (as with Ctrl) over a foe on the ground to strike it.
 - The player has hair: a short crew cut grown as strands on his head (Classic Crewcut groom, bound to his face), dark brown (HairMelanin, HairRedness), with the groom's own physics on.
 - Hair files (Content/Grooms, Classic Crewcut groom and its binding to the player's face) are in git, stored in LFS like the MetaHuman assets.
+- A shirt (or any garment) laid on the ground lies on a body the size of the garment itself, laid down, so none of it sinks into the ground; before, its body was sized from the worn bulk and most of a shirt hung through the floor.
+- The player's hair is longer: a medium cut over the ears (MetaHuman Hairstyle Male 11 groom, bound to his face), dark brown through the hair material, swinging with its own physics; it is hidden under a helmet instead of standing out through the metal.
+- Graphics settings have Cloth physics (worn clothes swing as cloth, or only follow the body) and Hair physics (r.HairStrands.Simulation) lines, both off in the Low preset; FrameProbe logs the frame rate and where the frame goes, ClothOn turns cloth on and off from the console.
+- A sleeve no longer catches on the other arm: the shirt's cloth collides with the upper arms, the thighs and the trunk only; a sleeve keeps out of its own forearm by its backstop.
+- A punch stays out while the arm is still coming round to the middle and a moment after (PunchHoldSeconds), so it lands straight out in front instead of spending itself at the side; the arm reaches 0.99 of its length (FistMaxReachShare).
+- NPCs keep further off in a fist fight (AIFistStandOffCm 88, AIFistStrikeInCm 76) and throw their fists slower (AIFistStrikeSpeed 9) and only just past the middle (AIFistThrough 0.05), so the arm follows the swing all the way round and stops out before the body.
+- The waist turns with a punch quicker (WaistTurnHz 5, up to 720 degrees a second).
+- A rising punch lifts its elbow higher, the fist where it was (RisingElbowRaise); a falling punch's far points come nearer the body and further back and its elbow a little higher (FallingSideInShare, FallingSideBackCm, FallingElbowRaise), so it comes straight down.
+- A punch costs less breath (PunchStaminaCost 9); a kick more (KickStaminaCost 18), swings higher (KickExtendHeightCm 80) and lands as a punch does: by the foot's speed into the body, harming only where it lands, and pushing no harder than a fist, so it no longer throws a body down.
+- A broken arm hangs as a limp body's arm does: the same muscle left in it, the same slack forearm and wrist, the same joint limits and damping, instead of swinging like an empty sleeve.
+- The southern helmet sits lower on the head.
+- The trees bend the same way in the wind: each takes the wind worked out for the way it faces; the grass, the trees, the rain meshes and the rain effect all blow one way.
+- The world no longer goes dark for a moment as rain sets in: the sky light's brightness is set without the light being rebuilt, in small steps, and the rain and snow are made ready from the start instead of on the first rainy frame.
+- Blood on the skin is brighter and sharp-edged; bruises are larger, darker and purple (the material read its three channels mixed together, so a bruise came out red).

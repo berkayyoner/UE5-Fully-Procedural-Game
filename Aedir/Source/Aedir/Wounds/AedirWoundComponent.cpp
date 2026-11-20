@@ -153,13 +153,13 @@ namespace
 		}
 	}
 
-	float WoundDecalRadius(EAedirWoundType Type, float Severity)
+	float WoundDecalRadius(EAedirWoundType Type, float Severity, float BruiseMinCm, float BruiseMaxCm)
 	{
 		const float Alpha = FMath::Clamp(Severity, 0.f, 1.f);
 		switch (Type)
 		{
 		case EAedirWoundType::Bruise:
-			return FMath::Lerp(2.5f, 7.f, Alpha);
+			return FMath::Lerp(BruiseMinCm, BruiseMaxCm, Alpha);
 		case EAedirWoundType::Cut:
 			return FMath::Lerp(4.f, 10.f, Alpha);
 		case EAedirWoundType::Puncture:
@@ -807,7 +807,7 @@ void UAedirWoundComponent::SoakClothes(float DeltaTime)
 			continue;
 		}
 		const FVector Where = WoundBindPoint(Mesh, Wound);
-		const float Radius = WoundDecalRadius(Wound.Type, Severity) * ClothStainRadiusShare;
+		const float Radius = WoundDecalRadius(Wound.Type, Severity, BruiseRadiusMinCm, BruiseRadiusMaxCm) * ClothStainRadiusShare;
 		for (AAedirItemActor* Item : Worn)
 		{
 			if (Item && Item->TakesBlood() && WoundCovered(Mesh, Item, WoundResolveBone(Mesh, Wound.Bone)))
@@ -909,7 +909,7 @@ void UAedirWoundComponent::EnsureWoundVisuals()
 			Visual = &NewVisual;
 		}
 
-		const float Radius = WoundDecalRadius(Wound.Type, Wound.GetSeverity());
+		const float Radius = WoundDecalRadius(Wound.Type, Wound.GetSeverity(), BruiseRadiusMinCm, BruiseRadiusMaxCm);
 		// Wounds and bruises are drawn on the skin itself.
 		if (UsesSkinBlood())
 		{
@@ -1095,7 +1095,7 @@ void UAedirWoundComponent::UpdateSkinBlood()
 			const float RunCm = (Visual ? Visual->RunLength : 0.f) * 2.f * (WoundRunHalfLengthMinCm + WoundRunHalfLengthPerSeverityCm * FMath::Clamp(Severity, 0.f, 1.f));
 			// A bruise shrinks slowly to nothing over its week as it turns from purple to yellow.
 			const float Healed = Wound.Type == EAedirWoundType::Bruise ? FMath::SmoothStep(0.f, 1.f, ComputeAge01(Wound.Type, Severity, Age)) : 0.f;
-			Where = FLinearColor(Point.X, Point.Y, Point.Z, WoundDecalRadius(Wound.Type, Severity) * (1.f - Healed));
+			Where = FLinearColor(Point.X, Point.Y, Point.Z, WoundDecalRadius(Wound.Type, Severity, BruiseRadiusMinCm, BruiseRadiusMaxCm) * (1.f - Healed));
 			UE_CLOG(CVarAedirSkinBloodLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Wounds] skin blood %d on %s at %s, radius %.1f, run %.1f cm"), Slot, *Wound.Bone.ToString(), *Point.ToCompactString(), Where.A, RunCm);
 			// A bruise has no run: the material knows it by a run length below zero.
 			const bool bBruise = Wound.Type == EAedirWoundType::Bruise;

@@ -134,10 +134,10 @@ namespace
 			Distances.Sort();
 			return Distances.IsEmpty() ? 0.f : FMath::Max(Distances[FMath::Min(Distances.Num() - 1, static_cast<int32>(Distances.Num() * ClothBodySkinShare))] - ClothBodyInsetCm, 1.f);
 		};
-		// The limbs: each bone to the next along it.
+		// The limbs: each bone to the next along it. Not the forearms and hands: crossed in a guard, one sleeve's cuff would
+		// catch on the other forearm and stretch after it; a sleeve keeps out of its own forearm by its backstop instead.
 		const TCHAR* const Limbs[][2] = {
-			{ TEXT("upperarm_l"), TEXT("lowerarm_l") }, { TEXT("lowerarm_l"), TEXT("hand_l") }, { TEXT("hand_l"), TEXT("middle_01_l") },
-			{ TEXT("upperarm_r"), TEXT("lowerarm_r") }, { TEXT("lowerarm_r"), TEXT("hand_r") }, { TEXT("hand_r"), TEXT("middle_01_r") },
+			{ TEXT("upperarm_l"), TEXT("lowerarm_l") }, { TEXT("upperarm_r"), TEXT("lowerarm_r") },
 			{ TEXT("thigh_l"), TEXT("calf_l") }, { TEXT("thigh_r"), TEXT("calf_r") }, { TEXT("neck_01"), TEXT("head") },
 		};
 		for (const auto& Limb : Limbs)

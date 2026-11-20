@@ -37,7 +37,7 @@ bool FAedirMeleeKickArcTest::RunTest(const FString& Parameters)
 	// The extension is reached at 0.62 of the kick, swung up quickly after the slower wind-up at 0.42.
 	const FVector Extension = UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.62f);
 	TestTrue(TEXT("Full extension is 85 cm ahead of the hip"), FMath::IsNearlyEqual(Extension.X, 85.f, 0.01f) && FMath::IsNearlyEqual(Extension.Y, 0.f, 0.01f));
-	TestTrue(TEXT("Full extension is 55 cm above the ground reference"), FMath::IsNearlyEqual(Extension.Z, 55.f, 0.01f));
+	TestTrue(TEXT("Full extension is 80 cm above the ground reference"), FMath::IsNearlyEqual(Extension.Z, 80.f, 0.01f));
 
 	const FVector WindUp = UAedirCombatComponent::EvaluateKickArc(Start, Hip, Forward, 0.42f);
 	TestTrue(TEXT("The wind-up draws the foot back of the hip"), WindUp.X < Hip.X);
