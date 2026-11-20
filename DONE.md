@@ -602,3 +602,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Bare-handed NPCs read the foe's guard: an arm let down or drawn aside leaves that side open, low fists the head; they weigh an opening again every half second while it lasts and go for it 85% of the time. Their punches are not all level: some come up across from low (low right to high left, low left to high right) and some down across from high.
 - Bare-handed, the mouse down no longer takes the body down; NPCs crouch (as with Ctrl) over a foe on the ground to strike it.
 - The player has hair: a short crew cut grown as strands on his head (Classic Crewcut groom, bound to his face), dark brown (HairMelanin, HairRedness), with the groom's own physics on.
+- Hair files (Content/Grooms, Classic Crewcut groom and its binding to the player's face) are in git, stored in LFS like the MetaHuman assets.
