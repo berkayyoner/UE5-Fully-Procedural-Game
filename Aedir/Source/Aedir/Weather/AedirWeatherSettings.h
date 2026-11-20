@@ -43,10 +43,10 @@ public:
 	// How far from a player a bolt comes down (cm), and how much the far end is favoured: 1 spreads them evenly by distance
 	// scale, lower keeps more of them far off, so a strike close by is rare.
 	UPROPERTY(Config, EditAnywhere, Category="Aedir|Weather|Lightning")
-	FVector2D LightningStrikeDistanceMinMaxCm = FVector2D(6000.f, 500000.f);
+	FVector2D LightningStrikeDistanceMinMaxCm = FVector2D(6000.f, 200000.f);
 
 	UPROPERTY(Config, EditAnywhere, Category="Aedir|Weather|Lightning", meta=(ClampMin=0.05, ClampMax=1))
-	float LightningNearness = 0.5f;
+	float LightningNearness = 0.7f;
 
 	// A bolt lights the land by up to this many lux when it comes down within LightningFlashFullWithinCm, less as the square
 	// of the distance past it.
@@ -59,7 +59,7 @@ public:
 	// Thunder is heard only from bolts within this distance, at once with the flash, at full loudness up to
 	// ThunderFullWithinCm and down to ThunderFarShare at the edge. Farther ones are seen and not heard.
 	UPROPERTY(Config, EditAnywhere, Category="Aedir|Weather|Lightning", meta=(ClampMin=0))
-	float ThunderHeardWithinCm = 60000.f;
+	float ThunderHeardWithinCm = 250000.f;
 
 	UPROPERTY(Config, EditAnywhere, Category="Aedir|Weather|Lightning", meta=(ClampMin=0))
 	float ThunderFullWithinCm = 10000.f;

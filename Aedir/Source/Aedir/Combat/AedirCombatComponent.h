@@ -191,7 +191,7 @@ public:
 
 	// Flat bonus for a bare-handed hit. Held items add their own Damage instead.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
-	float FistDamage = 6.f;
+	float FistDamage = 9.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float ImpactDamageScale = 0.1f;
@@ -221,6 +221,11 @@ public:
 	// bruises more than it shoves.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
 	float WeaponPushShare = 0.45f;
+
+	// How hard a fist's (or a kick's) blow pushes and throws the body it lands on, against what its weight and speed would
+	// give with the share every blow passes on: above 1 a solid punch rocks the body and can stagger it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage", meta=(ClampMin="0"))
+	float FistPushShare = 1.5f;
 
 	// A blow to the head shakes the senses: the first SensesFreeJoules of what gets through do nothing, each joule past them
 	// takes SensesPerJoule of the hundred.
@@ -487,7 +492,7 @@ public:
 
 	// Mass of the arm itself in kg, added to the held item weight.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")
-	float ForearmMass = 2.5f;
+	float ForearmMass = 3.f;
 
 	// Degrees of aim offset per unit of raw mouse movement.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Arm")

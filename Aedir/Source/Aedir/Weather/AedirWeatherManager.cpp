@@ -356,7 +356,6 @@ void AAedirWeatherManager::SetWeather(EAedirWeather NewWeather, float NewTransit
 	CurrentWeather = NewWeather;
 	TransitionSeconds = FMath::Max(NewTransitionSeconds, 0.f);
 	TransitionStartServerTime = GetServerTime();
-	NextLightningServerTime = -1.0;
 }
 
 EAedirWeather AAedirWeatherManager::GetWeather() const
@@ -795,18 +794,14 @@ void AAedirWeatherManager::UpdateServerSchedules(double ServerTime, const FAedir
 		}
 	}
 
-	if (Profile.LightningPerMinute <= 0.f)
-	{
-		NextLightningServerTime = -1.0;
-	}
-	else if (NextLightningServerTime < 0.0)
-	{
-		ScheduleNextLightning(ServerTime, Profile.LightningPerMinute);
-	}
-	else if (ServerTime >= NextLightningServerTime)
+	// A bolt may come down at any moment, by the storm's rate as it is now: as a storm builds up, its bolts come more often.
+	// (A time for the next one chosen when the storm had only just begun, at its first faint rate, lay hours off, and the
+	// storm went by without a single bolt.)
+	const double SinceLastCheck = LightningCheckServerTime < 0.0 ? 0.0 : FMath::Clamp(ServerTime - LightningCheckServerTime, 0.0, 1.0);
+	LightningCheckServerTime = ServerTime;
+	if (Profile.LightningPerMinute > 0.f && FMath::FRand() < 1.f - FMath::Exp(-Profile.LightningPerMinute / 60.f * static_cast<float>(SinceLastCheck)))
 	{
 		StrikeLightning();
-		ScheduleNextLightning(ServerTime, Profile.LightningPerMinute);
 	}
 }
 
@@ -816,13 +811,6 @@ void AAedirWeatherManager::ScheduleNextAutoChange(double ServerTime)
 	const float Low = FMath::Max(FMath::Min(Interval.X, Interval.Y), WeatherManagerMinAutoInterval);
 	const float High = FMath::Max(FMath::Max(Interval.X, Interval.Y), Low);
 	NextAutoChangeServerTime = ServerTime + static_cast<double>(FMath::FRandRange(Low, High));
-}
-
-void AAedirWeatherManager::ScheduleNextLightning(double ServerTime, float LightningPerMinute)
-{
-	const float RatePerSecond = LightningPerMinute / 60.f;
-	const float Uniform = FMath::Max(FMath::FRand(), KINDA_SMALL_NUMBER);
-	NextLightningServerTime = ServerTime - static_cast<double>(FMath::Loge(Uniform)) / static_cast<double>(RatePerSecond);
 }
 
 void AAedirWeatherManager::StrikeLightning()

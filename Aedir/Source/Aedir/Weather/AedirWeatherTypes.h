@@ -117,7 +117,7 @@ struct AEDIR_API FAedirWeatherProfile
 			Profile.SunIntensityLux = 1.6f;
 			Profile.SkyLightIntensity = 0.38f;
 			Profile.WindSpeed = 18.f;
-			Profile.LightningPerMinute = 2.5f;
+			Profile.LightningPerMinute = 4.f;
 			Profile.WetnessTarget = 1.f;
 			Profile.SunColor = FLinearColor(0.45f, 0.5f, 0.6f);
 			break;

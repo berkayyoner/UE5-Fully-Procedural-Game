@@ -76,6 +76,7 @@
 #include "Weather/AedirWeatherEffectsComponent.h"
 #include "Weather/AedirWeatherManager.h"
 #include "GroomComponent.h"
+#include "NiagaraComponent.h"
 #include "GroomAsset.h"
 #include "GroomBindingAsset.h"
 
@@ -1484,6 +1485,14 @@ void AAedirPlayerCharacter::HandleHeadCameraPressed()
 		// Time all but stopped is not stopped for the solver: it still pushes bodies apart and out of the ground every frame,
 		// and limbs would creep open for as long as the camera is out. The physics is held still altogether instead.
 		GetWorld()->bShouldSimulatePhysics = !bPhotoCamera;
+		// The hair's own simulation is held still too: stepped by time all but stopped, it pulled the strands out long.
+		if (Hair)
+		{
+			for (int32 Group = 0; Hair->GetNiagaraComponent(Group); ++Group)
+			{
+				Hair->GetNiagaraComponent(Group)->SetPaused(bPhotoCamera);
+			}
+		}
 	}
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (bPhotoCamera)

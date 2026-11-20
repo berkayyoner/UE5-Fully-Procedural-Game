@@ -618,3 +618,8 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The world no longer goes dark for a moment as rain sets in: the sky light's brightness is set without the light being rebuilt, in small steps, and the rain and snow are made ready from the start instead of on the first rainy frame.
 - Blood on the skin is brighter and sharp-edged; bruises are larger, darker and purple (the material read its three channels mixed together, so a bruise came out red).
 - The longer hair's files (Content/Grooms/SC_Hairstyle_Male_11, its groom and its binding to the player's face) and the blood skin material (M_AedirBloodSkin, as blood_look.py sets it) are in git.
+- In the free camera the hair's own simulation is held still with the rest, instead of being stepped by time all but stopped, which pulled the strands out long.
+- Thunderstorms bring bolts and thunder again: whether a bolt comes down is weighed every moment by the storm's rate as it is then (the next bolt used to be timed once, at the first faint rate of a storm just begun, and lay hours off). Thunderstorms have 4 bolts a minute, they come down from 60 m to 2 km off, mostly within a few hundred metres, and their thunder is heard within 2.5 km.
+- Blood on the skin is a deeper red and less glossy; bruises let the skin show through and are blotched, darker and lighter over them, instead of one flat painted colour.
+- Blood and bruises are drawn before the hair is laid over them, so they no longer show through the hair.
+- Fists hit harder: a heavier arm behind them (ForearmMass 3), more harm from a solid blow (FistDamage 9), and they push and rock the body half again as hard as before (FistPushShare 1.5), kicks too.

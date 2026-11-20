@@ -81,7 +81,6 @@ private:
 	double GetServerTime() const;
 	void UpdateServerSchedules(double ServerTime, const FAedirWeatherProfile& Profile);
 	void ScheduleNextAutoChange(double ServerTime);
-	void ScheduleNextLightning(double ServerTime, float LightningPerMinute);
 	void StrikeLightning();
 	bool FindLightningStrikeLocation(FVector& OutLocation) const;
 	void ApplyLightningDamage(const FVector& StrikeLocation) const;
@@ -131,7 +130,8 @@ private:
 	double NextSkyLightApplyTime = 0.0;
 	float AppliedSkyLightIntensity = -1.f;
 
-	double NextLightningServerTime = -1.0;
+	// When the server last weighed whether a bolt comes down.
+	double LightningCheckServerTime = -1.0;
 	double NextAutoChangeServerTime = -1.0;
 	double LightningFlashWorldTime = -1000.0;
 	// How much of its light the last bolt threw over the land here, by how far off it came down (0..1).

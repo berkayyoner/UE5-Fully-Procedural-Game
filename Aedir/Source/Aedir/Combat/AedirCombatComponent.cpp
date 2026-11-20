@@ -4549,7 +4549,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	if (Victim->Balance)
 	{
 		// How hard this kind of blow pushes, as set at the console.
-		const float Knock = CombatKnockbackScale(HeldItem, false) * (HeldItem ? WeaponPushShare : 1.f);
+		const float Knock = CombatKnockbackScale(HeldItem, false) * (HeldItem ? WeaponPushShare : FistPushShare);
 		FAedirImpactInfo Impact;
 		Impact.Bone = Bone;
 		Impact.Zone = Zone;
@@ -6262,7 +6262,7 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 		FAedirImpactInfo Impact;
 		Impact.Bone = Bone;
 		Impact.Zone = Zone;
-		const float Knock = CombatKnockbackScale(nullptr, true);
+		const float Knock = CombatKnockbackScale(nullptr, true) * FistPushShare;
 		Impact.EnergyJoules = Energy * AedirImpactBodyEnergyShare * Knock;
 		Impact.Direction = FootMotion.GetSafeNormal();
 		Impact.Location = Hit.ImpactPoint;
