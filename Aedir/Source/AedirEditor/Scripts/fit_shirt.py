@@ -1,13 +1,25 @@
 ﻿# blender -b --python fit_shirt.py -- shirt.fbx manny.json out.fbx preview_prefix
-# Fits the A-posed linen shirt onto the UE5 mannequin's bind pose and skins it from the nearest skin: the torso keeps its
-# shape, raised a little and widened to the body; each sleeve is swept along the arm's bones; then everything is pushed out
-# of the body and weighted from the skin under it (torso skin for the torso, arm skin for the sleeves, mixed at the shoulder).
-import bpy, sys, json, math
+# Fits the A-posed linen shirt onto the UE5 mannequin's bind pose and skins it, keeping the garment's own cut:
+# - the torso is only moved down to the neck and widened as a whole, by one scale across and one front to back, just
+#   enough for the body to fit inside it everywhere, so it still falls straight from the chest as it was made;
+# - each sleeve is laid along the arm's bones, its own shape kept;
+# - where the body still shows through, the cloth is eased out by a broad, smooth shift spread over its neighbours, never
+#   dented point by point;
+# - weights come from the skin under it (trunk skin for the trunk, arm skin for the sleeves, both over the shoulders);
+# - the cloth is simulated on a sparser copy (the ClothProxy section) that the garment drawn follows.
+import bpy, sys, json
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 from mathutils.kdtree import KDTree
 argv = sys.argv[sys.argv.index("--") + 1:]
 SRC, BODY, OUT, PREVIEW = argv[0], argv[1], argv[2], argv[3]
+
+CLEARANCE = 1.5          # cm the widest part of the body keeps inside the shirt
+SHOW_THROUGH_ROOM = 1.0  # cm a point the body still reaches is eased out to
+EASE_STEPS = 40          # how far that easing is spread over the cloth
+PROXY_RATIO = 0.3        # share of the points the simulated copy keeps
+SHOULDER_SCALE = 1.0     # how much wider the shoulders are made than the shirt's own
+MAX_EASE_GAIN = 3.0      # how much the spread easing is scaled back up
 
 d = json.load(open(BODY))
 names = [b["name"] for b in d["bones"]]
@@ -25,54 +37,53 @@ for v in d["verts"]:
     weights.append(w)
 top = [max(w, key=w.get) for w in weights]
 tris = [tuple(d["tris"][i:i + 3]) for i in range(0, len(d["tris"]), 3)]
+ARMSKIN = {i for i, n in enumerate(names) if n.startswith(("upperarm", "lowerarm", "hand"))}
+TORSO = {i for i, n in enumerate(names) if n.startswith(("pelvis", "spine", "neck", "clavicle"))}
 HANDS = {i for i, n in enumerate(names) if n.startswith(("hand", "thumb", "index", "middle", "ring", "pinky"))}
 bvh = BVHTree.FromPolygons(verts, [t for t in tris if not any(top[k] in HANDS for k in t)], all_triangles=True)
 
-ARMSKIN = {i for i, n in enumerate(names) if n.startswith(("upperarm", "lowerarm", "hand"))}
-TORSO = {i for i, n in enumerate(names) if n.startswith(("pelvis", "spine", "neck", "clavicle"))}
+def smooth(x, a, b):
+    t = max(0.0, min(1.0, (x - a) / (b - a)))
+    return t * t * (3 - 2 * t)
 
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.context.scene.unit_settings.scale_length = 0.01
 bpy.ops.import_scene.fbx(filepath=SRC)
 shirt = [o for o in bpy.data.objects if o.type == "MESH"][0]
-# In cm, Blender axes (front -Y, up Z), as the body is.
 src = [(shirt.matrix_world @ v.co) for v in shirt.data.vertices]
-zs = [v.z for v in src]
-unit = 100.0 if max(zs) - min(zs) < 10 else 1.0
+unit = 100.0 if max(v.z for v in src) - min(v.z for v in src) < 10 else 1.0
 src = [v * unit for v in src]
-s_lo, s_hi = min(v.z for v in src), max(v.z for v in src)
-print("[fit] shirt z %.1f..%.1f" % (s_lo, s_hi))
+src_polys = [tuple(p.vertices) for p in shirt.data.polygons]
+print("[fit] shirt z %.1f..%.1f, %d points" % (min(v.z for v in src), max(v.z for v in src), len(src)))
 
-# ---- torso: the collar's back at the base of the neck, the rest as it is, widened to the body.
+# ---- torso: down to the neck, then one scale across and one front to back, the least that holds the body inside.
 neck = bone_pos("neck_01")
-dz = (neck.z + 2.0) - s_hi
-def body_band(z0, z1):
-    return [verts[i] for i in range(len(verts)) if z0 < verts[i].z < z1 and top[i] in TORSO]
-band = body_band(105, 135)
-bw = max(abs(v.x) for v in band)
-by_lo, by_hi = min(v.y for v in band), max(v.y for v in band)
-sband = [v for v in src if 105 - dz < v.z < 135 - dz and abs(v.x) < 18.5]
-sw = max(abs(v.x) for v in sband)
-sy_lo, sy_hi = min(v.y for v in sband), max(v.y for v in sband)
-SX = max(1.0, bw * 1.06 / sw)
-SY = max(1.0, (by_hi - by_lo) * 1.08 / (sy_hi - sy_lo))
-ymid_s, ymid_b = (sy_lo + sy_hi) / 2, (by_lo + by_hi) / 2
-print("[fit] body half width %.1f depth %.1f; shirt %.1f %.1f; scale %.2f %.2f, down %.1f" % (bw, by_hi - by_lo, sw, sy_hi - sy_lo, SX, SY, -dz))
-# The body a touch wider than the shirt's own cut below the arms, the shoulders a touch narrower.
-TORSO_WIDEN = 1.045
-SHOULDER_NARROW = 0.94
-SLEEVE_SLIM = 0.92
-PROXY_RATIO = 0.3
-ARMPIT_ROOM = 1.4
-DRAW_SPREAD_STEPS = 14
+dz = (neck.z + 2.0) - max(v.z for v in src)
+SHIRT_SIDE = 18.5  # past this across, the shirt below the armpits is sleeve
+def band(points, z, half=1.5):
+    return [p for p in points if abs(p.z - z) < half]
+body_torso = [verts[i] for i in range(len(verts)) if top[i] in TORSO]
+shirt_torso = [Vector((v.x, v.y, v.z + dz)) for v in src if abs(v.x) < SHIRT_SIDE]
+cy_shirt = (min(v.y for v in band(shirt_torso, 120, 4)) + max(v.y for v in band(shirt_torso, 120, 4))) / 2
+cy_body = (min(v.y for v in band(body_torso, 120, 4)) + max(v.y for v in band(body_torso, 120, 4))) / 2
+SX, SY = 1.0, 1.0
+for z in range(104, 136, 2):
+    b, s = band(body_torso, z), band(shirt_torso, z)
+    if len(b) < 10 or len(s) < 10:
+        continue
+    SX = max(SX, (max(abs(p.x) for p in b) + CLEARANCE) / max(abs(p.x) for p in s))
+    front_b, back_b = min(p.y for p in b) - cy_body, max(p.y for p in b) - cy_body
+    front_s, back_s = min(p.y for p in s) - cy_shirt, max(p.y for p in s) - cy_shirt
+    SY = max(SY, (CLEARANCE - front_b) / -front_s, (back_b + CLEARANCE) / back_s)
+print("[fit] torso down %.1f, scale across %.3f, front to back %.3f" % (-dz, SX, SY))
 def torso_map(v):
+    # Over the shoulders the shirt keeps its own width: the chest's widening fades out above the armpits.
     z = v.z + dz
-    shoulder = max(0.0, min(1.0, (z - 132.0) / 12.0))
-    fx = TORSO_WIDEN + (SHOULDER_NARROW - TORSO_WIDEN) * shoulder
-    fy = TORSO_WIDEN + (1.0 - TORSO_WIDEN) * shoulder
-    return Vector((v.x * SX * fx, (v.y - ymid_s) * SY * fy + ymid_b, z))
+    top = smooth(z, 134.0, 144.0)
+    sx = SX + (SHOULDER_SCALE - SX) * top
+    return Vector((v.x * sx, (v.y - cy_shirt) * SY + cy_body, z))
 
-# ---- sleeves: the sleeve's own axis laid along upper arm and forearm.
+# ---- sleeves: the sleeve's own axis laid along upper arm and forearm, its shape kept.
 def sleeve_mapper(side):
     sv = [v for v in src if v.x * side > 0]
     near = [v for v in sv if 21 < abs(v.x) < 25 and v.z > 120]
@@ -88,125 +99,80 @@ def sleeve_mapper(side):
     L1, L2 = (E - S).length, (W - E).length
     d1, d2 = (E - S).normalized(), (W - E).normalized()
     rot1, rot2 = axis.rotation_difference(d1), axis.rotation_difference(d2)
-    # The sleeve starts where the arm leaves the shoulder, a share of its way in from the bone's head.
-    start = S + d1 * 2.0 - Vector((side * 1.0, 0, 0))
+    start = S + d1 * 2.0
     total = L1 + L2 - 2.0
-    print("[fit] sleeve", side, "shirt length %.1f -> arm %.1f, axis %s" % (length, total, tuple(round(c, 2) for c in axis)))
+    print("[fit] sleeve", side, "length %.1f -> %.1f" % (length, total))
     def mapper(v):
         rel = v - a
         t = rel.dot(axis) / length
         off = rel - axis * rel.dot(axis)
         along = t * total
-        share = max(0.0, min(1.0, (along - (L1 - 2.0) + 6.0) / 12.0))
-        rot = rot1.slerp(rot2, share * share * (3 - 2 * share))
+        share = smooth(along, L1 - 8.0, L1 + 4.0)
+        rot = rot1.slerp(rot2, share)
         p = start + d1 * along if along < L1 - 2.0 else E + d2 * (along - (L1 - 2.0))
-        slim = SLEEVE_SLIM + (1.0 - SLEEVE_SLIM) * max(0.0, min(1.0, (t - 0.4) / 0.4))
-        return p + rot @ (off * slim), t
+        return p + rot @ off, t
     return mapper
 maps = {1: sleeve_mapper(1.0), -1: sleeve_mapper(-1.0)}
 
-def smooth(x, a, b):
-    t = max(0.0, min(1.0, (x - a) / (b - a)))
-    return t * t * (3 - 2 * t)
-out, sleeve_share, sleeve_t = [], [], []
+out, sleeve_share = [], []
 for v in src:
     side = 1 if v.x > 0 else -1
     pt, t = maps[side](v)
-    sleeve_t.append(t)
-    pt_t = torso_map(v)
-    # Out past the side of the torso, and above the waist, it is sleeve.
-    s = smooth(abs(v.x), 17.0, 24.0) * (smooth(v.z, 98.0, 104.0) if abs(v.x) < 30.0 else 1.0)
-    out.append(pt_t.lerp(pt, s))
+    s = smooth(abs(v.x), 17.0, 24.0) * (smooth(v.z + dz, 98.0, 104.0) if abs(v.x) < 30.0 else 1.0)
+    out.append(torso_map(v).lerp(pt, s))
     sleeve_share.append(s)
 
-# ---- push out of the body, the clearance growing towards the loose hem and the sleeve ends
-probe = bvh.find_nearest(Vector((0, ymid_b - 40, bone_pos("spine_03").z)), 60.0)
+# ---- where the body still shows through, eased out broadly.
+probe = bvh.find_nearest(Vector((0, cy_body - 40, bone_pos("spine_03").z)), 60.0)
 NSIGN = 1.0 if probe[1].y < 0 else -1.0
-def room(i, base):
-    z = out[i].z
-    waist = smooth(z, 88.0, 100.0) * (1.0 - smooth(z, 108.0, 128.0)) * (1.0 - sleeve_share[i])
-    forearm = sleeve_share[i] * smooth(sleeve_t[i], 0.4, 0.75)
-    v = out[i]
-    armpit = smooth(abs(v.x), 11.0, 15.0) * (1.0 - smooth(abs(v.x), 22.0, 27.0)) * smooth(z, 118.0, 124.0) * (1.0 - smooth(z, 136.0, 142.0))
-    return base + 0.9 * waist + 1.0 * forearm + ARMPIT_ROOM * armpit
-def push(points, margin):
-    n = 0
-    for i, v in enumerate(points):
-        hit = bvh.find_nearest(v, 30.0)
-        m = room(i, margin)
-        if hit[0] is not None and (v - hit[0]).dot(hit[1] * NSIGN) < m:
-            points[i] = hit[0] + hit[1] * NSIGN * m
-            n += 1
-    return n
-# Pushed out once, the shift each point got is spread to its neighbours so nothing is left flattened, and pushed again.
-before = [v.copy() for v in out]
-pushed = push(out, 2.2)
 nbrs = [[] for _ in out]
 for e in shirt.data.edges:
     a, b = e.vertices
     nbrs[a].append(b); nbrs[b].append(a)
-shift = [out[i] - before[i] for i in range(len(out))]
-for _ in range(6):
-    shift = [shift[i] * 0.4 + (sum((shift[j] for j in nbrs[i]), Vector()) / max(len(nbrs[i]), 1)) * 0.6 for i in range(len(out))]
-out = [before[i] + shift[i] for i in range(len(out))]
-pushed += push(out, 1.8)
-print("[fit] pushed out", pushed, "of", len(out))
-TIGHT_MARGIN_TORSO = 1.3
-TIGHT_MARGIN_ARM = 1.0
-tight = []
-for i, v in enumerate(out):
-    # Drawn in over the chest and shoulders, and a little lower down too, the hold easing off gradually so that no ridge
-    # stands round the body where the close fit ends.
-    up_torso = (0.3 + 0.7 * smooth(v.z, 104.0, 134.0)) * (1.0 - sleeve_share[i])
-    up_arm = sleeve_share[i] * (1.0 - smooth(sleeve_t[i], 0.25, 0.45))
-    tight.append(max(up_torso, up_arm))
-drawn = 0
-pre_draw = [v.copy() for v in out]
-for i, v in enumerate(out):
-    w = tight[i]
-    if w <= 0.0:
-        continue
-    hit = bvh.find_nearest(v, 15.0)
-    if hit[0] is None:
-        continue
-    # Close, but with room for the chest and the shoulders to move and breathe under it.
-    margin = TIGHT_MARGIN_TORSO + (TIGHT_MARGIN_ARM - TIGHT_MARGIN_TORSO) * sleeve_share[i]
-    # Round the armpits, front and back, where arm and chest move against each other, it keeps more room.
-    armpit = smooth(abs(v.x), 11.0, 15.0) * (1.0 - smooth(abs(v.x), 22.0, 27.0)) * smooth(v.z, 118.0, 124.0) * (1.0 - smooth(v.z, 136.0, 142.0))
-    margin += ARMPIT_ROOM * armpit
-    # Low on the body it is drawn in no closer than the room the waist keeps.
-    low = 1.0 - smooth(v.z, 112.0, 126.0)
-    margin = margin * (1.0 - low) + max(margin, room(i, 2.2)) * low
-    target = hit[0] + hit[1] * NSIGN * margin
-    if (v - hit[0]).dot(hit[1] * NSIGN) > margin:
-        out[i] = v.lerp(target, 0.8 * w)
-        drawn += 1
-print("[fit] drawn in close", drawn)
-# How far each point was drawn in is spread over its neighbours, so the close fit fades into the loose cut below it
-# without a step standing round the body, and then the skin is cleared again.
-drawn_shift = [out[i] - pre_draw[i] for i in range(len(out))]
-for _ in range(DRAW_SPREAD_STEPS):
-    drawn_shift = [drawn_shift[i] * 0.35 + (sum((drawn_shift[j] for j in nbrs[i]), Vector()) / max(len(nbrs[i]), 1)) * 0.65 for i in range(len(out))]
-out = [pre_draw[i] + drawn_shift[i] for i in range(len(out))]
-pushed += push(out, 1.2)
+def inside_shift():
+    shift = [Vector() for _ in out]
+    n = 0
+    for i, v in enumerate(out):
+        hit = bvh.find_nearest(v, 20.0)
+        if hit[0] is not None:
+            gap = (v - hit[0]).dot(hit[1] * NSIGN)
+            if gap < SHOW_THROUGH_ROOM:
+                shift[i] = hit[1] * NSIGN * (SHOW_THROUGH_ROOM - gap)
+                n += 1
+    return shift, n
+for rnd in range(3):
+    shift, n = inside_shift()
+    print("[fit] round %d: %d points too close to the body" % (rnd, n))
+    if n == 0:
+        break
+    # Spread out, then scaled back up so the points that were in are out, the rest moved with them gently.
+    peak = [s.length for s in shift]
+    for _ in range(EASE_STEPS):
+        shift = [shift[i] * 0.5 + (sum((shift[j] for j in nbrs[i]), Vector()) / max(len(nbrs[i]), 1)) * 0.5 for i in range(len(out))]
+    gain = max((peak[i] / shift[i].length for i in range(len(out)) if peak[i] > 0.0 and shift[i].length > 1e-6), default=1.0)
+    gain = min(gain, MAX_EASE_GAIN)
+    out = [out[i] + shift[i] * gain for i in range(len(out))]
+# The very last few are set out exactly.
+shift, n = inside_shift()
+out = [out[i] + shift[i] for i in range(len(out))]
+print("[fit] %d points set out at the end" % n)
 
 # ---- weights
 def tree_of(allowed):
     ids = [i for i in range(len(verts)) if top[i] in allowed]
     t = KDTree(len(ids))
-    for n, i in enumerate(ids):
-        t.insert(verts[i], n)
+    for k, i in enumerate(ids):
+        t.insert(verts[i], k)
     t.balance()
     return t, ids
 tree_torso, ids_torso = tree_of(TORSO)
 tree_arm, ids_arm = tree_of(ARMSKIN)
-# Over the shoulders and round the front and back of the armpits the skin follows the arm as well as the trunk.
 tree_all, ids_all = tree_of(TORSO | ARMSKIN)
 def weigh(v, tree, ids):
     total = {}
-    for co, n, dist in tree.find_n(v, 8):
+    for co, k, dist in tree.find_n(v, 8):
         f = 1.0 / (dist * dist + 1.0)
-        for b, w in weights[ids[n]].items():
+        for b, w in weights[ids[k]].items():
             total[b] = total.get(b, 0) + w * f
     s = sum(total.values())
     return {b: w / s for b, w in total.items()}
@@ -239,7 +205,6 @@ shirt.parent = None
 shirt.matrix_world = Matrix.Identity(4)
 for i, v in enumerate(out):
     me.vertices[i].co = v
-# The model's own normals were for where its points were: smooth ones are made anew for where they are now.
 bpy.context.view_layer.objects.active = shirt
 shirt.select_set(True)
 if me.has_custom_normals:
@@ -276,7 +241,6 @@ for i, v in enumerate(out):
 shirt.parent = arm_obj
 mod = shirt.modifiers.new("Armature", "ARMATURE")
 mod.object = arm_obj
-print("[fit] bones", sorted(names[b] for b in groups))
 
 def clean(obj, threshold):
     # Points on top of each other are one, loose edges are gone (they come out as triangles with no area), and so are
@@ -298,8 +262,6 @@ def clean(obj, threshold):
     bpy.ops.object.mode_set(mode="OBJECT")
     print("[fit] %s: %d points, %d after cleaning" % (obj.name, nv, len(obj.data.vertices)))
 
-# The garment drawn keeps every point it was made with; the cloth is simulated on a sparser copy of it (ClothProxy),
-# which the drawn one follows.
 clean(shirt, 0.005)
 proxy = shirt.copy()
 proxy.data = shirt.data.copy()
@@ -317,6 +279,7 @@ bpy.context.view_layer.objects.active = proxy
 bpy.ops.object.modifier_move_to_index(modifier="Fewer", index=0)
 bpy.ops.object.modifier_apply(modifier="Fewer")
 clean(proxy, 0.15)
+
 bpy.ops.object.select_all(action="DESELECT")
 arm_obj.select_set(True)
 shirt.select_set(True)
@@ -324,27 +287,32 @@ proxy.select_set(True)
 bpy.context.view_layer.objects.active = arm_obj
 bpy.ops.export_scene.fbx(filepath=OUT, use_selection=True, object_types={"ARMATURE", "MESH"}, global_scale=1.0, apply_unit_scale=True, apply_scale_options="FBX_SCALE_NONE", axis_forward="-Y", axis_up="Z", bake_space_transform=False, use_mesh_modifiers=False, mesh_smooth_type="FACE", add_leaf_bones=False, primary_bone_axis="Y", secondary_bone_axis="X", use_armature_deform_only=False, armature_nodetype="NULL", bake_anim=False)
 
-# ---- preview with the body
+# ---- preview: the original shirt beside the fitted one on the body, front and side.
+proxy.hide_render = True
 bme = bpy.data.meshes.new("Body")
 bme.from_pydata([tuple(v) for v in verts], [], tris)
 bme.update()
 bo = bpy.data.objects.new("Body", bme)
 bpy.context.scene.collection.objects.link(bo)
-c = Vector((0, ymid_b, 115))
+orig = bpy.data.meshes.new("Original")
+orig.from_pydata([tuple(Vector((v.x, (v.y - cy_shirt) + cy_body, v.z + dz)) + Vector((90.0, 0.0, 0.0))) for v in src], [], src_polys)
+orig.update()
+oo = bpy.data.objects.new("Original", orig)
+bpy.context.scene.collection.objects.link(oo)
+c = Vector((45, cy_body, 115))
 scn = bpy.context.scene
 scn.render.engine = "BLENDER_WORKBENCH"
-scn.display.shading.color_type = "RANDOM"
-scn.render.resolution_x = scn.render.resolution_y = 600
+scn.render.resolution_x, scn.render.resolution_y = 900, 600
 for name, direction in (("front", (0, -1, 0)), ("side", (1, 0, 0)), ("back", (0, 1, 0))):
     cam = bpy.data.cameras.new(name)
     cam.type = "ORTHO"
-    cam.ortho_scale = 140
+    cam.ortho_scale = 210 if name != "side" else 140
     co = bpy.data.objects.new(name, cam)
     scn.collection.objects.link(co)
     dd = Vector(direction)
-    co.location = c + dd * 300
+    co.location = (c if name != "side" else Vector((0, cy_body, 115))) + dd * 400
     co.rotation_euler = (-dd).to_track_quat("-Z", "Y").to_euler()
-    cam.clip_end = 1000
+    cam.clip_end = 2000
     scn.camera = co
     scn.render.filepath = PREVIEW + "_" + name + ".png"
     bpy.ops.render.render(write_still=True)
