@@ -41,6 +41,8 @@ SIDE_ROOM = 1.0          # cm more room down the sides of the chest under the ar
 CONFORM_ROUNDS = 40
 CURTAIN_TOP = 136.0       # height (cm) of the chest the front hangs straight from
 CURTAIN_HALF_WIDTH = 15.0 # how far across the front hangs so, fading to the body's own shape at the sides
+SEAT_TOP = 100.0          # and the height behind it hangs straight from, off the buttocks
+SEAT_HALF_WIDTH = 15.0
 CONFORM_SPREAD = 4       # how many neighbours over the pull is spread each round
 SMOOTH_STEPS = 24        # the cloth is smoothed this much once laid on, so the body's own shapes (the muscles, the
 SMOOTH_FLOOR = 0.8       # joints of the mannequin) do not show in it: fully where it was drawn in, this much elsewhere
@@ -272,20 +274,22 @@ for _ in range(SMOOTH_STEPS):
         avg = [sum((out[j] for j in nbrs[i]), Vector()) / len(nbrs[i]) if nbrs[i] else out[i] for i in range(len(out))]
         out = [out[i] + (avg[i] - out[i]) * (k * pull_w[i]) for i in range(len(out))]
 # From the chest down the front hangs straight, as linen does off a man's chest, instead of following the chest's shape
-# in under it: no point of the front lies further in than the cloth above it in its own column, up to the top of the
-# chest. Toward the sides it keeps to the body.
-def hang_front():
-    front = [i for i, v in enumerate(out) if sleeve_share[i] < 0.5 and v.y < cy_body and v.z < CURTAIN_TOP + 4.0]
+# in under it, and behind, from the seat down, it hangs straight off the buttocks instead of tucking in under them: no
+# point lies further in than the cloth above it in its own column, up to where it hangs from. Toward the sides it keeps
+# to the body.
+def hang(side, top, half_width, label):
+    # side -1 is the front (toward -Y), 1 the back.
+    part = [i for i, v in enumerate(out) if sleeve_share[i] < 0.5 and (v.y - cy_body) * side > 0.0 and v.z < top + 4.0]
     cols = {}
-    for i in front:
+    for i in part:
         cols.setdefault(int(out[i].x // 2), []).append(i)
     moved = 0
     new = list(out)
-    for i in front:
+    for i in part:
         v = out[i]
-        if v.z >= CURTAIN_TOP:
+        if v.z >= top:
             continue
-        w = (1.0 - smooth(abs(v.x), CURTAIN_HALF_WIDTH - 4.0, CURTAIN_HALF_WIDTH)) * (1.0 - sleeve_share[i])
+        w = (1.0 - smooth(abs(v.x), half_width - 4.0, half_width)) * (1.0 - sleeve_share[i])
         if w <= 0.0:
             continue
         c = int(v.x // 2)
@@ -293,14 +297,15 @@ def hang_front():
         for cc in (c - 1, c, c + 1):
             for j in cols.get(cc, ()):
                 u = out[j]
-                if v.z < u.z <= CURTAIN_TOP and abs(u.x - v.x) < 2.5:
-                    most = min(most, u.y)
-        if most < v.y:
+                if v.z < u.z <= top and abs(u.x - v.x) < 2.5:
+                    most = max(most, u.y) if side > 0 else min(most, u.y)
+        if (most - v.y) * side > 0.0:
             new[i] = Vector((v.x, v.y + (most - v.y) * w, v.z))
             moved += 1
     out[:] = new
-    print("[fit] %d points of the front hung straight" % moved)
-hang_front()
+    print("[fit] %d points of the %s hung straight" % (moved, label))
+hang(-1, CURTAIN_TOP, CURTAIN_HALF_WIDTH, "front")
+hang(1, SEAT_TOP, SEAT_HALF_WIDTH, "back")
 lay_on(CONFORM_ROUNDS // 2)
 # The last few still in are set out exactly.
 for _ in range(3):
@@ -320,6 +325,14 @@ gap_report("final")
 # ---- weights: each point takes the weights of the skin right under it, read off the nearest point of the body's surface
 # (between the three corners of the triangle there), not off the nearest few corners, which on a sparse body reach over
 # to the inside of the arm from the side of the chest.
+def under(i, root):
+    while i >= 0:
+        if names[i] == root:
+            return True
+        i = d["bones"][i]["parent"]
+    return False
+LEGS = {i for i in range(len(names)) if under(i, "thigh_l") or under(i, "thigh_r")}
+PELVIS = idx["pelvis"]
 FINGERS = HANDS - {i for i, n in enumerate(names) if n.startswith("hand")}
 def surface_of(allowed):
     keep = [t for t in tris if any(top[k] in allowed for k in t) and not any(top[k] in FINGERS for k in t)]
@@ -389,6 +402,13 @@ for i, v in enumerate(out):
     # The trunk of the shirt follows whatever skin lies right under it: the trunk's, or over the shoulders and behind the
     # armpits the arm's (the deltoid, the back of the arm), which carries the cloth there with the arm.
     wt = weigh(v, surf_all) if s < 0.999 else {}
+    # A shirt hangs from the hips: what the legs move of the skin under its hem (the buttocks, the tops of the thighs) is
+    # left to the pelvis, so the hem does not swing out with each stride; the cloth is kept off the legs by its collision.
+    off_legs = {}
+    for b, w in wt.items():
+        b = PELVIS if b in LEGS else b
+        off_legs[b] = off_legs.get(b, 0.0) + w
+    wt = off_legs
     wa = weigh(v, surf_arm) if s > 0.001 else {}
     mix = {}
     for b, w in wt.items():

@@ -25,6 +25,7 @@ public class Aedir : ModuleRules
 			"DynamicWind",
 			"Landscape",
 			"ProceduralMeshComponent",
+			"HairStrandsCore",
 			"DeveloperSettings",
 			"NetCore",
 			"Slate",

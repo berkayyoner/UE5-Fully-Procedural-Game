@@ -4827,8 +4827,10 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	bAIWantsStoop = bStoop;
 	if (bStoop && !Creature->bIsCrouched && Creature->CanCrouch())
 	{
+		// Crouched down over it (as a player holds Ctrl) to reach it with fists or blade.
 		bAIStooped = true;
 		Creature->Crouch();
+		UE_LOG(LogAedir, Log, TEXT("[NpcStoop] %s crouches over %s, down %.0f cm off"), *Creature->GetName(), *GetNameSafe(AITarget.Get()), Distance);
 	}
 	else if (!bStoop && Creature->bIsCrouched)
 	{
@@ -5151,16 +5153,29 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		UE_LOG(LogAedir, Log, TEXT("[NpcGuard] %s mouse %.2f (wanted %.2f, lift %.2f), fists %.0f and %.0f cm from the chin; hands %.0f and %.0f cm from the skull's middle, %.0f and %.0f cm ahead"), *Creature->GetName(), Fists->GetMouseAim().Y, GuardHeight, AIFistGuardLift,
 			LeftFist.Z - Chin, RightFist.Z - Chin, Body->GetBoneLocation(TEXT("hand_l")).Z - SkullZ, Body->GetBoneLocation(TEXT("hand_r")).Z - SkullZ, FVector::DotProduct(LeftHand, Ahead), FVector::DotProduct(RightHand, Ahead));
 	}
-	// Bare-handed it watches the foe's guard for an arm drawn back, which leaves that side open, and for a foe out of breath.
+	// Bare-handed it watches the foe's guard for an opening, and for a foe out of breath: an arm let down or drawn back
+	// leaves that side open (1 its right, -1 its left), fists held low the head (2).
 	const UAedirFistArms* FoeFists = !bArmed && AITarget != nullptr ? AITarget->FindComponentByClass<UAedirFistArms>() : nullptr;
-	const float FoeAcross = FoeFists && FoeFists->IsSteering() ? static_cast<float>(FoeFists->GetAim().X) : 0.f;
-	const int32 OpenSide = FMath::Abs(FoeAcross) > AIOpeningAcross ? (FoeAcross > 0.f ? 1 : -1) : 0;
-	if (OpenSide != AIFoeOpenSide)
+	const bool bFoeOnGuard = FoeFists && FoeFists->IsSteering();
+	const float FoeAcross = bFoeOnGuard ? static_cast<float>(FoeFists->GetAim().X) : 0.f;
+	int32 OpenSide = 0;
+	if (bFoeOnGuard)
 	{
+		const bool bFoeLeftUp = FoeFists->IsButtonHeld(EAedirHand::Left);
+		const bool bFoeRightUp = FoeFists->IsButtonHeld(EAedirHand::Right);
+		OpenSide = bFoeLeftUp != bFoeRightUp ? (bFoeRightUp ? -1 : 1)
+			: FMath::Abs(FoeAcross) > AIOpeningAcross ? (FoeAcross > 0.f ? 1 : -1)
+			: FoeFists->GetAim().Y < AIOpeningLowAim ? 2 : 0;
+	}
+	AIOpeningRecheck -= DeltaTime;
+	if (OpenSide != AIFoeOpenSide || (OpenSide != 0 && !bAISeizeOpening && AIOpeningRecheck <= 0.f))
+	{
+		const bool bNew = OpenSide != AIFoeOpenSide;
 		AIFoeOpenSide = OpenSide;
+		AIOpeningRecheck = AIOpeningRecheckSeconds;
 		bAISeizeOpening = OpenSide != 0 && FMath::FRand() < AIOpeningChance;
-		UE_CLOG(OpenSide != 0 && CVarAedirHitLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[NpcOpening] %s sees %s's %s side open (arm drawn %.2f): %s"), *Creature->GetName(), *GetNameSafe(AITarget.Get()),
-			OpenSide > 0 ? TEXT("right") : TEXT("left"), FoeAcross, bAISeizeOpening ? TEXT("goes for it") : TEXT("lets it pass"));
+		UE_CLOG(OpenSide != 0 && (bNew || bAISeizeOpening), LogAedir, Log, TEXT("[NpcOpening] %s sees %s's %s open (arm across %.2f, fists at %.2f): %s"), *Creature->GetName(), *GetNameSafe(AITarget.Get()),
+			OpenSide == 2 ? TEXT("head") : OpenSide > 0 ? TEXT("right side") : TEXT("left side"), FoeAcross, FoeFists ? FoeFists->GetAim().Y : 0.f, bAISeizeOpening ? TEXT("goes for it") : TEXT("lets it pass"));
 	}
 	const bool bGoForOpening = !bArmed && AIFoeOpenSide != 0 && bAISeizeOpening && !bAITargetDown;
 	const bool bFoeSpent = !bArmed && AITarget != nullptr && AITarget->Stats && AITarget->Stats->GetStaminaFraction() < AIFoeSpentStamina;
@@ -5178,18 +5193,18 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		if (!bTired && Distance <= (bArmed ? Reach + AedirAIContactRange * 0.25f : (AIFistStrikeInCm + AedirAIFistStrikeSlackCm) * static_cast<float>(Creature->GetActorScale3D().X)) && AIMouseTimer >= Wait)
 		{
 			// Mostly at the head; now and then into the body. An open side is gone for at the head, and a spent foe more often.
-			const float HeadChance = bGoForOpening ? AIOpeningHeadChance : bFoeSpent ? FMath::Max(AIHeadChance, AIFoeSpentHeadChance) : AIHeadChance;
+			const float HeadChance = bGoForOpening ? (AIFoeOpenSide == 2 ? 1.f : AIOpeningHeadChance) : bFoeSpent ? FMath::Max(AIHeadChance, AIFoeSpentHeadChance) : AIHeadChance;
 			AIMousePart = bAITargetDown ? 1 : (FMath::FRand() < HeadChance ? 0 : 1);
 			const float Height = FMath::Min(HeightFor(AIMousePart) + (AIMousePart == 0 && !bArmed ? AIHeadAimLift : 0.f), 1.f);
 			// Drawn back to one side and thrown across, or for a blade now and then raised and brought down. Into an opening
 			// it is the hand across from it, the foe's right being on its own left: drawn back on that side, it comes round
 			// into the open side.
-			const float Side = bArmed ? (FMath::RandBool() ? 1.f : -1.f) : bGoForOpening ? -static_cast<float>(AIFoeOpenSide) : (bAINextLeft ? -1.f : 1.f);
+			const float Side = bArmed ? (FMath::RandBool() ? 1.f : -1.f) : bGoForOpening && AIFoeOpenSide != 2 ? -static_cast<float>(AIFoeOpenSide) : (bAINextLeft ? -1.f : 1.f);
 			bAINextLeft = Side > 0.f;
 			if (bGoForOpening)
 			{
 				bAISeizeOpening = false;
-				UE_LOG(LogAedir, Log, TEXT("[NpcOpening] %s throws its %s fist into %s's open %s side"), *Creature->GetName(), Side > 0.f ? TEXT("right") : TEXT("left"), *GetNameSafe(AITarget.Get()), AIFoeOpenSide > 0 ? TEXT("right") : TEXT("left"));
+				UE_LOG(LogAedir, Log, TEXT("[NpcOpening] %s throws its %s fist into %s's open %s"), *Creature->GetName(), Side > 0.f ? TEXT("right") : TEXT("left"), *GetNameSafe(AITarget.Get()), AIFoeOpenSide == 2 ? TEXT("head") : AIFoeOpenSide > 0 ? TEXT("right side") : TEXT("left side"));
 			}
 			if (bArmed && !bAITargetDown && FMath::FRand() < AedirAIMouseOverheadChance)
 			{
@@ -5202,6 +5217,14 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 				// not swung round from over the head; a blade is drawn back wide for its swing.
 				AIMouseWindup = bArmed ? FVector2D(Side * AedirAIMouseWindupAcross, Height) : FVector2D(Side * AIFistWindupAcross, FMath::Lerp(GuardHeight, Height, AIFistWindupHeightShare));
 				AIMouseStrike = FVector2D(-Side * (bArmed ? AedirAIMouseBladeThrough : AIFistThrough), Height);
+				// A fist comes up across from low, or down across from high, now and then, not always level.
+				const float Angle = FMath::FRand();
+				if (!bArmed && !bAITargetDown && Angle < AIFistRisingChance + AIFistFallingChance)
+				{
+					const bool bRising = Angle < AIFistRisingChance;
+					AIMouseWindup.Y = FMath::Clamp(Height + (bRising ? -AIFistDiagonalDrop : AIFistDiagonalDrop), -1.f, 1.f);
+					UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s throws it %s across"), *Creature->GetName(), bRising ? TEXT("rising") : TEXT("falling"));
+				}
 			}
 			AIMousePhase = 1;
 			AIMouseTimer = 0.f;

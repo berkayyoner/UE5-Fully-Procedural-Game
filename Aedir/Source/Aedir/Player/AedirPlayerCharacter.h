@@ -213,6 +213,23 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Weather")
 	TObjectPtr<UAedirWeatherEffectsComponent> WeatherEffects;
 
+	// The player's hair: strands grown on the face's head, bound to it (HairBinding), swinging under their own physics.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Look")
+	TObjectPtr<class UGroomComponent> Hair;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	FSoftObjectPath HairGroom = FSoftObjectPath(TEXT("/Game/Grooms/Male_ClassicCrewCut/Male_ClassicCrewCut/Male_ClassicCrewCut.Male_ClassicCrewCut"));
+
+	// Its colour: how dark (0 fair, 1 black) and how red.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look", meta=(ClampMin="0", ClampMax="1"))
+	float HairMelanin = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look", meta=(ClampMin="0", ClampMax="1"))
+	float HairRedness = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	FSoftObjectPath HairBinding = FSoftObjectPath(TEXT("/Game/Grooms/Male_ClassicCrewCut/GB_AedirMan_ClassicCrewCut.GB_AedirMan_ClassicCrewCut"));
+
 	// Bare-handed fighting, rebuilt step by step (see UAedirFistArms).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Fists")
 	TObjectPtr<class UAedirFistArms> FistArms;

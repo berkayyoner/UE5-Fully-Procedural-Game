@@ -73,6 +73,9 @@
 #include "UI/AedirMenuSubsystem.h"
 #include "Weather/AedirWeatherEffectsComponent.h"
 #include "Weather/AedirWeatherManager.h"
+#include "GroomComponent.h"
+#include "GroomAsset.h"
+#include "GroomBindingAsset.h"
 
 static TAutoConsoleVariable<int32> CVarAedirAutoGetUp(TEXT("aedir.AutoGetUp"), 0, TEXT("1: the player's body gets up by itself whenever it can, for tests left to run on their own."));
 
@@ -172,6 +175,10 @@ AAedirPlayerCharacter::AAedirPlayerCharacter(const FObjectInitializer& ObjectIni
 
 	WeatherEffects = CreateDefaultSubobject<UAedirWeatherEffectsComponent>(TEXT("WeatherEffects"));
 	FistArms = CreateDefaultSubobject<UAedirFistArms>(TEXT("FistArms"));
+
+	Hair = CreateDefaultSubobject<UGroomComponent>(TEXT("Hair"));
+	Hair->SetupAttachment(Face ? Face.Get() : GetMesh());
+	Hair->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void AAedirPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -183,6 +190,30 @@ void AAedirPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AAedirPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+
+	// The hair grows on the face it was bound to; on another head (or none) it is left off rather than floating.
+	UGroomAsset* Groom = Cast<UGroomAsset>(HairGroom.TryLoad());
+	UGroomBindingAsset* Binding = Cast<UGroomBindingAsset>(HairBinding.TryLoad());
+	const USkeletalMeshComponent* Head = Face && Face->GetSkeletalMeshAsset() ? Face.Get() : nullptr;
+	if (Hair && Groom && Binding && Head && Binding->GetTargetSkeletalMesh() == Head->GetSkeletalMeshAsset())
+	{
+		// It swings under the physics set on the groom itself.
+		Hair->SetGroomAsset(Groom, Binding);
+		for (int32 Slot = 0; Slot < Hair->GetNumMaterials(); ++Slot)
+		{
+			if (UMaterialInstanceDynamic* Look = Hair->CreateDynamicMaterialInstance(Slot))
+			{
+				Look->SetScalarParameterValue(TEXT("hairMelanin"), HairMelanin);
+				Look->SetScalarParameterValue(TEXT("hairRedness"), HairRedness);
+			}
+		}
+		UE_LOG(LogAedir, Log, TEXT("[Hair] %s grows %s on %s"), *GetName(), *Groom->GetName(), *Head->GetSkeletalMeshAsset()->GetName());
+	}
+	else if (Hair)
+	{
+		Hair->SetVisibility(false);
+		UE_LOG(LogAedir, Warning, TEXT("[Hair] %s has no hair: groom %d, binding %d, head %d"), *GetName(), Groom ? 1 : 0, Binding ? 1 : 0, Head ? 1 : 0);
+	}
 
 	// The camera settings of the code win over values stored on the boom in older blueprints.
 	if (UGameInstance* GameInstance = GetGameInstance())

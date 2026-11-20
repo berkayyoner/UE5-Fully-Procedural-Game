@@ -412,14 +412,34 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIFistThrough = 0.2f;
 
-	// Bare-handed, it watches the foe's guard: an arm drawn back to its side past AIOpeningAcross of the way leaves that side
-	// open, and each time it opens there is an AIOpeningChance it is gone for, at once (after AIOpeningWaitShare of the
-	// usual wait between blows), with the other hand, round into the open side, at the head AIOpeningHeadChance of the time.
+	// Not every punch comes across level: AIFistRisingChance of them are drawn back low and come up across (from low right
+	// to high left, or low left to high right), AIFistFallingChance drawn back high and come down across; each starts
+	// AIFistDiagonalDrop of the mouse's way below or above the height it goes for.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
-	float AIOpeningAcross = 0.5f;
+	float AIFistRisingChance = 0.3f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
-	float AIOpeningChance = 0.35f;
+	float AIFistFallingChance = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="2"))
+	float AIFistDiagonalDrop = 0.7f;
+
+	// Bare-handed, it watches the foe's guard: an arm let down, or drawn back to its side past AIOpeningAcross of the way,
+	// leaves that side open, and fists held lower than AIOpeningLowAim (the mouse's height) leave the head open. Seeing an
+	// opening it weighs it again every AIOpeningRecheckSeconds while it stays, going for it AIOpeningChance of the time, at
+	// once (after AIOpeningWaitShare of the usual wait between blows): with the other hand, round into the open side, at the
+	// head AIOpeningHeadChance of the time; over low fists at the head always.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIOpeningAcross = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="-1", ClampMax="1"))
+	float AIOpeningLowAim = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0.05"))
+	float AIOpeningRecheckSeconds = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
+	float AIOpeningChance = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIOpeningWaitShare = 0.25f;
@@ -1077,6 +1097,7 @@ private:
 	// The foe's guard was open on a side last frame (-1 its left, 1 its right, 0 none), and this opening is to be gone for.
 	int32 AIFoeOpenSide = 0;
 	bool bAISeizeOpening = false;
+	float AIOpeningRecheck = 0.f;
 
 	// Whether this creature has fought with a weapon in hand; one that has lost it, or its arms, runs for its life.
 	bool bAIHadWeapon = false;

@@ -102,9 +102,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float FistDownReachCm = 15.f;
 
-	// The mouse all the way down, the hips sink this far, the knees bending, so a fist (or a blade) reaches one lying down.
+	// The mouse all the way down, the hips sink this far, the knees bending, so a blade reaches one lying down. Bare-handed
+	// the mouse does not take the body down: to strike one on the ground the fighter crouches (Ctrl).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float DownHipDropCm = 45.f;
+	float DownHipDropCm = 0.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeDownHipDropCm = 15.f;
