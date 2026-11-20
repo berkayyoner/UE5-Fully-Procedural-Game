@@ -26,6 +26,8 @@
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "SkeletalMeshClothingSystemUtilities.h"
 #include "ChaosCloth/ChaosClothConfig.h"
+#include "Materials/MaterialInstanceConstant.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 
 namespace
 {
@@ -36,7 +38,7 @@ namespace
 
 	// A worn piece's first section is made cloth: held at the collar, and let hang free of its skinned place the more the
 	// further down the body and out along the sleeves, the body's capsules keeping it off the body.
-	int32 MakeCloth(const FString& MeshPath, float PinAboveCm, float TorsoFromCm, float BaseCm, float TorsoCm, float SleeveFromCm, float SleeveCm, float BendStiffness)
+	int32 MakeCloth(const FString& MeshPath, float PinAboveCm, float TorsoFromCm, float BaseCm, float TorsoCm, float SleeveFromCm, float SleeveCm, float BendStiffness, float AnimDrive)
 	{
 		USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath);
 		if (!Mesh)
@@ -61,14 +63,28 @@ namespace
 			UClothingAssetFactoryBase* Factory = ClothingEditor.GetClothingAssetFactory();
 			FSkeletalMeshClothBuildParams Params;
 			Params.AssetName = FPaths::GetBaseFilename(MeshPath) + TEXT("_Cloth");
+			// A section with the ClothProxy material is a sparser copy of the garment: the cloth is simulated on it, it is
+			// taken out of what is drawn, and the full garment drawn follows it.
+			int32 Proxy = INDEX_NONE;
+			const FSkeletalMeshLODModel& Lod0 = Mesh->GetImportedModel()->LODModels[0];
+			for (int32 Section = 0; Section < Lod0.Sections.Num(); ++Section)
+			{
+				const TArray<FSkeletalMaterial>& Slots = Mesh->GetMaterials();
+				if (Slots.IsValidIndex(Lod0.Sections[Section].MaterialIndex) && Slots[Lod0.Sections[Section].MaterialIndex].MaterialSlotName == FName(TEXT("ClothProxy")))
+				{
+					Proxy = Section;
+				}
+			}
 			Params.LodIndex = 0;
-			Params.SourceSection = 0;
-			Params.bRemoveFromMesh = false;
+			Params.SourceSection = Proxy == INDEX_NONE ? 0 : Proxy;
+			Params.bRemoveFromMesh = Proxy != INDEX_NONE;
+			UE_LOG(LogAedirEditor, Display, TEXT("Cloth simulated on section %d of %d (%s), %d points to simulate for %d drawn"), Params.SourceSection, Lod0.Sections.Num(), Proxy == INDEX_NONE ? TEXT("the garment itself") : TEXT("a sparser copy"),
+				Lod0.Sections[Params.SourceSection].SoftVertices.Num(), Lod0.Sections[Proxy == 0 && Lod0.Sections.Num() > 1 ? 1 : 0].SoftVertices.Num());
 			Params.PhysicsAsset = TSoftObjectPtr<UPhysicsAsset>(FSoftObjectPath(ImportBodyPhysicsPath));
 			// The triangles the cloth cannot be made of, as they lie in the imported model.
 			{
 				const FSkeletalMeshLODModel& Model = Mesh->GetImportedModel()->LODModels[0];
-				const FSkelMeshSection& First = Model.Sections[0];
+				const FSkelMeshSection& First = Model.Sections[Params.SourceSection];
 				int32 Bad = 0;
 				for (uint32 Tri = 0; Tri < First.NumTriangles; ++Tri)
 				{
@@ -133,7 +149,10 @@ namespace
 					Chaos->EdgeStiffnessWeighted = { 1.f, 1.f };
 					Chaos->BendingStiffnessWeighted = { BendStiffness, BendStiffness };
 					Chaos->DampingCoefficient = 0.06f;
-					Chaos->AnimDriveStiffness = { 0.f, 0.f };
+					// A light pull back to the garment's own shape, so it hangs as cut instead of slumping into a fold where it
+					// meets the close-fitted top, and still swings.
+					Chaos->AnimDriveStiffness = { AnimDrive, AnimDrive };
+					Chaos->AnimDriveDamping = { AnimDrive * 2.f, AnimDrive * 2.f };
 					Chaos->LinearVelocityScale = FVector(0.6f);
 					UE_LOG(LogAedirEditor, Display, TEXT("Cloth config %s: bending %.2f"), *Config.Key.ToString(), BendStiffness);
 				}
@@ -147,7 +166,8 @@ namespace
 			UE_LOG(LogAedirEditor, Display, TEXT("Made %s cloth: %d points, %d of them loose"), *MeshPath, Physical.Vertices.Num(), Loose);
 		}
 		TArray<UPackage*> ToSave = { Mesh->GetPackage() };
-		// The material scanned models wear is worn by cloth now as well.
+		// The material scanned models wear is worn by cloth now as well, and clothes wear it two-sided, so the inside of a
+		// sleeve or a hem lifting shows the cloth instead of nothing.
 		if (UMaterial* Scanned = LoadObject<UMaterial>(nullptr, ImportScannedPath))
 		{
 			bool bNeedsRecompile = false;
@@ -156,6 +176,21 @@ namespace
 				Scanned->SetMaterialUsage(bNeedsRecompile, MATUSAGE_Clothing);
 				ToSave.Add(Scanned->GetPackage());
 			}
+			const FString TwoSidedName = TEXT("MI_AedirScannedTwoSided");
+			const FString TwoSidedPackage = FString(TEXT("/Game/Aedir/Materials/")) + TwoSidedName;
+			UMaterialInstanceConstant* TwoSided = LoadObject<UMaterialInstanceConstant>(nullptr, *(TwoSidedPackage + TEXT(".") + TwoSidedName), nullptr, LOAD_NoWarn | LOAD_Quiet);
+			if (!TwoSided)
+			{
+				UPackage* Package = CreatePackage(*TwoSidedPackage);
+				TwoSided = NewObject<UMaterialInstanceConstant>(Package, FName(*TwoSidedName), RF_Public | RF_Standalone);
+				FAssetRegistryModule::AssetCreated(TwoSided);
+			}
+			TwoSided->SetParentEditorOnly(Scanned);
+			TwoSided->BasePropertyOverrides.bOverride_TwoSided = true;
+			TwoSided->BasePropertyOverrides.TwoSided = true;
+			TwoSided->UpdateOverridableBaseProperties();
+			TwoSided->PostEditChange();
+			ToSave.Add(TwoSided->GetPackage());
 		}
 		return UEditorLoadingAndSavingUtils::SavePackages(ToSave, false) ? 0 : 1;
 	}
@@ -225,13 +260,13 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 		return bDone ? 0 : 1;
 	}
 
-	// -Cloth=<skeletal mesh path> [-Pin=146 -TorsoFrom=145 -Base=1.5 -Torso=9 -SleeveFrom=16 -Sleeve=9 -Bend=0.3]: its first
+	// -Cloth=<skeletal mesh path> [-Pin=146 -TorsoFrom=145 -Base=1.5 -Torso=9 -SleeveFrom=16 -Sleeve=9 -Bend=0.3 -Drive=0.12]: its first
 	// section made cloth, held at the collar above Pin, Base cm free over the chest, to Torso cm at the hem from TorsoFrom
 	// down, and to Sleeve cm at the cuffs from SleeveFrom across; Bend is how stiffly it bends.
 	FString ClothMesh;
 	if (FParse::Value(*Params, TEXT("Cloth="), ClothMesh))
 	{
-		float Pin = 146.f, TorsoFrom = 133.f, Base = 0.f, Torso = 9.f, SleeveFrom = 26.f, Sleeve = 9.f, Bend = 0.3f;
+		float Pin = 146.f, TorsoFrom = 120.f, Base = 0.f, Torso = 9.f, SleeveFrom = 26.f, Sleeve = 9.f, Bend = 0.3f, Drive = 0.25f;
 		FParse::Value(*Params, TEXT("Pin="), Pin);
 		FParse::Value(*Params, TEXT("TorsoFrom="), TorsoFrom);
 		FParse::Value(*Params, TEXT("Base="), Base);
@@ -239,7 +274,8 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 		FParse::Value(*Params, TEXT("SleeveFrom="), SleeveFrom);
 		FParse::Value(*Params, TEXT("Sleeve="), Sleeve);
 		FParse::Value(*Params, TEXT("Bend="), Bend);
-		return MakeCloth(ClothMesh, Pin, TorsoFrom, Base, Torso, SleeveFrom, Sleeve, Bend);
+		FParse::Value(*Params, TEXT("Drive="), Drive);
+		return MakeCloth(ClothMesh, Pin, TorsoFrom, Base, Torso, SleeveFrom, Sleeve, Bend, Drive);
 	}
 
 	FString Source;

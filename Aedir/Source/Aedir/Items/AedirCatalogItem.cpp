@@ -246,16 +246,19 @@ void AAedirCatalogItem::WearSplitParts(const FAedirItemDef& Def)
 	}
 }
 
-static TAutoConsoleVariable<int32> CVarAedirCloth(TEXT("aedir.Cloth"), 1, TEXT("Worn clothes hang and swing as cloth (1) or only follow the bones (0); the physics command sets it too."));
+static TAutoConsoleVariable<int32> CVarAedirCloth(TEXT("aedir.Cloth"), 1, TEXT("Worn clothes hang and swing as cloth while the bodies' physics is on (1), or never (0)."));
 
 bool AAedirCatalogItem::IsClothOn()
 {
-	return CVarAedirCloth.GetValueOnGameThread() != 0;
+	// Cloth goes with the bodies' physics: posed directly (aedir.DirectPose), the clothes only follow the bones.
+	static const IConsoleVariable* Posed = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.DirectPose"));
+	return CVarAedirCloth.GetValueOnGameThread() != 0 && !(Posed && Posed->GetInt() != 0);
 }
 
 void AAedirCatalogItem::SetClothOn(UWorld* World, bool bOn)
 {
 	CVarAedirCloth->Set(bOn ? 1 : 0, ECVF_SetByConsole);
+	bOn = IsClothOn();
 	for (TActorIterator<AAedirCatalogItem> It(World); It; ++It)
 	{
 		if (USkeletalMeshComponent* Worn = It->WornMesh.Get())
@@ -313,7 +316,7 @@ void AAedirCatalogItem::ApplyWornLook()
 	const TArray<FSkeletalMaterial>& Slots = Model->GetMaterials();
 	for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
 	{
-		if (UMaterialInterface* Material = AedirScannedMaterial::Make(WornMesh, Def->WornLookFolder.IsEmpty() ? Slots[Slot].MaterialSlotName.ToString() : Def->WornLookFolder))
+		if (UMaterialInterface* Material = AedirScannedMaterial::Make(WornMesh, Def->WornLookFolder.IsEmpty() ? Slots[Slot].MaterialSlotName.ToString() : Def->WornLookFolder, !Model->GetMeshClothingAssets().IsEmpty()))
 		{
 			WornMesh->SetMaterial(Slot, Material);
 		}
@@ -710,7 +713,7 @@ bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
 		const TArray<FSkeletalMaterial>& Slots = Model->GetMaterials();
 		for (int32 Slot = 0; Slot < Slots.Num(); ++Slot)
 		{
-			if (UMaterialInterface* Material = AedirScannedMaterial::Make(Piece, Def.WornLookFolder.IsEmpty() ? Slots[Slot].MaterialSlotName.ToString() : Def.WornLookFolder))
+			if (UMaterialInterface* Material = AedirScannedMaterial::Make(Piece, Def.WornLookFolder.IsEmpty() ? Slots[Slot].MaterialSlotName.ToString() : Def.WornLookFolder, !Model->GetMeshClothingAssets().IsEmpty()))
 			{
 				Piece->SetMaterial(Slot, Material);
 			}

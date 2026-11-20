@@ -60,9 +60,11 @@ ymid_s, ymid_b = (sy_lo + sy_hi) / 2, (by_lo + by_hi) / 2
 print("[fit] body half width %.1f depth %.1f; shirt %.1f %.1f; scale %.2f %.2f, down %.1f" % (bw, by_hi - by_lo, sw, sy_hi - sy_lo, SX, SY, -dz))
 # The body a touch wider than the shirt's own cut below the arms, the shoulders a touch narrower.
 TORSO_WIDEN = 1.045
-SHOULDER_NARROW = 0.965
+SHOULDER_NARROW = 0.94
 SLEEVE_SLIM = 0.92
-DECIMATE_RATIO = 0.5
+PROXY_RATIO = 0.3
+ARMPIT_ROOM = 1.4
+DRAW_SPREAD_STEPS = 14
 def torso_map(v):
     z = v.z + dz
     shoulder = max(0.0, min(1.0, (z - 132.0) / 12.0))
@@ -124,7 +126,9 @@ def room(i, base):
     z = out[i].z
     waist = smooth(z, 88.0, 100.0) * (1.0 - smooth(z, 108.0, 128.0)) * (1.0 - sleeve_share[i])
     forearm = sleeve_share[i] * smooth(sleeve_t[i], 0.4, 0.75)
-    return base + 0.9 * waist + 1.0 * forearm
+    v = out[i]
+    armpit = smooth(abs(v.x), 11.0, 15.0) * (1.0 - smooth(abs(v.x), 22.0, 27.0)) * smooth(z, 118.0, 124.0) * (1.0 - smooth(z, 136.0, 142.0))
+    return base + 0.9 * waist + 1.0 * forearm + ARMPIT_ROOM * armpit
 def push(points, margin):
     n = 0
     for i, v in enumerate(points):
@@ -147,14 +151,17 @@ for _ in range(6):
 out = [before[i] + shift[i] for i in range(len(out))]
 pushed += push(out, 1.8)
 print("[fit] pushed out", pushed, "of", len(out))
-TIGHT_MARGIN_TORSO = 1.8
-TIGHT_MARGIN_ARM = 1.2
+TIGHT_MARGIN_TORSO = 1.3
+TIGHT_MARGIN_ARM = 1.0
 tight = []
 for i, v in enumerate(out):
-    up_torso = smooth(v.z, 127.0, 138.0) * (1.0 - sleeve_share[i])
+    # Drawn in over the chest and shoulders, and a little lower down too, the hold easing off gradually so that no ridge
+    # stands round the body where the close fit ends.
+    up_torso = (0.3 + 0.7 * smooth(v.z, 104.0, 134.0)) * (1.0 - sleeve_share[i])
     up_arm = sleeve_share[i] * (1.0 - smooth(sleeve_t[i], 0.25, 0.45))
     tight.append(max(up_torso, up_arm))
 drawn = 0
+pre_draw = [v.copy() for v in out]
 for i, v in enumerate(out):
     w = tight[i]
     if w <= 0.0:
@@ -164,11 +171,24 @@ for i, v in enumerate(out):
         continue
     # Close, but with room for the chest and the shoulders to move and breathe under it.
     margin = TIGHT_MARGIN_TORSO + (TIGHT_MARGIN_ARM - TIGHT_MARGIN_TORSO) * sleeve_share[i]
+    # Round the armpits, front and back, where arm and chest move against each other, it keeps more room.
+    armpit = smooth(abs(v.x), 11.0, 15.0) * (1.0 - smooth(abs(v.x), 22.0, 27.0)) * smooth(v.z, 118.0, 124.0) * (1.0 - smooth(v.z, 136.0, 142.0))
+    margin += ARMPIT_ROOM * armpit
+    # Low on the body it is drawn in no closer than the room the waist keeps.
+    low = 1.0 - smooth(v.z, 112.0, 126.0)
+    margin = margin * (1.0 - low) + max(margin, room(i, 2.2)) * low
     target = hit[0] + hit[1] * NSIGN * margin
     if (v - hit[0]).dot(hit[1] * NSIGN) > margin:
         out[i] = v.lerp(target, 0.8 * w)
         drawn += 1
 print("[fit] drawn in close", drawn)
+# How far each point was drawn in is spread over its neighbours, so the close fit fades into the loose cut below it
+# without a step standing round the body, and then the skin is cleared again.
+drawn_shift = [out[i] - pre_draw[i] for i in range(len(out))]
+for _ in range(DRAW_SPREAD_STEPS):
+    drawn_shift = [drawn_shift[i] * 0.35 + (sum((drawn_shift[j] for j in nbrs[i]), Vector()) / max(len(nbrs[i]), 1)) * 0.65 for i in range(len(out))]
+out = [pre_draw[i] + drawn_shift[i] for i in range(len(out))]
+pushed += push(out, 1.2)
 
 # ---- weights
 def tree_of(allowed):
@@ -258,38 +278,49 @@ mod = shirt.modifiers.new("Armature", "ARMATURE")
 mod.object = arm_obj
 print("[fit] bones", sorted(names[b] for b in groups))
 
-# Half the points, the shape and the texture kept: the cloth simulates every point, on every body wearing it.
-dec = shirt.modifiers.new("Fewer", "DECIMATE")
+def clean(obj, threshold):
+    # Points on top of each other are one, loose edges are gone (they come out as triangles with no area), and so are
+    # triangles with no area: cloth cannot be made of them.
+    bpy.ops.object.select_all(action="DESELECT")
+    obj.select_set(True)
+    bpy.context.view_layer.objects.active = obj
+    nv = len(obj.data.vertices)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.remove_doubles(threshold=threshold)
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.delete_loose(use_verts=True, use_edges=True, use_faces=False)
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.dissolve_degenerate(threshold=threshold)
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.mesh.quads_convert_to_tris()
+    bpy.ops.mesh.dissolve_degenerate(threshold=threshold)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    print("[fit] %s: %d points, %d after cleaning" % (obj.name, nv, len(obj.data.vertices)))
+
+# The garment drawn keeps every point it was made with; the cloth is simulated on a sparser copy of it (ClothProxy),
+# which the drawn one follows.
+clean(shirt, 0.005)
+proxy = shirt.copy()
+proxy.data = shirt.data.copy()
+proxy.name = "MedievalShirtCloth"
+bpy.context.scene.collection.objects.link(proxy)
+proxy.data.materials.clear()
+proxy.data.materials.append(bpy.data.materials.new("ClothProxy"))
+dec = proxy.modifiers.new("Fewer", "DECIMATE")
 dec.decimate_type = "COLLAPSE"
-dec.ratio = DECIMATE_RATIO
+dec.ratio = PROXY_RATIO
 dec.use_collapse_triangulate = True
 bpy.ops.object.select_all(action="DESELECT")
-shirt.select_set(True)
-bpy.context.view_layer.objects.active = shirt
-before_points = len(shirt.data.vertices)
+proxy.select_set(True)
+bpy.context.view_layer.objects.active = proxy
 bpy.ops.object.modifier_move_to_index(modifier="Fewer", index=0)
 bpy.ops.object.modifier_apply(modifier="Fewer")
-print("[fit] decimated %d points to %d" % (before_points, len(shirt.data.vertices)))
-# Points that ended up on top of each other are one, and triangles with no area are gone: cloth cannot be made of them.
-bpy.ops.object.select_all(action="DESELECT")
-shirt.select_set(True)
-bpy.context.view_layer.objects.active = shirt
-nv = len(shirt.data.vertices)
-bpy.ops.object.mode_set(mode="EDIT")
-bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.mesh.remove_doubles(threshold=0.1)
-bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.mesh.delete_loose(use_verts=True, use_edges=True, use_faces=False)
-bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.mesh.dissolve_degenerate(threshold=0.1)
-bpy.ops.mesh.select_all(action="SELECT")
-bpy.ops.mesh.quads_convert_to_tris()
-bpy.ops.mesh.dissolve_degenerate(threshold=0.1)
-bpy.ops.object.mode_set(mode="OBJECT")
-print("[fit] merged %d points into %d" % (nv, len(shirt.data.vertices)))
+clean(proxy, 0.15)
 bpy.ops.object.select_all(action="DESELECT")
 arm_obj.select_set(True)
 shirt.select_set(True)
+proxy.select_set(True)
 bpy.context.view_layer.objects.active = arm_obj
 bpy.ops.export_scene.fbx(filepath=OUT, use_selection=True, object_types={"ARMATURE", "MESH"}, global_scale=1.0, apply_unit_scale=True, apply_scale_options="FBX_SCALE_NONE", axis_forward="-Y", axis_up="Z", bake_space_transform=False, use_mesh_modifiers=False, mesh_smooth_type="FACE", add_leaf_bones=False, primary_bone_axis="Y", secondary_bone_axis="X", use_armature_deform_only=False, armature_nodetype="NULL", bake_anim=False)
 

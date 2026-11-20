@@ -8,6 +8,7 @@
 namespace
 {
 	const TCHAR* const ScannedMasterPath = TEXT("/Game/Aedir/Materials/M_AedirScanned.M_AedirScanned");
+	const TCHAR* const ScannedTwoSidedPath = TEXT("/Game/Aedir/Materials/MI_AedirScannedTwoSided.MI_AedirScannedTwoSided");
 	const TCHAR* const ScannedRoot = TEXT("/Game/Megascans/3D_Assets/");
 
 	UTexture* ScannedTexture(const FString& Folder, const TCHAR* Suffix)
@@ -17,7 +18,7 @@ namespace
 	}
 }
 
-UMaterialInterface* AedirScannedMaterial::Make(UObject* Outer, const FString& AssetFolder)
+UMaterialInterface* AedirScannedMaterial::Make(UObject* Outer, const FString& AssetFolder, bool bTwoSided)
 {
 	// A model from elsewhere comes with its own materials.
 	if (AssetFolder.IsEmpty())
@@ -25,7 +26,8 @@ UMaterialInterface* AedirScannedMaterial::Make(UObject* Outer, const FString& As
 		return nullptr;
 	}
 
-	UMaterialInterface* Master = LoadObject<UMaterialInterface>(nullptr, ScannedMasterPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+	UMaterialInterface* Master = bTwoSided ? LoadObject<UMaterialInterface>(nullptr, ScannedTwoSidedPath, nullptr, LOAD_NoWarn | LOAD_Quiet) : nullptr;
+	Master = Master ? Master : LoadObject<UMaterialInterface>(nullptr, ScannedMasterPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
 	UTexture* Base = ScannedTexture(AssetFolder, TEXT("A"));
 	if (!Master || !Base)
 	{
