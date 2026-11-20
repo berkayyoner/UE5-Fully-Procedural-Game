@@ -38,7 +38,7 @@ namespace
 
 	// A worn piece's first section is made cloth: held at the collar, and let hang free of its skinned place the more the
 	// further down the body and out along the sleeves, the body's capsules keeping it off the body.
-	int32 MakeCloth(const FString& MeshPath, float PinAboveCm, float TorsoFromCm, float BaseCm, float TorsoCm, float SleeveFromCm, float SleeveCm, float BendStiffness, float AnimDrive)
+	int32 MakeCloth(const FString& MeshPath, float PinAboveCm, float TorsoFromCm, float BaseCm, float TorsoCm, float SleeveFromCm, float SleeveCm, float BendStiffness, float AnimDrive, float BackstopRadiusCm, float BackstopDistanceCm)
 	{
 		USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath);
 		if (!Mesh)
@@ -130,6 +130,26 @@ namespace
 				const float Sleeve = Across > SleeveFromCm ? BaseCm + FMath::Pow(Out, 1.2f) * (SleeveCm - BaseCm) : 0.f;
 				Mask->Values[Point] = bCollar ? 0.f : FMath::Max(Torso, Sleeve);
 			}
+			// Backstops: the cloth may swing out and away from where it is sewn on but not in through the body under it, where
+			// the body's capsules do not reach (the hips, the small of the back).
+			const TArray<float> Free = Mask->Values;
+			const auto PaintMask = [&ClothLod, &Physical, &Free](EWeightMapTargetCommon Target, float Value)
+			{
+				FPointWeightMap* Map = ClothLod.PointWeightMaps.FindByPredicate([Target](const FPointWeightMap& M) { return M.CurrentTarget == static_cast<uint8>(Target); });
+				if (!Map)
+				{
+					Map = &ClothLod.PointWeightMaps.AddDefaulted_GetRef();
+				}
+				Map->Initialize(Physical.Vertices.Num());
+				Map->CurrentTarget = static_cast<uint8>(Target);
+				Map->bEnabled = true;
+				for (int32 Point = 0; Point < Physical.Vertices.Num() && Point < Free.Num(); ++Point)
+				{
+					Map->Values[Point] = Free[Point] > 0.f ? Value : 0.f;
+				}
+			};
+			PaintMask(EWeightMapTargetCommon::BackstopRadius, BackstopRadiusCm);
+			PaintMask(EWeightMapTargetCommon::BackstopDistance, BackstopDistanceCm);
 			Cloth->ApplyParameterMasks();
 			// Read back from what the simulation will use.
 			const FPointWeightMap* Used = Physical.FindWeightMap(EWeightMapTargetCommon::MaxDistance);
@@ -266,7 +286,7 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 	FString ClothMesh;
 	if (FParse::Value(*Params, TEXT("Cloth="), ClothMesh))
 	{
-		float Pin = 146.f, TorsoFrom = 120.f, Base = 0.f, Torso = 9.f, SleeveFrom = 26.f, Sleeve = 9.f, Bend = 0.3f, Drive = 0.25f;
+		float Pin = 146.f, TorsoFrom = 120.f, Base = 0.f, Torso = 9.f, SleeveFrom = 26.f, Sleeve = 9.f, Bend = 0.3f, Drive = 0.25f, BackRadius = 30.f, BackDistance = 0.5f;
 		FParse::Value(*Params, TEXT("Pin="), Pin);
 		FParse::Value(*Params, TEXT("TorsoFrom="), TorsoFrom);
 		FParse::Value(*Params, TEXT("Base="), Base);
@@ -275,7 +295,9 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 		FParse::Value(*Params, TEXT("Sleeve="), Sleeve);
 		FParse::Value(*Params, TEXT("Bend="), Bend);
 		FParse::Value(*Params, TEXT("Drive="), Drive);
-		return MakeCloth(ClothMesh, Pin, TorsoFrom, Base, Torso, SleeveFrom, Sleeve, Bend, Drive);
+		FParse::Value(*Params, TEXT("BackRadius="), BackRadius);
+		FParse::Value(*Params, TEXT("BackDistance="), BackDistance);
+		return MakeCloth(ClothMesh, Pin, TorsoFrom, Base, Torso, SleeveFrom, Sleeve, Bend, Drive, BackRadius, BackDistance);
 	}
 
 	FString Source;

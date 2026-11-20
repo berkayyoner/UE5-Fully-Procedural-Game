@@ -709,7 +709,7 @@ namespace
 	constexpr float AedirAIFistStrikeSlackCm = 6.f;
 	constexpr float AedirAIFistStepInput = 0.55f;
 	// Through a throw it keeps stepping in until this share of AIFistStrikeInCm.
-	constexpr float AedirAIFistStepInShare = 0.9f;
+	constexpr float AedirAIFistStepInShare = 1.f;
 	// Further than this past where it fights from, it closes in at a run.
 	constexpr float AedirAIPressRunCm = 60.f;
 	constexpr float AedirAIKeepBandCm = 15.f;

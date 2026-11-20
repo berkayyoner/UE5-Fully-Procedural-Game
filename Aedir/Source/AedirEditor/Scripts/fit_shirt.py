@@ -14,12 +14,14 @@ from mathutils.kdtree import KDTree
 argv = sys.argv[sys.argv.index("--") + 1:]
 SRC, BODY, OUT, PREVIEW = argv[0], argv[1], argv[2], argv[3]
 
-CLEARANCE = 1.5          # cm the widest part of the body keeps inside the shirt
-SHOW_THROUGH_ROOM = 1.0  # cm a point the body still reaches is eased out to
-EASE_STEPS = 40          # how far that easing is spread over the cloth
+CLEARANCE = 0.6          # cm the body keeps inside the shirt
+FIT_SHARE = 0.7          # share of the chest's bands the widening fits as it is
+SHOW_THROUGH_ROOM = 1.2  # cm a point the body still reaches is eased out to
+HIP_ROOM = 1.3           # cm more of it round the hips
+EASE_STEPS = 90          # how far that easing is spread over the cloth
 PROXY_RATIO = 0.3        # share of the points the simulated copy keeps
 SHOULDER_SCALE = 1.0     # how much wider the shoulders are made than the shirt's own
-MAX_EASE_GAIN = 3.0      # how much the spread easing is scaled back up
+MAX_EASE_GAIN = 2.5      # how much the spread easing is scaled back up
 
 d = json.load(open(BODY))
 names = [b["name"] for b in d["bones"]]
@@ -66,22 +68,35 @@ body_torso = [verts[i] for i in range(len(verts)) if top[i] in TORSO]
 shirt_torso = [Vector((v.x, v.y, v.z + dz)) for v in src if abs(v.x) < SHIRT_SIDE]
 cy_shirt = (min(v.y for v in band(shirt_torso, 120, 4)) + max(v.y for v in band(shirt_torso, 120, 4))) / 2
 cy_body = (min(v.y for v in band(body_torso, 120, 4)) + max(v.y for v in band(body_torso, 120, 4))) / 2
-SX, SY = 1.0, 1.0
+# Each band of the chest and belly asks a widening across and a depth; the shirt takes what most of them ask (not the
+# single worst), the body's centre front to back at each height, and the few points the body still reaches are eased.
+asks_x, asks_y, centres = [], [], []
 for z in range(104, 136, 2):
     b, s = band(body_torso, z), band(shirt_torso, z)
     if len(b) < 10 or len(s) < 10:
         continue
-    SX = max(SX, (max(abs(p.x) for p in b) + CLEARANCE) / max(abs(p.x) for p in s))
-    front_b, back_b = min(p.y for p in b) - cy_body, max(p.y for p in b) - cy_body
-    front_s, back_s = min(p.y for p in s) - cy_shirt, max(p.y for p in s) - cy_shirt
-    SY = max(SY, (CLEARANCE - front_b) / -front_s, (back_b + CLEARANCE) / back_s)
+    asks_x.append((max(abs(p.x) for p in b) + CLEARANCE) / max(abs(p.x) for p in s))
+    depth_b = max(p.y for p in b) - min(p.y for p in b)
+    depth_s = max(p.y for p in s) - min(p.y for p in s)
+    asks_y.append((depth_b + 2.0 * CLEARANCE) / depth_s)
+    centres.append(((min(p.y for p in b) + max(p.y for p in b)) / 2, (min(p.y for p in s) + max(p.y for p in s)) / 2))
+def share_of(values, share):
+    v = sorted(values)
+    return v[min(len(v) - 1, int(len(v) * share))]
+SX = max(1.0, share_of(asks_x, FIT_SHARE))
+SY = max(1.0, share_of(asks_y, FIT_SHARE))
+cy_body = sum(c[0] for c in centres) / len(centres)
+cy_shirt = sum(c[1] for c in centres) / len(centres)
 print("[fit] torso down %.1f, scale across %.3f, front to back %.3f" % (-dz, SX, SY))
 def torso_map(v):
-    # Over the shoulders the shirt keeps its own width: the chest's widening fades out above the armpits.
+    # Over the shoulders and up to the collar the shirt keeps its own size: the chest's widening fades out above the armpits.
     z = v.z + dz
     top = smooth(z, 134.0, 144.0)
+    # Front to back the chest's depth holds on over the shoulder blades, up to the base of the neck.
+    top_y = smooth(z, 140.0, 150.0)
     sx = SX + (SHOULDER_SCALE - SX) * top
-    return Vector((v.x * sx, (v.y - cy_shirt) * SY + cy_body, z))
+    sy = SY + (SHOULDER_SCALE - SY) * top_y
+    return Vector((v.x * sx, (v.y - cy_shirt) * sy + cy_body, z))
 
 # ---- sleeves: the sleeve's own axis laid along upper arm and forearm, its shape kept.
 def sleeve_mapper(side):
@@ -136,11 +151,13 @@ def inside_shift():
         hit = bvh.find_nearest(v, 20.0)
         if hit[0] is not None:
             gap = (v - hit[0]).dot(hit[1] * NSIGN)
-            if gap < SHOW_THROUGH_ROOM:
-                shift[i] = hit[1] * NSIGN * (SHOW_THROUGH_ROOM - gap)
+            # More room round the hips, which move most under the hem.
+            room = SHOW_THROUGH_ROOM + HIP_ROOM * (1.0 - smooth(v.z, 100.0, 110.0)) * (1.0 - sleeve_share[i])
+            if gap < room:
+                shift[i] = hit[1] * NSIGN * (room - gap)
                 n += 1
     return shift, n
-for rnd in range(3):
+for rnd in range(6):
     shift, n = inside_shift()
     print("[fit] round %d: %d points too close to the body" % (rnd, n))
     if n == 0:
@@ -152,7 +169,16 @@ for rnd in range(3):
     gain = max((peak[i] / shift[i].length for i in range(len(out)) if peak[i] > 0.0 and shift[i].length > 1e-6), default=1.0)
     gain = min(gain, MAX_EASE_GAIN)
     out = [out[i] + shift[i] * gain for i in range(len(out))]
-# The very last few are set out exactly.
+# The last few are eased out over a few neighbours at a time, then set out exactly.
+for rnd in range(5):
+    shift, n = inside_shift()
+    if n == 0:
+        break
+    peak = [x.length for x in shift]
+    for _ in range(6):
+        shift = [shift[i] * 0.5 + (sum((shift[j] for j in nbrs[i]), Vector()) / max(len(nbrs[i]), 1)) * 0.5 for i in range(len(out))]
+    gain = min(max((peak[i] / shift[i].length for i in range(len(out)) if peak[i] > 0.0 and shift[i].length > 1e-6), default=1.0), 2.0)
+    out = [out[i] + shift[i] * gain for i in range(len(out))]
 shift, n = inside_shift()
 out = [out[i] + shift[i] for i in range(len(out))]
 print("[fit] %d points set out at the end" % n)
@@ -303,14 +329,16 @@ c = Vector((45, cy_body, 115))
 scn = bpy.context.scene
 scn.render.engine = "BLENDER_WORKBENCH"
 scn.render.resolution_x, scn.render.resolution_y = 900, 600
-for name, direction in (("front", (0, -1, 0)), ("side", (1, 0, 0)), ("back", (0, 1, 0))):
+for name, direction in (("front", (0, -1, 0)), ("side", (1, 0, 0)), ("back", (0, 1, 0)), ("collar", (0, -1, 0.6)), ("collarside", (1, 0, 0.2))):
     cam = bpy.data.cameras.new(name)
     cam.type = "ORTHO"
-    cam.ortho_scale = 210 if name != "side" else 140
+    cam.ortho_scale = 45 if name.startswith("collar") else 210 if name != "side" else 140
     co = bpy.data.objects.new(name, cam)
     scn.collection.objects.link(co)
     dd = Vector(direction)
-    co.location = (c if name != "side" else Vector((0, cy_body, 115))) + dd * 400
+    focus = Vector((0, cy_body, neck.z - 4)) if name.startswith("collar") else c if name != "side" else Vector((0, cy_body, 115))
+    dd = dd.normalized()
+    co.location = focus + dd * 400
     co.rotation_euler = (-dd).to_track_quat("-Z", "Y").to_euler()
     cam.clip_end = 2000
     scn.camera = co

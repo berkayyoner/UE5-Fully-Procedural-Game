@@ -166,7 +166,7 @@ public:
 
 	// A whole punch thrown out costs this much stamina; without enough left, it only goes out as far as what is left pays for.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
-	float PunchStaminaCost = 11.f;
+	float PunchStaminaCost = 14.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistBackDegrees = 8.f;
@@ -341,10 +341,10 @@ public:
 	// A blade swung out costs this much stamina where a fist's punch costs PunchStaminaCost, and every quick move of it
 	// (faster than PunchSlowSpeed) this much more for each whole width of the mouse's field it goes.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeSwingStaminaCost = 16.f;
+	float BladeSwingStaminaCost = 20.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float BladeFastMoveStaminaPerField = 4.f;
+	float BladeFastMoveStaminaPerField = 5.f;
 
 	// Brought all the way across to the other side, a blade's wrist ends turned in this far (it turns in BladeSideInDegrees
 	// up to BladeSideTurnSplit of the way, as on its own side).

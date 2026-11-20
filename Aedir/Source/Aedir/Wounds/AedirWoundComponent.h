@@ -55,6 +55,14 @@ public:
 	UPROPERTY(ReplicatedUsing=OnRep_Wounds, VisibleAnywhere, Category="Aedir|Wounds")
 	TArray<FAedirWound> ActiveWounds;
 
+	// Blood on the skin is fresh, bright and wet when shed and darkens and dulls as it dries over this many game hours (a game
+	// hour is three real minutes); while the wound still bleeds it stays at most BloodBleedingDryShare dried.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds")
+	float BloodDryGameHours = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0", ClampMax="1"))
+	float BloodBleedingDryShare = 0.15f;
+
 	// The most wounds a body keeps at once, all drawn on the skin; the oldest goes only past this (no more than 250).
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
 	int32 MaxWounds = 250;

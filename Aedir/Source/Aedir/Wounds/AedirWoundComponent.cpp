@@ -973,7 +973,18 @@ void UAedirWoundComponent::UpdateSkinBlood()
 			UE_CLOG(CVarAedirSkinBloodLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Wounds] skin blood %d on %s at %s, radius %.1f, run %.1f cm"), Slot, *Wound.Bone.ToString(), *Point.ToCompactString(), Where.A, RunCm);
 			// A bruise has no run: the material knows it by a run length below zero.
 			const bool bBruise = Wound.Type == EAedirWoundType::Bruise;
-			How = FLinearColor(FMath::Max(Severity, 0.2f), ComputeAge01(Wound.Type, Severity, Age), bBruise ? -1.f : RunCm, static_cast<float>(Wound.Id % 17));
+			// A bruise turns by its healing; shed blood by how long it has had to dry, fresh while it still runs.
+			float Look = ComputeAge01(Wound.Type, Severity, Age);
+			if (!bBruise)
+			{
+				const float DrySeconds = FMath::Max(BloodDryGameHours, 0.01f) * AedirGameDaySeconds / 24.f;
+				Look = FMath::Clamp(Age / DrySeconds, 0.f, 1.f);
+				if (ComputeBleedRate(Wound.Type, Severity, Age) > 0.f)
+				{
+					Look = FMath::Min(Look, BloodBleedingDryShare);
+				}
+			}
+			How = FLinearColor(FMath::Max(Severity, 0.2f), Look, bBruise ? -1.f : RunCm, static_cast<float>(Wound.Id % 17));
 		}
 		Texels[Slot] = Where;
 		Texels[WoundSkinBloodSlots + Slot] = How;

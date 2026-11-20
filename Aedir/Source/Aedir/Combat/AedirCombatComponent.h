@@ -355,7 +355,7 @@ public:
 	// Bare-handed, to throw a punch it steps in this close (the middles of the two bodies, for its size), and on in through
 	// the throw: from further a fist reaches only the shoulders and the chest.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float AIFistStrikeInCm = 58.f;
+	float AIFistStrikeInCm = 66.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIWeaponStandOffShare = 1.f;
