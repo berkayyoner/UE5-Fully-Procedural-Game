@@ -23,6 +23,8 @@
 #include "Net/UnrealNetwork.h"
 #include "UObject/SoftObjectPath.h"
 #include "Wounds/AedirBloodSubsystem.h"
+#include "Items/AedirItemActor.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 namespace
 {
@@ -720,8 +722,132 @@ uint8 UAedirWoundComponent::AllocateWoundId()
 	return NextWoundId;
 }
 
+namespace
+{
+	// Where a wound lies in the bind pose of the body, the frame its skin and the clothes on it are drawn in.
+	FVector WoundBindPoint(const USkeletalMeshComponent* Mesh, const FAedirWound& Wound)
+	{
+		const USkinnedAsset* Asset = Mesh ? Mesh->GetSkinnedAsset() : nullptr;
+		if (!Asset)
+		{
+			return FVector::ZeroVector;
+		}
+		const FReferenceSkeleton& Skeleton = Asset->GetRefSkeleton();
+		FTransform Pose = FTransform::Identity;
+		for (int32 Index = Skeleton.FindBoneIndex(WoundResolveBone(Mesh, Wound.Bone)); Index != INDEX_NONE; Index = Skeleton.GetParentIndex(Index))
+		{
+			Pose = Pose * Skeleton.GetRefBonePose()[Index];
+		}
+		return Pose.TransformPosition(Wound.Offset);
+	}
+
+	// Whether a piece worn covers a bone: the bone itself or one of the two above it is among those it covers.
+	bool WoundCovered(const USkeletalMeshComponent* Mesh, const AAedirItemActor* Item, FName Bone)
+	{
+		const USkinnedAsset* Asset = Mesh ? Mesh->GetSkinnedAsset() : nullptr;
+		if (!Asset || !Item)
+		{
+			return false;
+		}
+		const FReferenceSkeleton& Skeleton = Asset->GetRefSkeleton();
+		int32 Index = Skeleton.FindBoneIndex(Bone);
+		for (int32 Up = 0; Up < 3 && Index != INDEX_NONE; ++Up, Index = Skeleton.GetParentIndex(Index))
+		{
+			if (Item->ArmorBones.Contains(Skeleton.GetBoneName(Index)))
+			{
+				return true;
+			}
+		}
+		return false;
+	}
+	constexpr float WoundSoakIntervalSeconds = 0.25f;
+}
+
+void UAedirWoundComponent::SoakClothes(float DeltaTime)
+{
+	SoakTimer += DeltaTime;
+	if (SoakTimer < WoundSoakIntervalSeconds)
+	{
+		return;
+	}
+	const float Step = SoakTimer;
+	SoakTimer = 0.f;
+	const AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
+	USkeletalMeshComponent* Mesh = GetBodyMesh();
+	const UWorld* World = GetWorld();
+	if (!Creature || !Mesh || !World)
+	{
+		return;
+	}
+	// In water the blood comes off the body and out of the clothes.
+	const UCharacterMovementComponent* Movement = Creature->GetCharacterMovement();
+	if (Movement && Movement->IsInWater())
+	{
+		WashBlood(WaterWashPerSecond * Step);
+	}
+	const TArray<AAedirItemActor*> Worn = Creature->Interaction ? Creature->Interaction->GetWornItemsCopy() : TArray<AAedirItemActor*>();
+	const double Now = GetWoundServerTime();
+	const float WorldNow = static_cast<float>(World->GetTimeSeconds());
+	for (FAedirWound& Wound : ActiveWounds)
+	{
+		if (Wound.Type == EAedirWoundType::Bruise)
+		{
+			continue;
+		}
+		const float Severity = Wound.GetSeverity();
+		const float Age = static_cast<float>(FMath::Max(0.0, Now - Wound.StartServerTime));
+		const float Rate = ComputeBleedRate(Wound.Type, Severity, Age);
+		// Fresh blood comes back over what was washed off.
+		if (Rate > 0.f)
+		{
+			Wound.Washed255 = 0;
+		}
+		if (Rate <= 0.f && Age > 1.f)
+		{
+			continue;
+		}
+		const FVector Where = WoundBindPoint(Mesh, Wound);
+		const float Radius = WoundDecalRadius(Wound.Type, Severity) * ClothStainRadiusShare;
+		for (AAedirItemActor* Item : Worn)
+		{
+			if (Item && Item->TakesBlood() && WoundCovered(Mesh, Item, WoundResolveBone(Mesh, Wound.Bone)))
+			{
+				const FAedirBloodStain* Had = Item->Stains.FindByPredicate([&Wound](const FAedirBloodStain& S) { return S.WoundId == Wound.Id; });
+				const float Grown = (Had ? Had->Amount : 0.f) + Step * (0.15f + Rate);
+				Item->SoakBlood(Where, Radius, FMath::Min(Grown, FMath::Max(Severity, 0.25f) * ClothSoakShare), Wound.Id, WorldNow);
+			}
+		}
+	}
+}
+
+void UAedirWoundComponent::WashBlood(float Share)
+{
+	if (!IsAuthoritative() || Share <= 0.f)
+	{
+		return;
+	}
+	for (FAedirWound& Wound : ActiveWounds)
+	{
+		if (Wound.Type != EAedirWoundType::Bruise)
+		{
+			Wound.Washed255 = static_cast<uint8>(FMath::Clamp(static_cast<float>(Wound.Washed255) + Share * 255.f, 0.f, 255.f));
+		}
+	}
+	if (const AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner()); Creature && Creature->Interaction)
+	{
+		for (AAedirItemActor* Item : Creature->Interaction->GetWornItemsCopy())
+		{
+			if (Item)
+			{
+				Item->WashBlood(Share);
+			}
+		}
+	}
+}
+
 void UAedirWoundComponent::UpdateBleeding(float DeltaTime)
 {
+	SoakClothes(DeltaTime);
 	const double Now = GetWoundServerTime();
 
 	for (int32 Index = ActiveWounds.Num() - 1; Index >= 0; --Index)
@@ -984,7 +1110,9 @@ void UAedirWoundComponent::UpdateSkinBlood()
 					Look = FMath::Min(Look, BloodBleedingDryShare);
 				}
 			}
-			How = FLinearColor(FMath::Max(Severity, 0.2f), Look, bBruise ? -1.f : RunCm, static_cast<float>(Wound.Id % 17));
+			// Washed off, the blood round it is gone, as much as was washed.
+			const float Left = bBruise ? 1.f : 1.f - static_cast<float>(Wound.Washed255) / 255.f;
+			How = FLinearColor(FMath::Max(Severity, 0.2f) * Left, Look, bBruise ? -1.f : RunCm, static_cast<float>(Wound.Id % 17));
 		}
 		Texels[Slot] = Where;
 		Texels[WoundSkinBloodSlots + Slot] = How;

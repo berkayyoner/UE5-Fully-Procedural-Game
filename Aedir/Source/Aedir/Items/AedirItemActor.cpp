@@ -114,6 +114,70 @@ void AAedirItemActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutL
 	DOREPLIFETIME(AAedirItemActor, bHolstered);
 	DOREPLIFETIME(AAedirItemActor, bWorn);
 	DOREPLIFETIME(AAedirItemActor, bStowed);
+	DOREPLIFETIME(AAedirItemActor, Stains);
+}
+
+namespace
+{
+	// A stain is no more once washed down to this much; blood from another wound this near soaks into the same stain.
+	constexpr float ItemStainGoneAmount = 0.03f;
+	constexpr float ItemStainMergeShare = 0.6f;
+	constexpr int32 ItemStainMax = 64;
+}
+
+bool AAedirItemActor::TakesBlood() const
+{
+	return ItemClass == EAedirItemClass::Armor && ArmorMaterial == EAedirArmorMaterial::Soft;
+}
+
+void AAedirItemActor::SoakBlood(const FVector& Where, float Radius, float Amount, uint8 WoundId, float Now)
+{
+	if (!HasAuthority() || !TakesBlood())
+	{
+		return;
+	}
+	FAedirBloodStain* Stain = Stains.FindByPredicate([WoundId](const FAedirBloodStain& S) { return S.WoundId == WoundId && S.WoundId != 0; });
+	if (!Stain)
+	{
+		Stain = Stains.FindByPredicate([&Where, Radius](const FAedirBloodStain& S) { return FVector::Dist(S.Where, Where) < (S.Radius + Radius) * ItemStainMergeShare; });
+	}
+	if (!Stain)
+	{
+		if (Stains.Num() >= ItemStainMax)
+		{
+			Stains.RemoveAt(0);
+		}
+		Stain = &Stains.AddDefaulted_GetRef();
+		Stain->Where = Where;
+		Stain->Seed = static_cast<uint8>(FMath::RandRange(0, 16));
+	}
+	Stain->WoundId = WoundId;
+	Stain->Radius = FMath::Max(Stain->Radius, Radius);
+	Stain->Amount = FMath::Clamp(FMath::Max(Stain->Amount, Amount), 0.f, 1.f);
+	Stain->ShedTime = Now;
+	RefreshStains();
+}
+
+void AAedirItemActor::WashBlood(float Share)
+{
+	if (!HasAuthority() || Stains.IsEmpty() || Share <= 0.f)
+	{
+		return;
+	}
+	for (int32 Index = Stains.Num() - 1; Index >= 0; --Index)
+	{
+		Stains[Index].Amount *= FMath::Clamp(1.f - Share, 0.f, 1.f);
+		if (Stains[Index].Amount < ItemStainGoneAmount)
+		{
+			Stains.RemoveAt(Index);
+		}
+	}
+	RefreshStains();
+}
+
+void AAedirItemActor::OnRep_Stains()
+{
+	RefreshStains();
 }
 
 void AAedirItemActor::Use_Implementation(AAedirCreature* User)

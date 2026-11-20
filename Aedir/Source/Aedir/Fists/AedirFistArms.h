@@ -139,10 +139,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float WaistTurnMaxDegreesPerSecond = 360.f;
 
-	// The foot on the other side from where the mouse is drawn steps forward; it changes over once the mouse is this share of
-	// its way out to the other side, so the feet do not shuffle while the fists pass the middle.
+	// The foot on the other side from where the mouse is drawn steps forward; it changes over once the mouse has stayed this
+	// share of its way out to the other side for LeadFootSwitchHoldSeconds, so the feet do not shuffle with every punch drawn
+	// back and thrown.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", ClampMax="1"))
-	float LeadFootSwitchAcross = 0.6f;
+	float LeadFootSwitchAcross = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
+	float LeadFootSwitchHoldSeconds = 0.5f;
 
 	// Drawn round to its own side the fist turns over about the forearm this far, palm going down, as for a hook.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")

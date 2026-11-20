@@ -17,10 +17,12 @@ SRC, BODY, OUT, PREVIEW = argv[0], argv[1], argv[2], argv[3]
 CLEARANCE = 0.6          # cm the body keeps inside the shirt
 FIT_SHARE = 0.7          # share of the chest's bands the widening fits as it is
 SHOW_THROUGH_ROOM = 1.2  # cm a point the body still reaches is eased out to
-HIP_ROOM = 1.3           # cm more of it round the hips
+HIP_ROOM = 2.0           # cm more of it round the hips
 EASE_STEPS = 90          # how far that easing is spread over the cloth
 PROXY_RATIO = 0.3        # share of the points the simulated copy keeps
-SHOULDER_SCALE = 1.0     # how much wider the shoulders are made than the shirt's own
+SHOULDER_SCALE = 0.92    # how much wider the shoulders are made than the shirt's own
+COLLAR_SCALE = 0.88      # and the collar, drawn in round the neck
+SLEEVE_SCALE = 0.84      # how much of its width the sleeve keeps round the arm
 MAX_EASE_GAIN = 2.5      # how much the spread easing is scaled back up
 
 d = json.load(open(BODY))
@@ -96,6 +98,10 @@ def torso_map(v):
     top_y = smooth(z, 140.0, 150.0)
     sx = SX + (SHOULDER_SCALE - SX) * top
     sy = SY + (SHOULDER_SCALE - SY) * top_y
+    # Round the neck the collar is drawn in closer still.
+    collar = smooth(z, 146.0, 152.0)
+    sx *= 1.0 + (COLLAR_SCALE - 1.0) * collar
+    sy *= 1.0 + (COLLAR_SCALE - 1.0) * collar
     return Vector((v.x * sx, (v.y - cy_shirt) * sy + cy_body, z))
 
 # ---- sleeves: the sleeve's own axis laid along upper arm and forearm, its shape kept.
@@ -125,7 +131,7 @@ def sleeve_mapper(side):
         share = smooth(along, L1 - 8.0, L1 + 4.0)
         rot = rot1.slerp(rot2, share)
         p = start + d1 * along if along < L1 - 2.0 else E + d2 * (along - (L1 - 2.0))
-        return p + rot @ off, t
+        return p + rot @ (off * SLEEVE_SCALE), t
     return mapper
 maps = {1: sleeve_mapper(1.0), -1: sleeve_mapper(-1.0)}
 
@@ -243,7 +249,8 @@ me.materials[0].name = "MedievalShirt"
 groups = {}
 for i, v in enumerate(out):
     s = sleeve_share[i]
-    shoulder = smooth(v.z, 122.0, 132.0)
+    # Over the shoulders, and down the sides under the arms (the wings, which the arm lifts), the skin follows the arm too.
+    shoulder = max(smooth(v.z, 122.0, 132.0), smooth(abs(v.x), 11.0, 16.0) * smooth(v.z, 106.0, 116.0))
     wt = {}
     if s < 0.999:
         low = weigh(v, tree_torso, ids_torso)

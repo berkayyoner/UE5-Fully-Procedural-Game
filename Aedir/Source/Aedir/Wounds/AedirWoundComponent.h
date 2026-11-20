@@ -63,6 +63,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0", ClampMax="1"))
 	float BloodBleedingDryShare = 0.15f;
 
+	// Blood from an open wound soaks into the clothes worn over it, the stain growing to ClothSoakShare of the wound's
+	// severity (more the more it bleeds) and kept on the clothes; it washes off the body and out of the clothes in water,
+	// WaterWashPerSecond of it each second, or all at once with WashBlood (a wash at a lavoir).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0", ClampMax="1"))
+	float ClothSoakShare = 0.9f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds")
+	float ClothStainRadiusShare = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0", ClampMax="1"))
+	float WaterWashPerSecond = 0.35f;
+
+	// Server only. Washes this share of the blood off the body and out of what it wears; blood still coming from a wound
+	// covers it again.
+	void WashBlood(float Share);
+
 	// The most wounds a body keeps at once, all drawn on the skin; the oldest goes only past this (no more than 250).
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
 	int32 MaxWounds = 250;
@@ -188,6 +204,9 @@ private:
 	uint8 AllocateWoundId();
 
 	void UpdateBleeding(float DeltaTime);
+	// Server only: blood soaking from the open wounds into the clothes over them, and washing off in water.
+	void SoakClothes(float DeltaTime);
+	float SoakTimer = 0.f;
 	void EnsureWoundVisuals();
 	void UpdateWoundVisuals(float DeltaTime);
 	FAedirWoundVisual* FindVisual(uint8 Id);

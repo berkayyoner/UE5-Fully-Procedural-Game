@@ -443,6 +443,9 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	bool bLeadFootRight = true;
+	// Since when the fists have been held out far enough to one side to change the lead foot, and to which side.
+	double LeadSwitchSince = -1.0;
+	int32 LeadSwitchSide = 0;
 	void UpdateLeadFoot();
 
 	// Spring stiffness of an unloaded arm in 1/s^2. Scaled down by weight, low strength, low stamina and injury.

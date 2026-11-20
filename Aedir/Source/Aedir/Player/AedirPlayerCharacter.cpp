@@ -2222,6 +2222,22 @@ void AAedirPlayerCharacter::ArmBones(const FString& Label)
 	UE_LOG(LogAedir, Display, TEXT("[ArmBones] %s%s"), *Label, *Line);
 }
 
+void AAedirPlayerCharacter::Wash()
+{
+	if (Wounds)
+	{
+		Wounds->WashBlood(1.f);
+	}
+	int32 Stained = 0;
+	for (const AAedirItemActor* Item : Interaction ? Interaction->GetWornItemsCopy() : TArray<AAedirItemActor*>())
+	{
+		Stained += Item ? Item->Stains.Num() : 0;
+	}
+	const FString Message = FString::Printf(TEXT("Washed: the blood is off the body and out of the clothes (%d stains left)."), Stained);
+	UE_LOG(LogAedir, Display, TEXT("[Dev] %s"), *Message);
+	UAedirDevTools::OnReported().Broadcast(Message);
+}
+
 void AAedirPlayerCharacter::ClothInfo()
 {
 	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)

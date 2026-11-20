@@ -106,6 +106,21 @@ private:
 
 	virtual void ApplyWornLook() override;
 	virtual void ClearWornLook() override;
+
+	// The blood soaked into it, drawn over the worn model or the pieces laid out on the ground with the same look as blood
+	// on the skin, drying over StainDryGameHours.
+	virtual void RefreshStains() override;
+	UPROPERTY(Transient)
+	TObjectPtr<class UMaterialInstanceDynamic> StainMaterial;
+	UPROPERTY(Transient)
+	TObjectPtr<class UTexture2D> StainData;
+	FTimerHandle StainDryTimer;
+
+public:
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Item")
+	float StainDryGameHours = 1.f;
+
+private:
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	FName AppliedCatalogId = NAME_None;

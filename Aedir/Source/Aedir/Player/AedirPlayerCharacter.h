@@ -481,6 +481,10 @@ public:
 	// off where the bones alone would put it.
 	UFUNCTION(Exec)
 	void ClothInfo();
+
+	// Washes the blood off the body and out of the clothes worn, as a wash at a lavoir will.
+	UFUNCTION(Exec)
+	void Wash();
 	FVector2D DevHeldKeys = FVector2D::ZeroVector;
 	float DevHeldKeysLeft = 0.f;
 

@@ -5,6 +5,7 @@
 #include "Items/AedirItemActor.h"
 #include "UObject/SoftObjectPtr.h"
 #include "Weather/AedirWeatherTypes.h"
+#include "Wounds/AedirWoundTypes.h"
 #include "AedirSaveGame.generated.h"
 
 USTRUCT(BlueprintType)
@@ -91,6 +92,10 @@ struct AEDIR_API FAedirItemSave
 
 	UPROPERTY()
 	FName CatalogId;
+
+	// The blood soaked into it; each stain's time as seconds before the save.
+	UPROPERTY()
+	TArray<FAedirBloodStain> Stains;
 };
 
 // A person of the world, as far as the story needs to remember them.

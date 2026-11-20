@@ -273,6 +273,13 @@ bool UAedirSaveSubsystem::SaveWorld(const FString& Slot)
 		{
 			ItemSave.CatalogId = Catalog->CatalogId;
 		}
+		const float SaveNow = static_cast<float>(World->GetTimeSeconds());
+		for (FAedirBloodStain Stain : Item->Stains)
+		{
+			Stain.ShedTime -= SaveNow;
+			Stain.WoundId = 0;
+			ItemSave.Stains.Add(Stain);
+		}
 		Save->LooseItems.Add(ItemSave);
 	}
 
@@ -495,7 +502,16 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 
 	for (const FAedirItemSave& ItemSave : Save->LooseItems)
 	{
-		SaveSubsystemSpawnItem(World, ItemSave.ItemClass, ItemSave.Transform, ItemSave.CatalogId);
+		if (AAedirItemActor* Item = SaveSubsystemSpawnItem(World, ItemSave.ItemClass, ItemSave.Transform, ItemSave.CatalogId); Item && !ItemSave.Stains.IsEmpty())
+		{
+			const float LoadNow = static_cast<float>(World->GetTimeSeconds());
+			Item->Stains = ItemSave.Stains;
+			for (FAedirBloodStain& Stain : Item->Stains)
+			{
+				Stain.ShedTime += LoadNow;
+			}
+			Item->RefreshStains();
+		}
 	}
 
 	for (int32 CreatureIndex = 0; CreatureIndex < Creatures.Num(); ++CreatureIndex)

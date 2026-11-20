@@ -18,6 +18,8 @@
 #include "Items/AedirInteractionComponent.h"
 #include "Items/AedirItemCatalog.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Engine/Texture2D.h"
+#include "TimerManager.h"
 #include "Materials/MaterialInterface.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/ConstructorHelpers.h"
@@ -336,6 +338,7 @@ void AAedirCatalogItem::ApplyWornLook()
 			Piece->SetVisibility(false);
 		}
 	}
+	RefreshStains();
 }
 
 void AAedirCatalogItem::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -720,6 +723,7 @@ bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
 		}
 		LaidPieces.Add(Piece);
 	}
+	RefreshStains();
 	return !LaidPieces.IsEmpty();
 }
 
@@ -737,6 +741,98 @@ void AAedirCatalogItem::OnConstruction(const FTransform& Transform)
 float AAedirCatalogItem::GetWornGrowth() const
 {
 	return Holder ? FMath::Max(static_cast<float>(Holder->GetActorScale3D().Z), 0.1f) / FMath::Max(WornFittedBodyScale, 0.1f) : 1.f;
+}
+
+namespace
+{
+	const TCHAR* const ItemStainMaterialPath = TEXT("/Game/Aedir/Materials/M_AedirBloodSkin.M_AedirBloodSkin");
+	constexpr int32 ItemStainSlots = 64;
+	// A game day passes in 72 real minutes.
+	constexpr float ItemStainGameHourSeconds = 72.f * 60.f / 24.f;
+	// Blood soaks a little further into cloth than it lies on the skin, and creeps a little way down it.
+	constexpr float ItemStainRunCm = 3.f;
+}
+
+void AAedirCatalogItem::RefreshStains()
+{
+	TArray<UMeshComponent*> Shown;
+	if (WornMesh)
+	{
+		Shown.Add(WornMesh);
+	}
+	for (const TObjectPtr<UPoseableMeshComponent>& Piece : LaidPieces)
+	{
+		if (Piece)
+		{
+			Shown.Add(Piece);
+		}
+	}
+	if (Stains.IsEmpty())
+	{
+		for (UMeshComponent* Part : Shown)
+		{
+			if (Part->GetOverlayMaterial() == StainMaterial && StainMaterial)
+			{
+				Part->SetOverlayMaterial(nullptr);
+			}
+		}
+		GetWorldTimerManager().ClearTimer(StainDryTimer);
+		return;
+	}
+	if (Shown.IsEmpty() || GetNetMode() == NM_DedicatedServer)
+	{
+		return;
+	}
+	if (!StainMaterial)
+	{
+		UMaterialInterface* Parent = LoadObject<UMaterialInterface>(nullptr, ItemStainMaterialPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		StainData = Parent ? UTexture2D::CreateTransient(ItemStainSlots, 2, PF_A32B32G32R32F) : nullptr;
+		if (!StainData)
+		{
+			return;
+		}
+		StainData->SRGB = false;
+		StainData->Filter = TF_Nearest;
+		StainData->CompressionSettings = TC_HDR;
+		StainData->NeverStream = true;
+		StainData->UpdateResource();
+		StainMaterial = UMaterialInstanceDynamic::Create(Parent, this);
+		StainMaterial->SetTextureParameterValue(TEXT("Data"), StainData);
+	}
+	const float Now = GetWorld() ? static_cast<float>(GetWorld()->GetTimeSeconds()) : 0.f;
+	const float DrySeconds = FMath::Max(StainDryGameHours, 0.01f) * ItemStainGameHourSeconds;
+	FLinearColor* Texels = new FLinearColor[ItemStainSlots * 2];
+	const int32 Count = FMath::Min(Stains.Num(), ItemStainSlots);
+	for (int32 Slot = 0; Slot < ItemStainSlots; ++Slot)
+	{
+		FLinearColor Where(0.f, 0.f, 0.f, 0.f);
+		FLinearColor How(0.f, 0.f, 0.f, 0.f);
+		if (Slot < Count)
+		{
+			const FAedirBloodStain& Stain = Stains[Slot];
+			Where = FLinearColor(Stain.Where.X, Stain.Where.Y, Stain.Where.Z, Stain.Radius);
+			How = FLinearColor(FMath::Max(Stain.Amount, 0.05f), FMath::Clamp((Now - Stain.ShedTime) / DrySeconds, 0.f, 1.f), ItemStainRunCm * Stain.Amount, static_cast<float>(Stain.Seed));
+		}
+		Texels[Slot] = Where;
+		Texels[ItemStainSlots + Slot] = How;
+	}
+	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, ItemStainSlots, 2);
+	StainData->UpdateTextureRegions(0, 1, Region, ItemStainSlots * sizeof(FLinearColor), sizeof(FLinearColor), reinterpret_cast<uint8*>(Texels),
+		[](uint8* Data, const FUpdateTextureRegion2D* Regions)
+		{
+			delete[] reinterpret_cast<FLinearColor*>(Data);
+			delete Regions;
+		});
+	StainMaterial->SetScalarParameterValue(TEXT("Count"), static_cast<float>(Count));
+	for (UMeshComponent* Part : Shown)
+	{
+		Part->SetOverlayMaterial(StainMaterial);
+	}
+	// While there is blood on it, it is drawn again every little while as it dries.
+	if (!GetWorldTimerManager().IsTimerActive(StainDryTimer))
+	{
+		GetWorldTimerManager().SetTimer(StainDryTimer, FTimerDelegate::CreateWeakLambda(this, [this]() { RefreshStains(); }), 2.f, true);
+	}
 }
 
 void AAedirCatalogItem::ClearWornLook()

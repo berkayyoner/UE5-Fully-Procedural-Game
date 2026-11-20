@@ -2915,13 +2915,16 @@ void UAedirCombatComponent::UpdateLeadFoot()
 	if (const UAedirFistArms* Fists = Creature->FindComponentByClass<UAedirFistArms>(); Fists && FMath::Max(Fists->GetRaised(EAedirHand::Left), Fists->GetRaised(EAedirHand::Right)) > 0.f)
 	{
 		const float Across = static_cast<float>(Fists->GetMouseAim().X);
-		if (Across > Fists->LeadFootSwitchAcross)
+		const int32 Side = Across > Fists->LeadFootSwitchAcross ? 1 : Across < -Fists->LeadFootSwitchAcross ? -1 : 0;
+		const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
+		if (Side != LeadSwitchSide)
 		{
-			bLeadFootRight = false;
+			LeadSwitchSide = Side;
+			LeadSwitchSince = Now;
 		}
-		else if (Across < -Fists->LeadFootSwitchAcross)
+		if (Side != 0 && Now - LeadSwitchSince >= Fists->LeadFootSwitchHoldSeconds)
 		{
-			bLeadFootRight = true;
+			bLeadFootRight = Side < 0;
 		}
 		return;
 	}

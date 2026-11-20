@@ -4,6 +4,7 @@
 #include "GameFramework/Actor.h"
 #include "Combat/AedirCombatTypes.h"
 #include "Items/AedirItemTypes.h"
+#include "Wounds/AedirWoundTypes.h"
 #include "AedirItemActor.generated.h"
 
 class AAedirCreature;
@@ -141,6 +142,23 @@ public:
 	// Where a worn piece sits on its bone and how it is turned there.
 	FTransform WornTransform = FTransform::Identity;
 
+	// Blood soaked into the item, kept with it wherever it goes until it is washed out (clothes only).
+	UPROPERTY(ReplicatedUsing=OnRep_Stains)
+	TArray<FAedirBloodStain> Stains;
+
+	// Server only. Blood from a wound soaks in at Where (the wearer's bind pose): the stain of that wound grows towards
+	// Amount and is fresh again; a stain from another wound close by is soaked into instead of starting a new one.
+	void SoakBlood(const FVector& Where, float Radius, float Amount, uint8 WoundId, float Now);
+
+	// Server only. Washes this share of every stain out; what is left is too faint to keep goes.
+	void WashBlood(float Share);
+
+	// Whether it takes blood: cloth does, armour of metal or a weapon does not.
+	bool TakesBlood() const;
+
+	// The stains are drawn anew (they changed, or they dry).
+	virtual void RefreshStains() {}
+
 	// Set on the server while the item is worn. Worn items are not pickable.
 	UPROPERTY(ReplicatedUsing=OnRep_Worn, BlueprintReadOnly, Category="Aedir|Item")
 	bool bWorn = false;
@@ -264,6 +282,9 @@ public:
 private:
 	UFUNCTION()
 	void OnRep_Holder();
+
+	UFUNCTION()
+	void OnRep_Stains();
 
 	UFUNCTION()
 	void OnRep_Stowed();
