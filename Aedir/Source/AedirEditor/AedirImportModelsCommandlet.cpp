@@ -35,7 +35,8 @@ namespace
 	const TCHAR* const WornBodyPath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Body/SKM_MHC_AedirMan_BodyMesh.SKM_MHC_AedirMan_BodyMesh");
 	const TCHAR* const ImportSkeletonPath =TEXT("/Game/Characters/Mannequins/Meshes/SK_Mannequin.SK_Mannequin");
 	const TCHAR* const ImportScannedPath = TEXT("/Game/Aedir/Materials/M_AedirScanned.M_AedirScanned");
-	const TCHAR* const ImportBodyPhysicsPath = TEXT("/Game/Characters/Mannequins/Rigs/PA_Mannequin.PA_Mannequin");
+	// What the cloth collides with: the bodies of the man the creatures wear, not the mannequin's, which lie off his skin.
+	const TCHAR* const ImportBodyPhysicsPath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Body/PHYS_MHC_AedirMan.PHYS_MHC_AedirMan");
 
 	// A worn piece's first section is made cloth: held at the collar, and let hang free of its skinned place the more the
 	// further down the body and out along the sleeves, the body's capsules keeping it off the body.
@@ -175,6 +176,10 @@ namespace
 					Chaos->AnimDriveStiffness = { AnimDrive, AnimDrive };
 					Chaos->AnimDriveDamping = { AnimDrive * 2.f, AnimDrive * 2.f };
 					Chaos->LinearVelocityScale = FVector(0.6f);
+					// It lies about a centimetre off the skin: kept just off the body's shapes, and those checked along the
+					// way each step, so a fast swing of a limb does not pass through it.
+					Chaos->CollisionThickness = 0.5f;
+					Chaos->bUseCCD = true;
 					UE_LOG(LogAedirEditor, Display, TEXT("Cloth config %s: bending %.2f"), *Config.Key.ToString(), BendStiffness);
 				}
 			}
@@ -288,13 +293,13 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 		return bDone ? 0 : 1;
 	}
 
-	// -Cloth=<skeletal mesh path> [-Pin=146 -TorsoFrom=145 -Base=1.5 -Torso=9 -SleeveFrom=16 -Sleeve=9 -Bend=0.3 -Drive=0.12]: its first
+	// -Cloth=<skeletal mesh path> [-Pin=146 -TorsoFrom=120 -Base=0 -Torso=5 -SleeveFrom=26 -Sleeve=3 -Bend=0.3 -Drive=0.4]: its first
 	// section made cloth, held at the collar above Pin, Base cm free over the chest, to Torso cm at the hem from TorsoFrom
 	// down, and to Sleeve cm at the cuffs from SleeveFrom across; Bend is how stiffly it bends.
 	FString ClothMesh;
 	if (FParse::Value(*Params, TEXT("Cloth="), ClothMesh))
 	{
-		float Pin = 146.f, TorsoFrom = 120.f, Base = 0.f, Torso = 9.f, SleeveFrom = 26.f, Sleeve = 4.f, Bend = 0.3f, Drive = 0.25f, BackRadius = 30.f, BackDistance = 0.5f;
+		float Pin = 146.f, TorsoFrom = 120.f, Base = 0.f, Torso = 5.f, SleeveFrom = 26.f, Sleeve = 3.f, Bend = 0.3f, Drive = 0.4f, BackRadius = 30.f, BackDistance = 0.5f;
 		FParse::Value(*Params, TEXT("Pin="), Pin);
 		FParse::Value(*Params, TEXT("TorsoFrom="), TorsoFrom);
 		FParse::Value(*Params, TEXT("Base="), Base);
@@ -311,7 +316,7 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 	FString Source;
 	if (!FParse::Value(*Params, TEXT("Source="), Source))
 	{
-		UE_LOG(LogAedirEditor, Error, TEXT("Usage: -run=AedirImportModels -Source=<folder>"));
+		UE_LOG(LogAedirEditor, Error, TEXT("Usage: -run=AedirImportModels -Source=<folder> [-Skeleton=<skeleton the worn pieces are skinned to>]"));
 		return 1;
 	}
 
@@ -368,7 +373,10 @@ int32 UAedirImportModelsCommandlet::Main(const FString& Params)
 		Options->bImportMesh = true;
 		if (bWorn)
 		{
-			Options->Skeleton = LoadObject<USkeleton>(nullptr, ImportSkeletonPath);
+			// A piece fitted to the man (with the corrective bones his skin follows) goes on his skeleton.
+			FString SkeletonPath = ImportSkeletonPath;
+			FParse::Value(*Params, TEXT("Skeleton="), SkeletonPath);
+			Options->Skeleton = LoadObject<USkeleton>(nullptr, *SkeletonPath);
 			Options->bCreatePhysicsAsset = false;
 			Options->SkeletalMeshImportData->bImportMeshesInBoneHierarchy = false;
 		}

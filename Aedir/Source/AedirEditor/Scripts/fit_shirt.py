@@ -11,7 +11,7 @@
 #   skin over the arms, shoulders, back of the neck and upper back, where a shirt sits close; the chest and belly in
 #   front keep their own fall;
 # - weights come from the skin right under it (trunk skin for the trunk, arm skin for the sleeves, both over the
-#   tops of the shoulders);
+#   shoulders and behind the armpits);
 # - the cloth is simulated on a sparser copy (the ClothProxy section) that the garment drawn follows.
 import bpy, sys, json
 from mathutils import Vector, Matrix
@@ -23,20 +23,24 @@ EXTRA = argv[5:]
 
 CLEARANCE = 0.6          # cm the body keeps inside the shirt
 FIT_SHARE = 0.7          # share of the chest's bands the widening fits as it is
-SHOW_THROUGH_ROOM = 1.2  # cm the cloth stands off the skin at the least
-HIP_ROOM = 2.0           # cm more of it round the hips
+SHOW_THROUGH_ROOM = 0.9  # cm the cloth stands off the skin at the least
+HIP_ROOM = 1.2           # cm more of it round the hips
 PROXY_RATIO = 0.3        # share of the points the simulated copy keeps
 SHOULDER_SCALE = 0.92    # how much wider the shoulders are made than the shirt's own
 COLLAR_SCALE = 0.88      # and the collar, drawn in round the neck
 SLEEVE_SCALE = 0.84      # how much of its width the sleeve keeps round the arm
 # Laid onto the body: over these parts, where the shirt stands off the skin by more than this (cm), it is drawn in onto
 # it, the pull spread over the neighbours so the folds keep their shape. The chest and belly in front keep their own fall.
-SLEEVE_GAP = 2.2
-SHOULDER_GAP = 1.4
-UPPER_BACK_GAP = 1.6
-NECK_BACK_GAP = 1.0
-SIDE_ROOM = 1.6          # cm more room down the sides of the chest under the arms, which the arms press into
+SLEEVE_GAP = 1.4
+SHOULDER_GAP = 1.0
+UPPER_BACK_GAP = 1.1
+LOWER_BACK_GAP = 1.8
+SIDE_GAP = 1.3
+NECK_BACK_GAP = 0.8
+SIDE_ROOM = 1.0          # cm more room down the sides of the chest under the arms, which the arms press into
 CONFORM_ROUNDS = 40
+CURTAIN_TOP = 136.0       # height (cm) of the chest the front hangs straight from
+CURTAIN_HALF_WIDTH = 15.0 # how far across the front hangs so, fading to the body's own shape at the sides
 CONFORM_SPREAD = 4       # how many neighbours over the pull is spread each round
 SMOOTH_STEPS = 24        # the cloth is smoothed this much once laid on, so the body's own shapes (the muscles, the
 SMOOTH_FLOOR = 0.8       # joints of the mannequin) do not show in it: fully where it was drawn in, this much elsewhere
@@ -201,8 +205,11 @@ def target_gap(i, v):
     back = smooth(v.y - cy_body, -4.0, 2.0)
     upper_back = back * smooth(v.z, 108.0, 118.0)
     shoulder = smooth(v.z, 128.0, 136.0)
+    lower_back = back * (1.0 - smooth(v.z, 108.0, 118.0)) * smooth(v.z, 100.0, 106.0)
     neck_back = back * smooth(v.z, neck.z - 10.0, neck.z - 4.0)
-    pulls = ((s, SLEEVE_GAP), (shoulder * (1.0 - s), SHOULDER_GAP), (upper_back * (1.0 - s), UPPER_BACK_GAP), (neck_back, NECK_BACK_GAP))
+    side = smooth(abs(v.x), 12.0, 16.0) * (1.0 - back)
+    pulls = ((s, SLEEVE_GAP), (shoulder * (1.0 - s), SHOULDER_GAP), (upper_back * (1.0 - s), UPPER_BACK_GAP),
+             (lower_back * (1.0 - s), LOWER_BACK_GAP), (side * (1.0 - s), SIDE_GAP), (neck_back, NECK_BACK_GAP))
     w = max(p for p, _ in pulls)
     if w <= 0.0:
         return None, 0.0
@@ -264,6 +271,36 @@ for _ in range(SMOOTH_STEPS):
     for k in (0.5, -0.53):
         avg = [sum((out[j] for j in nbrs[i]), Vector()) / len(nbrs[i]) if nbrs[i] else out[i] for i in range(len(out))]
         out = [out[i] + (avg[i] - out[i]) * (k * pull_w[i]) for i in range(len(out))]
+# From the chest down the front hangs straight, as linen does off a man's chest, instead of following the chest's shape
+# in under it: no point of the front lies further in than the cloth above it in its own column, up to the top of the
+# chest. Toward the sides it keeps to the body.
+def hang_front():
+    front = [i for i, v in enumerate(out) if sleeve_share[i] < 0.5 and v.y < cy_body and v.z < CURTAIN_TOP + 4.0]
+    cols = {}
+    for i in front:
+        cols.setdefault(int(out[i].x // 2), []).append(i)
+    moved = 0
+    new = list(out)
+    for i in front:
+        v = out[i]
+        if v.z >= CURTAIN_TOP:
+            continue
+        w = (1.0 - smooth(abs(v.x), CURTAIN_HALF_WIDTH - 4.0, CURTAIN_HALF_WIDTH)) * (1.0 - sleeve_share[i])
+        if w <= 0.0:
+            continue
+        c = int(v.x // 2)
+        most = v.y
+        for cc in (c - 1, c, c + 1):
+            for j in cols.get(cc, ()):
+                u = out[j]
+                if v.z < u.z <= CURTAIN_TOP and abs(u.x - v.x) < 2.5:
+                    most = min(most, u.y)
+        if most < v.y:
+            new[i] = Vector((v.x, v.y + (most - v.y) * w, v.z))
+            moved += 1
+    out[:] = new
+    print("[fit] %d points of the front hung straight" % moved)
+hang_front()
 lay_on(CONFORM_ROUNDS // 2)
 # The last few still in are set out exactly.
 for _ in range(3):
@@ -287,7 +324,6 @@ FINGERS = HANDS - {i for i, n in enumerate(names) if n.startswith("hand")}
 def surface_of(allowed):
     keep = [t for t in tris if any(top[k] in allowed for k in t) and not any(top[k] in FINGERS for k in t)]
     return BVHTree.FromPolygons(verts, keep, all_triangles=True), keep
-surf_torso = surface_of(TORSO)
 surf_arm = surface_of(ARMSKIN)
 surf_all = surface_of(TORSO | ARMSKIN)
 def weigh(v, surf):
@@ -350,14 +386,9 @@ me.materials[0].name = "MedievalShirt"
 groups = {}
 for i, v in enumerate(out):
     s = sleeve_share[i]
-    # Over the tops of the shoulders the skin under it may be the arm's (the deltoid); down the sides it is the trunk's.
-    shoulder = smooth(v.z, 128.0, 138.0)
-    wt = {}
-    if s < 0.999:
-        low = weigh(v, surf_torso)
-        high = weigh(v, surf_all) if shoulder > 0.0 else {}
-        for b in set(low) | set(high):
-            wt[b] = low.get(b, 0.0) * (1.0 - shoulder) + high.get(b, 0.0) * shoulder
+    # The trunk of the shirt follows whatever skin lies right under it: the trunk's, or over the shoulders and behind the
+    # armpits the arm's (the deltoid, the back of the arm), which carries the cloth there with the arm.
+    wt = weigh(v, surf_all) if s < 0.999 else {}
     wa = weigh(v, surf_arm) if s > 0.001 else {}
     mix = {}
     for b, w in wt.items():
