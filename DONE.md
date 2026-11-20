@@ -617,3 +617,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The trees bend the same way in the wind: each takes the wind worked out for the way it faces; the grass, the trees, the rain meshes and the rain effect all blow one way.
 - The world no longer goes dark for a moment as rain sets in: the sky light's brightness is set without the light being rebuilt, in small steps, and the rain and snow are made ready from the start instead of on the first rainy frame.
 - Blood on the skin is brighter and sharp-edged; bruises are larger, darker and purple (the material read its three channels mixed together, so a bruise came out red).
+- The longer hair's files (Content/Grooms/SC_Hairstyle_Male_11, its groom and its binding to the player's face) and the blood skin material (M_AedirBloodSkin, as blood_look.py sets it) are in git.
