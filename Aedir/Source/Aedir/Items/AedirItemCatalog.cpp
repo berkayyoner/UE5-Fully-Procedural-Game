@@ -77,6 +77,7 @@ namespace
 		Definitions.Add(CatalogMakeArmor(TEXT("Bracers"), TEXT("Bracers"), 1.2f, EAedirBodyZone::Arm, 0.30f, TEXT("lowerarm_l"), CatalogLeather, FVector(0.10, 0.10, 0.24)));
 		Definitions.Add(CatalogMakeArmor(TEXT("LinenShirt"), TEXT("Linen Shirt"), 0.4f, EAedirBodyZone::Torso, 0.05f, TEXT("spine_03"), FLinearColor(0.05f, 0.05f, 0.05f), FVector(0.30, 0.40, 0.06)));
 		Definitions.Add(CatalogMakeArmor(TEXT("LinenShirtWhite"), TEXT("White Linen Shirt"), 0.4f, EAedirBodyZone::Torso, 0.05f, TEXT("spine_03"), FLinearColor(0.80f, 0.77f, 0.70f), FVector(0.30, 0.40, 0.06)));
+		Definitions.Add(CatalogMakeArmor(TEXT("LeatherShoes"), TEXT("Leather Shoes"), 0.8f, EAedirBodyZone::Leg, 0.05f, TEXT("foot_l"), CatalogLeather, FVector(0.12, 0.28, 0.10)));
 		Definitions.Add(CatalogMakeArmor(TEXT("IronGreaves"), TEXT("Iron Greaves"), 3.5f, EAedirBodyZone::Leg, 0.45f, TEXT("thigh_l"), CatalogIron, FVector(0.13, 0.13, 0.42)));
 
 		// Miscellaneous items.
@@ -183,6 +184,8 @@ namespace
 		// The lace-up linen shirt, its hem and the ends of its sleeves loose cloth; one model, a colour for each.
 		SetWorn(TEXT("LinenShirt"), TEXT("/Game/Megascans/3D_Assets/MedievalShirt/SK_MedievalShirt.SK_MedievalShirt"));
 		SetWorn(TEXT("LinenShirtWhite"), TEXT("/Game/Megascans/3D_Assets/MedievalShirt/SK_MedievalShirt.SK_MedievalShirt"));
+		// Old leather shoes, low over the ankle with a turned-down cuff.
+		SetWorn(TEXT("LeatherShoes"), TEXT("/Game/Megascans/3D_Assets/MedievalShoes/SK_MedievalShoes.SK_MedievalShoes"));
 		for (FAedirItemDef& Item : Definitions)
 		{
 			if (Item.Id == FName(TEXT("LinenShirtWhite")))
@@ -388,6 +391,7 @@ namespace
 			SetArmour(Shirt, EAedirArmorMaterial::Soft, { TEXT("spine_01"), TEXT("spine_02"), TEXT("spine_03"), TEXT("spine_04"), TEXT("spine_05"), TEXT("clavicle_l"), TEXT("clavicle_r"), TEXT("upperarm_l"), TEXT("upperarm_r"), TEXT("lowerarm_l"), TEXT("lowerarm_r") });
 		}
 		SetArmour(TEXT("IronGreaves"), EAedirArmorMaterial::Plate, { TEXT("calf_l"), TEXT("calf_r") });
+		SetArmour(TEXT("LeatherShoes"), EAedirArmorMaterial::Soft, { TEXT("foot_l"), TEXT("foot_r"), TEXT("ball_l"), TEXT("ball_r") });
 		SetArmour(TEXT("RustyShoulders"), EAedirArmorMaterial::Plate, { TEXT("clavicle_l"), TEXT("clavicle_r"), TEXT("upperarm_l"), TEXT("upperarm_r") });
 		SetArmour(TEXT("RustyIronShield"), EAedirArmorMaterial::Plate, { TEXT("lowerarm_l"), TEXT("hand_l") });
 		// Any other armour covers the bones of its own part of the body.

@@ -754,10 +754,10 @@ void AAedirHUD::DrawPrompt(const AAedirCreature* Creature)
 	{
 		const float Scale = AedirUIStyle::ScaleForHeight(static_cast<float>(Canvas->SizeY));
 		const FSlateFontInfo Font = AedirUIStyle::RegularFont(HudPromptFontSize * 1.3f * Scale, 40);
-		const FString Hint = BalanceComponent->bHoistGetUp ? TEXT("Hold W A S D   Haul yourself up, towards the keys")
-			: BalanceComponent->GetLyingStyle() == EAedirGetUpStyle::FromFront
-			? TEXT("Hold W A S D   Push up on hands and knees")
-			: TEXT("Hold W A S D   Sit up and stand");
+		// The key towards the feet: the camera comes round to look along the body, so S face down and W on the back.
+		const FString Hint = BalanceComponent->GetLyingStyle() == EAedirGetUpStyle::FromFront
+			? TEXT("Hold S (towards your feet)   Push up onto hands and knees")
+			: TEXT("Hold W (towards your feet)   Sit up and stand");
 		AedirUIStyle::DrawText(*Canvas, Hint, Font, FVector2f(static_cast<float>(Canvas->SizeX) * 0.5f, static_cast<float>(Canvas->SizeY) * 0.72f), AedirUIStyle::Ivory, EAedirTextAlign::Center, 1.f);
 	}
 

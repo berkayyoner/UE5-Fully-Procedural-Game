@@ -1,4 +1,5 @@
 #include "Items/AedirCatalogItem.h"
+#include "Aedir.h"
 #include "EngineUtils.h"
 #include "Game/AedirClasses.h"
 
@@ -651,13 +652,15 @@ bool AAedirCatalogItem::BuildLaidArmour(const FAedirItemDef& Def)
 	TArray<FName> Pieces = { Def.ArmorAttachBone };
 
 	// The body faces +Y in the model and stands along +Z: laid on its back, its front looks up and its head points along
-	// the item's length.
-	const FRotator OnItsBack = FMatrix(FVector(0.f, 1.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(1.f, 0.f, 0.f), FVector::ZeroVector).Rotator();
+	// the item's length. Shoes are set down standing on their soles, as they are worn.
+	const bool bStands = Def.ArmorAttachBone.ToString().StartsWith(TEXT("foot"));
+	const FRotator OnItsBack = bStands ? FRotator::ZeroRotator : FMatrix(FVector(0.f, 1.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(1.f, 0.f, 0.f), FVector::ZeroVector).Rotator();
 	// The body it lies on the ground with is the model's own box, laid down: the whole garment rests on the ground with it,
 	// none of it reaching below (a box sized from the item's worn bulk would leave most of a shirt hanging through the floor).
 	const FBox ModelBox = Model->GetImportedBounds().GetBox();
 	const FBox LaidBox = ModelBox.IsValid ? ModelBox.TransformBy(FTransform(OnItsBack)) : FBox(FVector(-Def.BodyScale * 50.f), FVector(Def.BodyScale * 50.f));
 	BodyScale = FVector::Max(LaidBox.GetSize(), FVector(CatalogLaidMinSizeCm)) / 100.f;
+	UE_LOG(LogAedir, Log, TEXT("[Laid] %s lies on a body of %s cm, the model's box %s to %s"), *Def.Id.ToString(), *(BodyScale * 100.f).ToCompactString(), *ModelBox.Min.ToCompactString(), *ModelBox.Max.ToCompactString());
 	Mesh->SetStaticMesh(GetShapeMesh(EAedirCatalogShape::Cube));
 	Mesh->SetMaterial(0, nullptr);
 	Mesh->SetRelativeScale3D(BodyScale);
