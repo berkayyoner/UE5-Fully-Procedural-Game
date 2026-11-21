@@ -257,22 +257,53 @@ UAedirBalanceComponent::UAedirBalanceComponent()
 		Stage.Seconds = Seconds;
 		return Stage;
 	};
-	// Face down: lying; on the hands and knees, the back flat; sat back towards the heels, upright, as far as the knee joints
-	// of the body's physics fold (115 degrees); up.
+	// Face down: lying; on the hands and knees, the back flat; sat back on the heels, upright; up.
 	FrontGetUpStages = {
 		Step(13.f, 0.f, 0.f, 10.f, 10.f, 0.f, 20.f, 40.f, 1.f, 0.f, 0.f),
 		Step(50.f, 0.f, 0.f, 90.f, 90.f, 0.f, 80.f, 5.f, 1.f, 1.f, 1.1f),
-		Step(38.f, 22.f, 90.f, 75.f, 115.f, 0.f, 10.f, 30.f, 0.f, 1.f, 1.2f),
-		Step(88.f, 22.f, 90.f, 10.f, 10.f, 0.f, 0.f, 10.f, 0.f, 0.f, 1.3f),
+		Step(33.f, 28.f, 90.f, 85.f, 150.f, 0.f, 10.f, 30.f, 0.f, 1.f, 1.2f),
+		Step(88.f, 28.f, 90.f, 10.f, 10.f, 0.f, 0.f, 10.f, 0.f, 0.f, 1.3f),
 	};
 	// On the back: lying; the belly tightened, back and head a little up on the hands, the feet drawn in; crouched over
 	// the feet; up.
 	BackGetUpStages = {
 		Step(12.f, 0.f, 0.f, 10.f, 10.f, 0.f, -10.f, 10.f, 1.f, 0.f, 0.f),
 		Step(14.f, 0.f, 30.f, 75.f, 115.f, 25.f, -30.f, 10.f, 1.f, 1.f, 1.f),
-		Step(42.f, 32.f, 100.f, 110.f, 115.f, 15.f, 30.f, 30.f, 0.f, 1.f, 1.3f),
+		Step(42.f, 32.f, 100.f, 110.f, 130.f, 15.f, 30.f, 30.f, 0.f, 1.f, 1.3f),
 		Step(88.f, 32.f, 90.f, 10.f, 10.f, 0.f, 0.f, 10.f, 0.f, 0.f, 1.3f),
 	};
+}
+
+void UAedirBalanceComponent::WidenKnees()
+{
+	if (!BodyMesh || KneeExtraBendDegrees <= 0.f)
+	{
+		return;
+	}
+	for (FConstraintInstance* Joint : BodyMesh->Constraints)
+	{
+		if (!Joint || !Joint->JointName.ToString().StartsWith(TEXT("calf")))
+		{
+			continue;
+		}
+		// The knee bends about the joint's twist, within a range set off towards the bend. The range is widened by half the
+		// extra and its middle turned that much further into the bend: the straight end stays where it was, so the knee bends
+		// no further backwards, and the bent end goes the whole extra further.
+		// The joints are made again from the asset whenever the body's physics is (going down, among others): widened
+		// already, they are left as they are.
+		const float Half = Joint->GetAngularTwistLimit();
+		const float Shift = KneeExtraBendDegrees * 0.5f;
+		if (KneeAssetTwistHalf > 0.f && Half > KneeAssetTwistHalf + 0.5f)
+		{
+			continue;
+		}
+		KneeAssetTwistHalf = Half;
+		FTransform Frame = Joint->GetRefFrame(EConstraintFrame::Frame1);
+		Frame.SetRotation(Frame.GetRotation() * FQuat(FVector::XAxisVector, FMath::DegreesToRadians(Shift * KneeBendTwistSign)));
+		Joint->SetRefFrame(EConstraintFrame::Frame1, Frame);
+		Joint->SetAngularTwistLimit(Joint->GetAngularTwistMotion(), Half + Shift);
+		UE_LOG(LogAedir, Log, TEXT("[Knee] %s's %s: twist range %.0f either way, now %.0f, turned %.0f further into the bend"), *GetNameSafe(GetOwner()), *Joint->JointName.ToString(), Half, Half + Shift, Shift * KneeBendTwistSign);
+	}
 }
 
 void UAedirBalanceComponent::BeginPlay()
@@ -294,6 +325,7 @@ void UAedirBalanceComponent::BeginPlay()
 
 	BodyMesh->SetAllBodiesBelowSimulatePhysics(PelvisBoneName, true, true);
 	BodyMesh->SetAllBodiesPhysicsBlendWeight(1.f);
+	WidenKnees();
 	MeshRestRelative = BodyMesh->GetRelativeTransform();
 	MeshRelativeAtFall = MeshRestRelative;
 	BodyMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -2732,6 +2764,7 @@ void UAedirBalanceComponent::StartHoist()
 	bHoisting = true;
 	bHoistFinished = false;
 	HoistDrive = 0.f;
+	WidenKnees();
 	HoistDoneFor = 0.f;
 	HoistRestFor = 0.f;
 	HoistSeconds = 0.f;
@@ -2935,7 +2968,13 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 		if (HoistHeldSeconds >= HandsDownAt)
 		{
 			const float Keeping = 1.f - FMath::SmoothStep(HoistTrailFreeCm * Size, FMath::Max(HoistTrailStopCm, HoistTrailFreeCm + 1.f) * Size, HoistTrailLogged);
-			HoistProgress = FMath::Min(HoistProgress + DeltaTime / SegmentSeconds * Strength * GetUpLift * Keeping, Last);
+			const float Next = FMath::Min(HoistProgress + DeltaTime / SegmentSeconds * Strength * GetUpLift * Keeping, Last);
+			// Each step is reached before the next begins: the body comes into it (the hips within HoistStepArriveCm of
+			// where it has them) and only then goes on, or after HoistStepWaitSeconds at most if it cannot come closer.
+			const float StepAt = FMath::FloorToFloat(Next);
+			const bool bCrossing = StepAt > FMath::FloorToFloat(HoistProgress) && StepAt < Last;
+			HoistStepWaited = bCrossing ? HoistStepWaited + DeltaTime : 0.f;
+			HoistProgress = bCrossing && HoistTrailLogged > HoistStepArriveCm * Size && HoistStepWaited < HoistStepWaitSeconds ? StepAt - 0.001f : Next;
 		}
 	}
 	else
@@ -3161,7 +3200,9 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 			const FVector Shin = BodyMesh->GetBoneLocation(FName(FString(TEXT("foot")) + Suffix)) - BodyMesh->GetBoneLocation(FName(FString(TEXT("calf")) + Suffix));
 			return FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(Thigh.GetSafeNormal(), Shin.GetSafeNormal())), -1.f, 1.f)));
 		};
-		UE_LOG(LogAedir, Log, TEXT("[Hoist] %s knees bent %.0f and %.0f deg (the step %.0f)"), *GetNameSafe(GetOwner()), KneeBent(TEXT("_l")), KneeBent(TEXT("_r")), Stage.KneeBend);
+		const FConstraintInstance* LeftKnee = BodyMesh->FindConstraintInstance(TEXT("calf_l"));
+		UE_LOG(LogAedir, Log, TEXT("[Hoist] %s knees bent %.0f and %.0f deg (the step %.0f), the left knee's twist range %.0f, its twist now %.0f"), *GetNameSafe(GetOwner()), KneeBent(TEXT("_l")), KneeBent(TEXT("_r")), Stage.KneeBend,
+			LeftKnee ? LeftKnee->GetAngularTwistLimit() : -1.f, LeftKnee ? FMath::RadiansToDegrees(LeftKnee->GetCurrentTwist()) : 0.f);
 		UE_LOG(LogAedir, Log, TEXT("[Hoist] %s %.2f s held: step %.2f, hips %.0f cm up (wanted %.0f), %.0f cm off the step, rising %.0f cm/s, pull %.2f (lift %.2f, keys %d), chest up %.2f, trunk %.0f deg, hands %.2f (the furthest %.0f cm off), palms down %.2f, %s %.2f (the furthest %.0f cm off)"),
 			*GetNameSafe(GetOwner()), HoistHeldSeconds, HoistProgress, Height, WantedHeight, HoistTrailLogged, HipsSpeed.Z, Pull, GetUpLift, bHeld ? 1 : 0, ChestUp, Stage.TrunkDegrees,
 			Stage.Hands, HandOff, HoistPalmDownLogged, bFront ? TEXT("knees") : TEXT("feet"), Stage.Legs, LegOff);

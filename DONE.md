@@ -630,3 +630,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Things that are not weapons or shields (clothes, helmets, books, food) are taken by the nearest point of their surface and held where the hand closed on them, so a shirt on the ground is easy to pick up.
 - The world through the camera is softer: colours a little faded, less contrast and the shadows lifted out of black (LookSaturation and the rest, aedir.Look 0 to compare).
 - Those fighting the player are small red dots on the compass.
+- The knees fold 40 degrees further than the body's physics asset has them (to about 155, KneeExtraBendDegrees), the straight end kept where it was so they bend no further backwards; getting up off the front the body now sits right back on its heels, upright, before it rises. Each step of getting up is reached before the next begins (the hips within HoistStepArriveCm of it, or after HoistStepWaitSeconds).

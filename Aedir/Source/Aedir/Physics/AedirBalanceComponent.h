@@ -618,6 +618,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistTrailStopCm = 40.f;
 
+	// The hips come within this much of where a step has them before the next step begins (in cm for a 95 cm hip height).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistStepArriveCm = 8.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistStepWaitSeconds = 0.6f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistSpringPerSecondSq = 30.f;
 
@@ -730,6 +737,15 @@ public:
 	FVector GetGetUpLeanLocal() const;
 	// How hard the body still lifts itself getting up, 0 to 1.
 	float GetGetUpLift() const { return GetUpLift; }
+
+	// How much further than the physics asset's knee joints have it (to about 115 degrees) the knees fold, so a body kneeling
+	// can sit right back on its heels; the straight end stays as it is. KneeBendTwistSign is which way of the joint's twist
+	// the bend lies. 0 keeps the asset's.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float KneeExtraBendDegrees = 40.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float KneeBendTwistSign = -1.f;
 
 	// How weak the muscles are at the start of getting up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
@@ -1099,6 +1115,9 @@ private:
 	void StartHoist();
 	void UpdateHoist(float DeltaTime);
 	void StopHoist(const TCHAR* Why);
+	void WidenKnees();
+	// The knee joints' own twist range either way, as the physics asset has it, once read.
+	float KneeAssetTwistHalf = 0.f;
 	// Whether the keys asking the body up are held now (a body nobody plays always holds them), towards its feet.
 	bool IsGetUpKeyHeld() const;
 	const TArray<FAedirGetUpStage>& HoistStages() const;
@@ -1110,6 +1129,7 @@ private:
 	FVector HoistHeadward = FVector::ForwardVector;
 	float HoistGroundZ = 0.f;
 	float HoistTrailLogged = 0.f;
+	float HoistStepWaited = 0.f;
 	bool bHoistFinished = false;
 	float HoistDrive = 0.f;
 	float HoistDoneFor = 0.f;
