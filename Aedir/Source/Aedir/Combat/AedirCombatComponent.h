@@ -227,6 +227,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage", meta=(ClampMin="0"))
 	float FistPushShare = 1.5f;
 
+	// No one blow takes more than this share of a body's health, the head this larger one: a fight is a few good blows, not
+	// one, but a heavy blow to the head can all but end it, and knock the body out (UAedirStatsComponent::TakeHeadBlow).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float BlowMaxHealthShare = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float HeadBlowMaxHealthShare = 0.9f;
+
 	// A blow to the head shakes the senses: the first SensesFreeJoules of what gets through do nothing, each joule past them
 	// takes SensesPerJoule of the hundred.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
@@ -1090,7 +1098,8 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirCreature> Creature;
 
-	UPROPERTY(Transient)
+	// Who it fights; shared with every machine, for the compass of the one it fights.
+	UPROPERTY(Transient, Replicated)
 	TObjectPtr<AAedirCreature> AITarget;
 
 	float GuardAlpha[2] = { 0.f, 0.f };

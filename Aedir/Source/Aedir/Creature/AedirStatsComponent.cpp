@@ -83,6 +83,26 @@ void UAedirStatsComponent::LoseConsciousness(float Amount)
 	}
 }
 
+void UAedirStatsComponent::TakeHeadBlow(float Damage)
+{
+	if (!IsAuthoritative() || bIsDead || bIsDying || MaxHealth <= 0.f)
+	{
+		return;
+	}
+	const float Share = Damage / MaxHealth;
+	if (Share < KnockoutHeadShareMinMax.X)
+	{
+		return;
+	}
+	const float Hardness = FMath::GetRangePct(KnockoutHeadShareMinMax.X, FMath::Max(KnockoutHeadShareMinMax.Y, KnockoutHeadShareMinMax.X + 0.01f), Share);
+	const float Seconds = FMath::Lerp(KnockoutSecondsMinMax.X, KnockoutSecondsMinMax.Y, FMath::Clamp(Hardness, 0.f, 1.f));
+	KnockoutSecondsLeft = FMath::Max(KnockoutSecondsLeft, Seconds);
+	Consciousness = 0.f;
+	ConsciousnessQuietSeconds = 0.f;
+	bKnockedOut = true;
+	UE_LOG(LogAedir, Log, TEXT("[Senses] %s is knocked out by a blow to the head of %.0f%% of its health, for %.0f s."), *GetNameSafe(GetOwner()), Share * 100.f, Seconds);
+}
+
 void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -108,7 +128,20 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	// The senses come back a while after the last blow or the hand leaves the throat, quicker while still standing; one
 	// knocked out comes round once enough of them are back.
 	ConsciousnessQuietSeconds += DeltaTime;
-	if (Consciousness < 100.f && ConsciousnessQuietSeconds >= StatsConsciousnessQuietSeconds)
+	// Knocked out by a blow to the head, nothing comes back until its time is up; then the body wakes.
+	if (KnockoutSecondsLeft > 0.f)
+	{
+		KnockoutSecondsLeft = FMath::Max(KnockoutSecondsLeft - DeltaTime, 0.f);
+		Consciousness = 0.f;
+		if (KnockoutSecondsLeft <= 0.f)
+		{
+			Consciousness = StatsConsciousnessWakeAt;
+			bKnockedOut = false;
+			ConsciousnessQuietSeconds = StatsConsciousnessQuietSeconds;
+			UE_LOG(LogAedir, Log, TEXT("[Senses] %s comes round from the knock to the head."), *GetNameSafe(GetOwner()));
+		}
+	}
+	else if (Consciousness < 100.f && ConsciousnessQuietSeconds >= StatsConsciousnessQuietSeconds)
 	{
 		Consciousness = FMath::Min(Consciousness + DeltaTime * (bKnockedOut ? StatsConsciousnessOutRegen : StatsConsciousnessRegen), 100.f);
 		if (bKnockedOut && Consciousness >= StatsConsciousnessWakeAt)

@@ -75,7 +75,8 @@ private:
 	void DrawPointMarker(const AAedirCreature* Creature);
 	void DrawConsoleSelection(const AAedirCreature* Creature);
 	void DrawNeeds(const UAedirStatsComponent* Stats);
-	void DrawDeathOverlay();
+	// The view gone dark from being knocked senseless or dying (AAedirPlayerCharacter::GetSenseDarkness).
+	void DrawSenseDarkness(float Darkness);
 	void DrawSubtitles(const APawn* Pawn);
 	void DrawFatigue(const UAedirStatsComponent* Stats);
 	float FatigueShown = 0.f;

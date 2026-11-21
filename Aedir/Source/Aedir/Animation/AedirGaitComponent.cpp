@@ -172,7 +172,15 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	if (BalanceComponent && BalanceComponent->IsRagdoll())
 	{
 		ResetForRagdoll();
-		GaitState.LimpStandShare = BalanceComponent->GetHoistShare();
+		FAedirGetUpStage Stage;
+		float Progress = 0.f;
+		const bool bHoisted = BalanceComponent->GetHoistStage(Stage, Progress);
+		GaitState.HoistPoseShare = bHoisted ? BalanceComponent->GetHoistShare() : 0.f;
+		GaitState.HoistHipBend = Stage.HipBend;
+		GaitState.HoistKneeBend = Stage.KneeBend;
+		GaitState.HoistBackBow = Stage.BackBow;
+		GaitState.HoistArmRaise = Stage.ArmRaise;
+		GaitState.HoistElbowBend = Stage.ElbowBend;
 		return;
 	}
 

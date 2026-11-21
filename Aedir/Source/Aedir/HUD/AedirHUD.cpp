@@ -8,6 +8,7 @@
 #include "Settings/AedirSettingsSubsystem.h"
 #include "HUD/AedirMarkerSubsystem.h"
 #include "CanvasTypes.h"
+#include "EngineUtils.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirCreature.h"
@@ -79,8 +80,6 @@ namespace
 	constexpr float HudCompassTaper = 0.2f;
 	constexpr float HudCompassPoleFontSize = 12.f;
 	constexpr float HudCompassLabelFontSize = 9.f;
-	constexpr float HudDeathOverlayAlpha = 0.72f;
-	constexpr float HudDeathFontSize = 46.f;
 	constexpr float HudNotificationLifetime = 4.f;
 	constexpr float HudNotificationFadeIn = 0.3f;
 	constexpr float HudNotificationFadeOut = 0.7f;
@@ -88,6 +87,9 @@ namespace
 	constexpr float HudNotificationSpacing = 42.f;
 	constexpr float HudNotificationFontSize = 16.f;
 	const FLinearColor HudMissionColor(FColor(226, 190, 112));
+	// Those fighting the player, on the compass.
+	const FLinearColor HudFoeColor(FColor(214, 38, 30));
+	constexpr float HudFoeDotRadius = 3.f;
 	// Out of breath the sight closes in from the edges. The middle stays visible even with nothing left.
 	constexpr int32 HudFatigueCells = 56;
 	constexpr float HudFatigueEdgeAlpha = 0.85f;
@@ -300,9 +302,9 @@ void AAedirHUD::DrawHUD()
 	DrawNeeds(Stats);
 	DrawSubtitles(Pawn);
 
-	if (Stats && Stats->IsDead())
+	if (const AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(Pawn))
 	{
-		DrawDeathOverlay();
+		DrawSenseDarkness(Player->GetSenseDarkness());
 	}
 }
 
@@ -497,6 +499,36 @@ void AAedirHUD::DrawCompass(const APawn* Pawn)
 				LabelledRelative = FMath::Abs(Relative);
 				LabelledMarker = &Marker;
 			}
+		}
+	}
+
+	// Every living body fighting the player is a small red dot where it is, at the end of the strip it is nearest to when
+	// out of sight.
+	if (World && Pawn)
+	{
+		for (TActorIterator<AAedirCreature> It(World); It; ++It)
+		{
+			const AAedirCreature* Foe = *It;
+			if (Foe == Pawn || !Foe->Combat || Foe->Combat->GetAITarget() != Pawn || (Foe->Stats && (Foe->Stats->IsDead() || Foe->Stats->IsDying())))
+			{
+				continue;
+			}
+			const FVector Delta = Foe->GetActorLocation() - PawnLocation;
+			const float Relative = HudSignedDegrees(HudNormalizeDegrees(static_cast<float>(FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X)))) - Heading);
+			const bool bSeen = FMath::Abs(Relative) <= HalfFov * 0.92f;
+			const float Position = bSeen ? Relative / HalfFov : (Relative > 0.f ? 0.92f : -0.92f);
+			const FVector2f Spot(Center.X + Position * HalfWidth, Center.Y + HalfHeight * 0.45f);
+			const float Radius = HudFoeDotRadius * Scale;
+			FVector2f Rim[12];
+			FVector2f Dot[12];
+			for (int32 Corner = 0; Corner < 12; ++Corner)
+			{
+				const float Angle = UE_TWO_PI * Corner / 12.f;
+				Rim[Corner] = Spot + FVector2f(FMath::Cos(Angle), FMath::Sin(Angle)) * (Radius + Scale);
+				Dot[Corner] = Spot + FVector2f(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius;
+			}
+			Mesh.AddConvex(Rim, FLinearColor(0.f, 0.f, 0.f, 0.6f));
+			Mesh.AddConvex(Dot, WithAlpha(HudFoeColor, bSeen ? 1.f : HudMarkerClampAlpha));
 		}
 	}
 
@@ -739,7 +771,7 @@ void AAedirHUD::DrawPrompt(const AAedirCreature* Creature)
 		Canvas->K2_DrawLine(Left, Right, AedirGetUpBarThickness * Scale, FLinearColor(0.f, 0.f, 0.f, 0.4f));
 		Canvas->K2_DrawLine(Left, FMath::Lerp(Left, Right, static_cast<double>(Lift)), AedirGetUpBarThickness * Scale, Colour);
 		const FSlateFontInfo Font = AedirUIStyle::RegularFont(HudPromptFontSize * Scale, 40);
-		AedirUIStyle::DrawText(*Canvas, TEXT("Hold W A S D to rise, the way you want to face"), Font, FVector2f(Canvas->SizeX * 0.5f, static_cast<float>(Left.Y) + 14.f * Scale), AedirUIStyle::Ivory, EAedirTextAlign::Center, 1.f);
+		AedirUIStyle::DrawText(*Canvas, TEXT("Hold the key towards your feet to get up"), Font, FVector2f(Canvas->SizeX * 0.5f, static_cast<float>(Left.Y) + 14.f * Scale), AedirUIStyle::Ivory, EAedirTextAlign::Center, 1.f);
 	}
 
 	const AAedirItemActor* Item = Interaction->GetHighlightedItem();
@@ -988,24 +1020,31 @@ void AAedirHUD::DrawConsoleSelection(const AAedirCreature* Creature)
 	Canvas->K2_DrawLine(FVector2D(Least.X, Most.Y), Least, 2.f, Mark);
 }
 
-void AAedirHUD::DrawDeathOverlay()
+void AAedirHUD::DrawSenseDarkness(float Darkness)
 {
 	using namespace AedirUIStyle;
 
-	if (!Canvas || !Canvas->Canvas)
+	if (!Canvas || !Canvas->Canvas || Darkness <= 0.002f)
 	{
 		return;
 	}
-
+	// The sight closing as it does worn out, darker at the edges than in the middle, over the whole of it.
 	const FVector2f Size(static_cast<float>(Canvas->SizeX), static_cast<float>(Canvas->SizeY));
-	const float Scale = ScaleForHeight(Size.Y);
-
+	const auto ColorAt = [&](int32 CellX, int32 CellY)
+	{
+		const FVector2f Offset(CellX * 2.f / HudFatigueCells - 1.f, CellY * 2.f / HudFatigueCells - 1.f);
+		const float Edge = FMath::SmoothStep(0.3f, 1.4f, Offset.Size());
+		return FLinearColor(0.f, 0.f, 0.f, FMath::Clamp(Darkness * FMath::Lerp(0.92f, 1.08f, Edge), 0.f, 1.f));
+	};
 	FAedirUIMesh Mesh(1.f);
-	AddVignette(Mesh, Size, HudDeathOverlayAlpha * 0.8f, 1.f);
-	AddOrnamentRule(Mesh, FVector2f(Size.X * 0.5f, Size.Y * 0.5f + 44.f * Scale), 300.f * Scale, Metal);
+	for (int32 CellY = 0; CellY < HudFatigueCells; ++CellY)
+	{
+		for (int32 CellX = 0; CellX < HudFatigueCells; ++CellX)
+		{
+			const FVector2f Min(Size.X * CellX / HudFatigueCells, Size.Y * CellY / HudFatigueCells);
+			const FVector2f Max(Size.X * (CellX + 1) / HudFatigueCells, Size.Y * (CellY + 1) / HudFatigueCells);
+			Mesh.AddGradientRect(Min, Max, ColorAt(CellX, CellY), ColorAt(CellX + 1, CellY), ColorAt(CellX + 1, CellY + 1), ColorAt(CellX, CellY + 1));
+		}
+	}
 	DrawMesh(*Canvas->Canvas, Mesh);
-
-	const FSlateFontInfo Font = TitleFont(HudDeathFontSize * Scale);
-	const float TextHeight = MeasureText(TEXT("YOU DIED"), Font).Y;
-	AedirUIStyle::DrawText(*Canvas, TEXT("YOU DIED"), Font, FVector2f(Size.X * 0.5f, Size.Y * 0.5f - TextHeight * 0.5f - 8.f * Scale), FLinearColor(FColor(176, 40, 32)), EAedirTextAlign::Center, 1.f);
 }

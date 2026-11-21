@@ -59,6 +59,19 @@ public:
 	bool bKnockedOut = false;
 
 	void LoseConsciousness(float Amount);
+
+	// One blow to the head that takes at least the least of KnockoutHeadShareMinMax of the full health knocks a body that
+	// lives through it senseless, for the least of KnockoutSecondsMinMax at that share up to the most at the most of it,
+	// in proportion between; it comes round only then.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats")
+	FVector2D KnockoutHeadShareMinMax = FVector2D(0.5f, 0.9f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats")
+	FVector2D KnockoutSecondsMinMax = FVector2D(10.f, 60.f);
+
+	void TakeHeadBlow(float Damage);
+	// How long a knock to the head still keeps the body senseless, in seconds.
+	float GetKnockoutSecondsLeft() const { return KnockoutSecondsLeft; }
 	float GetConsciousnessFraction() const { return Consciousness / 100.f; }
 	bool IsKnockedOut() const { return bKnockedOut; }
 
@@ -253,6 +266,7 @@ public:
 private:
 	// Seconds since the senses were last knocked or choked.
 	float ConsciousnessQuietSeconds = 100.f;
+	float KnockoutSecondsLeft = 0.f;
 
 	bool IsAuthoritative() const;
 

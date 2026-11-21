@@ -333,6 +333,17 @@ public:
 	UFUNCTION(Exec)
 	void Knockdown(const FString& Args);
 
+	// HeadBlow <share>: a blow to the head taking that share of the full health. DieNow: the player dies at once. LookInfo:
+	// how the view is graded and how dark and grey it is now.
+	UFUNCTION(Exec)
+	void HeadBlow(const FString& Args);
+
+	UFUNCTION(Exec)
+	void DieNow();
+
+	UFUNCTION(Exec)
+	void LookInfo();
+
 	// Diagnostics: logs gait, balance and reach state for the given number of seconds.
 	UFUNCTION(Exec)
 	void GaitInfo(float Seconds, float Interval);
@@ -473,6 +484,11 @@ public:
 	// The camera behind the head (as Z does), and the camera turned round the body (as moving the mouse with V held does).
 	UFUNCTION(Exec)
 	void HeadCamera();
+
+	// PhotoToggle [real seconds]: the photo camera on or off, as Z; given seconds, it goes off again after that many real
+	// seconds (time all but stands still with it up, so nothing waiting on the game's time would).
+	UFUNCTION(Exec)
+	void PhotoToggle(float RealSeconds);
 
 	// Puts the free camera up and takes this many pictures this many real seconds apart while its time all but stands still.
 	UFUNCTION(Exec)
@@ -767,7 +783,74 @@ public:
 	bool IsDebugBodyEnabled() const { return bDebugBody; }
 	void SetDebugBodyEnabled(bool bEnabled) { bDebugBody = bEnabled; }
 
+	// The look of the world through the camera, softer than the engine's own: colours a little faded (LookSaturation,
+	// LookHighlightSaturation for the bright ones), less contrast, the shadows lifted out of black (LookShadowLift added
+	// to them, a softer film toe, local exposure easing the contrast of the shadows and the highlights), as a phone camera
+	// or a film graded for daylight shows the world.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float LookSaturation = 0.9f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float LookHighlightSaturation = 0.92f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float LookContrast = 0.94f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float LookShadowLift = 0.006f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float LookFilmToe = 0.42f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float LookShadowContrastScale = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float LookHighlightContrastScale = 0.85f;
+
+	// Knocked senseless the view goes dark (to KnockoutDarkness, still faintly seen) and grey over KnockoutFadeSeconds;
+	// coming round it clears over WakeDarkSeconds and its colours come back over WakeColourSeconds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float KnockoutFadeSeconds = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look", meta=(ClampMin="0", ClampMax="1"))
+	float KnockoutDarkness = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float WakeDarkSeconds = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float WakeColourSeconds = 3.f;
+
+	// Dying, time slows to DeathTimeDilation over DeathSlowSeconds (alone only: with others it runs on), the colours go
+	// over DeathGreySeconds, and the view goes dark to DeathDarkness over DeathDarkSeconds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float DeathSlowSeconds = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look", meta=(ClampMin="0.01", ClampMax="1"))
+	float DeathTimeDilation = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float DeathGreySeconds = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look")
+	float DeathDarkSeconds = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Look", meta=(ClampMin="0", ClampMax="1"))
+	float DeathDarkness = 0.97f;
+
+	// How dark the view is from being senseless or dying, 0 to 1, for the HUD to lay over it.
+	float GetSenseDarkness() const { return SenseDarkness; }
+	FString DevLookInfo() const;
+
 private:
+	void ApplyLook();
+	void UpdateSenseView();
+	float SenseDarkness = 0.f;
+	float SenseOutShare = 0.f;
+	float SenseGreyShare = 0.f;
+	float DeathRealSeconds = -1.f;
+
 	void ApplyViewPitchLimits();
 	void HandleViewTogglePressed();
 	void HandleViewToggleReleased();

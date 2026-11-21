@@ -557,8 +557,6 @@ namespace
 
 	// A graze does little of what a weapon can do; the full damage takes a blow with this much energy behind it.
 	constexpr float AedirImpactFullFlatJoules = 60.f;
-	constexpr float AedirImpactMaxHealthShare = 0.25f;
-	constexpr float AedirImpactMaxHealthShareHead = 0.4f;
 	constexpr float AedirAIRestStaminaShare = 0.15f;
 	constexpr float AedirAIFleeCm = 1500.f;
 	constexpr float AedirImpactMaxSpeed = 5000.f;
@@ -905,6 +903,7 @@ void UAedirCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
 
 	DOREPLIFETIME(UAedirCombatComponent, bLeftGuard);
+	DOREPLIFETIME(UAedirCombatComponent, AITarget);
 	DOREPLIFETIME(UAedirCombatComponent, bOffHandFree);
 	DOREPLIFETIME(UAedirCombatComponent, bHalfSwordToggled);
 	DOREPLIFETIME(UAedirCombatComponent, bRightGuard);
@@ -4511,10 +4510,15 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	const float CutShare = Energy * ArmorFactor / CutJoules * FMath::FRandRange(1.f - AedirCutLuck, 1.f + AedirCutLuck);
 	const bool bGlance = bEdged && CutShare < AedirCutGlanceShare;
 	const float DamageShare = bGlance ? AedirGlanceDamageShare : 1.f;
-	// No one blow takes more than a share of a body's health, the head a larger one: a fight is a few good blows, not one.
-	const float MaxShare = Zone == EAedirBodyZone::Head ? AedirImpactMaxHealthShareHead : AedirImpactMaxHealthShare;
+	// No one blow takes more than a share of a body's health, the head a larger one.
+	const float MaxShare = Zone == EAedirBodyZone::Head ? HeadBlowMaxHealthShare : BlowMaxHealthShare;
 	const float Damage = DamageShare * (!Victim->Stats ? RawDamage : FMath::Min(RawDamage, Victim->Stats->GetMaxHealth() * MaxShare));
 	const float AppliedDamage = Victim->ReceiveCreatureDamage(Damage);
+	// A heavy enough blow to the head knocks out a body that lives through it.
+	if (Zone == EAedirBodyZone::Head && Victim->Stats)
+	{
+		Victim->Stats->TakeHeadBlow(AppliedDamage);
+	}
 	// Landing it, the one who plays the striker feels the weight of the hit.
 	if (AAedirPlayerCharacter* Striker = Cast<AAedirPlayerCharacter>(Creature))
 	{
@@ -6243,9 +6247,13 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 		Victim->Stats->ConsumeStamina(FMath::Min(Energy * ArmorFactor * FistBodyStaminaPerJoule, Victim->Stats->GetStamina()));
 	}
 	const float RawDamage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(EAedirDamageType::Blunt, 0.f) * GetZoneDamageMultiplier(Zone) * ArmorFactor * Harm * FistShare + FistDamage * Harm * FistShare;
-	const float MaxShare = Zone == EAedirBodyZone::Head ? AedirImpactMaxHealthShareHead : AedirImpactMaxHealthShare;
+	const float MaxShare = Zone == EAedirBodyZone::Head ? HeadBlowMaxHealthShare : BlowMaxHealthShare;
 	const float Damage = !Victim->Stats ? RawDamage : FMath::Min(RawDamage, Victim->Stats->GetMaxHealth() * MaxShare);
 	const float KickDamage = Victim->ReceiveCreatureDamage(Damage);
+	if (Zone == EAedirBodyZone::Head && Victim->Stats)
+	{
+		Victim->Stats->TakeHeadBlow(KickDamage);
+	}
 	if (AAedirPlayerCharacter* Kicker = Cast<AAedirPlayerCharacter>(Creature))
 	{
 		Kicker->ShakeViewFromStrike(KickDamage);

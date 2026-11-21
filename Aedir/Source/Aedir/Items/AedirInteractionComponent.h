@@ -72,9 +72,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	float PickupRange = 150.f;
 
-	// Distance in cm from the hand bone to the item bounds center that counts as a grab.
+	// Distance in cm from the hand bone to where it reaches for on the item that counts as a grab.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
 	float GrabDistance = 22.f;
+
+	// What is not a weapon (or a shield) has no handle: the hand goes to the nearest point of the thing's surface and takes
+	// hold of it there, as it lies. The hand bone is the wrist, so it stops this far off the surface for the palm to lie on
+	// it.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")
+	float SurfaceGripWristCm = 7.f;
+
+	// Whether the hand takes hold of the item anywhere on its surface rather than by a handle.
+	bool UsesSurfaceGrip(const AAedirItemActor* Item) const;
 
 	// Speed in cm/s of the hand moving toward the reach target.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Interaction")

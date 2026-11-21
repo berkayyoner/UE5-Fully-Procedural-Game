@@ -25,9 +25,26 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	bool bLimpPose = false;
 
-	// Hauled up off the ground by the hips: how far the slack shape is straightened towards standing, 0 to 1.
+	// Hauled up off the ground by the hips: how far the slack shape gives way to the bends of the step of getting up the
+	// body is at, 0 to 1, and those bends in degrees (hips and knees forward, the back bowed forward, the arms raised
+	// forward, the elbows bent).
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
-	float LimpStandShare = 0.f;
+	float HoistPoseShare = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HoistHipBend = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HoistKneeBend = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HoistBackBow = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HoistArmRaise = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HoistElbowBend = 0.f;
 
 	// Hip offset in cm along the creature up axis, negative = lowered.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")

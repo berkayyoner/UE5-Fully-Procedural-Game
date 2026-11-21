@@ -392,6 +392,35 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		God(Player, Args);
 	}
+	else if (Command == TEXT("HeadBlow"))
+	{
+		// HeadBlow <share>: a blow to the player's head taking that share of its full health, as one in a fight would.
+		const float Share = FCString::Atof(*Args);
+		if (Player->Stats)
+		{
+			const bool bWasGod = Player->Stats->bInvulnerable;
+			Player->Stats->bInvulnerable = false;
+			const float Applied = Player->ReceiveCreatureDamage(Player->Stats->GetMaxHealth() * Share);
+			Player->Stats->bInvulnerable = bWasGod;
+			Player->Stats->TakeHeadBlow(Applied);
+			DevToolsReport(FString::Printf(TEXT("A blow to the head of %.0f, knocked out for %.0f s"), Applied, Player->Stats->GetKnockoutSecondsLeft()));
+		}
+	}
+	else if (Command == TEXT("DieNow"))
+	{
+		// DieNow: the player dies at once.
+		if (Player->Stats)
+		{
+			Player->Stats->bInvulnerable = false;
+			Player->Stats->Die();
+			DevToolsReport(TEXT("The player dies"));
+		}
+	}
+	else if (Command == TEXT("LookInfo"))
+	{
+		// LookInfo: the view's grading now, and how dark and grey being senseless or dying has it.
+		DevToolsReport(Player->DevLookInfo());
+	}
 	else if (Command == TEXT("GiveSkill"))
 	{
 		GiveSkill(Player, Args);

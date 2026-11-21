@@ -77,6 +77,7 @@
 #include "Weather/AedirWeatherManager.h"
 #include "GroomComponent.h"
 #include "NiagaraComponent.h"
+#include "Misc/App.h"
 #include "GroomAsset.h"
 #include "GroomBindingAsset.h"
 
@@ -193,6 +194,7 @@ void AAedirPlayerCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void AAedirPlayerCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyLook();
 
 	// The hair grows on the face it was bound to; on another head (or none) it is left off rather than floating.
 	UGroomAsset* Groom = Cast<UGroomAsset>(HairGroom.TryLoad());
@@ -347,6 +349,89 @@ void AAedirPlayerCharacter::ShakeViewFromStrike(float Damage)
 	}
 }
 
+void AAedirPlayerCharacter::ApplyLook()
+{
+	if (!FollowCamera)
+	{
+		return;
+	}
+	FPostProcessSettings& Look = FollowCamera->PostProcessSettings;
+	Look.bOverride_ColorSaturation = true;
+	Look.ColorSaturation = FVector4(1.f, 1.f, 1.f, LookSaturation);
+	Look.bOverride_ColorSaturationHighlights = true;
+	Look.ColorSaturationHighlights = FVector4(1.f, 1.f, 1.f, LookHighlightSaturation);
+	Look.bOverride_ColorContrast = true;
+	Look.ColorContrast = FVector4(1.f, 1.f, 1.f, LookContrast);
+	Look.bOverride_ColorOffsetShadows = true;
+	Look.ColorOffsetShadows = FVector4(0.f, 0.f, 0.f, LookShadowLift);
+	Look.bOverride_FilmToe = true;
+	Look.FilmToe = LookFilmToe;
+	Look.bOverride_LocalExposureShadowContrastScale = true;
+	Look.LocalExposureShadowContrastScale = LookShadowContrastScale;
+	Look.bOverride_LocalExposureHighlightContrastScale = true;
+	Look.LocalExposureHighlightContrastScale = LookHighlightContrastScale;
+	FollowCamera->PostProcessBlendWeight = 1.f;
+}
+
+static TAutoConsoleVariable<int32> CVarAedirLook(TEXT("aedir.Look"), 1, TEXT("1: the camera's own softer grading of the world (LookSaturation and on); 0: the engine's and the level's alone, to compare."));
+
+FString AAedirPlayerCharacter::DevLookInfo() const
+{
+	const FPostProcessSettings* Look = FollowCamera ? &FollowCamera->PostProcessSettings : nullptr;
+	return FString::Printf(TEXT("[Look] grading %s, saturation %.2f, darkness %.2f, time %.2f, knocked out %d, dead %d"), CVarAedirLook.GetValueOnGameThread() != 0 ? TEXT("on") : TEXT("off"),
+		Look ? Look->ColorSaturation.W : 0.f, SenseDarkness, GetWorld() ? GetWorld()->GetWorldSettings()->TimeDilation : 1.f, Stats && Stats->IsKnockedOut() ? 1 : 0, Stats && Stats->IsDead() ? 1 : 0);
+}
+
+void AAedirPlayerCharacter::UpdateSenseView()
+{
+	// Read in real seconds: dying slows time itself.
+	const float Real = static_cast<float>(FApp::GetDeltaTime());
+	const bool bAlone = GetNetMode() == NM_Standalone;
+	const bool bDead = Stats && Stats->IsDead();
+	float Grey = 0.f;
+	if (bDead)
+	{
+		DeathRealSeconds = DeathRealSeconds < 0.f ? 0.f : DeathRealSeconds + Real;
+		const float Slow = FMath::SmoothStep(0.f, FMath::Max(DeathSlowSeconds, 0.01f), DeathRealSeconds);
+		if (bAlone && !bPhotoCamera)
+		{
+			UGameplayStatics::SetGlobalTimeDilation(this, FMath::Lerp(1.f, DeathTimeDilation, Slow));
+		}
+		Grey = FMath::SmoothStep(0.f, FMath::Max(DeathGreySeconds, 0.01f), DeathRealSeconds);
+		SenseDarkness = DeathDarkness * FMath::SmoothStep(0.f, FMath::Max(DeathDarkSeconds, 0.01f), DeathRealSeconds);
+	}
+	else
+	{
+		// Back from the dead (brought round, or a new body): time runs as it did.
+		if (DeathRealSeconds >= 0.f)
+		{
+			DeathRealSeconds = -1.f;
+			if (bAlone && !bPhotoCamera)
+			{
+				UGameplayStatics::SetGlobalTimeDilation(this, 1.f);
+			}
+		}
+		const bool bOut = Stats && Stats->IsKnockedOut();
+		const float In = Real / FMath::Max(KnockoutFadeSeconds, 0.01f);
+		SenseOutShare = bOut ? FMath::Min(SenseOutShare + In, 1.f) : FMath::Max(SenseOutShare - Real / FMath::Max(WakeDarkSeconds, 0.01f), 0.f);
+		SenseGreyShare = bOut ? FMath::Min(SenseGreyShare + In, 1.f) : FMath::Max(SenseGreyShare - Real / FMath::Max(WakeColourSeconds, 0.01f), 0.f);
+		SenseDarkness = KnockoutDarkness * FMath::SmoothStep(0.f, 1.f, SenseOutShare);
+		Grey = FMath::SmoothStep(0.f, 1.f, SenseGreyShare);
+	}
+	if (FollowCamera)
+	{
+		const bool bGraded = CVarAedirLook.GetValueOnGameThread() != 0;
+		FollowCamera->PostProcessSettings.ColorSaturation = FVector4(1.f, 1.f, 1.f, (bGraded ? LookSaturation : 1.f) * (1.f - Grey));
+		FollowCamera->PostProcessSettings.ColorSaturationHighlights = FVector4(1.f, 1.f, 1.f, (bGraded ? LookHighlightSaturation : 1.f) * (1.f - Grey));
+		FollowCamera->PostProcessSettings.bOverride_ColorSaturationHighlights = bGraded;
+		FollowCamera->PostProcessSettings.bOverride_ColorContrast = bGraded;
+		FollowCamera->PostProcessSettings.bOverride_ColorOffsetShadows = bGraded;
+		FollowCamera->PostProcessSettings.bOverride_FilmToe = bGraded;
+		FollowCamera->PostProcessSettings.bOverride_LocalExposureShadowContrastScale = bGraded;
+		FollowCamera->PostProcessSettings.bOverride_LocalExposureHighlightContrastScale = bGraded;
+	}
+}
+
 void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -355,6 +440,7 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 	{
 		return;
 	}
+	UpdateSenseView();
 
 	if (!IsMenuOpen() && !IsCharacterCreationOpen())
 	{
@@ -923,11 +1009,13 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 				// A fallen or dead body keeps the camera: the pivot follows the pelvis wherever the ragdoll goes.
 				TargetRelative = GetActorTransform().InverseTransformPositionNoScale(PelvisWorld + FVector(0.f, 0.f, CameraRagdollRaiseCm));
 				FollowSpeed = CameraRagdollFollowSpeed;
-				// Down on the ground the view comes round behind the body, looking along it from its back, unless the mouse
-				// is turning it.
+				// Down on the ground the view comes round to look along the body, unless the mouse is turning it: face down
+				// from behind its feet towards its head, on its back from behind its head towards its feet, so the key
+				// that gets it up, the one towards the feet, is S face down and W on the back. Getting up it stays where it is,
+				// for the way of that key not to turn under the player as the body rises.
 				const FVector HeadWorld = BodyMesh->GetBoneLocation(TEXT("head"), EBoneSpaces::WorldSpace);
-				const FVector Along = (HeadWorld - PelvisWorld).GetSafeNormal2D();
-				if (Balance->IsRagdoll() && !Along.IsNearlyZero() && GetController() && LastLookInputSeconds > CameraRagdollFollowAfterSeconds)
+				const FVector Along = (HeadWorld - PelvisWorld).GetSafeNormal2D() * (Balance->GetLyingStyle() == EAedirGetUpStyle::FromBack ? -1.f : 1.f);
+				if (Balance->IsRagdoll() && !Balance->IsHoisting() && !Along.IsNearlyZero() && GetController() && LastLookInputSeconds > CameraRagdollFollowAfterSeconds)
 				{
 					const FRotator Current = GetControlRotation();
 					const FRotator Wanted(CameraRagdollPitch, Along.Rotation().Yaw, 0.f);
@@ -1485,12 +1573,18 @@ void AAedirPlayerCharacter::HandleHeadCameraPressed()
 		// Time all but stopped is not stopped for the solver: it still pushes bodies apart and out of the ground every frame,
 		// and limbs would creep open for as long as the camera is out. The physics is held still altogether instead.
 		GetWorld()->bShouldSimulatePhysics = !bPhotoCamera;
-		// The hair's own simulation is held still too: stepped by time all but stopped, it pulled the strands out long.
+		// The hair's own simulation is held still too: stepped by time all but stopped, it pulled the strands out long. Let
+		// go again, it starts afresh from how the hair hangs: carried on from where it was held, its first step took up all
+		// the head had moved meanwhile at once and flung the strands out long for a moment.
 		if (Hair)
 		{
 			for (int32 Group = 0; Hair->GetNiagaraComponent(Group); ++Group)
 			{
 				Hair->GetNiagaraComponent(Group)->SetPaused(bPhotoCamera);
+			}
+			if (!bPhotoCamera)
+			{
+				Hair->ResetSimulation();
 			}
 		}
 	}
@@ -1771,6 +1865,21 @@ void AAedirPlayerCharacter::Push(float Strength)
 void AAedirPlayerCharacter::Knockdown(const FString& Args)
 {
 	RunDevCommand(TEXT("Knockdown"), Args, true);
+}
+
+void AAedirPlayerCharacter::HeadBlow(const FString& Args)
+{
+	RunDevCommand(TEXT("HeadBlow"), Args, true);
+}
+
+void AAedirPlayerCharacter::DieNow()
+{
+	RunDevCommand(TEXT("DieNow"), FString(), true);
+}
+
+void AAedirPlayerCharacter::LookInfo()
+{
+	RunDevCommand(TEXT("LookInfo"), FString(), true);
 }
 
 void AAedirPlayerCharacter::BoneAxes(const FString& Bones)
@@ -2206,6 +2315,31 @@ void AAedirPlayerCharacter::HandWatch(int32 RightHand, float Seconds)
 void AAedirPlayerCharacter::HeadCamera()
 {
 	HandleHeadCameraPressed();
+}
+
+void AAedirPlayerCharacter::PhotoToggle(float RealSeconds)
+{
+	HandleHeadCameraPressed();
+	if (RealSeconds <= 0.f)
+	{
+		return;
+	}
+	TWeakObjectPtr<AAedirPlayerCharacter> Self(this);
+	const double Until = FPlatformTime::Seconds() + RealSeconds;
+	FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Self, Until](float)
+	{
+		if (!Self.IsValid())
+		{
+			return false;
+		}
+		if (FPlatformTime::Seconds() < Until)
+		{
+			return true;
+		}
+		Self->HandleHeadCameraPressed();
+		UE_LOG(LogAedir, Display, TEXT("[Dev] PhotoToggle: the free camera is put away"));
+		return false;
+	}));
 }
 
 void AAedirPlayerCharacter::PhotoShots(int32 Count, float RealSeconds)

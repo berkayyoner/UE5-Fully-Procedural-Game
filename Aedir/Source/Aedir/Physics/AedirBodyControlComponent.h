@@ -101,7 +101,7 @@ public:
 	float HoistMuscleShare = 0.15f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
-	float HoistLegShare = 0.25f;
+	float HoistLegShare = 0.45f;
 
 	// And for the arms, which push the body up off the ground.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))

@@ -1114,6 +1114,21 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 		return;
 	}
 
+	// Taken by its surface, it is held where the hand closed on it, as it lay.
+	if (UsesSurfaceGrip(Item))
+	{
+		const FVector Took = GetReachTargetWorld(Hand, Item);
+		const double Floor = Creature->GetActorLocation().Z - Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+		UE_LOG(LogAedir, Log, TEXT("[Reach] %s holds %s by its surface %.0f cm above the feet, the wrist %.0f cm off that spot; the item's middle %.0f cm above the feet, %.0f cm across."),
+			*GetNameSafe(Creature), *Item->GetName(), Took.Z - Floor, FVector::Dist(GetHandWorld(Hand), Took), Item->GetBoundsCenterWorld().Z - Floor, Item->GetHoldRadiusCm() * 2.f);
+		Item->AttachToHandInPlace(Creature, Hand);
+		Slot.State = EAedirHandState::Holding;
+		Slot.Item = Item;
+		Slot.ReachElapsed = 0.f;
+		UpdateCarriedWeight();
+		return;
+	}
+
 	if (Item->ItemClass == EAedirItemClass::Object)
 	{
 		// A big object has no handle: one hand closes where it touches, and with the second hand it comes to the middle of the body.
@@ -1405,6 +1420,23 @@ FVector UAedirInteractionComponent::GetReachTargetWorld(EAedirHand Hand, const A
 	}
 
 	const float Side = Hand == EAedirHand::Right ? 1.f : -1.f;
+	// No handle: the nearest point of its surface to the hand, the wrist a palm's breadth off it.
+	if (UsesSurfaceGrip(Item))
+	{
+		const FVector HandAt = GetHandWorld(Hand);
+		FVector Surface;
+		const UPrimitiveComponent* Shape = Item->Mesh.Get();
+		if (!Shape || Shape->GetClosestPointOnCollision(HandAt, Surface) < 0.f)
+		{
+			return Center;
+		}
+		FVector Away = (HandAt - Surface).GetSafeNormal();
+		if (Away.IsNearlyZero())
+		{
+			Away = (HandAt - Center).GetSafeNormal();
+		}
+		return Surface + Away * SurfaceGripWristCm;
+	}
 	if (Item->ItemClass == EAedirItemClass::Object)
 	{
 		// The hand goes to the near surface of the object, or to its far side when the other hand already has it.
@@ -1426,6 +1458,11 @@ FVector UAedirInteractionComponent::GetReachTargetWorld(EAedirHand Hand, const A
 		return Grip;
 	}
 	return Hand == ReachLeadHand ? Grip + Item->GetActorForwardVector() * Item->GripSpanCm : Grip;
+}
+
+bool UAedirInteractionComponent::UsesSurfaceGrip(const AAedirItemActor* Item) const
+{
+	return Item && Item->ItemClass != EAedirItemClass::Weapon && Item->ItemClass != EAedirItemClass::Object && !Item->IsShield();
 }
 
 bool UAedirInteractionComponent::IsHandUseless(EAedirHand Hand) const
