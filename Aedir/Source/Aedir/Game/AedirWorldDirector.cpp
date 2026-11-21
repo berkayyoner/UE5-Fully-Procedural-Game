@@ -371,10 +371,11 @@ void AedirWorldDirector::LayOutNatureMap(UWorld* World)
 	}
 	DirectorLayItem(World, TEXT("IronGreaves"), At(230.f, -700.f) + FVector(0.f, 0.f, 40.f), Flat.Yaw);
 	DirectorLayItem(World, TEXT("LeatherArmor"), At(300.f, -720.f) + FVector(0.f, 0.f, 40.f), Flat.Yaw);
-	// The linen shirts, the dark one and the white one, and the leather shoes, beside the leather armour.
+	// The linen shirts, the dark one and the white one, the trousers and the leather shoes, beside the leather armour.
 	DirectorLayItem(World, TEXT("LinenShirt"), At(360.f, -700.f) + FVector(0.f, 0.f, 40.f), Flat.Yaw);
 	DirectorLayItem(World, TEXT("LinenShirtWhite"), At(410.f, -680.f) + FVector(0.f, 0.f, 40.f), Flat.Yaw);
 	DirectorLayItem(World, TEXT("LeatherShoes"), At(460.f, -660.f) + FVector(0.f, 0.f, 40.f), Flat.Yaw);
+	DirectorLayItem(World, TEXT("BandagedTrousers"), At(520.f, -690.f) + FVector(0.f, 0.f, 40.f), Flat.Yaw);
 	DirectorPlaceProp(World, TEXT("BarrelOnStand"), At(800.f, 520.f), Random.FRandRange(0.f, 360.f));
 	DirectorPlaceProp(World, TEXT("OldWoodenTrough"), At(900.f, 120.f), Flat.Yaw + 75.f);
 	DirectorLayItem(World, TEXT("Bucket"), At(860.f, 30.f) + FVector(0.f, 0.f, 60.f), 0.f);
