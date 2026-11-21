@@ -54,6 +54,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float MouseFieldUpDown = 122.f;
 
+	// Down on the ground but awake, a fist's button held, the mouse still swings that arm, slack as the body lying there:
+	// the hand is sent across and up as seen from the camera, DownSwingReachCm for the mouse's whole travel, at most
+	// DownSwingMaxSpeed (cm/s), taking DownSwingShare of the way to that speed each frame.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Down")
+	float DownSwingReachCm = 50.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Down")
+	float DownSwingMaxSpeed = 300.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Down", meta=(ClampMin="0", ClampMax="1"))
+	float DownSwingShare = 0.3f;
+
 	// The guard: how far before the middle of the shoulders the fists are, how far apart, how high over the shoulders, and the
 	// angle between the two elbows.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
@@ -498,6 +510,7 @@ public:
 
 	// The mouse moved while a button is held (mouse axis units, up positive).
 	void AddMouse(const FVector2D& Delta);
+	void SwingWhileDown(const FVector2D& Mouse, float DeltaTime);
 
 	// A one-handed blade in the right hand with the left hand empty: the right button clicked takes it in both hands or
 	// back in one, held down it lets the left hand go and raises it on its own.

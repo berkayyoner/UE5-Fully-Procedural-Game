@@ -77,7 +77,10 @@
 #include "Weather/AedirWeatherManager.h"
 #include "GroomComponent.h"
 #include "NiagaraComponent.h"
-#include "Misc/App.h"
+#include "Components/AudioComponent.h"
+#include "Sound/SoundWaveProcedural.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
 #include "GroomAsset.h"
 #include "GroomBindingAsset.h"
 
@@ -349,6 +352,136 @@ void AAedirPlayerCharacter::ShakeViewFromStrike(float Damage)
 	}
 }
 
+namespace
+{
+	constexpr int32 HeartSampleRate = 48000;
+	// One beat: the "lub", a low thump falling in pitch, and the "dub" after it, a little higher, softer and shorter.
+	constexpr float HeartBeatSeconds = 0.6f;
+	constexpr float HeartDubAfterSeconds = 0.26f;
+	constexpr float HeartPulseSeconds = 0.35f;
+}
+
+void AAedirPlayerCharacter::BuildHeartbeat()
+{
+	const int32 Count = FMath::RoundToInt(HeartBeatSeconds * HeartSampleRate);
+	HeartBeatPcm.SetNumZeroed(Count * 2);
+	int16* Samples = reinterpret_cast<int16*>(HeartBeatPcm.GetData());
+	double PhaseLub = 0.0;
+	double PhaseDub = 0.0;
+	for (int32 Index = 0; Index < Count; ++Index)
+	{
+		const float T = static_cast<float>(Index) / HeartSampleRate;
+		// The lub: 58 Hz falling to 38, coming up in a few milliseconds and dying away over a twentieth of a second.
+		const float LubPitch = FMath::Lerp(58.f, 38.f, FMath::Clamp(T / 0.14f, 0.f, 1.f));
+		PhaseLub += UE_TWO_PI * LubPitch / HeartSampleRate;
+		const float Lub = (1.f - FMath::Exp(-T / 0.006f)) * FMath::Exp(-T / 0.05f) * FMath::Sin(static_cast<float>(PhaseLub));
+		// The dub, 70 Hz falling to 48.
+		const float U = T - HeartDubAfterSeconds;
+		float Dub = 0.f;
+		if (U > 0.f)
+		{
+			const float DubPitch = FMath::Lerp(70.f, 48.f, FMath::Clamp(U / 0.11f, 0.f, 1.f));
+			PhaseDub += UE_TWO_PI * DubPitch / HeartSampleRate;
+			Dub = 0.7f * (1.f - FMath::Exp(-U / 0.005f)) * FMath::Exp(-U / 0.038f) * FMath::Sin(static_cast<float>(PhaseDub));
+		}
+		// Faded out at the very end, so beats laid one after another meet without a click.
+		const float Tail = FMath::Clamp((HeartBeatSeconds - T) / 0.02f, 0.f, 1.f);
+		Samples[Index] = static_cast<int16>(FMath::Clamp((Lub + Dub) * 0.85f * Tail, -1.f, 1.f) * 32767.f);
+	}
+	HeartWave = NewObject<USoundWaveProcedural>(this);
+	HeartWave->SetSampleRate(HeartSampleRate);
+	HeartWave->NumChannels = 1;
+	HeartWave->Duration = INDEFINITELY_LOOPING_DURATION;
+	HeartWave->SoundGroup = SOUNDGROUP_Default;
+	HeartWave->bLooping = false;
+	HeartAudio = NewObject<UAudioComponent>(this);
+	HeartAudio->bAutoActivate = false;
+	HeartAudio->bAllowSpatialization = false;
+	HeartAudio->bIsUISound = true;
+	HeartAudio->SetSound(HeartWave);
+	HeartAudio->RegisterComponent();
+}
+
+float AAedirPlayerCharacter::GetHeartPulse() const
+{
+	const double Since = FPlatformTime::Seconds() - LastHeartBeatSeconds;
+	return Since < 0.0 ? 0.f : FMath::Clamp(1.f - static_cast<float>(Since) / HeartPulseSeconds, 0.f, 1.f);
+}
+
+void AAedirPlayerCharacter::UpdateHurtFeel()
+{
+	const bool bDead = !Stats || Stats->IsDead();
+	const float Health = Stats ? Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f) : 1.f;
+	HurtShare = bDead ? 0.f : FMath::Clamp((HurtFromHealthShare - Health) / FMath::Max(HurtFromHealthShare, 0.01f), 0.f, 1.f);
+	if (!HeartWave && HurtShare > 0.f)
+	{
+		BuildHeartbeat();
+	}
+	const bool bBeat = HurtShare > 0.f && HeartAudio && HeartWave;
+	if (bBeat != bHeartBeating)
+	{
+		bHeartBeating = bBeat;
+		UE_LOG(LogAedir, Log, TEXT("[Heart] %s"), bBeat ? *FString::Printf(TEXT("starts to be heard, health %.0f%%"), Health * 100.f) : bDead ? TEXT("stops: dead") : TEXT("is no longer heard"));
+		if (!bBeat && HeartAudio)
+		{
+			HeartAudio->Stop();
+			if (HeartWave)
+			{
+				HeartWave->ResetAudio();
+			}
+		}
+	}
+	if (!bBeat)
+	{
+		return;
+	}
+	if (!HeartAudio->IsPlaying())
+	{
+		HeartAudio->Play();
+	}
+	const double Now = FPlatformTime::Seconds();
+	HeartAudio->SetVolumeMultiplier(FMath::Lerp(static_cast<float>(HeartVolumeMinMax.X), static_cast<float>(HeartVolumeMinMax.Y), HurtShare));
+	if (Now >= NextHeartBeatSeconds)
+	{
+		const float Bpm = FMath::Lerp(static_cast<float>(HeartBpmMinMax.X), static_cast<float>(HeartBpmMinMax.Y), HurtShare);
+		HeartWave->QueueAudio(HeartBeatPcm.GetData(), HeartBeatPcm.Num());
+		LastHeartBeatSeconds = Now;
+		NextHeartBeatSeconds = Now + 60.0 / FMath::Max(Bpm, 20.f);
+		static const IConsoleVariable* HitLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+		UE_CLOG(HitLog && HitLog->GetInt() != 0, LogAedir, Log, TEXT("[Heart] beat at %.0f a minute, volume %.2f, health %.0f%%"), Bpm, HeartAudio->VolumeMultiplier, Health * 100.f);
+	}
+}
+
+void AAedirPlayerCharacter::HeartWav()
+{
+	if (!HeartBeatPcm.Num())
+	{
+		BuildHeartbeat();
+	}
+	// A plain 16-bit mono wave file.
+	TArray<uint8> File;
+	const auto Add32 = [&File](uint32 V) { File.Append(reinterpret_cast<uint8*>(&V), 4); };
+	const auto Add16 = [&File](uint16 V) { File.Append(reinterpret_cast<uint8*>(&V), 2); };
+	const auto AddTag = [&File](const char* Tag) { File.Append(reinterpret_cast<const uint8*>(Tag), 4); };
+	AddTag("RIFF");
+	Add32(36 + HeartBeatPcm.Num());
+	AddTag("WAVE");
+	AddTag("fmt ");
+	Add32(16);
+	Add16(1);
+	Add16(1);
+	Add32(HeartSampleRate);
+	Add32(HeartSampleRate * 2);
+	Add16(2);
+	Add16(16);
+	AddTag("data");
+	Add32(HeartBeatPcm.Num());
+	File.Append(HeartBeatPcm);
+	const FString Path = FPaths::ProjectSavedDir() / TEXT("Heartbeat.wav");
+	FFileHelper::SaveArrayToFile(File, *Path);
+	UE_LOG(LogAedir, Display, TEXT("[Dev] One heartbeat written to %s"), *FPaths::ConvertRelativePathToFull(Path));
+}
+
 void AAedirPlayerCharacter::ApplyLook()
 {
 	if (!FollowCamera)
@@ -441,6 +574,7 @@ void AAedirPlayerCharacter::Tick(float DeltaSeconds)
 		return;
 	}
 	UpdateSenseView();
+	UpdateHurtFeel();
 
 	if (!IsMenuOpen() && !IsCharacterCreationOpen())
 	{

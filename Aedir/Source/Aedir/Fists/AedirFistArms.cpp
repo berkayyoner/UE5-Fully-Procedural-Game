@@ -1,4 +1,6 @@
 #include "Fists/AedirFistArms.h"
+#include "Aedir.h"
+#include "PhysicsEngine/BodyInstance.h"
 #include "Physics/AedirBalanceComponent.h"
 
 #include "Animation/AedirGaitComponent.h"
@@ -102,6 +104,48 @@ void UAedirFistArms::AddMouse(const FVector2D& Delta)
 	}
 }
 
+void UAedirFistArms::SwingWhileDown(const FVector2D& Mouse, float DeltaTime)
+{
+	ACharacter* Owner = Cast<ACharacter>(GetOwner());
+	const UAedirBalanceComponent* OwnBalance = Owner ? Owner->FindComponentByClass<UAedirBalanceComponent>() : nullptr;
+	USkeletalMeshComponent* Mesh = Owner ? Owner->GetMesh() : nullptr;
+	if (!Mesh || !Owner->HasAuthority() || DeltaTime <= 0.f || Mouse.IsNearlyZero() || !OwnBalance || !OwnBalance->IsRagdoll() || OwnBalance->IsHoisting())
+	{
+		return;
+	}
+	const AAedirCreature* Creature = Cast<AAedirCreature>(Owner);
+	if (Creature && Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying() || Creature->Stats->IsKnockedOut()))
+	{
+		return;
+	}
+	const FRotationMatrix View(Owner->GetControlRotation());
+	const FVector Wanted = ((View.GetUnitAxis(EAxis::Y) * (Mouse.X / FMath::Max(MouseFieldAcross, 1.f)) + View.GetUnitAxis(EAxis::Z) * (Mouse.Y / FMath::Max(MouseFieldUpDown, 1.f))) * (DownSwingReachCm / DeltaTime)).GetClampedToMaxSize(DownSwingMaxSpeed);
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		if (!bHeld[Slot] || bArmUseless[Slot])
+		{
+			continue;
+		}
+		const TCHAR* Suffix = Slot == 0 ? TEXT("_l") : TEXT("_r");
+		FBodyInstance* HandBody = Mesh->GetBodyInstance(FName(FString(TEXT("hand")) + Suffix));
+		if (!HandBody || !HandBody->IsInstanceSimulatingPhysics())
+		{
+			continue;
+		}
+		// The whole arm is swung, the hand most and the upper arm least, as an arm is from the shoulder.
+		const FVector Change = (Wanted - HandBody->GetUnrealWorldVelocity()) * DownSwingShare;
+		for (const TPair<const TCHAR*, float>& Part : { TPair<const TCHAR*, float>(TEXT("hand"), 1.f), TPair<const TCHAR*, float>(TEXT("lowerarm"), 0.8f), TPair<const TCHAR*, float>(TEXT("upperarm"), 0.45f) })
+		{
+			if (FBodyInstance* Piece = Mesh->GetBodyInstance(FName(FString(Part.Key) + Suffix)); Piece && Piece->IsInstanceSimulatingPhysics())
+			{
+				Piece->AddImpulse(Change * Part.Value, true);
+			}
+		}
+		static const IConsoleVariable* HitLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+		UE_CLOG(HitLog && HitLog->GetInt() != 0, LogAedir, Log, TEXT("[DownSwing] %s swings its %s arm lying down: wanted %.0f cm/s, the hand at %.0f cm/s"), *Owner->GetName(), Slot == 0 ? TEXT("left") : TEXT("right"), Wanted.Size(), HandBody->GetUnrealWorldVelocity().Size());
+	}
+}
+
 bool UAedirFistArms::GetArm(EAedirHand Hand, FVector& OutFistWorld, FVector& OutElbowWorld, float& OutAlpha) const
 {
 	const int32 Slot = Index(Hand);
@@ -159,6 +203,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	MouseCarry += PendingMouse;
 	const FVector2D MouseNow = MouseSmoothSeconds > KINDA_SMALL_NUMBER ? MouseCarry * (1.f - FMath::Exp(-DeltaTime / MouseSmoothSeconds)) : MouseCarry;
 	MouseCarry -= MouseNow;
+	if (bBodyDown)
+	{
+		SwingWhileDown(MouseNow, DeltaTime);
+	}
 	if (bSteering && !bDevFrozen)
 	{
 		const float Before = static_cast<float>(MouseAim.X);

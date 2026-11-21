@@ -77,6 +77,8 @@ private:
 	void DrawNeeds(const UAedirStatsComponent* Stats);
 	// The view gone dark from being knocked senseless or dying (AAedirPlayerCharacter::GetSenseDarkness).
 	void DrawSenseDarkness(float Darkness);
+	// The edges of the view gone red as the health runs low (AAedirPlayerCharacter::GetHurtShare).
+	void DrawHurtEdges(float Alpha);
 	void DrawSubtitles(const APawn* Pawn);
 	void DrawFatigue(const UAedirStatsComponent* Stats);
 	float FatigueShown = 0.f;

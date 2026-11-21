@@ -304,6 +304,7 @@ void AAedirHUD::DrawHUD()
 
 	if (const AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(Pawn))
 	{
+		DrawHurtEdges(Player->GetHurtShare() * Player->HurtEdgeMaxAlpha * (0.85f + 0.15f * Player->GetHeartPulse()));
 		DrawSenseDarkness(Player->GetSenseDarkness());
 	}
 }
@@ -1018,6 +1019,35 @@ void AAedirHUD::DrawConsoleSelection(const AAedirCreature* Creature)
 	Canvas->K2_DrawLine(FVector2D(Most.X, Least.Y), Most, 2.f, Mark);
 	Canvas->K2_DrawLine(Most, FVector2D(Least.X, Most.Y), 2.f, Mark);
 	Canvas->K2_DrawLine(FVector2D(Least.X, Most.Y), Least, 2.f, Mark);
+}
+
+void AAedirHUD::DrawHurtEdges(float Alpha)
+{
+	using namespace AedirUIStyle;
+
+	if (!Canvas || !Canvas->Canvas || Alpha <= 0.002f)
+	{
+		return;
+	}
+	// The edges of the view gone red with the blood lost, as the sight closes worn out: clear in the middle, the red coming
+	// in from the edges, deepest in the corners.
+	const FVector2f Size(static_cast<float>(Canvas->SizeX), static_cast<float>(Canvas->SizeY));
+	const auto ColorAt = [&](int32 CellX, int32 CellY)
+	{
+		const FVector2f Offset(CellX * 2.f / HudFatigueCells - 1.f, CellY * 2.f / HudFatigueCells - 1.f);
+		return FLinearColor(0.42f, 0.f, 0.f, Alpha * FMath::SmoothStep(0.55f, 1.35f, Offset.Size()));
+	};
+	FAedirUIMesh Mesh(1.f);
+	for (int32 CellY = 0; CellY < HudFatigueCells; ++CellY)
+	{
+		for (int32 CellX = 0; CellX < HudFatigueCells; ++CellX)
+		{
+			const FVector2f Min(Size.X * CellX / HudFatigueCells, Size.Y * CellY / HudFatigueCells);
+			const FVector2f Max(Size.X * (CellX + 1) / HudFatigueCells, Size.Y * (CellY + 1) / HudFatigueCells);
+			Mesh.AddGradientRect(Min, Max, ColorAt(CellX, CellY), ColorAt(CellX + 1, CellY), ColorAt(CellX + 1, CellY + 1), ColorAt(CellX, CellY + 1));
+		}
+	}
+	DrawMesh(*Canvas->Canvas, Mesh);
 }
 
 void AAedirHUD::DrawSenseDarkness(float Darkness)

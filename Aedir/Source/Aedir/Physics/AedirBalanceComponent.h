@@ -181,9 +181,29 @@ public:
 	// With the weight beyond the feet by more than FallChanceFromCm, or the balance gone below FallBalanceThreshold, the body
 	// may go down at any moment it cannot catch itself: at most FallChancePerSecond, from FallChanceFullCm beyond the feet or
 	// with no balance left, twice that at no health left.
-	// A blow taking at least GetUpKnockLoss of the balance while the body is getting up puts it down again.
+	// A blow taking at least GetUpKnockLoss of the balance while the body is getting up puts it down again; a lesser one sets
+	// it back GetUpBlowStepLoss steps of getting up for all its balance (a tenth of it, a tenth of that).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
-	float GetUpKnockLoss = 0.3f;
+	float GetUpKnockLoss = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpBlowStepLoss = 3.f;
+
+	// Down but awake, the head turns slackly to where the player looks (anyone else, to whom it fights): at DownLookHz, with
+	// DownLookShare of the strength, never more than DownLookMaxDegrees at once.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
+	float DownLookHz = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
+	float DownLookShare = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
+	float DownLookMaxDegrees = 60.f;
+
+	// Getting up, the hands rest this high over the ground (their middle, in cm for a body of size 1): pulled lower, into
+	// it, they shook against it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistHandAboveGroundCm = 8.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
 	float FallChanceFromCm = 10.f;
@@ -200,14 +220,21 @@ public:
 	float FallTipBelowBalance = 0.5f;
 
 	// Going over, the legs give and the hips sink, faster and faster: below SinkFromBalance of its balance they drop with up
-	// to SinkGravityShare of a fall's pull (all of it at no balance left, as the square of the balance lost between); the
-	// body goes down once the hips have sunk FallSinkCm (for a body of size 1). With its balance coming back above
-	// SinkFromBalance they rise again at SinkRiseSpeed (cm/s).
+	// to SinkGravityShare of a fall's pull (all of it at no balance left, as the balance lost between to the power
+	// SinkLossPower); the body goes down once the hips have sunk FallSinkCm (for a body of size 1). Its balance coming back,
+	// the drop is taken hold of at SinkRecoverBrake a second; back above SinkFromBalance the hips rise again at SinkRiseSpeed
+	// (cm/s).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Sink", meta=(ClampMin="0", ClampMax="1"))
 	float SinkFromBalance = 0.6f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Sink", meta=(ClampMin="0", ClampMax="1"))
-	float SinkGravityShare = 0.6f;
+	float SinkGravityShare = 0.9f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Sink", meta=(ClampMin="0.5"))
+	float SinkLossPower = 1.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Sink", meta=(ClampMin="0"))
+	float SinkRecoverBrake = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Sink")
 	float FallSinkCm = 48.f;
@@ -533,7 +560,7 @@ public:
 	// balance it cost off it, and it comes back at GetUpLiftRecoverPerSecond. The rise goes at the pace of the lift, and with
 	// none left the body sinks even with the key held; its muscles hold it with no less than GetUpWeakMuscleShare.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float GetUpBlowLiftLoss = 2.f;
+	float GetUpBlowLiftLoss = 3.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float GetUpLiftRecoverPerSecond = 0.5f;
@@ -652,7 +679,7 @@ public:
 	float HoistHeadSeconds = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistHeadHz = 2.f;
+	float HoistHeadHz = 3.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
 	float HoistHeadLiftShare = 0.35f;
@@ -704,7 +731,7 @@ public:
 	float HoistChestCarryShare = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistUprightHz = 1.6f;
+	float HoistUprightHz = 2.4f;
 
 	// The hips are turned at this pace to face the way the body will stand: the head's way face down, the feet's on the back.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
@@ -714,7 +741,7 @@ public:
 	float HoistDoneHeightShare = 0.72f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
-	float HoistDoneUpright = 0.8f;
+	float HoistDoneUpright = 0.95f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistDoneSpeedCm = 90.f;
@@ -1115,6 +1142,7 @@ private:
 	void StartHoist();
 	void UpdateHoist(float DeltaTime);
 	void StopHoist(const TCHAR* Why);
+	void LookWhileDown();
 	void WidenKnees();
 	// The knee joints' own twist range either way, as the physics asset has it, once read.
 	float KneeAssetTwistHalf = 0.f;

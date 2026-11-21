@@ -659,7 +659,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float Soft = (bRising && !bLimp ? RisingMuscleShare : 1.f) * Blow;
 	const float Trunk = Soft * (bLimp ? 1.f : TrunkMuscleShare);
 	Apply(SpineControls, SpineHz * Body * Trunk, 0.f);
-	Apply(HeadControls, HeadStrength * Body * Trunk, 0.f);
+	Apply(HeadControls, HeadStrength * (bLimp ? FMath::Lerp(Limp, HoistHeadShare, Hauled) : Body) * Trunk, 0.f);
 	Apply(LeftLegControls, LegStrength * LegBody * (bBroken[2] && !bLimp ? BrokenShare : 1.f), 0.f);
 	Apply(RightLegControls, LegStrength * LegBody * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;

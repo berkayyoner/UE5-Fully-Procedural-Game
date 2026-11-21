@@ -103,6 +103,13 @@ public:
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt", meta=(ClampMin="0.5"))
 	float BruiseRadiusMaxCm = 10.f;
 
+	// How far round a cut its blood is smeared on the skin, from the slightest to the worst (in cm), and round a stab.
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
+	FVector2D CutBloodRadiusMinMaxCm = FVector2D(1.5f, 4.5f);
+
+	UPROPERTY(EditAnywhere, Category="Aedir|Wounds", meta=(ClampMin="0.5"))
+	float PunctureBloodRadiusCm = 1.5f;
+
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
 	float BluntBruiseJoules = 90.f;
 

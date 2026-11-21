@@ -103,6 +103,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
 	float HoistLegShare = 0.45f;
 
+	// And for the neck, which holds the head up and turns it the way the body rises.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
+	float HoistHeadShare = 0.6f;
+
 	// And for the arms, which push the body up off the ground.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
 	float HoistArmShare = 0.3f;

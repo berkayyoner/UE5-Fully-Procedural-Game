@@ -326,6 +326,15 @@ void UAedirBalanceComponent::BeginPlay()
 	BodyMesh->SetAllBodiesBelowSimulatePhysics(PelvisBoneName, true, true);
 	BodyMesh->SetAllBodiesPhysicsBlendWeight(1.f);
 	WidenKnees();
+	// Which way the face looks from the head bone: the body faces along the mesh's +Y in its rest pose.
+	if (const USkeletalMesh* FaceModel = BodyMesh->GetSkeletalMeshAsset())
+	{
+		const int32 HeadIndex = FaceModel->GetRefSkeleton().FindBoneIndex(HeadBoneName);
+		if (HeadIndex != INDEX_NONE)
+		{
+			HoistFaceLocal = FAnimationRuntime::GetComponentSpaceTransformRefPose(FaceModel->GetRefSkeleton(), HeadIndex).GetRotation().UnrotateVector(FVector(0.f, 1.f, 0.f)).GetSafeNormal();
+		}
+	}
 	MeshRestRelative = BodyMesh->GetRelativeTransform();
 	MeshRelativeAtFall = MeshRestRelative;
 	BodyMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
@@ -482,6 +491,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	}
 	WatchPartImpacts();
 	UpdateHoist(DeltaTime);
+	LookWhileDown();
 	HoistSettleLeft = FMath::Max(HoistSettleLeft - DeltaTime, 0.f);
 	UpdateGetUp(DeltaTime);
 	UpdatePelvisLean(DeltaTime);
@@ -1132,7 +1142,7 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	// it lets go of it altogether.
 	if (bIsRagdoll && bHoisting)
 	{
-		if (bKnockedDown)
+		if (bKnockedDown || Loss >= GetUpKnockLoss)
 		{
 			GetUpLift = 0.f;
 			StopHoist(TEXT("knocked down"));
@@ -1140,7 +1150,9 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 		else
 		{
 			GetUpLift = FMath::Max(GetUpLift - Loss * GetUpBlowLiftLoss, 0.f);
-			UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is struck being hauled up, losing %.2f of its balance: lift %.2f"), *GetNameSafe(GetOwner()), Loss, GetUpLift);
+			// And it is set back through the steps it had come.
+			HoistProgress = FMath::Max(HoistProgress - Loss * GetUpBlowStepLoss, 0.f);
+			UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is struck being hauled up, losing %.2f of its balance: lift %.2f, back to step %.2f"), *GetNameSafe(GetOwner()), Loss, GetUpLift, HoistProgress);
 			OnHitReaction.Broadcast(Impact.Zone, Impact.EnergyJoules, false, false);
 			return;
 		}
@@ -2281,10 +2293,10 @@ void UAedirBalanceComponent::UpdateBalanceSink(float DeltaTime)
 	{
 		// The legs give: the hips drop the faster the longer they go, the more of the balance is gone. Coming back, the legs
 		// take hold of the drop again.
-		SinkSpeed += 981.f * SinkGravityShare * Lost * Lost * DeltaTime;
+		SinkSpeed += 981.f * SinkGravityShare * FMath::Pow(Lost, SinkLossPower) * DeltaTime;
 		if (Balance > SinkLastBalance)
 		{
-			SinkSpeed *= FMath::Exp(-4.f * DeltaTime);
+			SinkSpeed *= FMath::Exp(-SinkRecoverBrake * DeltaTime);
 		}
 		SinkCm += SinkSpeed * DeltaTime;
 	}
@@ -2822,6 +2834,43 @@ void UAedirBalanceComponent::StartHoist()
 	UE_LOG(LogAedir, Log, TEXT("[GetUp] %s starts hauling itself up by the hips, lying %s."), *GetNameSafe(GetOwner()), LyingStyle == EAedirGetUpStyle::FromFront ? TEXT("face down") : TEXT("on its back"));
 }
 
+void UAedirBalanceComponent::LookWhileDown()
+{
+	if (!bIsRagdoll || bHoisting || !BodyMesh || !CharacterOwner || !IsAuthoritative())
+	{
+		return;
+	}
+	const UAedirStatsComponent* StatsComponent = FindStats();
+	if (StatsComponent && (StatsComponent->IsDead() || StatsComponent->IsDying() || StatsComponent->IsKnockedOut()))
+	{
+		return;
+	}
+	FBodyInstance* HeadBody = BodyMesh->GetBodyInstance(HeadBoneName);
+	if (!HeadBody || !HeadBody->IsInstanceSimulatingPhysics())
+	{
+		return;
+	}
+	// A player looks where the camera does, anyone else at whom it fights.
+	FVector Wanted = FVector::ZeroVector;
+	if (CharacterOwner->IsPlayerControlled())
+	{
+		Wanted = CharacterOwner->GetControlRotation().Vector();
+	}
+	else if (const AAedirCreature* Self = Cast<AAedirCreature>(CharacterOwner); Self && Self->Combat && Self->Combat->GetAITarget())
+	{
+		Wanted = (Self->Combat->GetAITarget()->GetActorLocation() - HeadBody->GetUnrealWorldTransform().GetLocation()).GetSafeNormal();
+	}
+	if (Wanted.IsNearlyZero())
+	{
+		return;
+	}
+	const FVector Face = HeadBody->GetUnrealWorldTransform().GetRotation().RotateVector(HoistFaceLocal);
+	const FVector Axis = FVector::CrossProduct(Face, Wanted);
+	const float Angle = FMath::Atan2(static_cast<float>(Axis.Size()), static_cast<float>(FVector::DotProduct(Face, Wanted)));
+	const float W = UE_TWO_PI * DownLookHz;
+	HeadBody->AddTorqueInRadians((Axis.GetSafeNormal() * (FMath::Min(Angle, FMath::DegreesToRadians(DownLookMaxDegrees)) * W * W) - HeadBody->GetUnrealWorldAngularVelocityInRadians() * (2.f * W)) * DownLookShare, true, true);
+}
+
 void UAedirBalanceComponent::StopHoist(const TCHAR* Why)
 {
 	if (!bHoisting)
@@ -3065,12 +3114,13 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 	Align(TEXT("spine_03"), TEXT("spine_01"), TEXT("spine_05"), 0.8f);
 	const float ChestUp = Align(TEXT("spine_05"), TEXT("spine_01"), TEXT("neck_01"), 1.f);
 
-	// The head is taken up first, the face turned to where the camera looks, the neck the harder the longer the keys are held.
+	// The head is taken up first, the face turned the way the body will stand (face down where the head lay, on the back
+	// the feet's way), the neck the harder the longer the keys are held.
+	const FVector StandFacing = HoistStyle == EAedirGetUpStyle::FromFront ? Headward : -Headward;
 	const float HeadShare = FMath::Max(FMath::Clamp(HoistHeldSeconds / FMath::Max(HoistHeadSeconds, 0.01f), 0.f, 1.f), HoistDrive * Lift);
 	if (FBodyInstance* HeadBody = BodyMesh->GetBodyInstance(HeadBoneName); HeadBody && HeadBody->IsInstanceSimulatingPhysics() && HeadShare > 0.f)
 	{
-		const FVector Looking = CharacterOwner->GetControlRotation().Vector().GetSafeNormal2D();
-		const FVector Wanted = (Looking.IsNearlyZero() ? CharacterOwner->GetActorForwardVector().GetSafeNormal2D() : Looking) * (1.f - HoistHeadLiftShare) + Up * HoistHeadLiftShare;
+		const FVector Wanted = StandFacing * (1.f - HoistHeadLiftShare) + Up * HoistHeadLiftShare;
 		const FVector Face = HeadBody->GetUnrealWorldTransform().GetRotation().RotateVector(HoistFaceLocal);
 		const FVector Axis = FVector::CrossProduct(Face, Wanted.GetSafeNormal());
 		const float Angle = FMath::Atan2(static_cast<float>(Axis.Size()), static_cast<float>(FVector::DotProduct(Face, Wanted.GetSafeNormal())));
@@ -3117,7 +3167,7 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 		{
 			Under = FVector(Spot.X, Spot.Y, Ground.Z);
 		}
-		Spot = Under + FVector(0.f, 0.f, 4.f * Scale);
+		Spot = Under + FVector(0.f, 0.f, HoistHandAboveGroundCm * Scale);
 		const FVector HandAt = HandBody->GetUnrealWorldTransform().GetLocation();
 		HandOff = FMath::Max(HandOff, static_cast<float>(FVector::Dist(Spot, HandAt)));
 		const float Hk = HoistHandSpringPerSecondSq;
@@ -3182,7 +3232,6 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 
 	// And the hips are turned to face the way the body will stand: face down where the head lay, on the back the feet's way.
 	const FVector Facing = FVector::CrossProduct(BodyMesh->GetBoneLocation(TEXT("thigh_r")) - BodyMesh->GetBoneLocation(TEXT("thigh_l")), Up).GetSafeNormal2D();
-	const FVector StandFacing = bFront ? Headward : -Headward;
 	if (!Facing.IsNearlyZero())
 	{
 		const float Off = FMath::Atan2(static_cast<float>(FVector::CrossProduct(Facing, StandFacing).Z), static_cast<float>(FVector::DotProduct(Facing, StandFacing)));

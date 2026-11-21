@@ -841,9 +841,44 @@ public:
 
 	// How dark the view is from being senseless or dying, 0 to 1, for the HUD to lay over it.
 	float GetSenseDarkness() const { return SenseDarkness; }
+
+	// Hurt, below HurtFromHealthShare of its health, the edges of the view go red, up to HurtEdgeMaxAlpha with no health
+	// left, and the heart is heard beating, low and soft: from HeartBpmMinMax's least to its most beats a minute and
+	// HeartVolumeMinMax's least to its most loud as the health goes. Dead, it stops.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Hurt", meta=(ClampMin="0.05", ClampMax="1"))
+	float HurtFromHealthShare = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Hurt", meta=(ClampMin="0", ClampMax="1"))
+	float HurtEdgeMaxAlpha = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Hurt")
+	FVector2D HeartBpmMinMax = FVector2D(64.f, 120.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Hurt")
+	FVector2D HeartVolumeMinMax = FVector2D(0.06f, 0.25f);
+
+	// How hurt the body is for the view, 0 (above HurtFromHealthShare) to 1 (no health left), and how strong the beat the
+	// heart just gave still is, 1 at the beat falling to 0.
+	float GetHurtShare() const { return HurtShare; }
+	float GetHeartPulse() const;
+
+	// HeartWav: writes one beat of the heart to Saved/Heartbeat.wav, to listen to.
+	UFUNCTION(Exec)
+	void HeartWav();
 	FString DevLookInfo() const;
 
 private:
+	void UpdateHurtFeel();
+	void BuildHeartbeat();
+	UPROPERTY(Transient)
+	TObjectPtr<class UAudioComponent> HeartAudio;
+	UPROPERTY(Transient)
+	TObjectPtr<class USoundWaveProcedural> HeartWave;
+	TArray<uint8> HeartBeatPcm;
+	double NextHeartBeatSeconds = 0.0;
+	double LastHeartBeatSeconds = -100.0;
+	float HurtShare = 0.f;
+	bool bHeartBeating = false;
 	void ApplyLook();
 	void UpdateSenseView();
 	float SenseDarkness = 0.f;

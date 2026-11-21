@@ -266,6 +266,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
 	float FistBodyStaminaPerJoule = 0.3f;
 
+	// A weapon's blow to the body takes this much stamina for each joule that gets through.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Damage")
+	float WeaponBodyStaminaPerJoule = 0.1f;
+
+	void TakeWind(AAedirCreature* Victim, EAedirBodyZone Zone, float Stamina);
+
 	// A solid fist knocks a little dust off the body: none below FistDustFromJoules, the most at FistDustFullJoules (the
 	// puff's own look is set on AAedirDustPuff).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Fx")

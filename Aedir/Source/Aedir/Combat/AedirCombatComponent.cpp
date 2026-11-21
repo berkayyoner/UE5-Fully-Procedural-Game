@@ -898,6 +898,17 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	}
 }
 
+void UAedirCombatComponent::TakeWind(AAedirCreature* Victim, EAedirBodyZone Zone, float Stamina)
+{
+	if (Zone != EAedirBodyZone::Torso || !Victim || !Victim->Stats || !IsAuthoritative() || Stamina <= 0.f || Victim->Stats->bInvulnerable)
+	{
+		return;
+	}
+	const float Lost = FMath::Min(Stamina, Victim->Stats->GetStamina());
+	Victim->Stats->ConsumeStamina(Lost);
+	UE_LOG(LogAedir, Log, TEXT("[Wind] %s loses %.0f stamina to a blow to the body, %.0f left"), *Victim->GetName(), Lost, Victim->Stats->GetStamina());
+}
+
 void UAedirCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
 	Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -4484,11 +4495,9 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	if (!HeldItem)
 	{
 		FistShare = Zone == EAedirBodyZone::Head ? FistHeadShare : Zone == EAedirBodyZone::Arm ? FistArmShare : Zone == EAedirBodyZone::Leg ? FistLegShare : FistTrunkShare;
-		if (Zone == EAedirBodyZone::Torso && Victim->Stats && IsAuthoritative())
-		{
-			Victim->Stats->ConsumeStamina(FMath::Min(Energy * ArmorFactor * FistBodyStaminaPerJoule, Victim->Stats->GetStamina()));
-		}
 	}
+	// A blow to the chest or the belly takes the wind, a fist's more than a weapon's.
+	TakeWind(Victim, Zone, Energy * ArmorFactor * (HeldItem ? WeaponBodyStaminaPerJoule : FistBodyStaminaPerJoule));
 	const float FlatDamage = (HeldItem ? HeldItem->GetDamage() : FistDamage) * Harm * FistShare;
 
 	// One blow to the body or a limb leaves the victim alive however hard it was; only the head can be finished at once.
@@ -6242,10 +6251,7 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 	}
 	const float Harm = FMath::SmoothStep(FistNoHarmJoules, FMath::Max(FistFullHarmJoules, FistNoHarmJoules + 1.f), Energy * ArmorFactor);
 	const float FistShare = Zone == EAedirBodyZone::Head ? FistHeadShare : Zone == EAedirBodyZone::Arm ? FistArmShare : Zone == EAedirBodyZone::Leg ? FistLegShare : FistTrunkShare;
-	if (Zone == EAedirBodyZone::Torso && Victim->Stats && IsAuthoritative())
-	{
-		Victim->Stats->ConsumeStamina(FMath::Min(Energy * ArmorFactor * FistBodyStaminaPerJoule, Victim->Stats->GetStamina()));
-	}
+	TakeWind(Victim, Zone, Energy * ArmorFactor * FistBodyStaminaPerJoule);
 	const float RawDamage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(EAedirDamageType::Blunt, 0.f) * GetZoneDamageMultiplier(Zone) * ArmorFactor * Harm * FistShare + FistDamage * Harm * FistShare;
 	const float MaxShare = Zone == EAedirBodyZone::Head ? HeadBlowMaxHealthShare : BlowMaxHealthShare;
 	const float Damage = !Victim->Stats ? RawDamage : FMath::Min(RawDamage, Victim->Stats->GetMaxHealth() * MaxShare);
