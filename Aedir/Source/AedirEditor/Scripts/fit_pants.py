@@ -1,4 +1,4 @@
-# blender -b --python fit_pants.py -- pants.glb body.json out.fbx preview_prefix [skeleton.json]
+# blender -b --python fit_pants.py -- pants.glb body.json out.fbx preview_prefix [skeleton.json|-] [braies]
 # Fits the medieval trousers with bandaged shins (Medieval Pants With Bandage Legs by Paradoox, CC-BY; the converted glb
 # of it, whose mannequin is left out) onto the body the creatures wear (exported with AedirImportModels -ExportBody=) and
 # skins them, keeping their own cut. With skeleton.json only that skeleton's bones are used, the body's extra ones given
@@ -18,7 +18,10 @@ from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
 argv = sys.argv[sys.argv.index("--") + 1:]
 SRC, BODY, OUT, PREVIEW = argv[0], argv[1], argv[2], argv[3]
-SKELETON = argv[4] if len(argv) > 4 else None
+SKELETON = argv[4] if len(argv) > 4 and argv[4] != "-" else None
+# "braies" as the sixth argument cuts the trousers off at the knee into linen braies, worn under all else, and looser.
+BRAIES = len(argv) > 5 and argv[5] == "braies"
+NAME = "MedievalBraies" if BRAIES else "MedievalTrousers"
 
 KEEP_SHARE = 0.35
 WAIST_ABOVE_PELVIS = 10.0 # cm the waistband sits above the pelvis bone, over the top of the body's own underwear
@@ -32,6 +35,12 @@ BLEND_CM = 6.0
 SKIN_ROOM = 0.6
 PUSH_ROUNDS = 16
 BAND = 2.0                # cm half the height of a band measured across
+# Braies: kept from this share of the way from the ankles to the crotch (the knee), and roomier round the legs and seat.
+BRAIES_FROM = 0.5
+if BRAIES:
+    LEG_ROOM, LEG_MOST_WIDENED, HIP_ROOM = 2.4, 1.6, 2.0
+SEAM_WELD_CM = 0.05       # points closer than this at a seam are one
+SEAM_TIE_CM = 0.02        # points still on each other after thinning move together (not layers lying close)
 
 d = json.load(open(BODY))
 names = [b["name"] for b in d["bones"]]
@@ -82,6 +91,32 @@ for v in pants.data.vertices:
     v.co = (world @ v.co) * 100.0
 bpy.context.view_layer.objects.active = pants
 pants.select_set(True)
+# The cloth is cut in pieces whose edges lie on each other at the seams, each with points of its own there: welded first,
+# a seam is thinned as one edge, and the fitting cannot pull its two sides apart. Left apart, the side seams opened in
+# slits the leg showed through.
+import bmesh
+bm = bmesh.new()
+bm.from_mesh(pants.data)
+before = len(bm.verts)
+# Only points facing the same way: the cloth is two-sided, its inside lying on its outside facing the other way, and
+# welded to it the two came out as one surface lit from both sides, in dark blotches.
+bm.normal_update()
+cells = {}
+for v in bm.verts:
+    cells.setdefault(tuple(round(c / SEAM_WELD_CM) for c in v.co), []).append(v)
+merges = []
+for group in cells.values():
+    while len(group) > 1:
+        first = group[0]
+        same = [v for v in group if v is first or v.normal.dot(first.normal) > 0.5]
+        group = [v for v in group if v not in same]
+        if len(same) > 1:
+            merges.append(same)
+for same in merges:
+    bmesh.ops.pointmerge(bm, verts=same, merge_co=sum((v.co for v in same), Vector()) / len(same))
+print("[fit] seams welded: %d points of %d" % (before - len(bm.verts), before))
+bm.to_mesh(pants.data)
+bm.free()
 dec = pants.modifiers.new("Fewer", "DECIMATE")
 dec.ratio = KEEP_SHARE
 bpy.ops.object.modifier_apply(modifier="Fewer")
@@ -118,6 +153,22 @@ def crotch_of(points, lo, hi, half_gap):
 s_crotch = crotch_of(pts, z_bot + 20, z_top - 5, 1.5)
 s_top, s_bot = z_top, z_bot
 print("[fit] trousers: waist %.1f, crotch %.1f, ankles %.1f cm" % (s_top, s_crotch, s_bot))
+# The trousers are measured whole, braies or not.
+MEAS = list(pts)
+if BRAIES:
+    # Measured whole, then cut at the knee: below it there is nothing to fit, and the legs end in an open hem.
+    cut = s_bot + (s_crotch - s_bot) * BRAIES_FROM
+    turned = front_y < 0
+    bm = bmesh.new()
+    bm.from_mesh(me)
+    gone = [v for v in bm.verts if v.co.z < cut]
+    bmesh.ops.delete(bm, geom=gone, context="VERTS")
+    bm.to_mesh(me)
+    bm.free()
+    me.update()
+    pts = [Vector((-v.co.x, -v.co.y, v.co.z)) if turned else v.co.copy() for v in me.vertices]
+    polys = [list(p.vertices) for p in me.polygons]
+    print("[fit] braies: cut at %.1f cm, %d points left" % (cut, len(pts)))
 
 # The body: its waist, crotch and ankles, and the line of each leg through the hip, knee and ankle joints.
 skin_legs = [verts[k] for k in range(len(verts)) if top[k] in COVER]
@@ -157,7 +208,7 @@ for side in (-1.0, 1.0):
     rows = []
     for share in LEG_KEYS:
         zs_ = s_bot + (s_crotch - s_bot) * share
-        sb = wide_band(pts, zs_, lambda p: p.x * side > 0)
+        sb = wide_band(MEAS, zs_, lambda p: p.x * side > 0)
         sc = centre_of(sb, Vector((side * 10.0, 0, zs_)))
         s_in = pct([Vector((p.x - sc.x, p.y - sc.y, 0)).length for p in sb], 0.1)
         bc0 = body_leg_point(side, share)
@@ -208,7 +259,7 @@ hips = []
 for share in HIP_KEYS:
     zs_ = s_crotch + (s_top - s_crotch) * share
     zb = b_crotch + (b_top - b_crotch) * share
-    sc, sx, sy = extent(pts, zs_)
+    sc, sx, sy = extent(MEAS, zs_)
     bc, bx, by = extent(hip_skin, zb)
     kx = max(min((bx + HIP_ROOM) / max(sx, 1.0), 1.4), 0.7)
     ky = max(min((by + HIP_ROOM) / max(sy, 1.0), 1.4), 0.7)
@@ -235,6 +286,29 @@ for p in pts:
         t = (p.z - (s_crotch - BLEND_CM)) / (2 * BLEND_CM)
         t = t * t * (3 - 2 * t)
         out.append(map_leg(p).lerp(map_hips(p), t))
+
+# Points lying together on the cloth as it was cut (two pieces' edges at a seam the weld left) stay together, at their
+# middle: fitted one by one, each by its own leg, they parted.
+cells = {}
+for i, p in enumerate(pts):
+    cells.setdefault((round(p.x / SEAM_TIE_CM), round(p.y / SEAM_TIE_CM), round(p.z / SEAM_TIE_CM)), []).append(i)
+ties = []
+seen = set()
+for i, p in enumerate(pts):
+    if i in seen:
+        continue
+    c = (round(p.x / SEAM_TIE_CM), round(p.y / SEAM_TIE_CM), round(p.z / SEAM_TIE_CM))
+    group = [j for dx in (-1, 0, 1) for dy in (-1, 0, 1) for dz in (-1, 0, 1) for j in cells.get((c[0] + dx, c[1] + dy, c[2] + dz), []) if j not in seen and (pts[j] - p).length < SEAM_TIE_CM]
+    if len(group) > 1:
+        ties.append(group)
+        seen.update(group)
+def tie(points):
+    for group in ties:
+        mid = sum((points[j] for j in group), Vector()) / len(group)
+        for j in group:
+            points[j] = mid.copy()
+tie(out)
+print("[fit] seams tied: %d groups" % len(ties))
 
 # ---- kept off the skin.
 keep = [t for t in tris if any(top[k] in COVER for k in t)]
@@ -270,6 +344,7 @@ for r in range(PUSH_ROUNDS):
             spread[j] += push[i] * 0.5 / max(len(nbrs[i]), 1)
     for i in range(len(out)):
         out[i] = out[i] + spread[i]
+tie(out)
 push, worst, count = through()
 print("[fit] through the skin after pushing: %d points, deepest %.2f cm" % (count, worst))
 
@@ -322,9 +397,9 @@ if me.has_custom_normals:
 for poly in me.polygons:
     poly.use_smooth = True
 me.update()
-pants.name = "MedievalTrousers"
+pants.name = NAME
 if me.materials:
-    me.materials[0].name = "MedievalTrousers"
+    me.materials[0].name = NAME
 groups = {}
 for i, v in enumerate(out):
     best = sorted(weigh(v).items(), key=lambda e: -e[1])[:4]

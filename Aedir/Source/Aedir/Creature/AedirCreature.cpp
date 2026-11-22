@@ -17,6 +17,8 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Graphics/AedirScannedMaterial.h"
+#include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Math/RotationMatrix.h"
@@ -30,6 +32,7 @@ static TAutoConsoleVariable<int32> CVarAedirSelfCollision(TEXT("aedir.SelfCollis
 
 namespace
 {
+	const TCHAR* const AedirBraiesPath = TEXT("/Game/Megascans/3D_Assets/MedievalBraies/SK_MedievalBraies.SK_MedievalBraies");
 	const TCHAR* const AedirManBodyPath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Body/SKM_MHC_AedirMan_BodyMesh.SKM_MHC_AedirMan_BodyMesh");
 	const TCHAR* const AedirManFacePath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Face/SKM_MHC_AedirMan_FaceMesh.SKM_MHC_AedirMan_FaceMesh");
 }
@@ -207,11 +210,40 @@ void AAedirCreature::BeginPlay()
 	BodyMaskBit = IsPlayerControlled() ? 1 : static_cast<uint8>(1 << (1 + NextCreatureBit++ % 5));
 	ApplyBodyMask();
 
+	// The braies, on a body that is drawn; a build without them goes in the body's own underwear.
+	USkeletalMesh* BraiesModel = GetNetMode() != NM_DedicatedServer ? LoadObject<USkeletalMesh>(nullptr, AedirBraiesPath, nullptr, LOAD_NoWarn | LOAD_Quiet) : nullptr;
+	if (BraiesModel && GetMesh())
+	{
+		Braies = NewObject<USkeletalMeshComponent>(this, TEXT("Braies"));
+		Braies->SetSkeletalMeshAsset(BraiesModel);
+		Braies->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		Braies->SetupAttachment(GetMesh());
+		Braies->RegisterComponent();
+		Braies->SetLeaderPoseComponent(GetMesh());
+		Braies->bUseAttachParentBound = true;
+		AedirScannedMaterial::Apply(Braies, TEXT("MedievalBraies"));
+		GetWorldTimerManager().SetTimer(BraiesTimer, this, &AAedirCreature::UpdateBraies, 0.25f, true, 0.f);
+	}
+
 	ApplyAppearance();
 	if (Stats)
 	{
 		Stats->OnStrengthChanged.AddDynamic(this, &AAedirCreature::ApplySizeScale);
 		ApplySizeScale(Stats->GetSizeScale());
+	}
+}
+
+void AAedirCreature::UpdateBraies()
+{
+	if (!Braies || !Interaction || !GetMesh())
+	{
+		return;
+	}
+	const bool bShown = !Interaction->GetArmorAt(TEXT("thigh_l"), GetMesh()->GetBoneLocation(TEXT("thigh_l")), EAedirDamageType::Blunt).bCovered;
+	if (Braies->IsVisible() != bShown)
+	{
+		Braies->SetVisibility(bShown);
+		UE_LOG(LogAedir, Verbose, TEXT("[Braies] %s's braies %s"), *GetName(), bShown ? TEXT("show") : TEXT("are under what is worn"));
 	}
 }
 

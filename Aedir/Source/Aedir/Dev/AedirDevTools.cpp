@@ -1,6 +1,7 @@
 #include "Dev/AedirDevTools.h"
 #include "Physics/AedirBodyControlComponent.h"
 #include "PhysicsEngine/BodySetup.h"
+#include "ProceduralMeshComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "AnimationRuntime.h"
@@ -1281,6 +1282,45 @@ void UAedirDevTools::ShotCam(AAedirPlayerCharacter* Player, const FString& Args)
 	if (Tokens.IsValidIndex(0) && DevToolsIsToken(Tokens[0], TEXT("off")))
 	{
 		Controller->SetViewTarget(Player);
+		return;
+	}
+	// ShotCam piece [yaw] [dist] [height]: a camera standing in the world looking at the piece cut off last, from that bearing.
+	// ShotCam bone <bone> [yaw] [dist] [height]: the same, looking at a bone of the player's body where it lies.
+	const bool bPiece = Tokens.IsValidIndex(0) && DevToolsIsToken(Tokens[0], TEXT("piece"));
+	const bool bBone = Tokens.IsValidIndex(1) && DevToolsIsToken(Tokens[0], TEXT("bone"));
+	if (bPiece || bBone)
+	{
+		AActor* Piece = nullptr;
+		for (TActorIterator<AActor> It(Player->GetWorld()); bPiece && It; ++It)
+		{
+			if (Cast<UProceduralMeshComponent>(It->GetRootComponent()) && (!Piece || It->CreationTime > Piece->CreationTime))
+			{
+				Piece = *It;
+			}
+		}
+		if (bPiece && !Piece)
+		{
+			DevToolsReport(TEXT("ShotCam piece: nothing has been cut off"));
+			return;
+		}
+		const int32 First = bBone ? 2 : 1;
+		const FVector At = bBone ? Player->GetMesh()->GetBoneLocation(FName(*Tokens[1])) : Piece->GetComponentsBoundingBox().GetCenter();
+		// A yaw starting with "r" is from the way the body's hips face (0 before them, 90 on their right).
+		float PieceYaw = Tokens.IsValidIndex(First) ? FCString::Atof(Tokens[First].StartsWith(TEXT("r")) ? *Tokens[First].Mid(1) : *Tokens[First]) : 0.f;
+		if (bBone && Tokens.IsValidIndex(First) && Tokens[First].StartsWith(TEXT("r")))
+		{
+			const FVector Facing = FVector::CrossProduct(Player->GetMesh()->GetBoneLocation(TEXT("thigh_r")) - Player->GetMesh()->GetBoneLocation(TEXT("thigh_l")), FVector::UpVector).GetSafeNormal2D();
+			PieceYaw += FMath::RadiansToDegrees(FMath::Atan2(Facing.Y, Facing.X));
+		}
+		const float PieceDistance = Tokens.IsValidIndex(First + 1) ? FCString::Atof(*Tokens[First + 1]) : 60.f;
+		const float PieceHeight = Tokens.IsValidIndex(First + 2) ? FCString::Atof(*Tokens[First + 2]) : 25.f;
+		const FVector From = At + FRotator(0.f, PieceYaw, 0.f).RotateVector(FVector(PieceDistance, 0.f, 0.f)) + FVector(0.f, 0.f, PieceHeight);
+		if (ACameraActor* PieceCamera = Player->GetWorld()->SpawnActor<ACameraActor>(From, (At - From).Rotation()))
+		{
+			PieceCamera->GetCameraComponent()->bConstrainAspectRatio = false;
+			Controller->SetViewTarget(PieceCamera);
+		}
+		DevToolsReport(FString::Printf(TEXT("ShotCam %s at %s"), bBone ? *Tokens[1] : *Piece->GetName(), *At.ToCompactString()));
 		return;
 	}
 

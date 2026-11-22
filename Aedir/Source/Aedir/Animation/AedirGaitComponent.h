@@ -46,6 +46,19 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float HoistElbowBend = 0.f;
 
+	// The leg put forward getting up (0 the left, 1 the right), how far (0 to 1) and its own hip and knee bends.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	int32 HoistLeadSide = 0;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HoistLead = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HoistLeadHipBend = 0.f;
+
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HoistLeadKneeBend = 0.f;
+
 	// Hip offset in cm along the creature up axis, negative = lowered.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float HipOffsetZ = 0.f;

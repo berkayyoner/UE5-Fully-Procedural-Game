@@ -7,6 +7,8 @@
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
+#include "GroomBindingAsset.h"
+#include "GroomComponent.h"
 #include "KismetProceduralMeshLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
@@ -171,10 +173,17 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 		const TArray<FMatrix44f>& RefInverse = LayerAsset->GetRefBasesInvMatrix();
 		const TArray<FTransform>& BodyPose = Body->GetComponentSpaceTransforms();
 		RefToLocals.SetNum(RefInverse.Num());
+		// A bone the body lacks (the face's own, under the head) stands as the layer's rest pose has it on its parent, as
+		// drawn: left where the rest pose has it in the body's frame, the face was torn off the head and stretched.
+		TArray<FTransform> LayerPose;
+		LayerPose.SetNum(RefInverse.Num());
 		for (int32 Bone = 0; Bone < RefInverse.Num(); ++Bone)
 		{
 			const int32 InBody = Body->GetBoneIndex(Skeleton.GetBoneName(Bone));
-			RefToLocals[Bone] = BodyPose.IsValidIndex(InBody) ? RefInverse[Bone] * FMatrix44f(BodyPose[InBody].ToMatrixWithScale()) : FMatrix44f::Identity;
+			const int32 Parent = Skeleton.GetParentIndex(Bone);
+			LayerPose[Bone] = BodyPose.IsValidIndex(InBody) ? BodyPose[InBody]
+				: Skeleton.GetRefBonePose()[Bone] * (Parent != INDEX_NONE ? LayerPose[Parent] : FTransform::Identity);
+			RefToLocals[Bone] = RefInverse[Bone] * FMatrix44f(LayerPose[Bone].ToMatrixWithScale());
 		}
 	}
 	else
@@ -395,6 +404,54 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 	for (USceneComponent* Strapped : OnLimb)
 	{
 		Strapped->AttachToComponent(Mesh, FAttachmentTransformRules::KeepWorldTransform);
+	}
+
+	// The hair grown on the head goes with the head, still and as it lay: it was left standing on the neck. Unbound from
+	// the face it is drawn as it was grown, on the rest pose of the model it was grown on, so it is set where that rest
+	// pose's head lies on the piece.
+	const FName HairBone = Body->GetBoneIndex(TEXT("head")) != INDEX_NONE && (SeverBone == TEXT("head") || Body->BoneIsChildOf(TEXT("head"), SeverBone)) ? FName(TEXT("head")) : SeverBone;
+	const TArray<FTransform>& BodyBones = Body->GetComponentSpaceTransforms();
+	const int32 HairBodyIndex = Body->GetBoneIndex(HairBone);
+	TArray<TPair<UGroomComponent*, USkeletalMeshComponent*>> Grown;
+	for (USkeletalMeshComponent* Layer : Layers)
+	{
+		for (USceneComponent* Child : Layer->GetAttachChildren())
+		{
+			UGroomComponent* Hair = Cast<UGroomComponent>(Child);
+			const FName Nearest = Hair ? Body->FindClosestBone(Hair->Bounds.Origin) : NAME_None;
+			if (Hair && !Nearest.IsNone() && (Nearest == SeverBone || Body->BoneIsChildOf(Nearest, SeverBone)))
+			{
+				Grown.Emplace(Hair, Layer);
+			}
+		}
+	}
+	for (const TPair<UGroomComponent*, USkeletalMeshComponent*>& Pair : Grown)
+	{
+		UGroomComponent* Hair = Pair.Key;
+		// The groom may have been grown on another head and fitted to this one by its binding: its rest pose is that head's.
+		const USkeletalMesh* GrownMesh = Hair->BindingAsset && Hair->BindingAsset->GetSourceSkeletalMesh() ? Hair->BindingAsset->GetSourceSkeletalMesh() : Pair.Value->GetSkeletalMeshAsset();
+		const FReferenceSkeleton& GrownOn = GrownMesh->GetRefSkeleton();
+		FTransform HairRest = FTransform::Identity;
+		for (int32 Index = GrownOn.FindBoneIndex(HairBone); Index != INDEX_NONE; Index = GrownOn.GetParentIndex(Index))
+		{
+			HairRest = HairRest * GrownOn.GetRefBonePose()[Index];
+		}
+		if (!BodyBones.IsValidIndex(HairBodyIndex) || GrownOn.FindBoneIndex(HairBone) == INDEX_NONE)
+		{
+			Hair->SetVisibility(false);
+			continue;
+		}
+		// Where the model it grew on lies on the body (the face is fixed to the body's root as it is).
+		const FTransform LayerToBody = Pair.Value == Body ? FTransform::Identity : Pair.Value->GetComponentTransform().GetRelativeTransform(Body->GetComponentTransform());
+		// Its own simulation is stopped: hanging from roots no longer held by the face, the strands fell off the head. The
+		// component takes that only over the groom's own settings.
+		Hair->SimulationSettings.bOverrideSettings = true;
+		Hair->SimulationSettings.SolverSettings.bEnableSimulation = true;
+		Hair->SetEnableSimulation(false);
+		Hair->SetBindingAsset(nullptr);
+		Hair->AttachToComponent(Mesh, FAttachmentTransformRules::KeepRelativeTransform);
+		Hair->SetRelativeTransform(Hair->GetRelativeTransform() * HairRest.Inverse() * BodyBones[HairBodyIndex] * LayerToBody * FTransform(FQuat::Identity, FVector::ZeroVector, BodySize));
+		UE_LOG(LogAedir, Log, TEXT("[Sever] the hair goes with the %s (grown on %s, %s off the body)"), *SeverBone.ToString(), *GetNameSafe(GrownMesh), *LayerToBody.GetLocation().ToCompactString());
 	}
 
 	Body->HideBoneByName(SeverBone, PBO_Term);

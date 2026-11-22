@@ -179,6 +179,22 @@ namespace
 		const FName ResolvedBone = WoundResolveBone(Mesh, Bone);
 		return ResolvedBone.IsNone() ? Mesh->GetComponentTransform() : Mesh->GetSocketTransform(ResolvedBone, RTS_World);
 	}
+
+	// Where a bone stands in the bind pose, the body's own frame in which the skin is drawn before it moves.
+	FTransform WoundBindPose(const FReferenceSkeleton& Skeleton, FName Bone)
+	{
+		FTransform Pose = FTransform::Identity;
+		for (int32 Index = Skeleton.FindBoneIndex(Bone); Index != INDEX_NONE; Index = Skeleton.GetParentIndex(Index))
+		{
+			Pose = Pose * Skeleton.GetRefBonePose()[Index];
+		}
+		return Pose;
+	}
+
+	// The skin's blood data: two rows (where, how) and the streams' rows under them: the wound's normal and how many
+	// streams, then a row for each of at most four streams.
+	constexpr int32 WoundSkinBloodStreamRow = 2;
+	constexpr int32 WoundSkinBloodRows = 3 + 4;
 }
 
 UAedirWoundComponent::UAedirWoundComponent()
@@ -984,9 +1000,12 @@ void UAedirWoundComponent::UpdateWoundVisuals(float DeltaTime)
 		if (Wound.Type != EAedirWoundType::Bruise)
 		{
 			// The cut itself lets out a little at once, more the worse it is; bleeding carries it on from there.
-			Visual->RunLength = FMath::Max(Visual->RunLength, WoundRunOpenShare + WoundRunOpenPerSeverity * FMath::Clamp(Severity, 0.f, 1.f));
+			const float Opened = WoundRunOpenShare + WoundRunOpenPerSeverity * FMath::Clamp(Severity, 0.f, 1.f);
+			float Shed = FMath::Max(Opened - Visual->RunLength, 0.f);
+			Visual->RunLength = FMath::Max(Visual->RunLength, Opened);
 			if (Rate > 0.f)
 			{
+				Shed += DeltaTime * (WoundRunShareBase + Rate * WoundRunSharePerBleed);
 				Visual->RunLength = FMath::Min(Visual->RunLength + DeltaTime * (WoundRunShareBase + Rate * WoundRunSharePerBleed), 1.f);
 				Visual->RunWet = 1.f;
 			}
@@ -994,6 +1013,7 @@ void UAedirWoundComponent::UpdateWoundVisuals(float DeltaTime)
 			{
 				Visual->RunWet = FMath::Max(Visual->RunWet - DeltaTime / WoundRunDrySeconds, 0.f);
 			}
+			UpdateBloodStreams(*Visual, Wound, Shed, DeltaTime);
 		}
 		if (Visual->RunMaterial)
 		{
@@ -1019,6 +1039,63 @@ void UAedirWoundComponent::UpdateWoundVisuals(float DeltaTime)
 		const FVector Velocity = FVector(0.f, 0.f, WoundDripGravityVelocity) + Owner->GetVelocity() * WoundDripCarryScale;
 		Blood->SpawnDrop(Location, Velocity);
 	}
+}
+
+void UAedirWoundComponent::UpdateBloodStreams(FAedirWoundVisual& Visual, const FAedirWound& Wound, float Shed, float DeltaTime)
+{
+	USkeletalMeshComponent* Mesh = GetBodyMesh();
+	if (Shed <= 0.f || !Mesh || !Mesh->GetSkinnedAsset())
+	{
+		return;
+	}
+	// The way down the skin at the wound as the body lies now, put into the bind pose: the world's down brought into the
+	// bone, the bone as it stands in the bind pose, and what of it goes into the skin taken off.
+	const FName Bone = WoundResolveBone(Mesh, Wound.Bone);
+	const FTransform Bind = WoundBindPose(Mesh->GetSkinnedAsset()->GetRefSkeleton(), Bone);
+	const FVector Normal = Bind.TransformVectorNoScale(Wound.Normal).GetSafeNormal();
+	const FVector Down = Bind.TransformVectorNoScale(WoundBoneTransform(Mesh, Wound.Bone).InverseTransformVectorNoScale(-FVector::UpVector));
+	const FVector Slope = FVector::VectorPlaneProject(Down, Normal);
+	if (Slope.Size() < BloodStreamLeastSlope)
+	{
+		return;
+	}
+	const FVector3f Way(Slope.GetSafeNormal());
+	FVector4f* Running = Visual.Streams.IsEmpty() ? nullptr : &Visual.Streams.Last();
+	const float Turned = Running ? FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector3f::DotProduct(FVector3f(Running->X, Running->Y, Running->Z), Way), -1.f, 1.f))) : 180.f;
+	if (Turned > BloodStreamTurnDegrees)
+	{
+		const bool bHeld = FVector3f::DotProduct(Visual.NewWay, Way) > FMath::Cos(FMath::DegreesToRadians(BloodStreamTurnDegrees));
+		Visual.NewWaySeconds = bHeld ? Visual.NewWaySeconds + DeltaTime : 0.f;
+		Visual.NewWay = Way;
+		Visual.NewWayShed += Shed;
+		// The first blood takes the way there is at once.
+		if (Running && Visual.NewWaySeconds < BloodStreamSettleSeconds)
+		{
+			return;
+		}
+		Shed = Visual.NewWayShed;
+		if (Visual.Streams.Num() >= FMath::Clamp(BloodStreamsMax, 1, 4))
+		{
+			int32 Shortest = 0;
+			for (int32 Index = 1; Index < Visual.Streams.Num(); ++Index)
+			{
+				Shortest = Visual.Streams[Index].W < Visual.Streams[Shortest].W ? Index : Shortest;
+			}
+			Visual.Streams.RemoveAt(Shortest);
+		}
+		Running = &Visual.Streams.Add_GetRef(FVector4f(Way.X, Way.Y, Way.Z, 0.f));
+		UE_CLOG(CVarAedirSkinBloodLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Wounds] blood from the wound on %s runs a new way (turned %.0f degrees), %d streams"), *Wound.Bone.ToString(), Turned, Visual.Streams.Num());
+	}
+	else
+	{
+		const FVector3f Bent = FMath::Lerp(FVector3f(Running->X, Running->Y, Running->Z), Way, FMath::Min(DeltaTime * BloodStreamFollowPerSecond, 1.f)).GetSafeNormal();
+		Running->X = Bent.X;
+		Running->Y = Bent.Y;
+		Running->Z = Bent.Z;
+	}
+	Visual.NewWaySeconds = 0.f;
+	Visual.NewWayShed = 0.f;
+	Running->W = FMath::Min(Running->W + Shed, 1.f);
 }
 
 bool UAedirWoundComponent::UsesSkinBlood()
@@ -1050,22 +1127,12 @@ void UAedirWoundComponent::UpdateSkinBlood()
 	{
 		return;
 	}
-	// Where each bone stands in the bind pose, the body's own frame in which the skin is drawn before it moves.
 	const FReferenceSkeleton& Skeleton = Mesh->GetSkinnedAsset()->GetRefSkeleton();
-	auto BindPose = [&Skeleton](FName Bone)
-	{
-		FTransform Pose = FTransform::Identity;
-		for (int32 Index = Skeleton.FindBoneIndex(Bone); Index != INDEX_NONE; Index = Skeleton.GetParentIndex(Index))
-		{
-			Pose = Pose * Skeleton.GetRefBonePose()[Index];
-		}
-		return Pose;
-	};
 
 	// Every wound and bruise, one texel each in the material's data texture.
 	if (!SkinBloodData)
 	{
-		SkinBloodData = UTexture2D::CreateTransient(WoundSkinBloodSlots, 2, PF_A32B32G32R32F);
+		SkinBloodData = UTexture2D::CreateTransient(WoundSkinBloodSlots, WoundSkinBloodRows, PF_A32B32G32R32F);
 		if (!SkinBloodData)
 		{
 			return;
@@ -1077,7 +1144,8 @@ void UAedirWoundComponent::UpdateSkinBlood()
 		SkinBloodData->UpdateResource();
 		SkinBlood->SetTextureParameterValue(TEXT("Data"), SkinBloodData);
 	}
-	FLinearColor* Texels = new FLinearColor[WoundSkinBloodSlots * 2];
+	FLinearColor* Texels = new FLinearColor[WoundSkinBloodSlots * WoundSkinBloodRows];
+	FMemory::Memzero(Texels, sizeof(FLinearColor) * WoundSkinBloodSlots * WoundSkinBloodRows);
 	const int32 Count = FMath::Min(ActiveWounds.Num(), WoundSkinBloodSlots);
 	const double Now = GetWoundServerTime();
 	for (int32 Slot = 0; Slot < WoundSkinBloodSlots; ++Slot)
@@ -1089,10 +1157,22 @@ void UAedirWoundComponent::UpdateSkinBlood()
 			const FAedirWound& Wound = ActiveWounds[Slot];
 			const float Severity = Wound.GetSeverity();
 			const float Age = static_cast<float>(FMath::Max(0.0, Now - Wound.StartServerTime));
-			const FVector Point = BindPose(WoundResolveBone(Mesh, Wound.Bone)).TransformPosition(Wound.Offset);
+			const FTransform Bind = WoundBindPose(Skeleton, WoundResolveBone(Mesh, Wound.Bone));
+			const FVector Point = Bind.TransformPosition(Wound.Offset);
 			const FAedirWoundVisual* Visual = FindVisual(Wound.Id);
-			// The run creeps down as the wound bleeds, as far as the old laid-on run went.
-			const float RunCm = (Visual ? Visual->RunLength : 0.f) * 2.f * (WoundRunHalfLengthMinCm + WoundRunHalfLengthPerSeverityCm * FMath::Clamp(Severity, 0.f, 1.f));
+			// The runs creep down as the wound bleeds, each as far as the old laid-on run went, the way the skin went down
+			// while it ran; the longest tells the material how far from the wound to look for them.
+			const float FullRunCm = 2.f * (WoundRunHalfLengthMinCm + WoundRunHalfLengthPerSeverityCm * FMath::Clamp(Severity, 0.f, 1.f));
+			float RunCm = 0.f;
+			const int32 StreamCount = Visual && Wound.Type != EAedirWoundType::Bruise ? FMath::Min(Visual->Streams.Num(), WoundSkinBloodRows - WoundSkinBloodStreamRow - 1) : 0;
+			const FVector Normal = Bind.TransformVectorNoScale(Wound.Normal).GetSafeNormal();
+			Texels[WoundSkinBloodStreamRow * WoundSkinBloodSlots + Slot] = FLinearColor(Normal.X, Normal.Y, Normal.Z, static_cast<float>(StreamCount));
+			for (int32 Stream = 0; Stream < StreamCount; ++Stream)
+			{
+				const FVector4f& Flow = Visual->Streams[Stream];
+				RunCm = FMath::Max(RunCm, Flow.W * FullRunCm);
+				Texels[(WoundSkinBloodStreamRow + 1 + Stream) * WoundSkinBloodSlots + Slot] = FLinearColor(Flow.X, Flow.Y, Flow.Z, Flow.W * FullRunCm);
+			}
 			// A bruise shrinks slowly to nothing over its week as it turns from purple to yellow.
 			const float Healed = Wound.Type == EAedirWoundType::Bruise ? FMath::SmoothStep(0.f, 1.f, ComputeAge01(Wound.Type, Severity, Age)) : 0.f;
 			Where = FLinearColor(Point.X, Point.Y, Point.Z, WoundDecalRadius(Wound.Type, Severity, BruiseRadiusMinCm, BruiseRadiusMaxCm, CutBloodRadiusMinMaxCm, PunctureBloodRadiusCm) * (1.f - Healed));
@@ -1117,7 +1197,7 @@ void UAedirWoundComponent::UpdateSkinBlood()
 		Texels[Slot] = Where;
 		Texels[WoundSkinBloodSlots + Slot] = How;
 	}
-	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, WoundSkinBloodSlots, 2);
+	FUpdateTextureRegion2D* Region = new FUpdateTextureRegion2D(0, 0, 0, 0, WoundSkinBloodSlots, WoundSkinBloodRows);
 	SkinBloodData->UpdateTextureRegions(0, 1, Region, WoundSkinBloodSlots * sizeof(FLinearColor), sizeof(FLinearColor), reinterpret_cast<uint8*>(Texels),
 		[](uint8* Data, const FUpdateTextureRegion2D* Regions)
 		{

@@ -1711,7 +1711,8 @@ void AAedirPlayerCharacter::HandleHeadCameraPressed()
 		// strands out long, and only paused, the strands still shimmered from one frame to the next. The hair is drawn as it
 		// is styled. Let go again, it starts afresh from how the hair hangs: carried on from where it was held, its first
 		// step took up all the head had moved meanwhile at once and flung the strands out long for a moment.
-		if (Hair)
+		// Hair gone with a head cut off lies still on it.
+		if (Hair && Hair->GetAttachParent() == Face)
 		{
 			Hair->SetEnableSimulation(!bPhotoCamera);
 			if (!bPhotoCamera)
@@ -2243,7 +2244,7 @@ void AAedirPlayerCharacter::PoseArm(const FString& PoseArgs)
 
 void AAedirPlayerCharacter::UpdateHairUnderHelmet()
 {
-	if (!Hair || !Interaction || !Face)
+	if (!Hair || !Interaction || !Face || Hair->GetAttachParent() != Face)
 	{
 		return;
 	}

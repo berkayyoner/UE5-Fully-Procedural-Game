@@ -1506,12 +1506,16 @@ void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, con
 	const float Elbow = FMath::Lerp(LimpElbowBendDegrees, GaitData.HoistElbowBend, Step);
 	Turn(BoneNameSet.LeftRadius, FRotator(Elbow, 0.f, 0.f));
 	Turn(BoneNameSet.RightRadius, FRotator(Elbow, 0.f, 0.f));
+	// The leg put forward bends as its own (in a step with none forward, as the other).
 	const float Hip = FMath::Lerp(LimpHipBendDegrees, GaitData.HoistHipBend, Step);
-	Turn(BoneNameSet.LeftFemur, FRotator(Hip, 0.f, 0.f));
-	Turn(BoneNameSet.RightFemur, FRotator(Hip, 0.f, 0.f));
+	const float LeadHip = FMath::Lerp(LimpHipBendDegrees, GaitData.HoistLeadHipBend, Step);
+	const bool bLeftLeads = GaitData.HoistLeadSide == 0;
+	Turn(BoneNameSet.LeftFemur, FRotator(bLeftLeads ? LeadHip : Hip, 0.f, 0.f));
+	Turn(BoneNameSet.RightFemur, FRotator(bLeftLeads ? Hip : LeadHip, 0.f, 0.f));
 	const float Knee = FMath::Lerp(LimpKneeBendDegrees, GaitData.HoistKneeBend, Step);
-	Turn(BoneNameSet.LeftTibia, FRotator(-Knee, 0.f, 0.f));
-	Turn(BoneNameSet.RightTibia, FRotator(-Knee, 0.f, 0.f));
+	const float LeadKnee = FMath::Lerp(LimpKneeBendDegrees, GaitData.HoistLeadKneeBend, Step);
+	Turn(BoneNameSet.LeftTibia, FRotator(-(bLeftLeads ? LeadKnee : Knee), 0.f, 0.f));
+	Turn(BoneNameSet.RightTibia, FRotator(-(bLeftLeads ? Knee : LeadKnee), 0.f, 0.f));
 }
 
 UAedirGaitComponent* UAedirProceduralAnimInstance::GetGaitComponent() const

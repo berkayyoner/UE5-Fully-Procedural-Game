@@ -181,6 +181,10 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		GaitState.HoistBackBow = Stage.BackBow;
 		GaitState.HoistArmRaise = Stage.ArmRaise;
 		GaitState.HoistElbowBend = Stage.ElbowBend;
+		GaitState.HoistLeadSide = BalanceComponent->GetHoistLeadSide();
+		GaitState.HoistLead = Stage.Lead;
+		GaitState.HoistLeadHipBend = Stage.LeadHipBend;
+		GaitState.HoistLeadKneeBend = Stage.LeadKneeBend;
 		return;
 	}
 

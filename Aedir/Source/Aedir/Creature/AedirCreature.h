@@ -49,6 +49,11 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Body")
 	TObjectPtr<USkeletalMeshComponent> Face;
 
+	// Undyed linen braies to the knee, worn under everything (the body's own underwear is a modern cut): put away while
+	// something worn covers the thighs, as trousers do.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Body")
+	TObjectPtr<USkeletalMeshComponent> Braies;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, ReplicatedUsing=OnRep_GroupId, Category="Aedir|Groups")
 	FName GroupId;
 
@@ -70,6 +75,10 @@ public:
 	virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
 	uint8 BodyMaskBit = 0;
+
+	// Shows the braies, or puts them away under what is worn over them.
+	void UpdateBraies();
+	FTimerHandle BraiesTimer;
 
 	// The collision mask the body and what it holds share, so its own weapon and fists pass through it.
 	uint8 GetBodyMaskBit() const { return BodyMaskBit; }

@@ -70,6 +70,21 @@ struct FAedirGetUpStage
 	// Seconds this step takes to come to from the one before, for a body fresh and whole.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float Seconds = 1.f;
+
+	// How far one leg, picked at random as the body starts up, is put forward of the other, 0 to 1: its hip and knee bent
+	// as LeadHipBend and LeadKneeBend, its foot set down flat LeadFootAheadCm ahead of where the step has the hips (face
+	// down: kneeling on the other knee, the body pushes up off that foot).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float Lead = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float LeadHipBend = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float LeadKneeBend = 0.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float LeadFootAheadCm = 0.f;
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FAedirBalanceEvent);
@@ -756,6 +771,8 @@ public:
 
 	// While the hips are being hauled up: how far the pull has come in, 0 to 1.
 	float GetHoistShare() const { return bHoisting ? HoistDrive : 0.f; }
+	// The leg put forward getting up: 0 the left, 1 the right.
+	int32 GetHoistLeadSide() const { return HoistLeadSide; }
 	bool IsHoisting() const { return bHoisting; }
 	// The step of getting up the body is at (between two, mixed), and how far along the steps it is (0 lying, 1 the first
 	// step, and on); false unless being hauled up.
@@ -1172,6 +1189,7 @@ private:
 	float HoistRestFor = 0.f;
 	float HoistHeldSeconds = 0.f;
 	int32 HoistHand = -1;
+	int32 HoistLeadSide = 0;
 	// How the body lay when it started getting up.
 	EAedirGetUpStyle HoistStyle = EAedirGetUpStyle::None;
 	FVector HoistFaceLocal = FVector(0.f, 1.f, 0.f);

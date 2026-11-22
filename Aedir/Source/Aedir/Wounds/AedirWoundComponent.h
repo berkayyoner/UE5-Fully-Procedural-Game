@@ -39,6 +39,16 @@ struct FAedirWoundVisual
 
 	float RunLength = 0.f;
 	float RunWet = 1.f;
+
+	// The streams the blood has run down the skin in, each the way down the skin was while it ran, in the body's bind
+	// pose (xyz) and how far it has got (w, 0 to 1 of a run's length): the body turned, fresh blood runs a new way from
+	// the wound and the old stream stays where it ran.
+	TArray<FVector4f, TInlineAllocator<4>> Streams;
+	// A new way down the skin waits to have held this long before blood starts a stream down it (a body falling turns
+	// through every way at once), with the blood shed meanwhile.
+	FVector3f NewWay = FVector3f::ZeroVector;
+	float NewWaySeconds = 0.f;
+	float NewWayShed = 0.f;
 };
 
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
@@ -62,6 +72,26 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0", ClampMax="1"))
 	float BloodBleedingDryShare = 0.15f;
+
+	// Blood runs from a wound down the skin the way gravity takes it as the body lies now: turned more than
+	// BloodStreamTurnDegrees from the way it was running, fresh blood starts a new stream (at most BloodStreamsMax, the
+	// shortest given up for a new one); turned less, the stream bends after it, BloodStreamFollowPerSecond of the way a
+	// second. Where the skin is flatter to the ground than BloodStreamLeastSlope (a wound facing up or down) it does not run.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="1", ClampMax="90"))
+	float BloodStreamTurnDegrees = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0", ClampMax="10"))
+	float BloodStreamFollowPerSecond = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0", ClampMax="1"))
+	float BloodStreamLeastSlope = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="1", ClampMax="4"))
+	int32 BloodStreamsMax = 4;
+
+	// A new way down has to hold this long before fresh blood takes it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0", ClampMax="5"))
+	float BloodStreamSettleSeconds = 0.75f;
 
 	// Blood from an open wound soaks into the clothes worn over it, the stain growing to ClothSoakShare of the wound's
 	// severity (more the more it bleeds) and kept on the clothes; it washes off the body and out of the clothes in water,
@@ -288,6 +318,8 @@ private:
 	float StumpDebt = 0.f;
 	float DeadSeconds = 0.f;
 	bool UsesSkinBlood();
+	// Carries the blood shed since the last update down the skin the way it goes down now.
+	void UpdateBloodStreams(FAedirWoundVisual& Visual, const FAedirWound& Wound, float Shed, float DeltaTime);
 	void UpdateSkinBlood();
 
 	uint8 NextWoundId = 0;

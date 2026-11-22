@@ -257,20 +257,33 @@ UAedirBalanceComponent::UAedirBalanceComponent()
 		Stage.Seconds = Seconds;
 		return Stage;
 	};
-	// Face down: lying; on the hands and knees, the back flat; sat back on the heels, upright; up.
+	// Face down: lying; on the hands and knees, the back flat; sat back on the heels with the trunk upright; one foot put
+	// forward, kneeling on the other knee, the hips over that knee; up off the forward foot. The hips are where the legs
+	// can have them: the knees held 22 cm back, a thigh 45 cm long. Sat on the heels 33 cm up they are 36 cm behind the
+	// knees (asked for over the knees, as they were, the hips stayed 25 cm forward of it and the trunk leant forward on
+	// them); kneeling on one knee they stand over it, the forward foot set down under its knee, a thigh ahead.
 	FrontGetUpStages = {
 		Step(13.f, 0.f, 0.f, 10.f, 10.f, 0.f, 20.f, 40.f, 1.f, 0.f, 0.f),
 		Step(50.f, 0.f, 0.f, 90.f, 90.f, 0.f, 80.f, 5.f, 1.f, 1.f, 1.1f),
-		Step(33.f, 28.f, 90.f, 85.f, 150.f, 0.f, 10.f, 30.f, 0.f, 1.f, 1.2f),
-		Step(88.f, 28.f, 90.f, 10.f, 10.f, 0.f, 0.f, 10.f, 0.f, 0.f, 1.3f),
+		Step(33.f, 58.f, 95.f, 85.f, 150.f, -5.f, 10.f, 30.f, 0.f, 1.f, 1.2f),
+		Step(50.f, 24.f, 92.f, 10.f, 95.f, 0.f, 10.f, 30.f, 0.f, 1.f, 1.f),
+		Step(88.f, 5.f, 90.f, 10.f, 10.f, 0.f, 0.f, 10.f, 0.f, 0.f, 1.3f),
 	};
-	// On the back: lying; the belly tightened, back and head a little up on the hands, the feet drawn in; crouched over
-	// the feet; up.
+	FrontGetUpStages[3].Lead = 1.f;
+	FrontGetUpStages[3].LeadHipBend = 95.f;
+	FrontGetUpStages[3].LeadKneeBend = 95.f;
+	FrontGetUpStages[3].LeadFootAheadCm = 42.f;
+	FrontGetUpStages[4].LeadHipBend = 10.f;
+	FrontGetUpStages[4].LeadKneeBend = 10.f;
+	// On the back: lying; the belly tightened, back and head a little up on the hands, the feet drawn in; sat up on the
+	// ground, the hips still down, the feet in; leant forward over the feet, the hips only now off the ground and right over
+	// the feet (held 34 cm back: 4 cm short of them the step waited on the hips, crouched, for up to 0.6 s); up.
 	BackGetUpStages = {
 		Step(12.f, 0.f, 0.f, 10.f, 10.f, 0.f, -10.f, 10.f, 1.f, 0.f, 0.f),
 		Step(14.f, 0.f, 30.f, 75.f, 115.f, 25.f, -30.f, 10.f, 1.f, 1.f, 1.f),
-		Step(42.f, 32.f, 100.f, 110.f, 130.f, 15.f, 30.f, 30.f, 0.f, 1.f, 1.3f),
-		Step(88.f, 32.f, 90.f, 10.f, 10.f, 0.f, 0.f, 10.f, 0.f, 0.f, 1.3f),
+		Step(15.f, 8.f, 80.f, 100.f, 130.f, 20.f, -10.f, 10.f, 0.7f, 1.f, 1.f),
+		Step(40.f, 36.f, 108.f, 115.f, 135.f, 15.f, 30.f, 30.f, 0.f, 1.f, 1.f),
+		Step(88.f, 36.f, 90.f, 10.f, 10.f, 0.f, 0.f, 10.f, 0.f, 0.f, 1.1f),
 	};
 }
 
@@ -2789,6 +2802,7 @@ void UAedirBalanceComponent::StartHoist()
 	HoistAnchor = Pelvis->GetUnrealWorldTransform().GetLocation();
 	HoistHeldSeconds = 0.f;
 	HoistHand = -1;
+	HoistLeadSide = FMath::RandBool() ? 1 : 0;
 	HoistProgress = 0.f;
 	HoistStyle = LyingStyle;
 	HoistHeadward = (BodyMesh->GetBoneLocation(ChestBoneName) - HoistAnchor).GetSafeNormal2D();
@@ -2938,6 +2952,13 @@ FAedirGetUpStage UAedirBalanceComponent::SampleHoistStage(float Progress) const
 	Out.Hands = FMath::Lerp(A.Hands, B.Hands, Alpha);
 	Out.Legs = FMath::Lerp(A.Legs, B.Legs, Alpha);
 	Out.Seconds = B.Seconds;
+	Out.Lead = FMath::Lerp(A.Lead, B.Lead, Alpha);
+	// A step that gives the forward leg no bends of its own bends it as the other.
+	const auto LeadHip = [](const FAedirGetUpStage& S) { return S.Lead > 0.f || S.LeadHipBend != 0.f ? S.LeadHipBend : S.HipBend; };
+	const auto LeadKnee = [](const FAedirGetUpStage& S) { return S.Lead > 0.f || S.LeadKneeBend != 0.f ? S.LeadKneeBend : S.KneeBend; };
+	Out.LeadHipBend = FMath::Lerp(LeadHip(A), LeadHip(B), Alpha);
+	Out.LeadKneeBend = FMath::Lerp(LeadKnee(A), LeadKnee(B), Alpha);
+	Out.LeadFootAheadCm = FMath::Lerp(A.LeadFootAheadCm, B.LeadFootAheadCm, Alpha);
 	return Out;
 }
 
@@ -3207,22 +3228,12 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 
 	// Face down the knees, on the back the feet, are held to the ground at their spot towards the feet: the knees under the
 	// hips as they come up onto them, the feet drawn in to the hips.
+	// A leg put forward has its foot held instead, flat on the ground ahead of where the step has the hips.
 	float LegOff = 0.f;
 	for (int32 Side = 0; Side < 2 && Stage.Legs > 0.f; ++Side)
 	{
 		const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
-		FBodyInstance* LegBody = BodyMesh->GetBodyInstance(FName(FString(bFront ? TEXT("calf") : TEXT("foot")) + Suffix));
-		if (!LegBody || !LegBody->IsInstanceSimulatingPhysics())
-		{
-			continue;
-		}
-		const float Outward = FVector::DotProduct(BodyMesh->GetBoneLocation(FName(FString(TEXT("thigh")) + Suffix)) - Hips, Right) >= 0.0 ? 1.f : -1.f;
-		const FVector Flat = FVector(HoistAnchor.X, HoistAnchor.Y, Ground.Z) - Headward * ((bFront ? GetUpKneeBackCm : GetUpFeetBackCm) * Size) + Right * (Outward * GetUpLegOutCm * Size);
-		const FVector Spot = Flat + FVector(0.f, 0.f, (bFront ? 6.f : 5.f) * Size);
-		const FVector LegAt = LegBody->GetUnrealWorldTransform().GetLocation();
-		LegOff = FMath::Max(LegOff, static_cast<float>(FVector::Dist(Spot, LegAt)));
-		const float Lk = GetUpLegSpringPerSecondSq * Strength;
-		const FVector LegAccel = ((Spot - LegAt) * Lk - LegBody->GetUnrealWorldVelocity() * (2.f * FMath::Sqrt(Lk))) * (Stage.Legs * HoistDrive);
+		const float Forward = Side == HoistLeadSide ? Stage.Lead : 0.f;
 		float LegMass = 0.f;
 		for (const TCHAR* Part : { TEXT("thigh"), TEXT("calf"), TEXT("foot") })
 		{
@@ -3231,7 +3242,24 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 				LegMass += Piece->GetBodyMass();
 			}
 		}
-		LegBody->AddForce(LegAccel.GetClampedToMaxSize(HoistHandMaxAccel) * FMath::Max(LegMass, LegBody->GetBodyMass()), true, false);
+		const float Outward = FVector::DotProduct(BodyMesh->GetBoneLocation(FName(FString(TEXT("thigh")) + Suffix)) - Hips, Right) >= 0.0 ? 1.f : -1.f;
+		const float Lk = GetUpLegSpringPerSecondSq * Strength;
+		const auto Hold = [&](const TCHAR* Part, const FVector& Spot, float Share)
+		{
+			FBodyInstance* LegBody = BodyMesh->GetBodyInstance(FName(FString(Part) + Suffix));
+			if (Share <= 0.f || !LegBody || !LegBody->IsInstanceSimulatingPhysics())
+			{
+				return;
+			}
+			const FVector LegAt = LegBody->GetUnrealWorldTransform().GetLocation();
+			LegOff = FMath::Max(LegOff, static_cast<float>(FVector::Dist(Spot, LegAt)));
+			const FVector LegAccel = ((Spot - LegAt) * Lk - LegBody->GetUnrealWorldVelocity() * (2.f * FMath::Sqrt(Lk))) * (Share * HoistDrive);
+			LegBody->AddForce(LegAccel.GetClampedToMaxSize(HoistHandMaxAccel) * FMath::Max(LegMass, LegBody->GetBodyMass()), true, false);
+		};
+		const FVector Flat = FVector(HoistAnchor.X, HoistAnchor.Y, Ground.Z) - Headward * ((bFront ? GetUpKneeBackCm : GetUpFeetBackCm) * Size) + Right * (Outward * GetUpLegOutCm * Size);
+		Hold(bFront ? TEXT("calf") : TEXT("foot"), Flat + FVector(0.f, 0.f, (bFront ? 6.f : 5.f) * Size), Stage.Legs * (1.f - Forward));
+		const FVector Ahead = FVector(HipsWanted.X, HipsWanted.Y, Ground.Z) + Headward * (Stage.LeadFootAheadCm * Size) + Right * (Outward * GetUpLegOutCm * Size);
+		Hold(TEXT("foot"), Ahead + FVector(0.f, 0.f, 5.f * Size), Stage.Legs * Forward);
 	}
 
 	// And the hips are turned to face the way the body will stand: face down where the head lay, on the back the feet's way.
