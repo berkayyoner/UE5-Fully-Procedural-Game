@@ -65,7 +65,7 @@ namespace
 	constexpr float AedirServoStillAimSpeed = 40.f;
 	constexpr float AedirServoForgetPerSecond = 2.f;
 	constexpr float AedirServoFightShare = 0.95f;
-	TAutoConsoleVariable<int32> CVarAedirPosedArms(TEXT("aedir.PosedArms"), 1, TEXT("A weapon's arms in the stance move exactly as the pose has them (1), or are left to their muscles (0)."));
+	TAutoConsoleVariable<int32> CVarAedirPosedArms(TEXT("aedir.PosedArms"), 0, TEXT("A weapon's arms in the stance move exactly as the pose has them (1), or are left to their muscles (0)."));
 	// A surface facing up at least this much is ground to a held blade.
 	constexpr double AedirHeldGroundNormalZ = 0.6;
 	TAutoConsoleVariable<int32> CVarAedirHeldBlockLog(TEXT("aedir.HeldBlockLog"), 0, TEXT("Log what stops a held blade."));
@@ -1086,13 +1086,15 @@ bool UAedirCombatComponent::IsInFightStance() const
 
 void UAedirCombatComponent::Flinch(EAedirHand Hand, float Seconds)
 {
-	if (Seconds <= 0.f || !Creature)
+	if (!Creature)
 	{
 		return;
 	}
-	float& Left = FlinchLeft[HandIndex(Hand)];
-	Left = FMath::Max(Left, Seconds);
-	CancelSwing(Hand);
+	FlinchLeft[HandIndex(Hand)] = FMath::Max(Seconds, 0.f);
+	if (Seconds > 0.f)
+	{
+		CancelSwing(Hand);
+	}
 }
 
 bool UAedirCombatComponent::GetGuardPose(EAedirHand Hand, float& OutAlpha) const

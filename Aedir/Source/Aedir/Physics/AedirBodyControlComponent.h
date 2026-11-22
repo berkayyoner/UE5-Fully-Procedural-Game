@@ -180,6 +180,10 @@ public:
 	void SetLimp(bool bInLimp);
 	// Down and being hauled up by the hips: how far, 0 to 1, the muscles have come back to HoistMuscleShare.
 	void SetHoist(float Share);
+	// How much of their hold the hips on the capsule and the feet on the ground have, 0 to 1, and how far the muscles have come
+	// from the strength the body hauled itself up with to all of theirs: just handed back to the capsule, it comes in from
+	// nothing.
+	void SetHoldEase(float Share);
 	// Dead, the body keeps only DeadShare of its muscles.
 	void SetDead(bool bInDead);
 	// Which limbs have a broken bone: left arm, right arm, left leg, right leg.
@@ -276,6 +280,7 @@ private:
 	bool bReady = false;
 	bool bLimp = false;
 	float Hoist = 0.f;
+	float HoldEase = 1.f;
 	bool bAirborne = false;
 	bool bRising = false;
 	bool bHipsCarried = false;

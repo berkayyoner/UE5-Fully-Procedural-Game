@@ -490,7 +490,8 @@ public:
 
 	// Hurt just now: that arm comes down out of the guard for this long, whatever its button says, and goes back up after if
 	// it is still held; the other arm goes on. A longer one already going is kept.
-	void Flinch(EAedirHand Hand, float Seconds) { FlinchLeft[Index(Hand)] = FMath::Max(FlinchLeft[Index(Hand)], Seconds); }
+	// Out of the fight for exactly this long from now (0 back in it at once).
+	void Flinch(EAedirHand Hand, float Seconds) { FlinchLeft[Index(Hand)] = FMath::Max(Seconds, 0.f); }
 	// Someone's hand holds this arm at that place, by that share of the struggle (0 to 1): the fist gets only so far from it
 	// and is thrown out the slower. It lasts as long as it is told again every moment.
 	void SetHeldBy(EAedirHand Hand, const FVector& HoldWorld, float Share)

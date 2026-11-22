@@ -45,7 +45,7 @@ namespace
 	// A leg is looked for in the ground this far above and below its shapes; a body is lifted out of it by no more than this.
 	constexpr float AedirLegGroundProbeCm = 20.f;
 	constexpr float AedirLegGroundLiftMaxCm = 15.f;
-	TAutoConsoleVariable<int32> CVarAedirDirectPose(TEXT("aedir.DirectPose"), 1, TEXT("The body is shown and moved as the pose has it, kinematic, with no physics (1), or held to it by its muscles (0)."));
+	TAutoConsoleVariable<int32> CVarAedirDirectPose(TEXT("aedir.DirectPose"), 0, TEXT("The body is shown and moved as the pose has it, kinematic, with no physics (1), or held to it by its muscles (0)."));
 	constexpr float AedirPhysicsRescaleStep = 0.005f;
 	constexpr float AedirLegInjuryRecoveryPenalty = 0.5f;
 	constexpr float AedirLeanInterpSpeed = 8.f;
@@ -2104,17 +2104,21 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 	if (const UWorld* World = GetWorld(); World && BodyMesh && Bone != NAME_None && BodyMesh->GetBoneIndex(Bone) != INDEX_NONE)
 	{
 		const double Now = World->GetTimeSeconds();
-		if (Now - LastBlowTime > 0.05)
+		// Sent from where the blow landed at the moment it did, the pushes on the chest and the trunk are that blow; one from
+		// anywhere else, even at the same moment, is another blow.
+		FAedirBlowLanded* Same = RecentBlows.Num() && Now - RecentBlows.Last().Time <= 0.05 && FVector::Dist(Location, RecentBlows.Last().World) < 1.f ? &RecentBlows.Last() : nullptr;
+		if (!Same)
 		{
-			LastBlowBone = Bone;
-			LastBlowLocal = BodyMesh->GetBoneTransform(Bone).InverseTransformPosition(Location);
-			LastBlowTime = Now;
-			LastBlowPush = static_cast<float>(Push.Size());
+			if (RecentBlows.Num() >= 4)
+			{
+				RecentBlows.RemoveAt(0);
+			}
+			RecentBlows.Add({ Bone, BodyMesh->GetBoneTransform(Bone).InverseTransformPosition(Location), Location, Now, static_cast<float>(Push.Size()) });
 		}
 		// The share of a blow on a shoulder sent on into the trunk is still that blow.
-		else if (Bone.ToString().StartsWith(TEXT("spine")) && (LastBlowBone.ToString().StartsWith(TEXT("clavicle")) || LastBlowBone.ToString().StartsWith(TEXT("upperarm"))))
+		else if (Bone.ToString().StartsWith(TEXT("spine")) && (Same->Bone.ToString().StartsWith(TEXT("clavicle")) || Same->Bone.ToString().StartsWith(TEXT("upperarm"))))
 		{
-			LastBlowPush += static_cast<float>(Push.Size());
+			Same->Push += static_cast<float>(Push.Size());
 		}
 		// The more worn the body, the more and the longer a blow slackens it.
 		const float Worn = GetWornShare();
@@ -2157,19 +2161,6 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 	}
 	Flinch = FMath::Max(Flinch, FMath::Clamp(static_cast<float>(Push.Size()) / HitFlinchFullImpulse, 0.f, 1.f));
 	MotorUpdateTimer = 0.f;
-}
-
-bool UAedirBalanceComponent::GetLastBlow(FName& OutBone, FVector& OutLocalPoint, double& OutWorldTime, float& OutPush) const
-{
-	if (LastBlowBone == NAME_None)
-	{
-		return false;
-	}
-	OutBone = LastBlowBone;
-	OutLocalPoint = LastBlowLocal;
-	OutWorldTime = LastBlowTime;
-	OutPush = LastBlowPush;
-	return true;
 }
 
 void UAedirBalanceComponent::LandPush(FName Bone, const FVector& Impulse, const FVector& Location)
@@ -2668,6 +2659,15 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 			{
 				if (FBodyInstance* Body = BodyMesh->Bodies[Index])
 				{
+					// The hips were held still a moment to put the mesh back on the capsule, and moving it left them a target
+					// where the pose has them on it; the next step took them there, simulating or not, at 50 to 80 m/s, 20 to 30
+					// cm at once. The target is set to where they lie.
+					if (Body == Pelvis && Body->IsInstanceSimulatingPhysics())
+					{
+						Body->SetInstanceSimulatePhysics(false, false, true);
+						Body->SetBodyTransform(Lying[Index], ETeleportType::None);
+						Body->SetInstanceSimulatePhysics(true, false, true);
+					}
 					Body->SetBodyTransform(Lying[Index], ETeleportType::TeleportPhysics);
 					if (Body->IsInstanceSimulatingPhysics())
 					{
@@ -2704,6 +2704,8 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 			BodyControl->SetLimp(false);
 			BodyControl->SetRising(false);
 			HoistSettleLeft = HoistSettleSeconds;
+			// The hips' and feet's hold comes in from nothing from this very step on, before the hips are tied to the capsule.
+			BodyControl->SetHoldEase(0.f);
 			BodyTeleportGrace = AedirBodyTeleportGraceSeconds * 2.f;
 		}
 		// The muscles come back and lift the body through the moves, the hips with them; a blow can still put it back down.
@@ -2752,9 +2754,11 @@ void UAedirBalanceComponent::PutMeshOnCapsule()
 		Pelvis->SetInstanceSimulatePhysics(false, false, true);
 	}
 	BodyMesh->AttachToComponent(BodyCapsule, AedirMeshOnCapsuleRules);
-	BodyMesh->SetRelativeTransform(MeshRelativeAtFall, false, nullptr, ETeleportType::None);
+	// Moved as a teleport: moved as a move, the held hips were left a target to go to where the pose had them on the capsule,
+	// which the next step still took them to although they simulate again (see where they are put back as they lay).
+	BodyMesh->SetRelativeTransform(MeshRelativeAtFall, false, nullptr, ETeleportType::TeleportPhysics);
 	// The same relative transform is not applied again, while the world one was the hips': it is worked out anew.
-	BodyMesh->UpdateComponentToWorld(EUpdateTransformFlags::None, ETeleportType::None);
+	BodyMesh->UpdateComponentToWorld(EUpdateTransformFlags::None, ETeleportType::TeleportPhysics);
 	if (bSimulating)
 	{
 		Pelvis->SetInstanceSimulatePhysics(true, false, true);
@@ -4005,6 +4009,7 @@ void UAedirBalanceComponent::UpdatePosedArms()
 	// physics is let back in. Getting up is never posed: the body lifts itself off the ground by its own muscles, its hips
 	// first, against its weight and the blows it takes (bPhysicalGetUp).
 	BodyControl->SetWholePosed(CVarAedirDirectPose.GetValueOnGameThread() != 0 && !bIsRagdoll && !(bPhysicalGetUp && IsGettingUp()) && HoistSettleLeft <= 0.f);
+	BodyControl->SetHoldEase(HoistSettleLeft > 0.f && HoistSettleSeconds > KINDA_SMALL_NUMBER ? FMath::SmoothStep(0.f, 1.f, 1.f - HoistSettleLeft / HoistSettleSeconds) : 1.f);
 	const bool bLeft = Combat && !bIsRagdoll && Combat->WantsPosedArm(EAedirHand::Left);
 	const bool bRight = Combat && !bIsRagdoll && Combat->WantsPosedArm(EAedirHand::Right);
 	BodyControl->SetArmsPosed(bLeft, bRight);

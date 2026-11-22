@@ -311,7 +311,7 @@ public:
 	void Wound(const FString& WoundType, const FString& Bone);
 
 	UFUNCTION(Exec)
-	void BloodTest();
+	void BloodTest(const FString& BloodArgs = TEXT(""));
 
 	UFUNCTION(Exec)
 	void DebugBody();
@@ -443,6 +443,8 @@ public:
 
 	UFUNCTION(Exec)
 	void JitterProbe(const FString& ProbeArgs);
+	UFUNCTION(Exec)
+	void HipProbe(const FString& ProbeArgs);
 
 	UFUNCTION(Exec)
 	void MouseDrive(const FString& DriveArgs);

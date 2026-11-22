@@ -749,6 +749,8 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistDoneHoldSeconds = 0.15f;
 
+	// Hauled up onto its feet, the body is handed back to its capsule; the hold of its hips and feet on the capsule and the
+	// ground, and the muscles' strength, come in over HoistSettleSeconds, so it is taken into the standing pose softly.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistSettleSeconds = 0.5f;
 
@@ -1051,9 +1053,18 @@ public:
 	// How far the head is knocked on its neck by the blows it took: back (pitch), aside (roll) and turned (yaw).
 	FRotator GetHeadSway() const { return FRotator(HeadSway.X, HeadSway.Z, HeadSway.Y); }
 
-	// The last blow that landed on this body: the bone, where on it (in the bone's frame), when (world seconds) and how hard
-	// it pushed. False if none has yet.
-	bool GetLastBlow(FName& OutBone, FVector& OutLocalPoint, double& OutWorldTime, float& OutPush) const;
+	// A blow that landed on this body: the bone, where on it (in the bone's frame), when (world seconds) and how hard it
+	// pushed.
+	struct FAedirBlowLanded
+	{
+		FName Bone;
+		FVector Local = FVector::ZeroVector;
+		FVector World = FVector::ZeroVector;
+		double Time = -1000.0;
+		float Push = 0.f;
+	};
+	// The last few blows, the oldest first: two landing at once on two places are two blows.
+	const TArray<FAedirBlowLanded, TInlineAllocator<4>>& GetRecentBlows() const { return RecentBlows; }
 
 	// Mass-weighted centre of mass of the body, sampled every 0.1 s. Zero until the first sample.
 	UFUNCTION(BlueprintPure, Category="Aedir|Balance")
@@ -1126,10 +1137,7 @@ private:
 		float Left = 0.f;
 	};
 	TArray<FPendingPush> PendingPushes;
-	FName LastBlowBone = NAME_None;
-	FVector LastBlowLocal = FVector::ZeroVector;
-	double LastBlowTime = -1000.0;
-	float LastBlowPush = 0.f;
+	TArray<FAedirBlowLanded, TInlineAllocator<4>> RecentBlows;
 	// One part of a blow's push landing: on the physical body, the trunk's and head's sway and the hips.
 	void LandPush(FName Bone, const FVector& Impulse, const FVector& Location);
 	void UpdatePendingPushes(float DeltaTime);

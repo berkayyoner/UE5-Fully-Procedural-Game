@@ -26,6 +26,8 @@ ANKLE_ABOVE_FOOT = 2.0    # cm the bottom of the bandages lies above the ankle j
 LEG_ROOM = 0.8            # cm the thinnest of a trouser leg keeps off the skin
 LEG_MOST_WIDENED = 1.25   # a trouser leg is never widened more than this round the body's leg
 HIP_ROOM = 1.4            # cm round the hips and the seat
+INNER_MARGIN = 0.4        # cm the inside of a trouser leg keeps from the middle between the legs
+INNER_SOFT = 0.6          # share of the way to it from which the inside is taken in softly
 BLEND_CM = 6.0
 SKIN_ROOM = 0.6
 PUSH_ROUNDS = 16
@@ -120,7 +122,10 @@ print("[fit] trousers: waist %.1f, crotch %.1f, ankles %.1f cm" % (s_top, s_crot
 # The body: its waist, crotch and ankles, and the line of each leg through the hip, knee and ankle joints.
 skin_legs = [verts[k] for k in range(len(verts)) if top[k] in COVER]
 b_top = bone_pos("pelvis").z + WAIST_ABOVE_PELVIS
-b_crotch = crotch_of(skin_legs, bone_pos("calf_l").z, bone_pos("pelvis").z, 1.0)
+# The crotch is the lowest of the hips' own skin in the middle. Measured as the highest height with no skin in the middle,
+# it came out where the thighs part, 10 cm lower (they touch below it), and the trousers' seat hung down there.
+groin = [verts[k].z for k in range(len(verts)) if abs(verts[k].x) < 2.0 and top[k] in HIPS and bone_pos("calf_l").z < verts[k].z < bone_pos("pelvis").z]
+b_crotch = min(groin) if groin else crotch_of(skin_legs, bone_pos("calf_l").z, bone_pos("pelvis").z, 1.0)
 b_bot = bone_pos("foot_l").z + ANKLE_ABOVE_FOOT
 print("[fit] body: waist %.1f, crotch %.1f, ankles %.1f cm" % (b_top, b_crotch, b_bot))
 
@@ -177,7 +182,20 @@ def map_leg(p):
     share = (p.z - s_bot) / max(s_crotch - s_bot, 1e-3)
     sc, bc, k = along(legs[side], share)
     zb = b_bot + (b_crotch - b_bot) * share
-    return Vector((bc.x + (p.x - sc.x) * k, bc.y + (p.y - sc.y) * k, zb))
+    x = bc.x + (p.x - sc.x) * k
+    # The inside of a leg stays on its own side of the middle between the two: the body's legs stand closer together than
+    # the trousers' did, and widened round each leg the two insides crossed the middle and filled the space between the
+    # thighs down to the knees, one wide piece like a shalwar's. Past INNER_SOFT of the way to the middle the inside is
+    # taken in softly, never past INNER_MARGIN from it.
+    _, other, _ = along(legs[-side], share)
+    middle = (bc.x + other.x) * 0.5
+    room = max((bc.x - middle) * side - INNER_MARGIN, 0.5)
+    inward = (bc.x - x) * side
+    soft = room * INNER_SOFT
+    if inward > soft:
+        inward = soft + (room - soft) * (1.0 - math.exp(-(inward - soft) / max(room - soft, 1e-3)))
+        x = bc.x - inward * side
+    return Vector((x, bc.y + (p.y - sc.y) * k, zb))
 
 def extent(points, z):
     b = [p for p in points if abs(p.z - z) < WIDE]

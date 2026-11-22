@@ -1,4 +1,6 @@
 #include "Dev/AedirDevTools.h"
+#include "Physics/AedirBodyControlComponent.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "AnimationRuntime.h"
@@ -609,6 +611,10 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	{
 		JitterProbe(Player, Args);
 	}
+	else if (Command == TEXT("HipProbe"))
+	{
+		HipProbe(Player, Args);
+	}
 	else if (Command == TEXT("MouseDrive"))
 	{
 		MouseDrive(Player, Args);
@@ -988,10 +994,16 @@ void UAedirDevTools::BloodTest(AAedirPlayerCharacter* Player, const FString& Arg
 		return;
 	}
 
+	// BloodTest [speed share]: a share given is kept for the sprays after it too, to try how far the drops go.
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	if (Tokens.IsValidIndex(0))
+	{
+		Blood->SpraySpeedShare = FMath::Clamp(FCString::Atof(*Tokens[0]), 0.05f, 1.f);
+	}
 	const FVector Forward = Player->GetActorForwardVector();
 	const FVector Location = Player->GetActorLocation() + Forward * 60.f + FVector(0.f, 0.f, 40.f);
 	Blood->SpawnSpray(Location, Forward, 0.9f, EAedirWoundType::Cut);
-	DevToolsReport(TEXT("Blood spray spawned in front of the player"));
+	DevToolsReport(FString::Printf(TEXT("Blood spray spawned in front of the player at %s, at %.2f of the full speed"), *Location.ToCompactString(), Blood->SpraySpeedShare));
 }
 
 void UAedirDevTools::DebugBody(AAedirPlayerCharacter* Player, const FString& Args)
@@ -1308,6 +1320,118 @@ void UAedirDevTools::PoseArm(AAedirPlayerCharacter* Player, const FString& Args)
 	Player->Combat->SetGuard(Hand, FCString::Atoi(*Tokens[1]) != 0);
 	Player->Combat->DevSetArmAim(Hand, FVector2D(FCString::Atof(*Tokens[2]), FCString::Atof(*Tokens[3])), FCString::Atof(*Tokens[4]));
 	Player->Combat->SetThrustMode(FCString::Atoi(*Tokens[5]) != 0);
+}
+
+void UAedirDevTools::HipProbe(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// Every frame: the hips as drawn against where the pose has them (how far the body is let lag behind it), and how far
+	// they move in the body's own frame from one frame to the next (a jump is the body snapped somewhere at once).
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	const float Seconds = Tokens.IsValidIndex(0) ? FMath::Clamp(FCString::Atof(*Tokens[0]), 0.2f, 60.f) : 3.f;
+	const FString Label = Tokens.IsValidIndex(1) ? FString(Tokens[1]) : FString(TEXT("probe"));
+	struct FHipProbe
+	{
+		TOptional<FVector> Prev;
+		TOptional<FVector> PrevWorld;
+		TOptional<FVector> PrevBody;
+		TArray<FVector> PrevParts;
+		double MaxWorldJump = 0.0;
+		double MaxWorldJumpAt = 0.0;
+		double SumGap = 0.0;
+		double MaxGap = 0.0;
+		double MaxJump = 0.0;
+		double MaxJumpAt = 0.0;
+		int32 Frames = 0;
+		int32 PosedFrames = 0;
+		float Elapsed = 0.f;
+		uint64 LastFrame = 0;
+		FString Label;
+	};
+	TSharedRef<FHipProbe> Probe = MakeShared<FHipProbe>();
+	Probe->Label = Label;
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	Player->GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(Player, [Player, Probe, Handle, Seconds, Label]()
+	{
+		if (Probe->LastFrame == GFrameCounter)
+		{
+			return;
+		}
+		Probe->LastFrame = GFrameCounter;
+		Probe->Elapsed += Player->GetWorld()->GetDeltaSeconds();
+		const USkeletalMeshComponent* Mesh = Player->GetMesh();
+		const UAedirBodyControlComponent* Body = Player->FindComponentByClass<UAedirBodyControlComponent>();
+		const FVector Hips = Mesh->GetBoneLocation(TEXT("pelvis"));
+		const FBodyInstance* PelvisBody = Mesh->GetBodyInstance(TEXT("pelvis"));
+		if (Body && Body->IsReady())
+		{
+			const double Gap = FVector::Dist(Hips, Body->GetPoseLocation(TEXT("pelvis")));
+			Probe->SumGap += Gap;
+			Probe->MaxGap = FMath::Max(Probe->MaxGap, Gap);
+			Probe->PosedFrames += Body->IsWholePosed() ? 1 : 0;
+		}
+		const FVector Local = Player->GetActorTransform().InverseTransformPosition(Hips);
+		if (Probe->Prev.IsSet())
+		{
+			const double Jump = FVector::Dist(Local, Probe->Prev.GetValue());
+			if (Jump > Probe->MaxJump)
+			{
+				Probe->MaxJump = Jump;
+				Probe->MaxJumpAt = Probe->Elapsed;
+			}
+		}
+		Probe->Prev = Local;
+		// In the world too: the capsule is set down where the body stands up, so in its frame the hips seem to jump then.
+		if (Probe->PrevWorld.IsSet())
+		{
+			const double Jump = FVector::Dist(Hips, Probe->PrevWorld.GetValue());
+			if (Jump > 6.0)
+			{
+				// Which parts went furthest with them, and how fast the hips go now.
+				FString Parts;
+				TArray<TPair<double, FName>> Moved;
+				for (int32 Index = 0; Index < Mesh->Bodies.Num() && Index < Probe->PrevParts.Num(); ++Index)
+				{
+					if (const FBodyInstance* Part = Mesh->Bodies[Index]; Part && Part->BodySetup.IsValid())
+					{
+						Moved.Emplace(FVector::Dist(Part->GetUnrealWorldTransform().GetLocation(), Probe->PrevParts[Index]), Part->BodySetup->BoneName);
+					}
+				}
+				Moved.Sort([](const TPair<double, FName>& A, const TPair<double, FName>& B) { return A.Key > B.Key; });
+				for (int32 Index = 0; Index < Moved.Num(); ++Index)
+				{
+					Parts += FString::Printf(TEXT(" %s %.0f"), *Moved[Index].Value.ToString(), Moved[Index].Key);
+				}
+				UE_LOG(LogAedir, Display, TEXT("[HipProbe] %s: hips at %.0f cm/s %s; parts moved:%s"), *Probe->Label, PelvisBody ? PelvisBody->GetUnrealWorldVelocity().Size() : -1.f,
+					PelvisBody ? *PelvisBody->GetUnrealWorldVelocity().ToCompactString() : TEXT("-"), *Parts);
+				UE_LOG(LogAedir, Display, TEXT("[HipProbe] %s: the hips jump %.1f cm in the world at %.2f s (their body %.1f cm), frame %.3f s, down %d, getting up %d, the capsule %.1f cm from them"), *Probe->Label, Jump, Probe->Elapsed,
+					PelvisBody && Probe->PrevBody.IsSet() ? FVector::Dist(PelvisBody->GetUnrealWorldTransform().GetLocation(), Probe->PrevBody.GetValue()) : -1.0, Player->GetWorld()->GetDeltaSeconds(), Player->Balance && Player->Balance->IsRagdoll() ? 1 : 0, Player->Balance && Player->Balance->IsGettingUp() ? 1 : 0, FVector::Dist2D(Player->GetActorLocation(), Hips));
+			}
+			if (Jump > Probe->MaxWorldJump)
+			{
+				Probe->MaxWorldJump = Jump;
+				Probe->MaxWorldJumpAt = Probe->Elapsed;
+			}
+		}
+		Probe->PrevWorld = Hips;
+		Probe->PrevParts.SetNum(Mesh->Bodies.Num());
+		for (int32 Index = 0; Index < Mesh->Bodies.Num(); ++Index)
+		{
+			Probe->PrevParts[Index] = Mesh->Bodies[Index] ? Mesh->Bodies[Index]->GetUnrealWorldTransform().GetLocation() : FVector::ZeroVector;
+		}
+		if (PelvisBody)
+		{
+			Probe->PrevBody = PelvisBody->GetUnrealWorldTransform().GetLocation();
+		}
+		++Probe->Frames;
+		if (Probe->Elapsed >= Seconds)
+		{
+			// Kept past the timer's end: clearing it lets go of what it holds, this too.
+			const TSharedRef<FHipProbe> Kept = Probe;
+			Player->GetWorldTimerManager().ClearTimer(*Handle);
+			UE_LOG(LogAedir, Display, TEXT("[HipProbe] %s frames=%d gap mean %.1f max %.1f cm, biggest jump %.1f cm in a frame at %.2f s (in the world %.1f cm at %.2f s), posed %d frames"), *Kept->Label, Kept->Frames,
+				Kept->SumGap / FMath::Max(Kept->Frames, 1), Kept->MaxGap, Kept->MaxJump, Kept->MaxJumpAt, Kept->MaxWorldJump, Kept->MaxWorldJumpAt, Kept->PosedFrames);
+		}
+	}), 0.001f, true);
 }
 
 void UAedirDevTools::JitterProbe(AAedirPlayerCharacter* Player, const FString& Args)

@@ -33,6 +33,8 @@ private:
 	TObjectPtr<UStaticMeshComponent> Mesh;
 
 	bool bSplatted = false;
+	// Where it left the wound, for how far it flew.
+	FVector LaunchedFrom = FVector::ZeroVector;
 };
 
 UCLASS()
@@ -89,6 +91,12 @@ public:
 	// it is gone quickly, and is taken away after BurstMaxSeconds whatever is left of it.
 	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
 	float BurstFullSeconds = 0.3f;
+
+	// The drops of a spray leave the wound this share as fast as a cut's or a stab's full speed: at the full speed they flew
+	// twice as far as blood does. Measured from the chest: half the speed lands them half as far (half of them within 130 cm
+	// instead of 239, nine in ten within 186 instead of 398).
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood", meta=(ClampMin="0.05", ClampMax="1"))
+	float SpraySpeedShare = 0.5f;
 
 	UPROPERTY(EditAnywhere, Category="Aedir|Blood")
 	float BurstFadeSpeed = 6.f;

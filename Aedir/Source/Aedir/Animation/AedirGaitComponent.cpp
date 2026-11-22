@@ -1636,7 +1636,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 	// The hand for a place on a bone: the head by its own side, the neck, a shoulder and the middle of the trunk by the other
 	// side, a side of the trunk and a thigh by their own side. When that one is busy the other one may go, except to a
 	// shoulder, which the hand on its own side cannot reach.
-	const auto PickHand = [&](FName Bone, const FVector& PointWorld) -> int32
+	const auto PickHand = [&](FName Bone, const FVector& PointWorld, TFunctionRef<bool(int32)> Idle, TFunctionRef<bool(int32)> Takeable) -> int32
 	{
 		int32 PartSide = 0;
 		const EAedirClutchPart Part = AedirClutchPartOf(Bone, PartSide);
@@ -1661,13 +1661,40 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			bOwnSide = FMath::RadiansToDegrees(FMath::Atan2(FMath::Abs(Round.Y), Round.X)) > ClutchFlankDegrees;
 		}
 		const int32 First = bOwnSide ? (Side < 0 ? 0 : 1) : (Side < 0 ? 1 : 0);
-		if (Free(First))
+		// A shoulder or an arm is never held by its own hand.
+		const bool bOwnLimb = Part == EAedirClutchPart::Shoulder || Part == EAedirClutchPart::Arm;
+		const bool bOtherMay = !bOwnLimb && Free(1 - First);
+		// A hand with nothing to do first, the right one before the other; only then one taken from a place less bad.
+		if (Free(First) && Idle(First))
 		{
 			return First;
 		}
-		// A shoulder or an arm is never held by its own hand.
-		const bool bOwnLimb = Part == EAedirClutchPart::Shoulder || Part == EAedirClutchPart::Arm;
-		return !bOwnLimb && Free(1 - First) ? 1 - First : INDEX_NONE;
+		if (bOtherMay && Idle(1 - First))
+		{
+			return 1 - First;
+		}
+		if (Free(First) && Takeable(First))
+		{
+			return First;
+		}
+		return bOtherMay && Takeable(1 - First) ? 1 - First : INDEX_NONE;
+	};
+	const auto Always = [](int32) { return true; };
+	// A hand's flinch set, or ended (0), in the fight and the fists alike: the hand is out of them exactly while it holds.
+	const auto SetFlinch = [&](int32 Slot, float Seconds)
+	{
+		const EAedirHand FlinchHand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
+		if (AAedirCreature* Owner = CreatureOwner.Get())
+		{
+			if (Owner->Combat)
+			{
+				Owner->Combat->Flinch(FlinchHand, Seconds);
+			}
+			if (UAedirFistArms* Fists = Owner->FindComponentByClass<UAedirFistArms>())
+			{
+				Fists->Flinch(FlinchHand, Seconds);
+			}
+		}
 	};
 	// The wrist a little off the skin and back towards the hand's own shoulder, so the palm and fingers lie over the place.
 	const auto WristAt = [&](int32 Slot, const FVector& PointWorld, const FVector& OutwardWorld)
@@ -1680,34 +1707,41 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 
 	if (bDown)
 	{
-		FlinchLeft = 0.f;
-		FlinchSlot = INDEX_NONE;
+		HandFlinch[0].Left = HandFlinch[1].Left = 0.f;
 	}
 	else
 	{
-		// Something new that hurts: a blow, or a wound opened just now.
-		FName NewBone;
-		FVector NewLocal = FVector::ZeroVector;
-		float NewSeverity = -1.f;
-		FName Bone;
-		FVector Local;
-		double When = 0.0;
-		float Push = 0.f;
-		if (BalanceComponent && BalanceComponent->GetLastBlow(Bone, Local, When, Push) && When > FlinchBlowSeen)
+		// Everything new that hurts: a blow, and the wounds opened just now.
+		struct FNewHurt
 		{
-			FlinchBlowSeen = When;
-			static const IConsoleVariable* HitLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
-			if (HitLog && HitLog->GetInt() != 0)
+			FName Bone;
+			FVector Local;
+			float Severity;
+		};
+		TArray<FNewHurt, TInlineAllocator<4>> NewHurts;
+		// Every blow since the last frame: two landing at once on two places are two hurts. A shoulder's push sent on into
+		// the trunk with it is still one blow, held at the shoulder.
+		const double Seen = FlinchBlowSeen;
+		if (BalanceComponent)
+		{
+			for (const UAedirBalanceComponent::FAedirBlowLanded& Blow : BalanceComponent->GetRecentBlows())
 			{
-				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s takes a blow of %.0f on %s"), *GetNameSafe(CreatureOwner), Push, *Bone.ToString());
-			}
-			int32 PartSide = 0;
-			const EAedirClutchPart Struck = AedirClutchPartOf(Bone, PartSide);
-			if (Push >= ClutchBlowMinPush && Struck != EAedirClutchPart::None && Struck != EAedirClutchPart::Arm && Body->GetBoneIndex(Bone) != INDEX_NONE)
-			{
-				NewBone = Bone;
-				NewLocal = Local;
-				NewSeverity = FMath::Clamp((Push - ClutchBlowMinPush) / FMath::Max(ClutchBlowFullPush - ClutchBlowMinPush, 1.f), 0.f, 1.f);
+				if (Blow.Time <= Seen)
+				{
+					continue;
+				}
+				FlinchBlowSeen = FMath::Max(FlinchBlowSeen, Blow.Time);
+				static const IConsoleVariable* HitLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+				if (HitLog && HitLog->GetInt() != 0)
+				{
+					UE_LOG(LogAedir, Log, TEXT("[Clutch] %s takes a blow of %.0f on %s"), *GetNameSafe(CreatureOwner), Blow.Push, *Blow.Bone.ToString());
+				}
+				int32 PartSide = 0;
+				const EAedirClutchPart Struck = AedirClutchPartOf(Blow.Bone, PartSide);
+				if (Blow.Push >= ClutchBlowMinPush && Struck != EAedirClutchPart::None && Struck != EAedirClutchPart::Arm && Body->GetBoneIndex(Blow.Bone) != INDEX_NONE)
+				{
+					NewHurts.Add({ Blow.Bone, Blow.Local, FMath::Clamp((Blow.Push - ClutchBlowMinPush) / FMath::Max(ClutchBlowFullPush - ClutchBlowMinPush, 1.f), 0.f, 1.f) });
+				}
 			}
 		}
 		if (WoundComponent)
@@ -1717,14 +1751,12 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 				bool bAlreadySeen = false;
 				FlinchWoundsSeen.Add(Wound.Id, &bAlreadySeen);
 				int32 PartSide = 0;
-				if (bAlreadySeen || !bFlinchWoundsKnown || Wound.Type == EAedirWoundType::Bruise || Wound.GetSeverity() < ClutchFlinchWoundSeverity || Wound.GetSeverity() <= NewSeverity
+				if (bAlreadySeen || !bFlinchWoundsKnown || Wound.Type == EAedirWoundType::Bruise || Wound.GetSeverity() < ClutchFlinchWoundSeverity
 					|| AedirClutchPartOf(Wound.Bone, PartSide) == EAedirClutchPart::None || Body->GetBoneIndex(Wound.Bone) == INDEX_NONE)
 				{
 					continue;
 				}
-				NewBone = Wound.Bone;
-				NewLocal = Wound.Offset;
-				NewSeverity = Wound.GetSeverity();
+				NewHurts.Add({ Wound.Bone, Wound.Offset, Wound.GetSeverity() });
 			}
 			// A healed wound's number may come again for a new one.
 			for (auto It = FlinchWoundsSeen.CreateIterator(); It; ++It)
@@ -1736,51 +1768,86 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			}
 			bFlinchWoundsKnown = true;
 		}
-		// It takes over from one going that is less bad, or half over.
-		const float NewSeconds = FMath::Lerp(ClutchFlinchMinSeconds, ClutchFlinchMaxSeconds, FMath::Max(NewSeverity, 0.f));
-		if (NewSeverity >= 0.f && (FlinchLeft <= 0.f || NewSeverity >= FlinchSeverity || FlinchLeft < NewSeconds * 0.5f))
+		// The worst first. A blow and the wound it opened are one hurt, the worse of the two.
+		NewHurts.Sort([](const FNewHurt& A, const FNewHurt& B) { return A.Severity > B.Severity; });
+		const float SamePlace = ClutchSamePlaceCm * static_cast<float>(ActorTransform.GetScale3D().X);
+		TArray<FNewHurt, TInlineAllocator<4>> Hurts;
+		for (const FNewHurt& Hurt : NewHurts)
 		{
-			const FVector At = Body->GetBoneTransform(NewBone).TransformPosition(NewLocal);
-			const int32 Slot = PickHand(NewBone, At);
-			if (Slot != INDEX_NONE)
+			if (!Hurts.ContainsByPredicate([&](const FNewHurt& Kept) { return Kept.Bone == Hurt.Bone && FVector::Dist(Kept.Local, Hurt.Local) < SamePlace; }))
 			{
-				FlinchSlot = Slot;
-				FlinchBone = NewBone;
-				FlinchLocal = NewLocal;
-				FlinchSeverity = NewSeverity;
-				FlinchLeft = NewSeconds;
-				FlinchSeconds = NewSeconds;
-				FlinchElbowJump = 0.f;
-				FlinchElbowLast.Reset();
-				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s flinches for %.1f s, the %s hand to %s"), *GetNameSafe(CreatureOwner), NewSeconds, Slot == 0 ? TEXT("left") : TEXT("right"), *NewBone.ToString());
-				// That hand comes out of the fight while it is there; the other one goes on.
-				const EAedirHand FlinchHand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
-				if (AAedirCreature* Owner = CreatureOwner.Get())
-				{
-					if (Owner->Combat)
-					{
-						Owner->Combat->Flinch(FlinchHand, NewSeconds);
-					}
-					if (UAedirFistArms* Fists = Owner->FindComponentByClass<UAedirFistArms>())
-					{
-						Fists->Flinch(FlinchHand, NewSeconds);
-					}
-				}
+				Hurts.Add(Hurt);
 			}
 		}
-		if (FlinchLeft > 0.f && FlinchSlot != INDEX_NONE && Body->GetBoneIndex(FlinchBone) != INDEX_NONE)
+		for (const FNewHurt& Hurt : Hurts)
 		{
-			const float Before = FlinchLeft;
-			FlinchLeft = FMath::Max(FlinchLeft - DeltaTime, 0.f);
+			const float NewSeconds = FMath::Lerp(ClutchFlinchMinSeconds, ClutchFlinchMaxSeconds, Hurt.Severity);
+			const FVector At = Body->GetBoneTransform(Hurt.Bone).TransformPosition(Hurt.Local);
+			// A place a hand holds already stays that hand's, the longer and the worse of the two.
+			int32 Slot = INDEX_NONE;
+			for (int32 Hand = 0; Hand < 2; ++Hand)
+			{
+				if (HandFlinch[Hand].Left > 0.f && HandFlinch[Hand].Bone == Hurt.Bone && FVector::Dist(HandFlinch[Hand].Local, Hurt.Local) < SamePlace)
+				{
+					Slot = Hand;
+				}
+			}
+			if (Slot != INDEX_NONE)
+			{
+				FAedirHandFlinch& Held = HandFlinch[Slot];
+				Held.Severity = FMath::Max(Held.Severity, Hurt.Severity);
+				Held.Left = FMath::Max(Held.Left, NewSeconds);
+				Held.Seconds = FMath::Max(Held.Seconds, Held.Left);
+				SetFlinch(Slot, Held.Left);
+				continue;
+			}
+			// Otherwise a hand with nothing to hold goes there; failing one, it takes over from a place less bad, or half over.
+			const auto Idle = [&](int32 Hand) { return HandFlinch[Hand].Left <= 0.f; };
+			const auto Takeable = [&](int32 Hand) { return HandFlinch[Hand].Left <= 0.f || Hurt.Severity >= HandFlinch[Hand].Severity || HandFlinch[Hand].Left < NewSeconds * 0.5f; };
+			Slot = PickHand(Hurt.Bone, At, Idle, Takeable);
+			if (Slot == INDEX_NONE)
+			{
+				continue;
+			}
+			FAedirHandFlinch& Flinch = HandFlinch[Slot];
+			Flinch.Bone = Hurt.Bone;
+			Flinch.Local = Hurt.Local;
+			Flinch.Severity = Hurt.Severity;
+			Flinch.Left = NewSeconds;
+			Flinch.Seconds = NewSeconds;
+			Flinch.ElbowJump = 0.f;
+			Flinch.ElbowLast.Reset();
+			UE_LOG(LogAedir, Log, TEXT("[Clutch] %s flinches for %.1f s, the %s hand to %s (the %s hand %s)"), *GetNameSafe(CreatureOwner), NewSeconds, Slot == 0 ? TEXT("left") : TEXT("right"), *Hurt.Bone.ToString(),
+				Slot == 0 ? TEXT("right") : TEXT("left"), HandFlinch[1 - Slot].Left > 0.f ? *FString::Printf(TEXT("holds %s"), *HandFlinch[1 - Slot].Bone.ToString()) : TEXT("free"));
+			// That hand comes out of the fight while it is there; the other one goes on.
+			SetFlinch(Slot, NewSeconds);
+		}
+		for (int32 FlinchSlot = 0; FlinchSlot < 2; ++FlinchSlot)
+		{
+			FAedirHandFlinch& Flinch = HandFlinch[FlinchSlot];
+			if (Flinch.Left <= 0.f)
+			{
+				continue;
+			}
+			if (Body->GetBoneIndex(Flinch.Bone) == INDEX_NONE)
+			{
+				// The place is gone (cut off): the hand is back in the fight at once.
+				Flinch.Left = 0.f;
+				SetFlinch(FlinchSlot, 0.f);
+				continue;
+			}
+			const float Before = Flinch.Left;
+			Flinch.Left = FMath::Max(Flinch.Left - DeltaTime, 0.f);
+			const FName FlinchBone = Flinch.Bone;
 			const FTransform Frame = Body->GetBoneTransform(FlinchBone);
-			const FVector At = Frame.TransformPosition(FlinchLocal);
+			const FVector At = Frame.TransformPosition(Flinch.Local);
 			// Once, well into it: how near the hand came to the place.
-			const float Into = FlinchSeconds - 0.6f;
-			if (Before > Into && FlinchLeft <= Into)
+			const float Into = Flinch.Seconds - 0.6f;
+			if (Before > Into && Flinch.Left <= Into)
 			{
 				const FVector Palm = Body->GetBoneLocation(FlinchSlot == 0 ? TEXT("hand_l") : TEXT("hand_r"));
 				const FVector OtherPalm = Body->GetBoneLocation(FlinchSlot == 0 ? TEXT("hand_r") : TEXT("hand_l"));
-				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s: the hand is %.0f cm from the place on %s, the other %.0f cm; the elbow jumped at most %.1f cm in a frame"), *GetNameSafe(CreatureOwner), FVector::Dist(Palm, At), *FlinchBone.ToString(), FVector::Dist(OtherPalm, At), FlinchElbowJump);
+				UE_LOG(LogAedir, Log, TEXT("[Clutch] %s: the %s hand is %.0f cm from the place on %s, the other %.0f cm; the elbow jumped at most %.1f cm in a frame"), *GetNameSafe(CreatureOwner), FlinchSlot == 0 ? TEXT("left") : TEXT("right"), FVector::Dist(Palm, At), *FlinchBone.ToString(), FVector::Dist(OtherPalm, At), Flinch.ElbowJump);
 			}
 			// A blow by the ear or behind it is held from the side of the face: a hand reached round to behind the ear twists
 			// the arm up over itself and it thrashes about. The place is taken forward to the temple, and held from outside.
@@ -1801,11 +1868,11 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			bFlinchHand[FlinchSlot] = true;
 			// Dev: the biggest jump the elbow makes from one frame to the next while the hand goes there.
 			const FVector Elbow = Body->GetBoneLocation(FlinchSlot == 0 ? TEXT("lowerarm_l") : TEXT("lowerarm_r"));
-			if (FlinchElbowLast.IsSet())
+			if (Flinch.ElbowLast.IsSet())
 			{
-				FlinchElbowJump = FMath::Max(FlinchElbowJump, static_cast<float>(FVector::Dist(Elbow, FlinchElbowLast.GetValue())));
+				Flinch.ElbowJump = FMath::Max(Flinch.ElbowJump, static_cast<float>(FVector::Dist(Elbow, Flinch.ElbowLast.GetValue())));
 			}
-			FlinchElbowLast = Elbow;
+			Flinch.ElbowLast = Elbow;
 		}
 
 		// Out of the fight and not reaching for anything, the worst of what still hurts is held while it lasts: a stump, a
@@ -1820,7 +1887,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			FVector Outward = FVector::ZeroVector;
 			const auto Consider = [&](float Score, int32 Hand, const FVector& At, const FVector& Out)
 			{
-				if (Hand != INDEX_NONE && Hand != FlinchSlot && Score > Worst)
+				if (Hand != INDEX_NONE && HandFlinch[Hand].Left <= 0.f && Score > Worst)
 				{
 					Worst = Score;
 					Slot = Hand;
@@ -1841,7 +1908,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 				}
 				const FTransform Frame = Body->GetBoneTransform(Wound.Bone);
 				const FVector At = Frame.TransformPosition(Wound.Offset);
-				Consider(Severity, PickHand(Wound.Bone, At), At, Frame.TransformVectorNoScale(Wound.Normal).GetSafeNormal());
+				Consider(Severity, PickHand(Wound.Bone, At, Always, Always), At, Frame.TransformVectorNoScale(Wound.Normal).GetSafeNormal());
 			}
 			// A lost arm is held at the stump by the other hand, a lost thigh by the hand on its side; a broken arm at the
 			// middle of the upper arm by the other hand, a broken leg above the knee by the hand on its side.

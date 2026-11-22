@@ -23,7 +23,7 @@ namespace
 	TAutoConsoleVariable<int32> CVarAedirEdgeOn(TEXT("aedir.EdgeOn"), 1, TEXT("A blade is held with its edge to the enemy (1) or as its model lies (0)."));
 	// Across a blade, thinner one way than this share of the other: it has a flat that can strike.
 	constexpr double AedirItemFlatRatio = 0.5;
-	TAutoConsoleVariable<int32> CVarAedirHeldPassesOwnBody(TEXT("aedir.HeldPassesOwnBody"), 1, TEXT("A held weapon passes through its holder's own body (1) or stops against it (0): stopping, a blade caught on the own head or hip turned over the wrong way round and stuck there."));
+	TAutoConsoleVariable<int32> CVarAedirHeldPassesOwnBody(TEXT("aedir.HeldPassesOwnBody"), 0, TEXT("A held weapon passes through its holder's own body (1) or stops against it (0): stopping, a blade caught on the own head or hip turned over the wrong way round and stuck there."));
 	// A piece worn on the arm that is this thin for its width is a shield.
 	constexpr float ItemShieldThinShare = 0.3f;
 	constexpr float ItemPommelBeyondGripShare = 0.6f;
@@ -42,7 +42,7 @@ namespace
 	constexpr float ArmorWearLoss = 0.4f;
 	// Welding a held item onto the hand's body leaves its size in the welded shape's transform, which breaks the physics'
 	// queries and contacts on it; the hand carries its weight by force and its blade stops by the held sweep instead.
-	TAutoConsoleVariable<int32> CVarAedirWeldHeld(TEXT("aedir.WeldHeld"), 0, TEXT("Make a held item part of the hand's physical body."));
+	TAutoConsoleVariable<int32> CVarAedirWeldHeld(TEXT("aedir.WeldHeld"), 1, TEXT("Make a held item part of the hand's physical body."));
 	constexpr int32 AedirHighlightStencilValue = 250;
 }
 

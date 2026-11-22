@@ -1707,15 +1707,13 @@ void AAedirPlayerCharacter::HandleHeadCameraPressed()
 		// Time all but stopped is not stopped for the solver: it still pushes bodies apart and out of the ground every frame,
 		// and limbs would creep open for as long as the camera is out. The physics is held still altogether instead.
 		GetWorld()->bShouldSimulatePhysics = !bPhotoCamera;
-		// The hair's own simulation is held still too: stepped by time all but stopped, it pulled the strands out long. Let
-		// go again, it starts afresh from how the hair hangs: carried on from where it was held, its first step took up all
-		// the head had moved meanwhile at once and flung the strands out long for a moment.
+		// The hair's own simulation is let go of while the camera is out: stepped by time all but stopped, it pulled the
+		// strands out long, and only paused, the strands still shimmered from one frame to the next. The hair is drawn as it
+		// is styled. Let go again, it starts afresh from how the hair hangs: carried on from where it was held, its first
+		// step took up all the head had moved meanwhile at once and flung the strands out long for a moment.
 		if (Hair)
 		{
-			for (int32 Group = 0; Hair->GetNiagaraComponent(Group); ++Group)
-			{
-				Hair->GetNiagaraComponent(Group)->SetPaused(bPhotoCamera);
-			}
+			Hair->SetEnableSimulation(!bPhotoCamera);
 			if (!bPhotoCamera)
 			{
 				Hair->ResetSimulation();
@@ -1966,9 +1964,9 @@ void AAedirPlayerCharacter::Wound(const FString& WoundType, const FString& Bone)
 	RunDevCommand(TEXT("Wound"), FString::Printf(TEXT("%s %s"), *WoundType, *Bone), true);
 }
 
-void AAedirPlayerCharacter::BloodTest()
+void AAedirPlayerCharacter::BloodTest(const FString& BloodArgs)
 {
-	RunDevCommand(TEXT("BloodTest"), FString(), false);
+	RunDevCommand(TEXT("BloodTest"), BloodArgs, false);
 }
 
 void AAedirPlayerCharacter::DebugBody()
@@ -2359,6 +2357,11 @@ void AAedirPlayerCharacter::BloodCount()
 void AAedirPlayerCharacter::GripInfo()
 {
 	RunDevCommand(TEXT("GripInfo"), FString(), false);
+}
+
+void AAedirPlayerCharacter::HipProbe(const FString& ProbeArgs)
+{
+	RunDevCommand(TEXT("HipProbe"), ProbeArgs, false);
 }
 
 void AAedirPlayerCharacter::JitterProbe(const FString& ProbeArgs)

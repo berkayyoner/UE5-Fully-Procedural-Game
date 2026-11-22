@@ -300,6 +300,32 @@ void UAedirBodyControlComponent::SetHoist(float Share)
 	ApplyMultipliers();
 }
 
+void UAedirBodyControlComponent::SetHoldEase(float Share)
+{
+	const float Clamped = FMath::Clamp(Share, 0.f, 1.f);
+	// Only as it changes enough to matter, and once more as it comes to its end.
+	if (FMath::Abs(Clamped - HoldEase) > 0.02f || (Clamped != HoldEase && (Clamped == 0.f || Clamped == 1.f)))
+	{
+		// While it comes in, the muscles go after where the pose is, not after how fast it moves: the pose turns from getting
+		// up to standing at once (the knees from bent double to straight in a frame), and that speed is no speed to follow.
+		const bool bFollowSpeed = Clamped >= 1.f;
+		if (Control && bFollowSpeed != (HoldEase >= 1.f))
+		{
+			for (const FName& Name : Control->GetAllControlNames())
+			{
+				FPhysicsControlData Data;
+				if (Control->GetControlData(Name, Data) && Data.bUseSkeletalAnimation)
+				{
+					Control->SetControlUseSkeletalAnimation(Name, true, bFollowSpeed ? 1.f : 0.f, bFollowSpeed ? 1.f : 0.f);
+				}
+			}
+		}
+		HoldEase = Clamped;
+		AppliedKey = -1.f;
+		ApplyMultipliers();
+	}
+}
+
 void UAedirBodyControlComponent::SetDead(bool bInDead)
 {
 	if (bDead != bInDead)
@@ -641,8 +667,11 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// A dead body keeps less of its muscles than a living one that is down.
 	const float Limp = bDead ? DeadNow : LimpShare;
 	const float Hauled = bLimp && !bDead ? Hoist : 0.f;
-	const float Body = bLimp ? FMath::Lerp(Limp, HoistMuscleShare, Hauled) : FMath::Lerp(0.35f, 1.f, Upright);
-	const float LegBody = bLimp ? FMath::Lerp(Limp, HoistLegShare, Hauled) : Body;
+	// Just hauled up, the muscles come from the strength they lifted with to all of it (HoldEase), taking the body into the
+	// standing pose over a moment rather than straightening the legs from kneeling in a step or two.
+	const float Standing = FMath::Lerp(0.35f, 1.f, Upright);
+	const float Body = bLimp ? FMath::Lerp(Limp, HoistMuscleShare, Hauled) : FMath::Lerp(HoistMuscleShare, Standing, HoldEase);
+	const float LegBody = bLimp ? FMath::Lerp(Limp, HoistLegShare, Hauled) : FMath::Lerp(HoistLegShare, Standing, HoldEase);
 	const auto Apply = [this](const TArray<FName>& Names, float AngularHz, float LinearHz)
 	{
 		FPhysicsControlMultiplier Multiplier;
@@ -659,7 +688,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float Soft = (bRising && !bLimp ? RisingMuscleShare : 1.f) * Blow;
 	const float Trunk = Soft * (bLimp ? 1.f : TrunkMuscleShare);
 	Apply(SpineControls, SpineHz * Body * Trunk, 0.f);
-	Apply(HeadControls, HeadStrength * (bLimp ? FMath::Lerp(Limp, HoistHeadShare, Hauled) : Body) * Trunk, 0.f);
+	Apply(HeadControls, HeadStrength * (bLimp ? FMath::Lerp(Limp, HoistHeadShare, Hauled) : FMath::Lerp(HoistHeadShare, Standing, HoldEase)) * Trunk, 0.f);
 	Apply(LeftLegControls, LegStrength * LegBody * (bBroken[2] && !bLimp ? BrokenShare : 1.f), 0.f);
 	Apply(RightLegControls, LegStrength * LegBody * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
@@ -697,7 +726,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// Rising, the hips are lifted along the moves by the muscles, as hard as the body has it in it, never carried.
 	const float Rise = CVarAedirBodyRise.GetValueOnGameThread() >= 0.f ? CVarAedirBodyRise.GetValueOnGameThread() : RiseHipShare;
 	const float HipShare = bRising ? Rise * Body : Body;
-	Apply({ HipControl }, bHold ? HipAngularStrength * HipShare : 0.f, bHold ? Hips * HipShare : 0.f);
+	Apply({ HipControl }, bHold ? HipAngularStrength * HipShare * HoldEase : 0.f, bHold ? Hips * HipShare * HoldEase : 0.f);
 	Control->SetControlEnabled(HipControl, bHold);
 
 	// The trunk is kept upright as a whole, and standing it carries only part of its weight.
@@ -708,7 +737,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 		Control->SetControlEnabled(Name, !bLimp && Posture > 0.f);
 	}
 	const float Foot = CVarAedirBodyFoot.GetValueOnGameThread() >= 0.f ? CVarAedirBodyFoot.GetValueOnGameThread() : FootStrength;
-	Apply(FootControls, bLimp ? 0.f : Foot * Body, bLimp ? 0.f : Foot * Body);
+	Apply(FootControls, bLimp ? 0.f : Foot * Body * HoldEase, bLimp ? 0.f : Foot * Body * HoldEase);
 	// A kicking foot is thrown along its arc by the whole leg, much harder than a step sets a foot down.
 	if (!bLimp && KickLeg >= 0)
 	{

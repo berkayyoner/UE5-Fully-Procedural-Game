@@ -48,6 +48,8 @@ public:
 	static void GripInfo(AAedirPlayerCharacter* Player, const FString& Args);
 	// JitterProbe <seconds> <label>: measures how much the hands and the held item shake, in the body's own frame.
 	static void JitterProbe(AAedirPlayerCharacter* Player, const FString& Args);
+	// HipProbe <seconds> <label>: how far the hips are from where the pose has them, and the most they jump in a frame.
+	static void HipProbe(AAedirPlayerCharacter* Player, const FString& Args);
 	// MouseDrive <hand 0|1> <seconds> <ampX> <ampY> <hz>: moves the mouse in a figure for that hand, as a player swinging would.
 	static void MouseDrive(AAedirPlayerCharacter* Player, const FString& Args);
 

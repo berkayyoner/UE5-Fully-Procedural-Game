@@ -646,6 +646,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchFlankDegrees = 45.f;
 
+	// Hurt in two places at once, each hand goes to one of them; a new hurt within ClutchSamePlaceCm of a place a hand
+	// already holds on the same bone is that hand's to hold, not the other's.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchSamePlaceCm = 10.f;
+
 	// Out of the fight stance and not reaching for anything, a hand holds a wound still bleeding (from ClutchWoundMinSeverity
 	// up), the stump of a lost arm or thigh, or a broken limb, the worst of them, as far as ClutchWoundShare.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
@@ -992,15 +997,18 @@ private:
 	float ClutchAlpha[2] = { 0.f, 0.f };
 	// Whether the hand's hold is a flinch, over the swing and the fists' guard too.
 	bool bClutchFlinch[2] = { false, false };
-	// The flinch going: which hand, where on which bone, and how long it still lasts.
-	int32 FlinchSlot = INDEX_NONE;
-	FName FlinchBone;
-	FVector FlinchLocal = FVector::ZeroVector;
-	float FlinchLeft = 0.f;
-	float FlinchSeconds = 0.f;
-	float FlinchSeverity = 0.f;
-	TOptional<FVector> FlinchElbowLast;
-	float FlinchElbowJump = 0.f;
+	// The flinch each hand has going (left, right): where on which bone, how bad, and how long it still lasts.
+	struct FAedirHandFlinch
+	{
+		FName Bone;
+		FVector Local = FVector::ZeroVector;
+		float Left = 0.f;
+		float Seconds = 0.f;
+		float Severity = 0.f;
+		TOptional<FVector> ElbowLast;
+		float ElbowJump = 0.f;
+	};
+	FAedirHandFlinch HandFlinch[2];
 	double FlinchBlowSeen = -1.0;
 	TSet<uint8> FlinchWoundsSeen;
 	bool bFlinchWoundsKnown = false;

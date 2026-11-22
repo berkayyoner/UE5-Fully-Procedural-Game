@@ -88,7 +88,7 @@ namespace
 	constexpr float HudNotificationFontSize = 16.f;
 	const FLinearColor HudMissionColor(FColor(226, 190, 112));
 	// Those fighting the player, on the compass.
-	const FLinearColor HudFoeColor(FColor(214, 38, 30));
+	const FLinearColor HudFoeColor(FColor(188, 28, 22));
 	constexpr float HudFoeDotRadius = 3.f;
 	// Out of breath the sight closes in from the edges. The middle stays visible even with nothing left.
 	constexpr int32 HudFatigueCells = 56;
@@ -518,7 +518,7 @@ void AAedirHUD::DrawCompass(const APawn* Pawn)
 			const float Relative = HudSignedDegrees(HudNormalizeDegrees(static_cast<float>(FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X)))) - Heading);
 			const bool bSeen = FMath::Abs(Relative) <= HalfFov * 0.92f;
 			const float Position = bSeen ? Relative / HalfFov : (Relative > 0.f ? 0.92f : -0.92f);
-			const FVector2f Spot(Center.X + Position * HalfWidth, Center.Y + HalfHeight * 0.45f);
+			const FVector2f Spot(Center.X + Position * HalfWidth, Center.Y);
 			const float Radius = HudFoeDotRadius * Scale;
 			FVector2f Rim[12];
 			FVector2f Dot[12];

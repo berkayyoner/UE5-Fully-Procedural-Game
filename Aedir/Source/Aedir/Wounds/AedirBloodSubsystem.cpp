@@ -139,6 +139,7 @@ void AAedirBloodDrop::Launch(const FVector& Velocity, UMaterialInterface* Materi
 	}
 
 	Mesh->SetPhysicsLinearVelocity(Velocity);
+	LaunchedFrom = GetActorLocation();
 }
 
 void AAedirBloodDrop::OnDropHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
@@ -149,7 +150,7 @@ void AAedirBloodDrop::OnDropHit(UPrimitiveComponent* HitComponent, AActor* Other
 	}
 
 	bSplatted = true;
-	UE_LOG(LogAedir, Verbose, TEXT("[Blood] drop hit %s after %.2f s at %s"), *GetNameSafe(OtherActor), GetGameTimeSinceCreation(), *Hit.ImpactPoint.ToCompactString());
+	UE_LOG(LogAedir, Verbose, TEXT("[Blood] drop hit %s after %.2f s at %s, %.0f cm out along the ground from %s"), *GetNameSafe(OtherActor), GetGameTimeSinceCreation(), *Hit.ImpactPoint.ToCompactString(), FVector::Dist2D(LaunchedFrom, Hit.ImpactPoint), *LaunchedFrom.ToCompactString());
 
 	if (UWorld* World = GetWorld())
 	{
@@ -250,7 +251,7 @@ void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Di
 		: Random.RandRange(FMath::Min(PunctureDropsMin, PunctureDropsMax), FMath::Max(PunctureDropsMin, PunctureDropsMax));
 	const float MinSpeed = bCut ? BloodCutSpeedMin : BloodPunctureSpeedMin;
 	const float MaxSpeed = bCut ? BloodCutSpeedMax : BloodPunctureSpeedMax;
-	const float SeverityScale = FMath::Lerp(BloodSeverityMinSpeedScale, 1.f, FMath::Clamp(Severity, 0.f, 1.f));
+	const float SeverityScale = FMath::Lerp(BloodSeverityMinSpeedScale, 1.f, FMath::Clamp(Severity, 0.f, 1.f)) * SpraySpeedShare;
 	const float ConeHalfAngleRad = FMath::DegreesToRadians(BloodSprayConeHalfAngleDeg);
 
 	for (int32 Index = 0; Index < DropCount; ++Index)

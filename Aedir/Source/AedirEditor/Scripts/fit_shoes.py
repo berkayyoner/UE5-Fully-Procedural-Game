@@ -13,6 +13,7 @@
 import bpy, sys, json
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
+from mathutils.kdtree import KDTree
 argv = sys.argv[sys.argv.index("--") + 1:]
 SRC, BODY, OUT, PREVIEW = argv[0], argv[1], argv[2], argv[3]
 SKELETON = argv[4] if len(argv) > 4 else None
@@ -23,6 +24,13 @@ SOLE_UNDER = 1.0    # cm the sole lies under the bottom of the foot
 HEEL_BEHIND = 1.6   # cm the back of the shoe lies behind the heel
 SKIN_ROOM = 0.7    # cm the leather keeps off the skin at the least
 PUSH_ROUNDS = 12
+PUSH_DEEPEST_CM = 3.0  # leather further into the skin than this is not the skin's to push
+PUSH_MOST_CM = 2.0     # nor is any pushed further than this in all
+SLICES = [0.0, 0.15, 0.3, 0.45, 0.6, 0.7, 0.8, 0.88, 0.95, 1.0]  # along the shoe, heel 0 to toe 1, where it is measured
+SLICE_CM = 1.5      # cm half the length of a slice measured across
+TOE_ROOM = 0.9      # cm the leather keeps beside and over the toes and the front of the foot
+MOST_WIDENED = 1.7  # a slice of the shoe is never widened more than this
+LINING_CM = 0.25    # cm thick the leather is: its inside is lined, seen from inside the shoe as it is from out
 
 d = json.load(open(BODY))
 names = [b["name"] for b in d["bones"]]
@@ -114,14 +122,50 @@ for side in (0, 1):
     k_wid = width_f * WIDTH_ROOM / width_s
     k_up = max(k_len, k_wid)
     origin = heel_to_toe * (heel_f - HEEL_BEHIND) + across * centre_across_f + up * (sole_f - SOLE_UNDER)
+    # Along its length, slice by slice, the shoe is centred over the foot and made wide and high enough for it: the front
+    # of the foot lies to the inside of the line from the heel to the ball, where the big toe is, and the shoe's point does
+    # not; widened alike from heel to toe, the big toe came out at the inside of the point.
+    a_f = [(verts[k].dot(heel_to_toe) - (heel_f - HEEL_BEHIND)) for k in skin]
+    total_f = toe_f - heel_f + LENGTH_ROOM + HEEL_BEHIND
+    rows = []
+    for share in SLICES:
+        at_f = share * total_f
+        fs = [k for k, a_ in zip(skin, a_f) if abs(a_ - at_f) < SLICE_CM and verts[k].z < bone_pos(foot).z]
+        at_s = heel_s + share * length_s
+        ss = [i for i in mine if abs(pts[i].dot(toe_way) - at_s) < SLICE_CM / k_len]
+        if fs and ss:
+            fc = [verts[k].dot(across) for k in fs]
+            sc_ = [pts[i].dot(across_s_axis) for i in ss]
+            f_mid, f_half = (max(fc) + min(fc)) * 0.5, (max(fc) - min(fc)) * 0.5
+            s_mid, s_half = (max(sc_) + min(sc_)) * 0.5, (max(sc_) - min(sc_)) * 0.5
+            kw = max(min((f_half + TOE_ROOM) / max(s_half, 0.3), MOST_WIDENED), k_wid)
+            f_top = max(verts[k].z for k in fs) - (sole_f - SOLE_UNDER)
+            s_top = (max(pts[i].z for i in ss) - sole_s) * k_up
+            ku = max(min((f_top + TOE_ROOM) / max(s_top, 0.3), MOST_WIDENED), 1.0)
+            rows.append((share, f_mid, s_mid, kw, ku))
+        elif rows:
+            rows.append((share,) + rows[-1][1:])
+    if not rows:
+        rows = [(0.0, centre_across_f, centre_across_s, k_wid, 1.0), (1.0, centre_across_f, centre_across_s, k_wid, 1.0)]
+    for r_ in rows:
+        print("[fit] %s at %.2f: foot middle %+.1f, widened %.2f, raised %.2f" % (foot, r_[0], r_[1] - centre_across_f, r_[3], r_[4]))
+    def slice_at(share):
+        share = max(min(share, rows[-1][0]), rows[0][0])
+        for r0, r1 in zip(rows, rows[1:]):
+            if share <= r1[0]:
+                t = (share - r0[0]) / max(r1[0] - r0[0], 1e-6)
+                t = t * t * (3 - 2 * t)
+                return [r0[n] + (r1[n] - r0[n]) * t for n in range(1, 5)]
+        return list(rows[-1][1:])
     for i in mine:
         p = pts[i]
         a = (p.dot(toe_way) - heel_s) * k_len
-        c = (p.dot(across_s_axis) - centre_across_s) * k_wid
-        h = (p.z - sole_s) * k_up
+        f_mid, s_mid, kw, ku = slice_at((p.dot(toe_way) - heel_s) / max(length_s, 1e-3))
+        c = f_mid - centre_across_f + (p.dot(across_s_axis) - s_mid) * kw
+        h = (p.z - sole_s) * k_up * ku
         out[i] = origin + heel_to_toe * a + across * c + up * h
     print("[fit] %s: foot %.1f cm long, %.1f across; shoe %.1f by %.1f, scaled %.2f long %.2f across %.2f up" % (foot, toe_f - heel_f, width_f, length_s, width_s, k_len, k_wid, k_up))
-    skin_of[side] = (foot_bones | {shin}, foot)
+    skin_of[side] = (foot_bones | {shin}, foot, heel_to_toe, across, centre_across_f, bone_pos("ball" + suffix).dot(heel_to_toe))
 
 # The skin of the feet and the shins, to keep the shoes off and to weigh them by.
 FEET = set()
@@ -135,6 +179,7 @@ for p in polys:
         for b in p:
             if a != b:
                 nbrs[a].add(b)
+pushed = [0.0] * len(out)
 def through():
     worst, count = 0.0, 0
     push = [Vector() for _ in out]
@@ -143,7 +188,9 @@ def through():
         if loc is None:
             continue
         gap = (v - loc).dot(normal)
-        if gap < SKIN_ROOM:
+        # Only leather at the skin: a point taken to the wrong side of a thin place (a strap at the ankle) was pushed further
+        # every round, out into a spike.
+        if -PUSH_DEEPEST_CM < gap < SKIN_ROOM and pushed[i] < PUSH_MOST_CM:
             push[i] = normal * (SKIN_ROOM - gap)
             worst = max(worst, SKIN_ROOM - gap)
             count += 1
@@ -158,8 +205,21 @@ for r in range(PUSH_ROUNDS):
             spread[j] += push[i] * 0.5 / max(len(nbrs[i]), 1)
     for i in range(len(out)):
         out[i] = out[i] + spread[i]
+        pushed[i] += spread[i].length
 push, worst, count = through()
 print("[fit] through the skin after pushing: %d points, deepest %.2f cm" % (count, worst))
+
+# Which way the leather's faces look, out of the shoe or in, by their winding.
+def shoe_normals_out(_unused):
+    total = 0.0
+    for poly in polys[:: max(len(polys) // 400, 1)]:
+        c = sum((out[i] for i in poly), Vector()) / len(poly)
+        n = (out[poly[1]] - out[poly[0]]).cross(out[poly[2]] - out[poly[0]])
+        if n.length < 1e-9:
+            continue
+        foot = bone_pos("foot_l") if (c - bone_pos("foot_l")).length < (c - bone_pos("foot_r")).length else bone_pos("foot_r")
+        total += n.normalized().dot((c - Vector((foot.x, foot.y, 3.0))).normalized())
+    return 1.0 if total >= 0 else -1.0
 
 def weigh(v):
     loc, _, face, _ = tree.find_nearest(v)
@@ -234,6 +294,20 @@ for i, v in enumerate(out):
                 g = groups[b] = shoes.vertex_groups.new(name=names[b])
             g.add([i], w / tot, "REPLACE")
 print("[fit] weighted to", sorted(names[b] for b in groups))
+# The leather given its thickness, inwards, the inside a lining that shows from within the shoe: one skin of faces only, it
+# could be seen through from inside, and the foot's skin showed in the opening where its inside should have been. The
+# lining keeps the leather's weights.
+lining = shoes.modifiers.new("Lining", "SOLIDIFY")
+lining.thickness = LINING_CM
+lining.offset = -1.0 * shoe_normals_out(None)
+# Not evened out: evened, a sharp fold in the strap at the ankle was thrown out into a long spike.
+lining.use_even_offset = False
+lining.use_rim = True
+bpy.ops.object.select_all(action="DESELECT")
+shoes.select_set(True)
+bpy.context.view_layer.objects.active = shoes
+bpy.ops.object.modifier_apply(modifier="Lining")
+print("[fit] lined: %d points" % len(shoes.data.vertices))
 shoes.parent = arm_obj
 mod = shoes.modifiers.new("Armature", "ARMATURE")
 mod.object = arm_obj
