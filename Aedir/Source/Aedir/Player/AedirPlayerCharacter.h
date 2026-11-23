@@ -617,6 +617,15 @@ public:
 	UFUNCTION(Exec)
 	void FaceNearest();
 
+	// NearestBody <seconds>: how far the nearest other body's hips go, and how fast at most, over the next seconds.
+	UFUNCTION(Exec)
+	void NearestBody(float Seconds);
+
+	// TwoHandInfo <label>: with a weapon in the right hand, where both hands are along its grip and across it (the bodies as
+	// they are, and where the pose wants them).
+	UFUNCTION(Exec)
+	void TwoHandInfo(const FString& Label);
+
 	// Logs how the worn armour sits: the box of the skin of the head as it is drawn now and the box of each worn piece, in the
 	// body's frame (forward, right, up) from the head bone, and the bone each piece hangs from.
 	UFUNCTION(Exec)
@@ -732,7 +741,7 @@ public:
 	void KickNow(float HoldShare);
 
 	UFUNCTION(Exec)
-	void HandKey(int32 RightHand);
+	void HandKey(int32 RightHand, int32 Release = 0);
 
 	UFUNCTION(Exec)
 	void PlaceBlock(float Forward, float Right, float Up, float SizeCm);
@@ -1055,11 +1064,17 @@ private:
 	void HandleHandPressed(EAedirHand Hand);
 	void HandleHandReleased(EAedirHand Hand);
 	void UpdateHandUseHold(float DeltaSeconds);
+	void UpdateReachAfterHandOver(float DeltaSeconds);
 	void UpdateSwingInput(float DeltaSeconds);
 
 	FVector2D PendingMouseDelta = FVector2D::ZeroVector;
 
 	bool bHandKeyTracked[2] = { false, false };
+
+	// A hand whose weapon went over into the other hand reaches as soon as it is empty (on a guest's machine, once the
+	// server has said so); given up after a second.
+	int32 ReachAfterHandOver = -1;
+	float ReachAfterHandOverSeconds = 0.f;
 	bool bHandUseTriggered[2] = { false, false };
 	float HandKeyHeldSeconds[2] = { 0.f, 0.f };
 

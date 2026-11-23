@@ -1,4 +1,5 @@
 #include "Combat/AedirCombatComponent.h"
+#include "EngineUtils.h"
 #include "Animation/AedirGaitComponent.h"
 #include "Player/AedirPlayerCharacter.h"
 #include "Fists/AedirFistArms.h"
@@ -6218,9 +6219,62 @@ void UAedirCombatComponent::UpdateKick(float DeltaTime)
 			}
 		}
 
+		// Bodies lying in the leg's way are shoved along, never sent flying by the force that drives the foot.
+		LimitKickedDownBodies();
+
 		if (KickNet.Elapsed >= AedirKickDuration)
 		{
 			KickNet.bActive = false;
+		}
+	}
+}
+
+void UAedirCombatComponent::LimitKickedDownBodies()
+{
+	UWorld* World = GetWorld();
+	if (!World || !Creature)
+	{
+		return;
+	}
+	const FVector Origin = Creature->GetActorLocation();
+	for (TActorIterator<AAedirCreature> It(World); It; ++It)
+	{
+		AAedirCreature* Other = *It;
+		USkeletalMeshComponent* OtherMesh = Other ? Other->GetMesh() : nullptr;
+		if (!OtherMesh || Other == Creature || FVector::DistSquared2D(Other->GetActorLocation(), Origin) > FMath::Square(250.f))
+		{
+			continue;
+		}
+		const bool bDead = Other->Stats && (Other->Stats->IsDead() || Other->Stats->IsDying());
+		const bool bDown = bDead || (Other->Balance && Other->Balance->IsRagdoll() && !Other->Balance->IsHoisting());
+		if (!bDown)
+		{
+			continue;
+		}
+		float Fastest = 0.f;
+		for (FBodyInstance* Body : OtherMesh->Bodies)
+		{
+			if (!Body || !Body->IsInstanceSimulatingPhysics())
+			{
+				continue;
+			}
+			const FVector V = Body->GetUnrealWorldVelocity();
+			FVector Flat(V.X, V.Y, 0.f);
+			const float FlatSpeed = static_cast<float>(Flat.Size());
+			const bool bTooFast = FlatSpeed > KickDownBodyMaxSpeedCm || V.Z > KickDownBodyUpMaxSpeedCm;
+			Fastest = FMath::Max(Fastest, FlatSpeed);
+			if (bTooFast)
+			{
+				if (FlatSpeed > KickDownBodyMaxSpeedCm)
+				{
+					Flat *= KickDownBodyMaxSpeedCm / FlatSpeed;
+				}
+				Body->SetLinearVelocity(FVector(Flat.X, Flat.Y, FMath::Min(V.Z, static_cast<double>(KickDownBodyUpMaxSpeedCm))), false);
+			}
+		}
+		if (Fastest > KickDownBodyMaxSpeedCm * 1.5f)
+		{
+			UE_LOG(LogAedir, Log, TEXT("[Kick] %s's leg runs into %s lying down: a part of it going %.0f cm/s is held to %.0f"), *Creature->GetName(), *Other->GetName(), Fastest, KickDownBodyMaxSpeedCm);
 		}
 	}
 }

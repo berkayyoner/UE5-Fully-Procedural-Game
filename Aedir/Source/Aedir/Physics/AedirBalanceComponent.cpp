@@ -785,6 +785,11 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 		Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftLeg), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightLeg));
 	const bool bGettingUp = IsGettingUp();
 	BodyControl->SetRising(bGettingUp);
+	{
+		// Down but awake the body keeps the muscle it has on its feet, less only with breath gone or the senses dazed.
+		const bool bSenseless = BreathStats && (BreathStats->IsDead() || BreathStats->IsDying() || BreathStats->IsKnockedOut());
+		BodyControl->SetDownAwake(bSenseless ? 0.f : DownAwakeMotorShare * Breath * (1.f - 0.6f * GetDazeFactor()));
+	}
 
 	// A foot the steps have put down stays there; one in the air, or both while jumping or falling, swings free.
 	FAedirGaitState Pose;
@@ -1125,7 +1130,8 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 
 	if (Impact.Bone != NAME_None && BodyMesh)
 	{
-		const float ImpulseSize = FMath::Min(Impact.MassKg * Impact.RelativeSpeed * HitReactionBoneImpulseScale, HitReactionBoneImpulseMax) * Weak;
+		const float ImpulseSize = FMath::Min(Impact.MassKg * Impact.RelativeSpeed * HitReactionBoneImpulseScale, HitReactionBoneImpulseMax) * Weak
+			* (bIsRagdoll && !bHoisting ? DownBlowPushShare : 1.f);
 		// A shoulder or an upper arm struck: the trunk takes most of it, so the arm is not flung up beside the head.
 		const FString StruckName = Impact.Bone.ToString();
 		const bool bShoulder = StruckName.StartsWith(TEXT("clavicle")) || StruckName.StartsWith(TEXT("upperarm"));
@@ -2344,7 +2350,10 @@ void UAedirBalanceComponent::UpdateStumbleWalk(float DeltaTime)
 	const UWorld* StumbleWorld = GetWorld();
 	// Dying away after the blow that started it.
 	const float Fade = StumbleWorld ? 1.f - FMath::Clamp(static_cast<float>(StumbleWorld->GetTimeSeconds() - StumbleBlowTime) / FMath::Max(StumbleWalkSeconds, 0.05f), 0.f, 1.f) : 0.f;
-	bStumbling = Movement && !bIsRagdoll && !IsGettingUp() && Movement->IsMovingOnGround() && (Balance < StumbleWalkBelowBalance || StaggerSeconds > 0.f) && !LeanDirection.IsNearlyZero() && Fade > 0.f;
+	// On one leg for a kick there is no hurried walk: the body goes over its standing foot as it is, not dragged on the way it went.
+	const UAedirCombatComponent* StumbleCombat = CharacterOwner ? CharacterOwner->FindComponentByClass<UAedirCombatComponent>() : nullptr;
+	const bool bOneLeg = StumbleCombat && StumbleCombat->IsKicking();
+	bStumbling = Movement && !bIsRagdoll && !IsGettingUp() && !bOneLeg && Movement->IsMovingOnGround() && (Balance < StumbleWalkBelowBalance || StaggerSeconds > 0.f) && !LeanDirection.IsNearlyZero() && Fade > 0.f;
 	if (!bStumbling)
 	{
 		return;
@@ -4524,7 +4533,7 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	}
 	else if (bIsRagdoll)
 	{
-		Common = FMath::Max(AedirLivingFallMotorShare, DownAwakeMotorShare * FMath::Lerp(0.35f, 1.f, StaminaFraction) * (1.f - 0.6f * GetDazeFactor()));
+		Common = FMath::Max(AedirLivingFallMotorShare, DownAwakeMotorShare * FMath::Lerp(TiredStrengthShare, 1.f, StaminaFraction) * (1.f - 0.6f * GetDazeFactor()));
 	}
 
 	float Strength[5];

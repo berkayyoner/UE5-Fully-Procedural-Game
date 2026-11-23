@@ -178,6 +178,10 @@ public:
 
 	// A body down on the ground: limp, every part loose. Back up, it is tied to the capsule again.
 	void SetLimp(bool bInLimp);
+
+	// Down but awake (not dead, not senseless), the share of a standing body's muscle it keeps, 0 to 1: it lies firm in its
+	// pose and can turn, guard and strike from the ground. 0 leaves it as limp as LimpShare.
+	void SetDownAwake(float Share);
 	// Down and being hauled up by the hips: how far, 0 to 1, the muscles have come back to HoistMuscleShare.
 	void SetHoist(float Share);
 	// How much of their hold the hips on the capsule and the feet on the ground have, 0 to 1, and how far the muscles have come
@@ -282,6 +286,7 @@ private:
 	bool bReady = false;
 	bool bLimp = false;
 	float Hoist = 0.f;
+	float DownAwake = 0.f;
 	float HoldEase = 1.f;
 	bool bAirborne = false;
 	bool bRising = false;

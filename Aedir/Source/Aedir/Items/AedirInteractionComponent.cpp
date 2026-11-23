@@ -1790,6 +1790,42 @@ void UAedirInteractionComponent::ServerPassToOtherHand_Implementation()
 	PassToOtherHand();
 }
 
+bool UAedirInteractionComponent::HandOverNow(EAedirHand FromHand)
+{
+	AAedirCreature* Creature = GetCreature();
+	AAedirItemActor* Item = GetHeldItem(FromHand);
+	const EAedirHand ToHand = GetOtherHand(FromHand);
+	if (!Creature || !Item || GetHandState(FromHand) != EAedirHandState::Holding || GetHeldItem(ToHand) || GetHandState(ToHand) != EAedirHandState::Idle || IsHandUseless(ToHand))
+	{
+		return false;
+	}
+	if (!IsAuthoritative())
+	{
+		ServerHandOverNow(FromHand);
+		return true;
+	}
+	FAedirHandSlot& From = GetSlot(FromHand);
+	FAedirHandSlot& To = GetSlot(ToHand);
+	ResetSlot(From);
+	Item->AttachToCreatureHand(Creature, ToHand);
+	if (Creature->Combat)
+	{
+		Creature->Combat->SetWeaponDirNow(ToHand, Item->GetActorForwardVector());
+	}
+	To.State = EAedirHandState::Holding;
+	To.Item = Item;
+	To.ReachElapsed = 0.f;
+	UpdateCarriedWeight();
+	UE_LOG(LogAedir, Log, TEXT("[HandOver] %s took %s from the %s hand into the %s, the one already on its grip."), *GetNameSafe(Creature), *Item->GetName(),
+		FromHand == EAedirHand::Left ? TEXT("left") : TEXT("right"), ToHand == EAedirHand::Left ? TEXT("left") : TEXT("right"));
+	return true;
+}
+
+void UAedirInteractionComponent::ServerHandOverNow_Implementation(EAedirHand FromHand)
+{
+	HandOverNow(FromHand);
+}
+
 void UAedirInteractionComponent::ServerDrawWaistSlot_Implementation(EAedirHand Hand, int32 SlotIndex)
 {
 	DrawWaistSlot(Hand, SlotIndex);

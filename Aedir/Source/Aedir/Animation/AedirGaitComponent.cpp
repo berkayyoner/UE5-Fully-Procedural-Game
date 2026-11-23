@@ -278,7 +278,10 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float ReachWidenAlpha = FMath::Clamp((WidenInteraction ? WidenInteraction->GetPelvisLowerZ() : 0.f) / ReachLowerMaxCm, 0.f, 1.f);
 	const float PostureWidthScale = 1.f + (CrouchFootWidenShare * CrouchAlpha) + (CrouchFootWidenShare * ReachWidenAlpha);
 	// Crouched, the stance sets the feet no wider than the crouch does.
-	const float StanceWiden = FMath::Max(FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha), FMath::Lerp(1.f, FistStanceWidthMultiplier, FistStanceAlpha));
+	const float StanceWidenStill = FMath::Max(FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha), FMath::Lerp(1.f, FistStanceWidthMultiplier, FistStanceAlpha));
+	// Moving, the stance's widening gives way with the speed: at a run the feet come in under the body.
+	const float WidenKept = bMoving ? FMath::Lerp(FMath::Lerp(1.f, StanceWalkWidthShare, FMath::Clamp(Speed2D / WalkSpeedCm, 0.f, 1.f)), StanceRunWidthShare, RunMix) : 1.f;
+	const float StanceWiden = 1.f + (StanceWidenStill - 1.f) * WidenKept;
 	const float StanceWidthScale = FMath::Lerp(StanceWiden, FMath::Lerp(1.f, StanceWiden, CrouchStanceWidthShare), CrouchAlpha) * PostureWidthScale;
 	const float StanceLeadForwardCm = StanceLeadFootForwardCm * StaggerAlpha * ActorScale;
 	for (int32 Foot = 0; Foot < 2; ++Foot)
@@ -553,7 +556,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.RightFootRot = ComputeFootTilt(TargetNormal[1], ActorUp, GaitState.RightFootRot, DeltaTime);
 
 	// Stairs make the body climb more slowly.
-	MovementComponent->SetStairSpeedScale(FMath::GetMappedRangeValueClamped(FVector2f(StairStrideMultiplier, 1.f), FVector2f(AedirStairMinSpeedScale, 1.f), StairFactor));
+	MovementComponent->SetStairSpeedScale(FMath::GetMappedRangeValueClamped(FVector2f(StairStrideMultiplier, 1.f), FVector2f(AedirStairMinSpeedScale, 1.f), StairFactor)
+		* (bKicking ? FMath::Lerp(1.f, KickMoveSpeedShare, KickAlpha) : 1.f));
 
 	const float RunTarget = MovementComponent->IsRunningNow() ? SpeedAlpha : 0.f;
 	RunBlend = FMath::FInterpTo(RunBlend, RunTarget, DeltaTime, AedirRunBlendInterpSpeed);
@@ -872,6 +876,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	}
 	// Loose arms hang straight while standing; the elbows start to break with the walking and running speed.
 	GaitState.ElbowBend = FMath::Lerp(ElbowBendWalkDegrees, ElbowBendRunDegrees, SpeedAlpha * SpeedAlpha) * ArmBlend;
+	// Creeping, out of the stance, the arms are drawn in with the elbows bent.
+	GaitState.ElbowBend = FMath::Max(GaitState.ElbowBend, CrouchElbowBendDegrees * CrouchAlpha * (1.f - FMath::Max(StanceAlpha, FistStanceAlpha)));
 	GaitState.KneeBend = FMath::Max(Lift[0], Lift[1]) * KneeBendMaxDegrees + ReachLowerAlpha * KneeBendMaxDegrees;
 	GaitState.KneeBend += StanceKneeBendDegrees * SinkAlpha;
 

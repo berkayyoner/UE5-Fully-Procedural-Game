@@ -1599,6 +1599,22 @@ void AAedirPlayerCharacter::HandleHandReleased(EAedirHand Hand)
 	{
 		return;
 	}
+	// A one-handed weapon held in both hands: the hand sent out first leaves it to the other. The left one just lets go of
+	// the grip; the right one gives the weapon over into the left, already on it, and then reaches.
+	if (FistArms && FistArms->IsTwoHand())
+	{
+		FistArms->SetTwoHand(false);
+		if (Hand == EAedirHand::Right && Interaction->GetHandState(Hand) == EAedirHandState::Holding)
+		{
+			if (Interaction->HandOverNow(EAedirHand::Right))
+			{
+				ReachAfterHandOver = Index;
+				ReachAfterHandOverSeconds = 0.f;
+				UpdateReachAfterHandOver(0.f);
+			}
+			return;
+		}
+	}
 	switch (Interaction->GetHandState(Hand))
 	{
 	case EAedirHandState::Idle:
@@ -1612,8 +1628,28 @@ void AAedirPlayerCharacter::HandleHandReleased(EAedirHand Hand)
 	}
 }
 
+void AAedirPlayerCharacter::UpdateReachAfterHandOver(float DeltaSeconds)
+{
+	if (ReachAfterHandOver < 0 || !Interaction)
+	{
+		return;
+	}
+	const EAedirHand Hand = static_cast<EAedirHand>(ReachAfterHandOver);
+	ReachAfterHandOverSeconds += DeltaSeconds;
+	if (Interaction->GetHandState(Hand) == EAedirHandState::Idle && !Interaction->GetHeldItem(Hand))
+	{
+		ReachAfterHandOver = -1;
+		Interaction->StartReach(Hand);
+	}
+	else if (ReachAfterHandOverSeconds > 1.f)
+	{
+		ReachAfterHandOver = -1;
+	}
+}
+
 void AAedirPlayerCharacter::UpdateHandUseHold(float DeltaSeconds)
 {
+	UpdateReachAfterHandOver(DeltaSeconds);
 	if (!Interaction)
 	{
 		return;
@@ -2431,8 +2467,13 @@ void AAedirPlayerCharacter::KickNow(float HoldShare)
 	}
 }
 
-void AAedirPlayerCharacter::HandKey(int32 RightHand)
+void AAedirPlayerCharacter::HandKey(int32 RightHand, int32 Release)
 {
+	if (Release != 0)
+	{
+		HandleHandReleased(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
+		return;
+	}
 	HandleHandPressed(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
 }
 
@@ -3167,6 +3208,70 @@ void AAedirPlayerCharacter::FaceNearest()
 		SetActorRotation(FRotator(0.f, Yaw, 0.f));
 		UE_LOG(LogAedir, Display, TEXT("[Dev] Facing %s's hips, %.0f cm off"), *Nearest->GetName(), FVector::Dist2D(Hips, GetActorLocation()));
 	}
+}
+
+void AAedirPlayerCharacter::TwoHandInfo(const FString& Label)
+{
+	const AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
+	USkeletalMeshComponent* Body = GetMesh();
+	if (!Item || !Body)
+	{
+		return;
+	}
+	const FVector Axis = Item->GetActorForwardVector();
+	const FVector Grip = Item->GetGripWorld();
+	const auto Along = [&](const FVector& P) { return static_cast<float>(FVector::DotProduct(P - Grip, Axis)); };
+	const auto Off = [&](const FVector& P) { const FVector D = P - Grip; return static_cast<float>((D - Axis * FVector::DotProduct(D, Axis)).Size()); };
+	// The middle of each fist: between the wrist and the knuckles.
+	const FVector R = (Body->GetBoneLocation(TEXT("hand_r")) + Body->GetBoneLocation(TEXT("middle_01_r"))) * 0.5;
+	const FVector L = (Body->GetBoneLocation(TEXT("hand_l")) + Body->GetBoneLocation(TEXT("middle_01_l"))) * 0.5;
+	UAedirProceduralAnimInstance* Anim = Cast<UAedirProceduralAnimInstance>(Body->GetAnimInstance());
+	const FVector PoseL = Anim ? Anim->GetPoseArmWorld(0, 2).GetLocation() : FVector::ZeroVector;
+	const FVector PoseR = Anim ? Anim->GetPoseArmWorld(1, 2).GetLocation() : FVector::ZeroVector;
+	UE_LOG(LogAedir, Display, TEXT("[TwoHand] %s: right fist %.1f along the grip, %.1f off it; left fist %.1f along, %.1f off; the fists %.1f cm apart (%.1f along); left wrist %.1f cm from its pose, right %.1f; both hands %d, grip gap %.1f, pommel %.1f below the grip"),
+		*Label, Along(R), Off(R), Along(L), Off(L), FVector::Dist(R, L), Along(R) - Along(L),
+		FVector::Dist(Body->GetBoneLocation(TEXT("hand_l")), PoseL), FVector::Dist(Body->GetBoneLocation(TEXT("hand_r")), PoseR),
+		FistArms && FistArms->IsTwoHand() ? 1 : 0, FistArms ? FistArms->GetGripGapCm(Item) : 0.f, Item->GetPommelBelowGripCm());
+}
+
+void AAedirPlayerCharacter::NearestBody(float Seconds)
+{
+	AAedirCreature* Nearest = nullptr;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())))
+		{
+			Nearest = *It;
+		}
+	}
+	if (!Nearest || !Nearest->GetMesh())
+	{
+		return;
+	}
+	struct FWatch { FVector From; FVector Last; float Top = 0.f; float Elapsed = 0.f; };
+	TSharedRef<FWatch> Watch = MakeShared<FWatch>();
+	Watch->From = Watch->Last = Nearest->GetMesh()->GetBoneLocation(TEXT("pelvis"));
+	TWeakObjectPtr<AAedirCreature> Weak = Nearest;
+	const float Total = FMath::Clamp(Seconds, 0.2f, 20.f);
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(this, [this, Watch, Weak, Total, Handle]()
+	{
+		const float Step = 1.f / 60.f;
+		if (!Weak.IsValid() || !Weak->GetMesh())
+		{
+			GetWorldTimerManager().ClearTimer(*Handle);
+			return;
+		}
+		const FVector Now = Weak->GetMesh()->GetBoneLocation(TEXT("pelvis"));
+		Watch->Top = FMath::Max(Watch->Top, static_cast<float>(FVector::Dist(Now, Watch->Last)) / Step);
+		Watch->Last = Now;
+		Watch->Elapsed += Step;
+		if (Watch->Elapsed >= Total)
+		{
+			UE_LOG(LogAedir, Display, TEXT("[NearestBody] %s's hips went %.0f cm (%.0f up), at most %.0f cm/s"), *Weak->GetName(), FVector::Dist2D(Now, Watch->From), Now.Z - Watch->From.Z, Watch->Top);
+			GetWorldTimerManager().ClearTimer(*Handle);
+		}
+	}), 1.f / 60.f, true);
 }
 
 void AAedirPlayerCharacter::WorldJitter(const FString& Args)

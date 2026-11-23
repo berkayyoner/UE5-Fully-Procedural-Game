@@ -390,11 +390,11 @@ public:
 
 	// Held in both hands, the second hand closes on the grip this far below the first, towards the pommel.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandGapCm = 9.f;
+	float TwoHandGapCm = 10.5f;
 
 	// On a short handle the second hand comes no further down than this far past the end of the pommel, closing over it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandPastPommelCm = 2.5f;
+	float TwoHandPastPommelCm = 5.5f;
 
 	// The second arm's elbow points at least this share out to its own side (0 straight down or back, 1 straight out), so
 	// it never bends in through the chest.

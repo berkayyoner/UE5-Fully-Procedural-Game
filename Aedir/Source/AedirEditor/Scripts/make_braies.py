@@ -22,7 +22,7 @@ SKELETON = argv[3] if len(argv) > 3 and argv[3] != "-" else None
 NAME = "MedievalBraies"
 os.makedirs(OUTDIR, exist_ok=True)
 
-WAIST_ABOVE_PELVIS = 7.0   # cm the top of the waistband stands over the pelvis bone
+WAIST_ABOVE_PELVIS = 12.0  # cm the top of the waistband stands over the pelvis bone: on the waist, not low on the hips
 BAND_CM = 3.2              # how tall the waistband is
 HEM_INNER_CM = 9.0         # the hem lies this far under the crotch on the inside of the leg
 HEM_OUTER_CM = 5.0         # and this far on the outside, the leg opening rising to the side
@@ -39,14 +39,15 @@ K = 26                     # points round each half of the seat
 M = 9                      # spans along the gusset between front and back
 ROW_CM = 1.2               # rows of the seat this far apart
 LEG_ROWS = 9
-TILE_CM = 11.0             # the weave repeats every this many centimetres
+TILE_CM = 44.0             # the weave repeats every this many centimetres: further than any one view of the cloth
+LINING_CM = 0.14           # the cloth's thickness: its inside is a second face this far in, the weave on it too
 WEIGHT_ROUNDS = 10
 TROUSERS = len(argv) > 4 and argv[4] == "trousers"
 WOOL = (74, 63, 52)       # the trousers' wool; the braies are undyed linen
 LINEN = (201, 189, 163)
 if TROUSERS:
     NAME = "MedievalTrousers"
-    WAIST_ABOVE_PELVIS, BAND_CM = 9.0, 4.0
+    WAIST_ABOVE_PELVIS, BAND_CM = 14.0, 4.0
     GATHERS, GATHER_CM = 16, 0.4
     SEAT_ROOM, LEG_ROOM_TOP = 2.6, 3.2
     LEG_ROWS = 34
@@ -428,9 +429,26 @@ sm.factor, sm.iterations = 0.35, 2
 bpy.context.view_layer.objects.active = obj
 obj.select_set(True)
 bpy.ops.object.modifier_apply(modifier="Soft")
+# The inside: the whole cloth again, a thickness in and facing the body, so a look into a leg or under the band finds
+# cloth and not the back of a face.
+bm = bmesh.new()
+bm.from_mesh(me)
+bm.normal_update()
+outer_verts = list(bm.verts)
+outer_normals = {v: v.normal.copy() for v in outer_verts}
+dup = bmesh.ops.duplicate(bm, geom=list(bm.verts) + list(bm.edges) + list(bm.faces))
+vmap = dup["vert_map"]
+inner_faces = [g for g in dup["geom"] if isinstance(g, bmesh.types.BMFace)]
+for v in outer_verts:
+    vmap[v].co = v.co - outer_normals[v] * LINING_CM
+bmesh.ops.reverse_faces(bm, faces=inner_faces)
+bm.to_mesh(me)
+bm.free()
+for poly in me.polygons:
+    poly.use_smooth = True
 mat = bpy.data.materials.new(NAME)
 me.materials.append(mat)
-print("[braies] cloth: %d points, %d faces" % (len(me.vertices), len(me.polygons)))
+print("[braies] cloth: %d points, %d faces, its inside too" % (len(me.vertices), len(me.polygons)))
 
 # ---- the drawstring, tied in a bow at the front of the band.
 knot = seat_point(waist_z - BAND_CM * 0.5, K, 1)
@@ -448,14 +466,28 @@ def string(points, radius=0.32):
     bpy.context.scene.collection.objects.link(o)
     return o
 pieces = []
+BOW = 1.6 if TROUSERS else 1.0
+if TROUSERS:
+    # The cord runs round the waist over the band and comes out at the front to the knot.
+    cord_z = waist_z - BAND_CM * 0.5
+    ring = []
+    for half, ks in ((1, range(K, -1, -1)), (-1, range(1, K + 1))):
+        for k in ks:
+            p = seat_point(cord_z, k, half)
+            c = seat_hull(cord_z)[1]
+            flat = Vector((p.x - c.x, p.y - c.y))
+            flat.length += 0.38
+            ring.append(Vector((c.x + flat.x, c.y + flat.y, cord_z + 0.25 * math.sin(k * 0.9))))
+    ring.append(ring[0].copy())
+    pieces.append(string(ring, 0.42))
 for side in (1, -1):
-    loop = [knot + Vector((side * 4.2 * math.sin(math.pi * s) * (0.6 + 0.4 * s), -0.45 * math.sin(math.pi * s) - 0.05, 2.2 * math.sin(2 * math.pi * s) * 0.6 + 0.4 * s)) for s in [i / 14 for i in range(15)]]
-    pieces.append(string(loop))
-    tail = [knot + Vector((side * (0.6 + 1.4 * s) + side * 0.6 * math.sin(3 * s), -0.4 - 0.25 * s, -9.0 * s)) for s in [i / 12 for i in range(13)]]
-    pieces.append(string(tail))
+    loop = [knot + Vector((side * 4.2 * BOW * math.sin(math.pi * s) * (0.6 + 0.4 * s), -0.45 * math.sin(math.pi * s) - 0.05, BOW * (2.2 * math.sin(2 * math.pi * s) * 0.6 + 0.4 * s))) for s in [i / 14 for i in range(15)]]
+    pieces.append(string(loop, 0.32 * (1.3 if TROUSERS else 1.0)))
+    tail = [knot + Vector((side * (0.6 + 1.4 * s) + side * 0.6 * math.sin(3 * s), -0.4 - 0.25 * s, -9.0 * BOW * s)) for s in [i / 12 for i in range(13)]]
+    pieces.append(string(tail, 0.32 * (1.3 if TROUSERS else 1.0)))
 knot_mesh = bpy.data.meshes.new("Knot")
 bmk = bmesh.new()
-bmesh.ops.create_uvsphere(bmk, u_segments=10, v_segments=6, radius=0.75)
+bmesh.ops.create_uvsphere(bmk, u_segments=10, v_segments=6, radius=0.75 * (1.35 if TROUSERS else 1.0))
 bmesh.ops.scale(bmk, vec=(1.1, 0.7, 0.8), verts=bmk.verts)
 bmesh.ops.translate(bmk, vec=knot, verts=bmk.verts)
 bmk.to_mesh(knot_mesh)
@@ -527,7 +559,14 @@ def weigh(v):
     s = sum(total.values()) or 1.0
     return {bone: w / s for bone, w in total.items()} if total else {idx["pelvis"]: 1.0}
 co = [v.co.copy() for v in me.vertices]
-raw = [weigh(co[i]) if i < cloth_count else {idx["pelvis"]: 1.0} for i in range(len(co))]
+# The drawstring and the cord go as the band under them does: by the skin there, the trunk's bones only, so the cord round
+# the waist stays on the band as the body bends instead of standing off it on the pelvis alone.
+TRUNK = {idx[n] for n in ("pelvis", "spine_01", "spine_02", "spine_03") if n in idx}
+def weigh_trunk(v):
+    w = {b: x for b, x in weigh(v).items() if b in TRUNK}
+    t = sum(w.values())
+    return {b: x / t for b, x in w.items()} if t > 0 else {idx["pelvis"]: 1.0}
+raw = [weigh(co[i]) if i < cloth_count else weigh_trunk(co[i]) for i in range(len(co))]
 nbrs = [set() for _ in co]
 for e in me.edges:
     a, b = e.vertices
@@ -605,8 +644,8 @@ bpy.ops.export_scene.fbx(filepath=out_fbx, use_selection=True, object_types={"AR
 print("[braies] wrote %s" % out_fbx)
 
 # ---- the linen: a plain weave of slubbed thread, the warp and the weft over and under each other.
-S = 1024
-THREADS = 72
+S = 2048
+THREADS = 288
 yy, xx = np.mgrid[0:S, 0:S].astype(np.float64) / S
 rng = np.random.default_rng(11)
 def tile_noise(cells, amp):
@@ -617,9 +656,16 @@ def tile_noise(cells, amp):
     gx *= np.exp(-(fx ** 2 + fy ** 2) * 60)
     small = np.real(np.fft.ifft2(gx))
     small = (small - small.mean()) / (small.std() + 1e-9)
-    ix = (xx * cells).astype(int) % cells
-    iy = (yy * cells).astype(int) % cells
-    return small[iy, ix] * amp
+    # Read between the cells smoothly, wrapping round, so no square of the grid shows.
+    fx_, fy_ = xx * cells, yy * cells
+    x0, y0 = np.floor(fx_).astype(int), np.floor(fy_).astype(int)
+    tx, ty = fx_ - x0, fy_ - y0
+    tx, ty = tx * tx * (3 - 2 * tx), ty * ty * (3 - 2 * ty)
+    x0, y0 = x0 % cells, y0 % cells
+    x1, y1 = (x0 + 1) % cells, (y0 + 1) % cells
+    top_ = small[y0, x0] * (1 - tx) + small[y0, x1] * tx
+    bot_ = small[y1, x0] * (1 - tx) + small[y1, x1] * tx
+    return (top_ * (1 - ty) + bot_ * ty) * amp
 warp_slub = np.repeat(rng.standard_normal(THREADS) * 0.18, S // THREADS + 1)[:S]
 weft_slub = np.repeat(rng.standard_normal(THREADS) * 0.18, S // THREADS + 1)[:S]
 u = xx * THREADS
@@ -629,10 +675,10 @@ cell_v = np.floor(v).astype(int)
 over = ((cell_u + cell_v) % 2 == 0)
 warp = np.clip(np.cos(np.pi * (u - np.floor(u) - 0.5)), 0, 1) ** 0.6 * (1 + warp_slub[(xx[0] * S).astype(int)][None, :])
 weft = np.clip(np.cos(np.pi * (v - np.floor(v) - 0.5)), 0, 1) ** 0.6 * (1 + weft_slub[(yy[:, 0] * S).astype(int)][:, None])
-height = np.where(over, warp * 0.6 + weft * 0.4, weft * 0.6 + warp * 0.4) + tile_noise(32, 0.06)
+height = np.where(over, warp * 0.6 + weft * 0.4, weft * 0.6 + warp * 0.4) + tile_noise(128, 0.05)
 height = np.nan_to_num(height)
 height = (height - height.min()) / (height.max() - height.min())
-tone = 1.0 + tile_noise(16, 0.035) + (height - 0.5) * 0.16
+tone = 1.0 + tile_noise(64, 0.022) + tile_noise(24, 0.012) + (height - 0.5) * 0.16
 base = np.array(WOOL if TROUSERS else LINEN, dtype=np.float64)
 albedo = np.clip(base[None, None, :] * tone[..., None], 0, 255).astype(np.uint8)
 gy, gx = np.gradient(height * 3.0)
@@ -640,7 +686,7 @@ nx, ny = -gx * 4, gy * 4      # the green way down, as the engine reads a normal
 nz = np.ones_like(nx)
 ln = np.sqrt(nx ** 2 + ny ** 2 + nz ** 2)
 normal = np.stack([(nx / ln * 0.5 + 0.5) * 255, (ny / ln * 0.5 + 0.5) * 255, (nz / ln * 0.5 + 0.5) * 255], -1).astype(np.uint8)
-rough = np.clip(222 + (0.5 - height) * 30 + tile_noise(16, 6), 0, 255)
+rough = np.clip(222 + (0.5 - height) * 30 + tile_noise(64, 5), 0, 255)
 masks = np.stack([rough, np.zeros_like(rough), np.zeros_like(rough)], -1).astype(np.uint8)
 def save(arr, name):
     # Written straight out as a PNG: eight bits a channel, the rows top first.

@@ -230,7 +230,12 @@ public:
 	// Down but awake, the muscles keep this much of their strength (1 as standing): the body lies as one still in it, not
 	// slack; dead or senseless they keep only RagdollMotorShare.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
-	float DownAwakeMotorShare = 0.65f;
+	float DownAwakeMotorShare = 1.f;
+
+	// A body already lying on the ground takes this share of the push of a blow or a kick a standing one would: it has
+	// the ground under it and nothing to be thrown off, so it is shoved, not sent flying.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
+	float DownBlowPushShare = 0.35f;
 
 	// Down but awake, a hand goes to where a blow of at least DownClutchMinPush landed and holds it there, as standing:
 	// for DownClutchMinSeconds to DownClutchMaxSeconds (the harder the blow, the longer, full at DownClutchFullPush), pulled

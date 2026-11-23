@@ -580,13 +580,21 @@ public:
 	// KickOffFootBalancePerSecond a second at KickOffFootMostCm and beyond: a step's carry throws it over, a shuffle does not.
 	// A kick from a jump does not stand at all.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
-	float KickOffFootLeastCm = 14.f;
+	float KickOffFootLeastCm = 22.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
-	float KickOffFootMostCm = 35.f;
+	float KickOffFootMostCm = 50.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
-	float KickOffFootBalancePerSecond = 4.f;
+	float KickOffFootBalancePerSecond = 2.f;
+
+	// A body lying on the ground (fallen, senseless or dead) that the kicking leg runs into is shoved along, not launched: while
+	// the kick lasts no part of it is let go faster than this along the ground, nor up off it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
+	float KickDownBodyMaxSpeedCm = 180.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
+	float KickDownBodyUpMaxSpeedCm = 90.f;
 
 	// A fist's or a weapon's speed is taken over at least this many seconds, never from a single frame alone.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
@@ -1162,6 +1170,8 @@ private:
 	float KickCooldownRemaining = 0.f;
 	float KickPoseAlpha = 0.f;
 	bool bKickStruck = false;
+
+	void LimitKickedDownBodies();
 	FVector KickPrevFootWorld = FVector::ZeroVector;
 	// How fast and which way the body went over the ground as the kick began, on the ground; lost once, as the leg comes up.
 	float KickLoggedLag = 0.f;

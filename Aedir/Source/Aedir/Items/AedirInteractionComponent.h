@@ -110,6 +110,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Interaction")
 	void StartReach(EAedirHand Hand);
 
+	// A weapon held in both hands goes at once into the other hand, the one already on its grip, leaving FromHand empty.
+	bool HandOverNow(EAedirHand FromHand);
+
 	// A free hand takes hold of the nearest body or loose part of one in front of it, living, dead or cut off. False when there is none.
 	bool TryGrabBody(EAedirHand Hand, const FVector* AimedPoint = nullptr);
 
@@ -346,6 +349,9 @@ private:
 
 	UFUNCTION(Server, Reliable)
 	void ServerPassToOtherHand();
+
+	UFUNCTION(Server, Reliable)
+	void ServerHandOverNow(EAedirHand FromHand);
 
 	UFUNCTION(Server, Reliable)
 	void ServerDrawFromBackpack(int32 Index, EAedirHand Hand);

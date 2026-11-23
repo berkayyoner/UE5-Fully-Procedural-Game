@@ -560,7 +560,16 @@ public:
 
 	// Forward bend of the spine at a full crouch.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float CrouchSpineLeanDegrees = 22.f;
+	float CrouchSpineLeanDegrees = 40.f;
+
+	// On one leg for a kick the body cannot keep moving at its full pace: its top speed is brought down to this share of it, the
+	// planted foot braking the body, so a kick on the move carries it on a little and slows rather than throwing it past its foot.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick", meta=(ClampMin="0", ClampMax="1"))
+	float KickMoveSpeedShare = 0.4f;
+
+	// Crouched and not in a fight stance, the elbows are kept bent this much, the arms drawn in to the body as one creeping.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Crouch", meta=(ClampMin="0"))
+	float CrouchElbowBendDegrees = 55.f;
 
 	// Speed of the fighting stance blend in and out.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")
@@ -602,6 +611,14 @@ public:
 	// The feet spread this much wider with the fists' guard fully up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="1"))
 	float FistStanceWidthMultiplier = 2.6f;
+
+	// Moving in the stance (or with the fists up), this share of its widening of the feet is kept at a walk, and this at a full
+	// run: a fighter closing in or running brings the feet in under the body rather than running with the legs spread.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
+	float StanceWalkWidthShare = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance", meta=(ClampMin="0", ClampMax="1"))
+	float StanceRunWidthShare = 0.1f;
 
 	// Walking stride multiplier at a full fighting stance. Running is not affected.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Stance")

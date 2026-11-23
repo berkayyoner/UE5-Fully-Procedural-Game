@@ -13,7 +13,7 @@
 static TAutoConsoleVariable<float> CVarAedirBodyPosture(TEXT("aedir.BodyPosture"), -1.f, TEXT("Hz of the trunk's upright hold in the world; below 0 uses the component's own."));
 static TAutoConsoleVariable<float> CVarAedirBodyGravity(TEXT("aedir.BodyGravity"), -1.f, TEXT("Share of its weight a standing body carries; below 0 uses the component's own."));
 
-static TAutoConsoleVariable<int32> CVarAedirBodyPlant(TEXT("aedir.BodyPlant"), 0, TEXT("Whether a planted foot is held by the pose rather than its muscles."));
+static TAutoConsoleVariable<int32> CVarAedirBodyPlant(TEXT("aedir.BodyPlant"), 1, TEXT("Whether a planted foot is held by the pose rather than its muscles: held by them, a standing foot trembled on its springs."));
 
 static TAutoConsoleVariable<float> CVarAedirBodyFoot(TEXT("aedir.BodyFoot"), -1.f, TEXT("Hz of the feet's hold on where the pose sets them; below 0 uses the component's own."));
 
@@ -292,6 +292,16 @@ void UAedirBodyControlComponent::SetLimp(bool bInLimp)
 		bLimp = bInLimp;
 		ApplyLegContacts();
 		AppliedKey = -1.f;
+		ApplyMultipliers();
+	}
+}
+
+void UAedirBodyControlComponent::SetDownAwake(float Share)
+{
+	const float Clamped = FMath::Clamp(Share, 0.f, 1.f);
+	if (!FMath::IsNearlyEqual(DownAwake, Clamped, 0.02f))
+	{
+		DownAwake = Clamped;
 		ApplyMultipliers();
 	}
 }
@@ -659,7 +669,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const auto Step = [](float Share) { return static_cast<double>(FMath::RoundToInt(Share * 50.f)); };
 	const float DeadNow = bDead ? GetDeadShareNow() : 0.f;
 	const double Key = (bLimp ? 1.0 : 0.0) + (bHipsCarried ? 2.0 : 0.0) + (bAirborne ? 4.0 : 0.0) + (bRising ? 8.0 : 0.0)
-		+ 16.0 * (Step(Upright) + 64.0 * (Step(LeftArmShare) + 64.0 * (Step(RightArmShare) + 64.0 * (Step(LeftLoadShare) + 64.0 * (Step(RightLoadShare) + 64.0 * Step(DeadNow * 10.f)))))) + 1.0e13 * Step(bLimp ? Hoist : 0.f);
+		+ 16.0 * (Step(Upright) + 64.0 * (Step(LeftArmShare) + 64.0 * (Step(RightArmShare) + 64.0 * (Step(LeftLoadShare) + 64.0 * (Step(RightLoadShare) + 64.0 * Step(DeadNow * 10.f)))))) + 1.0e13 * Step(bLimp ? Hoist : 0.f) + 1.0e15 * Step(bLimp ? DownAwake : 0.f);
 	// A tuning console variable changed counts as a change too.
 	const float Tuning = CVarAedirBodyPosture.GetValueOnGameThread() + 3.f * CVarAedirBodyGravity.GetValueOnGameThread() + 7.f * CVarAedirBodyFoot.GetValueOnGameThread()
 		+ 13.f * CVarAedirBodyHips.GetValueOnGameThread() + 17.f * CVarAedirBodyRise.GetValueOnGameThread() + 19.f * CVarAedirBodySpine.GetValueOnGameThread();
@@ -672,7 +682,9 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float SpineHz = CVarAedirBodySpine.GetValueOnGameThread() >= 0.f ? CVarAedirBodySpine.GetValueOnGameThread() : SpineStrength;
 
 	// A dead body keeps less of its muscles than a living one that is down.
-	const float Limp = bDead ? DeadNow : LimpShare;
+	// Down but awake, the muscles keep what they have standing; only the senseless are slack.
+	const float Awake = bLimp && !bDead ? DownAwake : 0.f;
+	const float Limp = bDead ? DeadNow : FMath::Lerp(LimpShare, 1.f, Awake);
 	const float Hauled = bLimp && !bDead ? Hoist : 0.f;
 	// Just hauled up, the muscles come from the strength they lifted with to all of it (HoldEase), taking the body into the
 	// standing pose over a moment rather than straightening the legs from kneeling in a step or two.
@@ -717,7 +729,8 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// The wrists are looser than the arm above them, less so with both hands on one thing.
 	const float Wrist = FMath::Lerp(WristShare, TwoHandWristShare, TwoHandGrip);
 	// Down or dead, the elbows and the wrists go slacker still than the rest of the arm.
-	const float Slack[2] = { bLimp || bBroken[0] ? LimpForearmShare : 1.f, bLimp || bBroken[1] ? LimpForearmShare : 1.f };
+	const float LimpForearm = FMath::Lerp(LimpForearmShare, 1.f, Awake);
+	const float Slack[2] = { bBroken[0] ? LimpForearmShare : bLimp ? LimpForearm : 1.f, bBroken[1] ? LimpForearmShare : bLimp ? LimpForearm : 1.f };
 	Apply(LeftHandControls, LeftArmHz * Wrist * Slack[0], 0.f);
 	Apply(RightHandControls, RightArmHz * Wrist * Slack[1], 0.f);
 	for (int32 Side = 0; Side < 2; ++Side)
