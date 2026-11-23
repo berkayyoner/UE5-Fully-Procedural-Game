@@ -21,6 +21,7 @@ namespace
 	constexpr double ItemHaftedBoxY = 0.035;
 	constexpr float ItemMurderHoldShare = 0.12f;
 	TAutoConsoleVariable<int32> CVarAedirEdgeOn(TEXT("aedir.EdgeOn"), 1, TEXT("A blade is held with its edge to the enemy (1) or as its model lies (0)."));
+	TAutoConsoleVariable<float> CVarAedirPalmHoldCurl(TEXT("aedir.PalmHoldCurl"), -1.f, TEXT("How far the fingers close on a thing held in the palm, 0 to 1, in place of what its thickness sets (below 0)."));
 	// Across a blade, thinner one way than this share of the other: it has a flat that can strike.
 	constexpr double AedirItemFlatRatio = 0.5;
 	TAutoConsoleVariable<int32> CVarAedirHeldPassesOwnBody(TEXT("aedir.HeldPassesOwnBody"), 0, TEXT("A held weapon passes through its holder's own body (1) or stops against it (0): stopping, a blade caught on the own head or hip turned over the wrong way round and stuck there."));
@@ -102,6 +103,33 @@ void AAedirItemActor::BeginPlay()
 	Super::BeginPlay();
 
 	ApplyItemMass();
+	if (Mesh)
+	{
+		Mesh->SetNotifyRigidBodyCollision(true);
+		Mesh->OnComponentHit.AddDynamic(this, &AAedirItemActor::HandleMeshHit);
+	}
+}
+
+void AAedirItemActor::HandleMeshHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit)
+{
+	// Loose on the ground and struck by a creature's swinging limb: thrown as the limb's weight against its own would throw it.
+	if (!Mesh || !Mesh->IsSimulatingPhysics() || IsHeld() || !Cast<AAedirCreature>(OtherActor) || !Cast<USkeletalMeshComponent>(OtherComp) || !OtherComp->IsSimulatingPhysics(Hit.BoneName))
+	{
+		return;
+	}
+	const float LimbSpeed = static_cast<float>(OtherComp->GetPhysicsLinearVelocityAtPoint(Hit.ImpactPoint, Hit.BoneName).Size());
+	if (LimbSpeed < BodyPushLimbLeastSpeedCm)
+	{
+		return;
+	}
+	const float Most = FMath::Min(LimbSpeed, BodyPushMaxSpeedCm) * BodyPushLimbMassKg / (BodyPushLimbMassKg + FMath::Max(Weight, 0.01f));
+	const FVector Velocity = Mesh->GetPhysicsLinearVelocity();
+	if (Velocity.Size() > Most)
+	{
+		UE_LOG(LogAedir, Verbose, TEXT("[Item] %s struck by %s's %s at %.0f cm/s: thrown at %.0f cm/s, not %.0f"), *GetName(), *OtherActor->GetName(), *Hit.BoneName.ToString(), LimbSpeed, Most, Velocity.Size());
+		Mesh->SetPhysicsLinearVelocity(Velocity.GetClampedToMaxSize(Most));
+		Mesh->SetPhysicsAngularVelocityInDegrees(Mesh->GetPhysicsAngularVelocityInDegrees().GetClampedToMaxSize(720.f));
+	}
 }
 
 void AAedirItemActor::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -277,6 +305,66 @@ bool AAedirItemActor::IsShield() const
 	return ItemClass == EAedirItemClass::Armor && ArmorZone == EAedirBodyZone::Arm && BodyScale.Z < ItemShieldThinShare * FMath::Min(BodyScale.X, BodyScale.Y);
 }
 
+bool AAedirItemActor::IsPalmHeld() const
+{
+	if (ItemClass == EAedirItemClass::Weapon || ItemClass == EAedirItemClass::Object || IsShield() || bWorn || !FMath::IsNearlyZero(GripLocalCm))
+	{
+		return false;
+	}
+	// Small enough to lie in one hand: a jug or a carafe is held by its body as a grip is.
+	const FVector Half = GetShownHalfSizeCm();
+	return FMath::Max(Half.X, Half.Y) <= PalmHoldMostHalfCm && Half.Z <= PalmHoldMostHalfCm * 0.5f;
+}
+
+FVector AAedirItemActor::GetShownHalfSizeCm() const
+{
+	if (ShownHalfSizeCm.IsSet())
+	{
+		return ShownHalfSizeCm.GetValue();
+	}
+	// The box of every shown part, seen from the item itself.
+	FBox Shown(ForceInit);
+	const FTransform Self = GetActorTransform();
+	TArray<UStaticMeshComponent*> Parts;
+	GetComponents<UStaticMeshComponent>(Parts);
+	for (const UStaticMeshComponent* Part : Parts)
+	{
+		if (!Part || !Part->IsVisible() || !Part->GetStaticMesh() || Part == Sheath)
+		{
+			continue;
+		}
+		const FBox Box = Part->GetStaticMesh()->GetBoundingBox();
+		const FTransform Frame = Part->GetComponentTransform();
+		for (int32 Corner = 0; Corner < 8; ++Corner)
+		{
+			const FVector Point((Corner & 1) ? Box.Max.X : Box.Min.X, (Corner & 2) ? Box.Max.Y : Box.Min.Y, (Corner & 4) ? Box.Max.Z : Box.Min.Z);
+			Shown += Self.InverseTransformPositionNoScale(Frame.TransformPosition(Point));
+		}
+	}
+	if (!Shown.IsValid)
+	{
+		return BodyScale * 50.0;
+	}
+	ShownHalfSizeCm = FVector(FMath::Max(FMath::Abs(Shown.Min.X), FMath::Abs(Shown.Max.X)), FMath::Max(FMath::Abs(Shown.Min.Y), FMath::Abs(Shown.Max.Y)), FMath::Max(FMath::Abs(Shown.Min.Z), FMath::Abs(Shown.Max.Z)));
+	return ShownHalfSizeCm.GetValue();
+}
+
+float AAedirItemActor::GetHoldCurl() const
+{
+	if (!IsPalmHeld())
+	{
+		return 1.f;
+	}
+	if (CVarAedirPalmHoldCurl.GetValueOnGameThread() >= 0.f)
+	{
+		return FMath::Clamp(CVarAedirPalmHoldCurl.GetValueOnGameThread(), 0.f, 1.f);
+	}
+	// Its Y runs along the fingers and its Z out of the palm (see ComputeHandGrip).
+	const FVector Half = GetShownHalfSizeCm();
+	const float Curl = PalmHoldCurlBase - PalmHoldCurlPerThickCm * static_cast<float>(Half.Z) - PalmHoldCurlPerLongCm * static_cast<float>(Half.Y);
+	return FMath::Clamp(Curl, static_cast<float>(PalmHoldCurlMinMax.X), static_cast<float>(PalmHoldCurlMinMax.Y));
+}
+
 FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAedirHand Hand) const
 {
 	const USkeletalMesh* BodyAsset = Creature->GetMesh() ? Creature->GetMesh()->GetSkeletalMeshAsset() : nullptr;
@@ -303,7 +391,9 @@ FTransform AAedirItemActor::ComputeHandGrip(const AAedirCreature* Creature, EAed
 	{
 		PalmNormal = -PalmNormal;
 	}
-	const FVector Palm = HandLocation + (RefLocation(TEXT("middle_01")) - HandLocation) * HandGripPalmShare + PalmNormal * HandGripPalmDepthCm;
+	// A thing with no handle lies on the skin of the palm, its middle out from it by half its own thickness.
+	const float Depth = IsPalmHeld() ? PalmHoldSkinCm + static_cast<float>(GetShownHalfSizeCm().Z) : HandGripPalmDepthCm;
+	const FVector Palm = HandLocation + (RefLocation(TEXT("middle_01")) - HandLocation) * HandGripPalmShare + PalmNormal * Depth;
 
 	// A shield is gripped by the bar behind its boss: the fist goes into the boss and the face stands across the way the
 	// knuckles point, its round side out.

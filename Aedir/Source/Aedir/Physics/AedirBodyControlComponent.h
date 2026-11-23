@@ -212,6 +212,8 @@ public:
 
 	// Where the pose has a bone this frame, in the world: where its muscles are pulling it.
 	FVector GetPoseLocation(FName Bone) const;
+	// Where and how turned the pose has a bone this frame, in the world. Identity when nothing has been read yet.
+	FTransform GetPoseTransform(FName Bone) const;
 
 	// The capsule's physical body was made anew (its collision turned back on): the hips are tied to the new one.
 	void RebindHips(UCapsuleComponent* InCapsule);

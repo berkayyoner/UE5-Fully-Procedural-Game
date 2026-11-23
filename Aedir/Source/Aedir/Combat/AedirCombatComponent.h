@@ -520,6 +520,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
 	float GripWeaponMassShare = 0.35f;
 
+	// The second hand on a weapon is held to it in its turn as well as in its place, by a spring this stiff (and this damped)
+	// at a full grip: it closes on the handle as the pose has it and stays so, never sliding round it or lying crooked on it.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
+	float GripJointTurnStiffness = 40000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
+	float GripJointTurnDamping = 1500.f;
+
 	// Stiffness multiplier of the primary arm while two-hand gripped.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
 	float GripPrimaryStiffnessScale = 1.35f;
@@ -553,6 +561,21 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
 	float KickCooldown = 1.2f;
+
+	// A kick off the ground stands on one leg: started walking or running, the body carried on over that leg and the hips
+	// let down for the kick throw it off its feet (from KickMovingSpeedMinCm on, surely at KickMovingSpeedMaxCm), that much
+	// balance lost the way it went once the leg is up, KickMovingFallAtSeconds in. A kick from a jump does not stand at all.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickMovingSpeedMinCm = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickMovingSpeedMaxCm = 80.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickMovingFallBalance = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
+	float KickMovingFallAtSeconds = 0.3f;
 
 	// A fist's or a weapon's speed is taken over at least this many seconds, never from a single frame alone.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
@@ -1129,6 +1152,9 @@ private:
 	float KickPoseAlpha = 0.f;
 	bool bKickStruck = false;
 	FVector KickPrevFootWorld = FVector::ZeroVector;
+	// How fast and which way the body went over the ground as the kick began, on the ground; lost once, as the leg comes up.
+	FVector KickStartVelocity = FVector::ZeroVector;
+	bool bKickTopplePending = false;
 
 	float AIRetargetTimer = 0.f;
 	float AIAttackTimer = 0.f;

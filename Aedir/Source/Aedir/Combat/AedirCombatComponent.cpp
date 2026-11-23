@@ -17,6 +17,7 @@
 #include "Engine/World.h"
 #include "Engine/HitResult.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Movement/AedirCharacterMovementComponent.h"
 #include "Engine/OverlapResult.h"
 #include "GameFramework/Controller.h"
 #include "Items/AedirInteractionComponent.h"
@@ -1129,7 +1130,7 @@ float UAedirCombatComponent::GetFistAlpha(EAedirHand Hand) const
 	const AAedirItemActor* HeldItem = GetHeldItem(Hand);
 	if (HeldItem)
 	{
-		return HeldItem->ItemClass == EAedirItemClass::Object ? AedirObjectFistAlpha : 1.f;
+		return HeldItem->ItemClass == EAedirItemClass::Object ? AedirObjectFistAlpha : HeldItem->GetHoldCurl();
 	}
 	if (Creature && Creature->Interaction && Creature->Interaction->IsGrabbingBody(Hand))
 	{
@@ -6101,8 +6102,9 @@ bool UAedirCombatComponent::CanStartKick() const
 		return false;
 	}
 
+	// On the ground or in a jump: a kick while moving has to be jumped into, or it throws the body over.
 	const UCharacterMovementComponent* Movement = Creature->GetCharacterMovement();
-	if (!Movement || !Movement->IsMovingOnGround())
+	if (!Movement || !(Movement->IsMovingOnGround() || Movement->IsFalling()))
 	{
 		return false;
 	}
@@ -6154,6 +6156,12 @@ void UAedirCombatComponent::BeginKick()
 	KickPrevFootWorld = KickNet.StartWorld;
 	bKickStruck = false;
 	KickCooldownRemaining = KickCooldown;
+	// Crouched to spring, the body is already jumping: a kick out of the jump does not stand on a leg.
+	const UAedirCharacterMovementComponent* Movement = Cast<UAedirCharacterMovementComponent>(Creature->GetCharacterMovement());
+	const bool bJumping = !Movement || !Movement->IsMovingOnGround() || Movement->GetJumpWindupAlpha() > 0.f;
+	KickStartVelocity = bJumping ? FVector::ZeroVector : FVector(Creature->GetVelocity().X, Creature->GetVelocity().Y, 0.0);
+	bKickTopplePending = KickStartVelocity.Size() > KickMovingSpeedMinCm;
+	UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicks %s at %.0f cm/s over the ground"), *Creature->GetName(), bJumping ? TEXT("out of a jump") : TEXT("standing"), Creature->GetVelocity().Size2D());
 }
 
 void UAedirCombatComponent::UpdateKick(float DeltaTime)
@@ -6183,6 +6191,16 @@ void UAedirCombatComponent::UpdateKick(float DeltaTime)
 		}
 
 		KickPrevFootWorld = FootWorld;
+
+		// Kicked from a walk or a run, the body goes on over the one leg it stands on, the hips let down, and over it goes.
+		if (bKickTopplePending && KickNet.Elapsed >= KickMovingFallAtSeconds && Creature->Balance)
+		{
+			bKickTopplePending = false;
+			const float Speed = static_cast<float>(KickStartVelocity.Size());
+			const float Share = FMath::Clamp((Speed - KickMovingSpeedMinCm) / FMath::Max(KickMovingSpeedMaxCm - KickMovingSpeedMinCm, 1.f), 0.f, 1.f);
+			UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicked moving at %.0f cm/s: loses %.2f balance over its standing leg"), *Creature->GetName(), Speed, KickMovingFallBalance * Share);
+			Creature->Balance->ApplyBalanceImpact(KickStartVelocity.GetSafeNormal(), KickMovingFallBalance * Share);
+		}
 
 		if (KickNet.Elapsed >= AedirKickDuration)
 		{

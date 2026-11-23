@@ -95,8 +95,14 @@ public:
 
 	TWeakObjectPtr<class AAedirCreature> LockOnTarget;
 
+	// The capsule put somewhere at once, further than it moved by its own speed and this much more (as when it is set
+	// under a body that has got up), leaves the view where it was in the world and eases it over from there.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float CameraTeleportCm = 10.f;
+
 	FVector CameraRelative = FVector::ZeroVector;
 	FVector CameraPelvisBaseline = FVector::ZeroVector;
+	FTransform CameraActorLast = FTransform::Identity;
 	bool bCameraStateInitialized = false;
 
 	// Share of the mouse movement that still turns the camera while a guard is held.
@@ -445,6 +451,17 @@ public:
 	void JitterProbe(const FString& ProbeArgs);
 	UFUNCTION(Exec)
 	void HipProbe(const FString& ProbeArgs);
+	UFUNCTION(Exec)
+	void ItemProbe(const FString& ProbeArgs);
+	UFUNCTION(Exec)
+	void HoldGap();
+	UFUNCTION(Exec)
+	void GrabPiece();
+	UFUNCTION(Exec)
+	void GripProbe(const FString& ProbeArgs);
+	// JumpNow: a tap of the jump key.
+	UFUNCTION(Exec)
+	void JumpNow();
 
 	UFUNCTION(Exec)
 	void MouseDrive(const FString& DriveArgs);

@@ -50,6 +50,16 @@ public:
 	static void JitterProbe(AAedirPlayerCharacter* Player, const FString& Args);
 	// HipProbe <seconds> <label>: how far the hips are from where the pose has them, and the most they jump in a frame.
 	static void HipProbe(AAedirPlayerCharacter* Player, const FString& Args);
+	// ItemProbe <seconds> <label>: the fastest every loose item near the body goes in that time, and how far it ends from where it lay.
+	static void ItemProbe(AAedirPlayerCharacter* Player, const FString& Args);
+	// HoldGap: for what each hand holds, how far the palm and the finger tips are from the model shown (its box), in cm.
+	static void HoldGap(AAedirPlayerCharacter* Player, const FString& Args);
+	// GrabPiece: steps up to the part cut off last, looks at it and puts out the right hand as the player would; two seconds
+	// on, says what the hand holds.
+	static void GrabPiece(AAedirPlayerCharacter* Player, const FString& Args);
+	// GripProbe <seconds> <label>: the second hand on what the first holds, seen from the weapon every frame: how far it
+	// slides along and round it and how far it turns from where it took hold, and how crooked its knuckles lie to the handle.
+	static void GripProbe(AAedirPlayerCharacter* Player, const FString& Args);
 	// MouseDrive <hand 0|1> <seconds> <ampX> <ampY> <hz>: moves the mouse in a figure for that hand, as a player swinging would.
 	static void MouseDrive(AAedirPlayerCharacter* Player, const FString& Args);
 

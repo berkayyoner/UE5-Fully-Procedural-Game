@@ -96,6 +96,8 @@ int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const F
 #include "Animation/AedirProceduralAnimInstance.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Camera/CameraActor.h"
+#include "Engine/StaticMesh.h"
+#include "Camera/PlayerCameraManager.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -611,6 +613,22 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	else if (Command == TEXT("JitterProbe"))
 	{
 		JitterProbe(Player, Args);
+	}
+	else if (Command == TEXT("GripProbe"))
+	{
+		GripProbe(Player, Args);
+	}
+	else if (Command == TEXT("GrabPiece"))
+	{
+		GrabPiece(Player, Args);
+	}
+	else if (Command == TEXT("HoldGap"))
+	{
+		HoldGap(Player, Args);
+	}
+	else if (Command == TEXT("ItemProbe"))
+	{
+		ItemProbe(Player, Args);
 	}
 	else if (Command == TEXT("HipProbe"))
 	{
@@ -1237,6 +1255,8 @@ void UAedirDevTools::GaitInfo(AAedirPlayerCharacter* Player, const FString& Args
 		UE_LOG(LogAedir, Display, TEXT("[GaitInfo]   trunkLean=%.1f pelvisAhead=%.1f chestAhead=%.1f pelvisZ=%.1f | pose pelvisPitch=%.1f spinePitch=%.1f hipZ=%.1f pelvisRoll=%.1f spineRoll=%.1f hipSide=%.1f"),
 			TrunkLean, Ahead(TEXT("pelvis")), Ahead(TEXT("spine_05")), Height(TEXT("pelvis")),
 			State.PelvisRotation.Pitch, State.SpineLeanPitch, State.HipOffsetZ, State.PelvisRollDegrees, State.SpineLeanRoll, State.HipLateralOffset);
+		// How far apart the feet stand across the body.
+		UE_LOG(LogAedir, Display, TEXT("[GaitInfo]   feetApart=%.1f across"), FMath::Abs(FVector::DotProduct(Mesh->GetBoneLocation(TEXT("foot_l")) - Mesh->GetBoneLocation(TEXT("foot_r")), Player->GetActorRightVector())));
 		// The hips against the capsule: where they are, and where the pose holds them.
 		if (const UAedirBodyControlComponent* Body = Player->FindComponentByClass<UAedirBodyControlComponent>(); Body && Body->IsReady())
 		{
@@ -1374,6 +1394,9 @@ void UAedirDevTools::HipProbe(AAedirPlayerCharacter* Player, const FString& Args
 		TOptional<FVector> Prev;
 		TOptional<FVector> PrevWorld;
 		TOptional<FVector> PrevBody;
+		TOptional<FVector> PrevCamera;
+		double MaxCameraJump = 0.0;
+		double MaxCameraJumpAt = 0.0;
 		TArray<FVector> PrevParts;
 		double MaxWorldJump = 0.0;
 		double MaxWorldJumpAt = 0.0;
@@ -1453,6 +1476,26 @@ void UAedirDevTools::HipProbe(AAedirPlayerCharacter* Player, const FString& Args
 			}
 		}
 		Probe->PrevWorld = Hips;
+		// The view too: a camera that jumps in a frame is what the player sees of a body put somewhere at once.
+		if (const APlayerController* Controller = Cast<APlayerController>(Player->GetController()); Controller && Controller->PlayerCameraManager)
+		{
+			const FVector Camera = Controller->PlayerCameraManager->GetCameraLocation();
+			if (Probe->PrevCamera.IsSet())
+			{
+				const double Jump = FVector::Dist(Camera, Probe->PrevCamera.GetValue());
+				if (Jump > 4.0)
+				{
+					UE_LOG(LogAedir, Display, TEXT("[HipProbe] %s: the camera jumps %.1f cm at %.2f s, frame %.3f s, down %d, getting up %d"), *Probe->Label, Jump, Probe->Elapsed, Player->GetWorld()->GetDeltaSeconds(),
+						Player->Balance && Player->Balance->IsRagdoll() ? 1 : 0, Player->Balance && Player->Balance->IsGettingUp() ? 1 : 0);
+				}
+				if (Jump > Probe->MaxCameraJump)
+				{
+					Probe->MaxCameraJump = Jump;
+					Probe->MaxCameraJumpAt = Probe->Elapsed;
+				}
+			}
+			Probe->PrevCamera = Camera;
+		}
 		Probe->PrevParts.SetNum(Mesh->Bodies.Num());
 		for (int32 Index = 0; Index < Mesh->Bodies.Num(); ++Index)
 		{
@@ -1468,8 +1511,268 @@ void UAedirDevTools::HipProbe(AAedirPlayerCharacter* Player, const FString& Args
 			// Kept past the timer's end: clearing it lets go of what it holds, this too.
 			const TSharedRef<FHipProbe> Kept = Probe;
 			Player->GetWorldTimerManager().ClearTimer(*Handle);
-			UE_LOG(LogAedir, Display, TEXT("[HipProbe] %s frames=%d gap mean %.1f max %.1f cm, biggest jump %.1f cm in a frame at %.2f s (in the world %.1f cm at %.2f s), posed %d frames"), *Kept->Label, Kept->Frames,
-				Kept->SumGap / FMath::Max(Kept->Frames, 1), Kept->MaxGap, Kept->MaxJump, Kept->MaxJumpAt, Kept->MaxWorldJump, Kept->MaxWorldJumpAt, Kept->PosedFrames);
+			UE_LOG(LogAedir, Display, TEXT("[HipProbe] %s frames=%d gap mean %.1f max %.1f cm, biggest jump %.1f cm in a frame at %.2f s (in the world %.1f cm at %.2f s), posed %d frames, the camera's biggest jump %.1f cm at %.2f s"), *Kept->Label, Kept->Frames,
+				Kept->SumGap / FMath::Max(Kept->Frames, 1), Kept->MaxGap, Kept->MaxJump, Kept->MaxJumpAt, Kept->MaxWorldJump, Kept->MaxWorldJumpAt, Kept->PosedFrames, Kept->MaxCameraJump, Kept->MaxCameraJumpAt);
+		}
+	}), 0.001f, true);
+}
+
+void UAedirDevTools::GripProbe(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	const float Seconds = Tokens.IsValidIndex(0) ? FMath::Clamp(FCString::Atof(*Tokens[0]), 0.2f, 60.f) : 3.f;
+	struct FGripProbe
+	{
+		TOptional<FTransform> First;
+		double MostSlide = 0.0;
+		double MostTurn = 0.0;
+		double SumSlide = 0.0;
+		double SumTurn = 0.0;
+		double SumCrooked = 0.0;
+		double MostCrooked = 0.0;
+		double SumFirstCrooked = 0.0;
+		double SumCrookedApart = 0.0;
+		int32 Frames = 0;
+		float Elapsed = 0.f;
+		uint64 LastFrame = 0;
+		FString Label;
+	};
+	TSharedRef<FGripProbe> Probe = MakeShared<FGripProbe>();
+	Probe->Label = Tokens.IsValidIndex(1) ? FString(Tokens[1]) : FString(TEXT("probe"));
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	Player->GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(Player, [Player, Probe, Handle, Seconds]()
+	{
+		if (Probe->LastFrame == GFrameCounter)
+		{
+			return;
+		}
+		Probe->LastFrame = GFrameCounter;
+		Probe->Elapsed += Player->GetWorld()->GetDeltaSeconds();
+		const USkeletalMeshComponent* Mesh = Player->GetMesh();
+		const AAedirItemActor* Item = Player->Interaction ? Player->Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
+		if (Item && Mesh)
+		{
+			// The left hand in the frame of the weapon.
+			const FTransform Hand = Mesh->GetBoneTransform(Mesh->GetBoneIndex(TEXT("hand_l")));
+			FTransform InItem = Hand.GetRelativeTransform(FTransform(Item->GetActorQuat(), Item->GetActorLocation()));
+			InItem.SetScale3D(FVector::OneVector);
+			if (!Probe->First.IsSet())
+			{
+				Probe->First = InItem;
+			}
+			const double Slide = FVector::Dist(InItem.GetLocation(), Probe->First->GetLocation());
+			const double Turn = FMath::RadiansToDegrees(InItem.GetRotation().AngularDistance(Probe->First->GetRotation()));
+			// The knuckles lie along the handle on a grip; crooked is how far off that they lie.
+			const FVector Knuckles = (Mesh->GetBoneLocation(TEXT("index_01_l")) - Mesh->GetBoneLocation(TEXT("pinky_01_l"))).GetSafeNormal();
+			const double Crooked = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FMath::Abs(FVector::DotProduct(Knuckles, Item->GetActorForwardVector())), 0.0, 1.0)));
+			Probe->MostSlide = FMath::Max(Probe->MostSlide, Slide);
+			Probe->MostTurn = FMath::Max(Probe->MostTurn, Turn);
+			Probe->MostCrooked = FMath::Max(Probe->MostCrooked, Crooked);
+			// The carrying hand's own, and how far apart the two lie.
+			const FVector FirstKnuckles = (Mesh->GetBoneLocation(TEXT("index_01_r")) - Mesh->GetBoneLocation(TEXT("pinky_01_r"))).GetSafeNormal();
+			Probe->SumFirstCrooked += FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FMath::Abs(FVector::DotProduct(FirstKnuckles, Item->GetActorForwardVector())), 0.0, 1.0)));
+			Probe->SumCrookedApart += FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FMath::Abs(FVector::DotProduct(FirstKnuckles, Knuckles)), 0.0, 1.0)));
+			Probe->SumSlide += Slide;
+			Probe->SumTurn += Turn;
+			Probe->SumCrooked += Crooked;
+			++Probe->Frames;
+		}
+		if (Probe->Elapsed >= Seconds)
+		{
+			const TSharedRef<FGripProbe> Kept = Probe;
+			Player->GetWorldTimerManager().ClearTimer(*Handle);
+			const double N = FMath::Max(Kept->Frames, 1);
+			UE_LOG(LogAedir, Display, TEXT("[GripProbe] %s frames=%d: the second hand slid %.1f cm on average, at most %.1f; turned %.1f deg on average, at most %.1f; its knuckles %.1f deg off the handle on average, at most %.1f (the carrying hand's %.1f, the two %.1f apart)"),
+				*Kept->Label, Kept->Frames, Kept->SumSlide / N, Kept->MostSlide, Kept->SumTurn / N, Kept->MostTurn, Kept->SumCrooked / N, Kept->MostCrooked, Kept->SumFirstCrooked / N, Kept->SumCrookedApart / N);
+		}
+	}), 0.001f, true);
+}
+
+void UAedirDevTools::GrabPiece(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	AActor* Piece = nullptr;
+	for (TActorIterator<AActor> It(Player->GetWorld()); It; ++It)
+	{
+		if (Cast<UProceduralMeshComponent>(It->GetRootComponent()) && (!Piece || It->CreationTime > Piece->CreationTime))
+		{
+			Piece = *It;
+		}
+	}
+	if (!Piece)
+	{
+		DevToolsReport(TEXT("GrabPiece: nothing has been cut off"));
+		return;
+	}
+	const FVector At = Piece->GetComponentsBoundingBox().GetCenter();
+	// On the side of it away from the body it came off, where there is room to stand.
+	FVector Away(1.f, 0.f, 0.f);
+	for (TActorIterator<AAedirCreature> It(Player->GetWorld()); It; ++It)
+	{
+		if (*It != Player && FVector::Dist2D(It->GetMesh()->GetBoneLocation(TEXT("pelvis")), At) < 200.f)
+		{
+			Away = (At - It->GetMesh()->GetBoneLocation(TEXT("pelvis"))).GetSafeNormal2D();
+		}
+	}
+	const FVector Beside = At + Away * 50.f;
+	Player->SetActorLocation(FVector(Beside.X, Beside.Y, Player->GetActorLocation().Z), false, nullptr, ETeleportType::TeleportPhysics);
+	if (AController* Controller = Player->GetController())
+	{
+		Controller->SetControlRotation((At - Player->GetPawnViewLocation()).Rotation());
+	}
+	Player->SetActorRotation(FRotator(0.f, (At - Player->GetActorLocation()).Rotation().Yaw, 0.f));
+	DevToolsReport(FString::Printf(TEXT("GrabPiece: stands %.0f cm from %s, %.0f cm above it"), FVector::Dist2D(Player->GetActorLocation(), At), *Piece->GetName(), Player->GetActorLocation().Z - At.Z));
+	FTimerHandle Press;
+	Player->GetWorldTimerManager().SetTimer(Press, FTimerDelegate::CreateWeakLambda(Player, [Player]()
+	{
+		// A tap of the key: the hand goes out for what is in reach as the key comes up.
+		if (Player->Interaction)
+		{
+			Player->Interaction->StartReach(EAedirHand::Right);
+		}
+	}), 0.3f, false);
+	FTimerHandle Look;
+	Player->GetWorldTimerManager().SetTimer(Look, FTimerDelegate::CreateWeakLambda(Player, [Player, Piece]()
+	{
+		const AAedirItemActor* Held = Player->Interaction ? Player->Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
+		FVector Grip;
+		const bool bGrabbing = Player->Interaction && Player->Interaction->IsGrabbingBody(EAedirHand::Right) && Player->Interaction->GetBodyGrabPoint(EAedirHand::Right, Grip);
+		DevToolsReport(FString::Printf(TEXT("GrabPiece: the right hand holds %s, grabs a body %d, the piece %.0f cm from the hand, %.0f cm up"), *GetNameSafe(Held), bGrabbing ? 1 : 0,
+			IsValid(Piece) ? FVector::Dist(Piece->GetComponentsBoundingBox().GetCenter(), Player->GetMesh()->GetBoneLocation(TEXT("hand_r"))) : -1.0, IsValid(Piece) ? Piece->GetComponentsBoundingBox().GetCenter().Z - Player->GetActorLocation().Z : 0.0));
+	}), 2.5f, false);
+}
+
+void UAedirDevTools::HoldGap(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	const USkeletalMeshComponent* Body = Player->GetMesh();
+	if (!Body || !Player->Interaction)
+	{
+		return;
+	}
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		const AAedirItemActor* Item = Player->Interaction->GetHeldItem(Hand);
+		if (!Item)
+		{
+			continue;
+		}
+		const TCHAR* Side = Hand == EAedirHand::Left ? TEXT("_l") : TEXT("_r");
+		// The nearest a point comes to any shown part of the thing, by the box of each part's model.
+		const auto Gap = [Item](const FVector& Point)
+		{
+			double Best = UE_BIG_NUMBER;
+			TArray<UStaticMeshComponent*> Parts;
+			Item->GetComponents<UStaticMeshComponent>(Parts);
+			for (const UStaticMeshComponent* Part : Parts)
+			{
+				if (!Part || !Part->IsVisible() || !Part->GetStaticMesh())
+				{
+					continue;
+				}
+				const FBox Box = Part->GetStaticMesh()->GetBoundingBox();
+				const FTransform Frame = Part->GetComponentTransform();
+				const FVector Local = Frame.InverseTransformPosition(Point);
+				const FVector Closest(FMath::Clamp(Local.X, Box.Min.X, Box.Max.X), FMath::Clamp(Local.Y, Box.Min.Y, Box.Max.Y), FMath::Clamp(Local.Z, Box.Min.Z, Box.Max.Z));
+				const bool bInside = Closest.Equals(Local);
+				// Inside, how deep: the nearest face, below zero.
+				const FVector Scale = Frame.GetScale3D().GetAbs();
+				const double Deep = FMath::Min3(FMath::Min(Local.X - Box.Min.X, Box.Max.X - Local.X) * Scale.X, FMath::Min(Local.Y - Box.Min.Y, Box.Max.Y - Local.Y) * Scale.Y, FMath::Min(Local.Z - Box.Min.Z, Box.Max.Z - Local.Z) * Scale.Z);
+				const double Distance = bInside ? -Deep : FVector::Dist(Frame.TransformPosition(Closest), Point);
+				Best = FMath::Min(Best, Distance);
+			}
+			return Best;
+		};
+		const FVector HandAt = Body->GetBoneLocation(FName(*FString::Printf(TEXT("hand%s"), Side)));
+		const FVector Middle = Body->GetBoneLocation(FName(*FString::Printf(TEXT("middle_01%s"), Side)));
+		FString Line = FString::Printf(TEXT("HoldGap %s %s: palm %.1f"), Hand == EAedirHand::Left ? TEXT("left") : TEXT("right"), *Item->ItemName.ToString(), Gap(FMath::Lerp(HandAt, Middle, 0.62)));
+		for (const TCHAR* Finger : { TEXT("thumb_03"), TEXT("index_03"), TEXT("middle_03"), TEXT("ring_03"), TEXT("pinky_03"), TEXT("middle_02") })
+		{
+			Line += FString::Printf(TEXT(", %s %.1f"), Finger, Gap(Body->GetBoneLocation(FName(*FString::Printf(TEXT("%s%s"), Finger, Side)))));
+		}
+		// Where the middle of what is shown is, seen from the hand: out from the palm (towards the thumb's side, as the grip
+		// sets it), along the fingers and across the knuckles, and how far the shown thing reaches each way from its middle.
+		const FVector Index = Body->GetBoneLocation(FName(*FString::Printf(TEXT("index_01%s"), Side)));
+		const FVector Pinky = Body->GetBoneLocation(FName(*FString::Printf(TEXT("pinky_01%s"), Side)));
+		const FVector Thumb = Body->GetBoneLocation(FName(*FString::Printf(TEXT("thumb_01%s"), Side)));
+		const FVector Knuckles = (Index - Pinky).GetSafeNormal();
+		const FVector Fingers = (Middle - HandAt).GetSafeNormal();
+		FVector Out = FVector::CrossProduct(Knuckles, Fingers).GetSafeNormal();
+		if (FVector::DotProduct(Out, Thumb - HandAt) < 0.0)
+		{
+			Out = -Out;
+		}
+		FBox Shown(ForceInit);
+		TArray<UStaticMeshComponent*> Parts;
+		Item->GetComponents<UStaticMeshComponent>(Parts);
+		for (const UStaticMeshComponent* Part : Parts)
+		{
+			if (Part && Part->IsVisible() && Part->GetStaticMesh())
+			{
+				Shown += Part->Bounds.GetBox();
+			}
+		}
+		const FVector Centre = Shown.IsValid ? Shown.GetCenter() : Item->GetActorLocation();
+		const FVector From = Centre - HandAt;
+		Line += FString::Printf(TEXT(" | middle from the hand: out %.1f, along the fingers %.1f, across %.1f; reaching %.1f; the hand's palm side faces out %.2f"),
+			FVector::DotProduct(From, Out), FVector::DotProduct(From, Fingers), FVector::DotProduct(From, Knuckles), Shown.IsValid ? Shown.GetExtent().GetMin() : 0.0,
+			FVector::DotProduct(Out, (Body->GetBoneLocation(FName(*FString::Printf(TEXT("middle_03%s"), Side))) - Middle).GetSafeNormal()));
+		const FVector Half = Item->GetShownHalfSizeCm();
+		Line += FString::Printf(TEXT("; its own half size %.1f %.1f %.1f, palm held %d, curl %.2f"), Half.X, Half.Y, Half.Z, Item->IsPalmHeld() ? 1 : 0, Item->GetHoldCurl());
+		DevToolsReport(Line);
+	}
+}
+
+void UAedirDevTools::ItemProbe(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// Every frame, how fast each loose item within three metres goes; at the end the fastest and how far it went.
+	const TArray<FString> Tokens = DevToolsTokens(Args);
+	const float Seconds = Tokens.IsValidIndex(0) ? FMath::Clamp(FCString::Atof(*Tokens[0]), 0.2f, 60.f) : 3.f;
+	const FString Label = Tokens.IsValidIndex(1) ? FString(Tokens[1]) : FString(TEXT("probe"));
+	struct FItemProbe
+	{
+		TMap<TWeakObjectPtr<AAedirItemActor>, FVector> Start;
+		TMap<TWeakObjectPtr<AAedirItemActor>, float> Fastest;
+		float Elapsed = 0.f;
+		uint64 LastFrame = 0;
+		FString Label;
+	};
+	TSharedRef<FItemProbe> Probe = MakeShared<FItemProbe>();
+	Probe->Label = Label;
+	for (TActorIterator<AAedirItemActor> It(Player->GetWorld()); It; ++It)
+	{
+		if (!It->IsHeld() && FVector::Dist(It->GetActorLocation(), Player->GetActorLocation()) < 300.f)
+		{
+			Probe->Start.Add(*It, It->GetActorLocation());
+			Probe->Fastest.Add(*It, 0.f);
+		}
+	}
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	Player->GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(Player, [Player, Probe, Handle, Seconds]()
+	{
+		if (Probe->LastFrame == GFrameCounter)
+		{
+			return;
+		}
+		Probe->LastFrame = GFrameCounter;
+		Probe->Elapsed += Player->GetWorld()->GetDeltaSeconds();
+		for (TPair<TWeakObjectPtr<AAedirItemActor>, float>& Pair : Probe->Fastest)
+		{
+			if (Pair.Key.IsValid())
+			{
+				Pair.Value = FMath::Max(Pair.Value, static_cast<float>(Pair.Key->GetVelocity().Size()));
+			}
+		}
+		if (Probe->Elapsed >= Seconds)
+		{
+			const TSharedRef<FItemProbe> Kept = Probe;
+			Player->GetWorldTimerManager().ClearTimer(*Handle);
+			for (const TPair<TWeakObjectPtr<AAedirItemActor>, float>& Pair : Kept->Fastest)
+			{
+				if (Pair.Key.IsValid())
+				{
+					UE_LOG(LogAedir, Display, TEXT("[ItemProbe] %s: %s (%.1f kg) at most %.0f cm/s, ended %.0f cm from where it lay"), *Kept->Label, *Pair.Key->ItemName.ToString(), Pair.Key->Weight, Pair.Value,
+						FVector::Dist(Pair.Key->GetActorLocation(), Kept->Start.FindRef(Pair.Key)));
+				}
+			}
 		}
 	}), 0.001f, true);
 }

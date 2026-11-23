@@ -277,7 +277,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const UAedirInteractionComponent* WidenInteraction = CreatureOwner->Interaction.Get();
 	const float ReachWidenAlpha = FMath::Clamp((WidenInteraction ? WidenInteraction->GetPelvisLowerZ() : 0.f) / ReachLowerMaxCm, 0.f, 1.f);
 	const float PostureWidthScale = 1.f + (CrouchFootWidenShare * CrouchAlpha) + (CrouchFootWidenShare * ReachWidenAlpha);
-	const float StanceWidthScale = FMath::Max(FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha), FMath::Lerp(1.f, FistStanceWidthMultiplier, FistStanceAlpha)) * PostureWidthScale;
+	// Crouched, the stance sets the feet no wider than the crouch does.
+	const float StanceWiden = FMath::Max(FMath::Lerp(1.f, StanceFootWidthMultiplier, StanceAlpha), FMath::Lerp(1.f, FistStanceWidthMultiplier, FistStanceAlpha));
+	const float StanceWidthScale = FMath::Lerp(StanceWiden, FMath::Lerp(1.f, StanceWiden, CrouchStanceWidthShare), CrouchAlpha) * PostureWidthScale;
 	const float StanceLeadForwardCm = StanceLeadFootForwardCm * StaggerAlpha * ActorScale;
 	for (int32 Foot = 0; Foot < 2; ++Foot)
 	{
@@ -571,6 +573,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.HipOffsetZ -= ReachLowerCm;
 	GaitState.HipForwardOffset = Interaction ? Interaction->GetReachHipForward() * ActorScale : 0.f;
 	GaitState.HipOffsetZ -= StanceHipLowerCm * SinkAlpha;
+	// Kicking off the ground the hips sink on the standing leg.
+	GaitState.HipOffsetZ -= bKicking && !bAirborne ? KickHipDropCm * ActorScale * KickAlpha : 0.f;
 
 	// Crouching shrinks the capsule, so the pelvis drops by the same amount and the camera boom stays on the body.
 	const float CrouchDropCm = FMath::Max(CreatureOwner->GetDefaultHalfHeight() - MovementComponent->GetCrouchedHalfHeight(), 0.f) * ActorScale;

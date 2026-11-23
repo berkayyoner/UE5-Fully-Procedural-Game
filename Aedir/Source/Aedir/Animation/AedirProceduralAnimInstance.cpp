@@ -1297,6 +1297,17 @@ void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCS
 
 	// The point on the weapon comes from the final pose of the carrying hand, so the two hands cannot drift apart.
 	const FTransform PrimaryTransform = CSPose.GetComponentSpaceTransform(PrimaryHand);
+	// The carrying hand's fingers, the way they wrap the handle: the second hand closes on it the same way round, as one grip
+	// of two hands, and keeps to it however the arms move, instead of turning about the handle with its own elbow.
+	const TCHAR* PrimarySuffix = bLeft ? TEXT("_r") : TEXT("_l");
+	const FCompactPoseBoneIndex PrimaryMiddle = ResolveCompactBone(Bones, FName(*FString::Printf(TEXT("middle_01%s"), PrimarySuffix)));
+	FVector PrimaryFingers = FVector::ZeroVector;
+	if (PrimaryMiddle.IsValid())
+	{
+		const FTransform RefPrimary = RefCSPose.GetComponentSpaceTransform(PrimaryHand);
+		const FVector RefPrimaryFingers = RefPrimary.GetRotation().Inverse().RotateVector(RefCSPose.GetComponentSpaceTransform(PrimaryMiddle).GetLocation() - RefPrimary.GetLocation());
+		PrimaryFingers = PrimaryTransform.GetRotation().RotateVector(RefPrimaryFingers);
+	}
 	FVector HandleMesh = PrimaryTransform.TransformPositionNoScale(GaitData.GripPointInPrimaryHand);
 	const FVector BladeMesh = PrimaryTransform.GetRotation().RotateVector(GaitData.GripBladeInPrimaryHand).GetSafeNormal();
 
@@ -1321,7 +1332,9 @@ void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCS
 	for (int32 Pass = 0; Pass < 2; ++Pass)
 	{
 		const FVector FromElbow = HandleMesh - CSPose.GetComponentSpaceTransform(Radius).GetLocation();
-		FVector Fingers = FVector::VectorPlaneProject(FromElbow, BladeMesh);
+		static const IConsoleVariable* GripHoldVar = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.GripHold"));
+		const bool bHoldAsPrimary = (!GripHoldVar || GripHoldVar->GetInt() == 1) && GaitData.GripOverhand <= 0.f && !PrimaryFingers.IsNearlyZero();
+		FVector Fingers = FVector::VectorPlaneProject(bHoldAsPrimary ? PrimaryFingers : FromElbow, BladeMesh);
 		if (Fingers.IsNearlyZero(1.f))
 		{
 			Fingers = HandRotation.RotateVector(RefHandInverse.RotateVector(RefToMiddle));

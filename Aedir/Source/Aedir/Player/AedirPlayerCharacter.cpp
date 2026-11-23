@@ -1172,6 +1172,13 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 			}
 		}
 
+		// The capsule was put somewhere at once: the pivot stays where it was in the world and eases over from there.
+		const FTransform ActorNow = GetActorTransform();
+		if (bCameraStateInitialized && FVector::Dist(ActorNow.GetLocation(), CameraActorLast.GetLocation()) > GetVelocity().Size() * DeltaSeconds + CameraTeleportCm)
+		{
+			CameraRelative = ActorNow.InverseTransformPositionNoScale(CameraActorLast.TransformPositionNoScale(CameraRelative));
+		}
+		CameraActorLast = ActorNow;
 		CameraRelative = bCameraStateInitialized ? FMath::VInterpTo(CameraRelative, TargetRelative, DeltaSeconds, FollowSpeed) : TargetRelative;
 		bCameraStateInitialized = true;
 		CameraBoom->SetRelativeLocation(CameraRelative);
@@ -2363,6 +2370,33 @@ void AAedirPlayerCharacter::GripInfo()
 void AAedirPlayerCharacter::HipProbe(const FString& ProbeArgs)
 {
 	RunDevCommand(TEXT("HipProbe"), ProbeArgs, false);
+}
+
+void AAedirPlayerCharacter::JumpNow()
+{
+	HandleJumpPressed();
+	FTimerHandle Release;
+	GetWorldTimerManager().SetTimer(Release, FTimerDelegate::CreateWeakLambda(this, [this]() { HandleJumpReleased(); }), 0.1f, false);
+}
+
+void AAedirPlayerCharacter::GripProbe(const FString& ProbeArgs)
+{
+	RunDevCommand(TEXT("GripProbe"), ProbeArgs, false);
+}
+
+void AAedirPlayerCharacter::GrabPiece()
+{
+	RunDevCommand(TEXT("GrabPiece"), FString(), false);
+}
+
+void AAedirPlayerCharacter::HoldGap()
+{
+	RunDevCommand(TEXT("HoldGap"), FString(), false);
+}
+
+void AAedirPlayerCharacter::ItemProbe(const FString& ProbeArgs)
+{
+	RunDevCommand(TEXT("ItemProbe"), ProbeArgs, false);
 }
 
 void AAedirPlayerCharacter::JitterProbe(const FString& ProbeArgs)

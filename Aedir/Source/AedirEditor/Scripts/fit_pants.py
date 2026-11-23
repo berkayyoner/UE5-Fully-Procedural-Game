@@ -12,7 +12,7 @@
 #   carried onto the hips the same way, by their width and depth; the two meet over BLEND_CM round the crotch;
 # - wherever the skin still comes through, the cloth is pushed out off it to SKIN_ROOM, the push spread over its
 #   neighbours;
-# - weights come from the skin right under it (the legs, the hips and the bottom of the back).
+# - weights come from the skin right under it (the legs, the hips and the bottom of the back), smoothed over the cloth.
 import bpy, sys, json, math
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
@@ -29,6 +29,9 @@ ANKLE_ABOVE_FOOT = 2.0    # cm the bottom of the bandages lies above the ankle j
 LEG_ROOM = 0.8            # cm the thinnest of a trouser leg keeps off the skin
 LEG_MOST_WIDENED = 1.25   # a trouser leg is never widened more than this round the body's leg
 HIP_ROOM = 1.4            # cm round the hips and the seat
+# The seat and waist are widened up to this much round the hips: the trousers' waist is cut much narrower than the body's,
+# and what was left of it inside the hips was pushed out of them in lumps.
+HIP_MOST_WIDENED = 1.8
 INNER_MARGIN = 0.4        # cm the inside of a trouser leg keeps from the middle between the legs
 INNER_SOFT = 0.6          # share of the way to it from which the inside is taken in softly
 BLEND_CM = 6.0
@@ -40,6 +43,9 @@ BRAIES_FROM = 0.5
 if BRAIES:
     LEG_ROOM, LEG_MOST_WIDENED, HIP_ROOM = 2.4, 1.6, 2.0
 SEAM_WELD_CM = 0.05       # points closer than this at a seam are one
+WEIGHT_SMOOTH_HIPS = 12     # rounds the weights are smoothed over the seat, the waist and round the crotch
+WEIGHT_SMOOTH_LEGS = 3      # and down the legs
+WEIGHT_SMOOTH_FROM_CM = 12  # cm below the body's crotch the seat's smoothing reaches
 SEAM_TIE_CM = 0.02        # points still on each other after thinning move together (not layers lying close)
 
 d = json.load(open(BODY))
@@ -261,8 +267,8 @@ for share in HIP_KEYS:
     zb = b_crotch + (b_top - b_crotch) * share
     sc, sx, sy = extent(MEAS, zs_)
     bc, bx, by = extent(hip_skin, zb)
-    kx = max(min((bx + HIP_ROOM) / max(sx, 1.0), 1.4), 0.7)
-    ky = max(min((by + HIP_ROOM) / max(sy, 1.0), 1.4), 0.7)
+    kx = max(min((bx + HIP_ROOM) / max(sx, 1.0), HIP_MOST_WIDENED), 0.7)
+    ky = max(min((by + HIP_ROOM) / max(sy, 1.0), HIP_MOST_WIDENED), 0.7)
     hips.append((share, sc, bc, kx, ky))
     print("[fit] hips at %.2f: trousers %.1f by %.1f, body %.1f by %.1f" % (share, sx, sy, bx, by))
 def map_hips(p):
@@ -400,9 +406,28 @@ me.update()
 pants.name = NAME
 if me.materials:
     me.materials[0].name = NAME
+# Each point's weights are the skin's nearest it, and over the seat and round the crotch the nearest skin goes from one
+# bone to another across the fold of the buttock: a point the thigh's next to one the pelvis's, the cloth there tore
+# and twisted as the legs moved. The weights are smoothed over the cloth, its points with their neighbours',
+# WEIGHT_SMOOTH_HIPS rounds above the crotch and down to WEIGHT_SMOOTH_FROM_CM below it, fewer further down the legs.
+raw = [weigh(v) for v in out]
+smooth_rounds = [WEIGHT_SMOOTH_HIPS if v.z > b_crotch - WEIGHT_SMOOTH_FROM_CM else WEIGHT_SMOOTH_LEGS for v in out]
+for r in range(max(WEIGHT_SMOOTH_HIPS, WEIGHT_SMOOTH_LEGS)):
+    nxt = []
+    for i, w in enumerate(raw):
+        if r >= smooth_rounds[i] or not nbrs[i]:
+            nxt.append(w)
+            continue
+        mix = {b: x * 0.5 for b, x in w.items()}
+        share = 0.5 / len(nbrs[i])
+        for j in nbrs[i]:
+            for b, x in raw[j].items():
+                mix[b] = mix.get(b, 0) + x * share
+        nxt.append(mix)
+    raw = nxt
 groups = {}
 for i, v in enumerate(out):
-    best = sorted(weigh(v).items(), key=lambda e: -e[1])[:4]
+    best = sorted(raw[i].items(), key=lambda e: -e[1])[:4]
     tot = sum(w for _, w in best)
     for b, w in best:
         if w / tot > 0.02:

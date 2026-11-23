@@ -1934,6 +1934,14 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 		Creature->Interaction->DropHeld(EAedirHand::Right);
 		Creature->Interaction->DropHeld(EAedirHand::Left);
 	}
+	// So does a senseless one, whether it was standing or already down when it went out.
+	if (bSenseless && !bDroppedSenseless && Creature && Creature->Interaction)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Senses] %s's hands go slack and let go of what they held."), *GetNameSafe(GetOwner()));
+		Creature->Interaction->DropHeld(EAedirHand::Right);
+		Creature->Interaction->DropHeld(EAedirHand::Left);
+	}
+	bDroppedSenseless = bSenseless;
 	const float MaxLegInjury = Creature && Creature->Combat
 		? FMath::Max(Creature->Combat->GetLimbInjury(EAedirLimb::LeftLeg), Creature->Combat->GetLimbInjury(EAedirLimb::RightLeg))
 		: 0.f;
@@ -2015,12 +2023,6 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 		if (bTipsOver && !(Over.IsNearlyZero() && ComOffsetDirection.IsNearlyZero()))
 		{
 			MulticastTopple((Over.IsNearlyZero() ? ComOffsetDirection : Over) * (ComputeStaggerSpeed(200.f) * KnockdownToppleShare));
-		}
-		// Nothing is held by a hand that has gone slack.
-		if (bSenseless && Creature && Creature->Interaction)
-		{
-			Creature->Interaction->DropHeld(EAedirHand::Right);
-			Creature->Interaction->DropHeld(EAedirHand::Left);
 		}
 	}
 	else if (bIsRagdoll)

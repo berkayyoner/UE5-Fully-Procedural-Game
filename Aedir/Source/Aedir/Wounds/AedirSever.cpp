@@ -22,6 +22,8 @@ namespace
 {
 	// A severed part's collision is at least this thick every way.
 	constexpr double SeverMinThicknessCm = 4.0;
+	// A corner of the body's own on a triangle cut with the limb goes this far under the cut, for the slice to take it off.
+	constexpr double SeverBodyCornerUnderCm = 0.5;
 	constexpr float SeverPieceLifeSeconds = 240.f;
 	// The cut part takes this share of the blade's speed through the cut, at most this fast: a cut limb drops and tumbles,
 	// it is not thrown.
@@ -141,6 +143,27 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 	Mesh->SetWorldTransform(PieceTransform);
 	Mesh->RegisterComponent();
 
+	// The cut itself: the plane of the blow through the joint, keeping the side away from the body.
+	const FVector JointWorld = Body->GetBoneLocation(SeverBone);
+	const FVector ParentWorld = Body->GetBoneLocation(Body->GetParentBone(SeverBone));
+	FVector Normal = (JointWorld - ParentWorld).GetSafeNormal();
+	// The blade decides the tilt of the cut, but never so far that it runs along the limb.
+	if (!PlaneNormal.IsNearlyZero())
+	{
+		const FVector Blade = FVector::DotProduct(PlaneNormal, Normal) >= 0.0 ? PlaneNormal : -PlaneNormal;
+		Normal = (Normal + Blade.GetSafeNormal() * 0.6).GetSafeNormal();
+	}
+	// Seen from the piece. A triangle goes with the limb when any of its corners does, so that the cut runs through whole
+	// skin; its corners that are the body's own are let down onto the body's side of the cut, or a body's part beyond the
+	// plane (the slope of the shoulders past the root of the neck) would go with the limb as a flap.
+	const FVector CutOrigin = PieceTransform.InverseTransformPosition(JointWorld);
+	const FVector CutNormal = PieceTransform.InverseTransformVectorNoScale(Normal);
+	const auto KeepOnBodySide = [&CutOrigin, &CutNormal](const FVector& Point)
+	{
+		const double Over = FVector::DotProduct(Point - CutOrigin, CutNormal) + SeverBodyCornerUnderCm;
+		return Over > 0.0 ? Point - CutNormal * Over : Point;
+	};
+
 	TArray<FVector> HullPoints;
 	int32 MadeSections = 0;
 	for (USkeletalMeshComponent* Layer : Layers)
@@ -248,7 +271,7 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 				int32* Known = Remap.Find(Corner);
 				if (!Known)
 				{
-					const int32 New = Vertices.Add(FVector(Skinned[Corner]));
+					const int32 New = Vertices.Add(IsInLimb(Corner) ? FVector(Skinned[Corner]) : KeepOnBodySide(FVector(Skinned[Corner])));
 					Normals.Add(LayerToBody.TransformVectorNoScale(FVector(FVector3f(Static.VertexTangentZ(Corner)))));
 					UV.Add(FVector2D(Static.GetVertexUV(Corner, 0)));
 					Tangents.Add(FProcMeshTangent(LayerToBody.TransformVectorNoScale(FVector(FVector3f(Static.VertexTangentX(Corner)))), false));
@@ -285,17 +308,7 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 		return nullptr;
 	}
 
-	// The cut itself: the plane of the blow through the joint, keeping the side away from the body.
 	const FTransform& ToBody = PieceTransform;
-	const FVector JointWorld = Body->GetBoneLocation(SeverBone);
-	const FVector ParentWorld = Body->GetBoneLocation(Body->GetParentBone(SeverBone));
-	FVector Normal = (JointWorld - ParentWorld).GetSafeNormal();
-	// The blade decides the tilt of the cut, but never so far that it runs along the limb.
-	if (!PlaneNormal.IsNearlyZero())
-	{
-		const FVector Blade = FVector::DotProduct(PlaneNormal, Normal) >= 0.0 ? PlaneNormal : -PlaneNormal;
-		Normal = (Normal + Blade.GetSafeNormal() * 0.6).GetSafeNormal();
-	}
 	UProceduralMeshComponent* Other = nullptr;
 	UKismetProceduralMeshLibrary::SliceProceduralMesh(Mesh, JointWorld, Normal, false, Other, EProcMeshSliceCapOption::CreateNewSectionForCap, SeverFlesh());
 	// Its collision is the box round its points, never thinner than a finger: a hull of a few hundred thinned-out points

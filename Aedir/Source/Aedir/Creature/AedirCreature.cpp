@@ -28,6 +28,7 @@
 #include "Surface/AedirFootstepComponent.h"
 #include "Wounds/AedirWoundComponent.h"
 
+static TAutoConsoleVariable<int32> CVarAedirBraies(TEXT("aedir.Braies"), 1, TEXT("Every body wears its linen braies under all else (1), or goes bare under it (0), to look at the body itself."));
 static TAutoConsoleVariable<int32> CVarAedirSelfCollision(TEXT("aedir.SelfCollision"), 1, TEXT("Whether a body stands against its own weapon and its arms against its trunk (1), or passes through them (0)."));
 
 namespace
@@ -239,7 +240,7 @@ void AAedirCreature::UpdateBraies()
 	{
 		return;
 	}
-	const bool bShown = !Interaction->GetArmorAt(TEXT("thigh_l"), GetMesh()->GetBoneLocation(TEXT("thigh_l")), EAedirDamageType::Blunt).bCovered;
+	const bool bShown = CVarAedirBraies.GetValueOnGameThread() != 0 && !Interaction->GetArmorAt(TEXT("thigh_l"), GetMesh()->GetBoneLocation(TEXT("thigh_l")), EAedirDamageType::Blunt).bCovered;
 	if (Braies->IsVisible() != bShown)
 	{
 		Braies->SetVisibility(bShown);

@@ -601,6 +601,11 @@ FVector UAedirBodyControlComponent::GetPoseLocation(FName Bone) const
 	return Control && Mesh ? Control->GetCachedBoneTransform(Mesh, Bone).GetLocation() : FVector::ZeroVector;
 }
 
+FTransform UAedirBodyControlComponent::GetPoseTransform(FName Bone) const
+{
+	return Control && Mesh ? Control->GetCachedBoneTransform(Mesh, Bone) : FTransform::Identity;
+}
+
 void UAedirBodyControlComponent::RebindHips(UCapsuleComponent* InCapsule)
 {
 	if (!Control || !Mesh || !InCapsule)

@@ -66,16 +66,20 @@ bool UAedirInteractionComponent::FindAimedBody(FVector& OutPoint) const
 	FCollisionObjectQueryParams Objects;
 	Objects.AddObjectTypesToQuery(ECC_PhysicsBody);
 	Objects.AddObjectTypesToQuery(ECC_Pawn);
-	Objects.AddObjectTypesToQuery(ECC_WorldStatic);
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirBodyAim), false, Creature);
+	// The eyes stop at the ground or a wall where they meet it, but the hand is not as narrow as a look: a head lying on
+	// the ground looked at counts, though a sweep the width of a hand meets the ground round it first. Only what is
+	// behind the wall the look itself ends on is out of reach.
+	FHitResult Wall;
+	const double WallAt = World->LineTraceSingleByObjectType(Wall, From, From + Aim * BodyGrabAimRangeCm, FCollisionObjectQueryParams(ECC_WorldStatic), Params) ? Wall.Distance : BodyGrabAimRangeCm;
 	TArray<FHitResult> Hits;
 	World->SweepMultiByObjectType(Hits, From, From + Aim * BodyGrabAimRangeCm, FQuat::Identity, Objects, FCollisionShape::MakeSphere(BodyGrabAimRadiusCm), Params);
 	for (const FHitResult& Hit : Hits)
 	{
 		const UPrimitiveComponent* Component = Hit.GetComponent();
-		if (!Component || Component->GetCollisionObjectType() == ECC_WorldStatic)
+		if (!Component || Hit.Distance > WallAt + BodyGrabAimRadiusCm)
 		{
-			return false;
+			continue;
 		}
 		// A body's capsule stands for the body inside it.
 		const AActor* Owner = Component->GetOwner();

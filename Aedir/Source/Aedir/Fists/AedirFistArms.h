@@ -414,10 +414,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandRestElbowBelowShoulderCm = 29.f;
 
-	// The furthest the second hand turns at the wrist off the line its forearm gives it to close on the grip, in degrees:
+	// The furthest the second hand turns at the wrist off the line its forearm gives it to close on the grip, in degrees (at
+	// 32 it lay 28 degrees across the grip at rest, crooked to the carrying hand; at 60, 7):
 	// past it the hand would turn into the blade.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
-	float TwoHandWristMaxDegrees = 32.f;
+	float TwoHandWristMaxDegrees = 60.f;
 
 	// Held in both hands and drawn round to its own side, the blade comes in this close to the chest (in one hand
 	// SideRadiusCm), so the second arm still reaches it bent.

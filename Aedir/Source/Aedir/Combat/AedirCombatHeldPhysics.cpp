@@ -12,10 +12,12 @@
 #include "PhysicsEngine/BodyInstance.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 #include "Physics/AedirBalanceComponent.h"
+#include "Physics/AedirBodyControlComponent.h"
 
 namespace
 {
 	TAutoConsoleVariable<int32> CVarAedirHeldWeight(TEXT("aedir.HeldWeight"), 1, TEXT("Let the weight of a held weapon pull on the hand."));
+	TAutoConsoleVariable<int32> CVarAedirGripHold(TEXT("aedir.GripHold"), 1, TEXT("The second hand on a weapon closes on it the carrying hand's way round and is held to it in its turn too (1), or turns about it with its own elbow and is held only in place (0)."));
 	TAutoConsoleVariable<int32> CVarAedirGripJoint(TEXT("aedir.GripJoint"), 1, TEXT("Hold the second hand on a weapon with a physical joint."));
 
 	// A held weapon is not part of the arm: its weight and the force it takes to swing it pull on the hand that holds it.
@@ -246,6 +248,9 @@ void UAedirCombatComponent::UpdateGripJoint(float DeltaTime)
 		Joint->SetAngularTwistLimit(ACM_Free, 0.f);
 		Joint->SetLinearPositionDrive(true, true, true);
 		Joint->SetLinearVelocityDrive(true, true, true);
+		Joint->SetAngularDriveMode(EAngularDriveMode::SLERP);
+		Joint->SetOrientationDriveSLERP(true);
+		Joint->SetAngularVelocityDriveSLERP(true);
 		Joint->RegisterComponent();
 		Joint->SetConstrainedComponents(Body, PrimaryBone, Body, OtherBone);
 		Joint->SetConstraintReferencePosition(EConstraintFrame::Frame2, OtherWorld.InverseTransformPosition(PalmWorld));
@@ -256,6 +261,24 @@ void UAedirCombatComponent::UpdateGripJoint(float DeltaTime)
 	GripJoint->SetLinearPositionTarget(FVector::ZeroVector);
 	GripJoint->SetLinearVelocityTarget(FVector::ZeroVector);
 	GripJoint->SetLinearDriveParams(GripJointStiffness * Alpha, GripJointDamping * Alpha, 0.f);
+	// In its turn too: the second hand is held to the carrying one as the pose has the two of them, closed on the handle the
+	// same way round, so it neither turns about the handle nor lies crooked on it.
+	const UAedirBodyControlComponent* Muscles = Creature->FindComponentByClass<UAedirBodyControlComponent>();
+	const FTransform PrimaryPose = Muscles ? Muscles->GetPoseTransform(PrimaryBone) : FTransform::Identity;
+	const FTransform OtherPose = Muscles ? Muscles->GetPoseTransform(OtherBone) : FTransform::Identity;
+	if (CVarAedirGripHold.GetValueOnGameThread() == 0)
+	{
+		GripJoint->SetAngularDriveParams(0.f, 0.f, 0.f);
+	}
+	else if (!PrimaryPose.Equals(FTransform::Identity) && !OtherPose.Equals(FTransform::Identity))
+	{
+		const FQuat OtherInPrimary = PrimaryPose.GetRotation().Inverse() * OtherPose.GetRotation();
+		GripJoint->SetConstraintReferenceOrientation(EConstraintFrame::Frame1, OtherInPrimary.GetAxisX(), OtherInPrimary.GetAxisY());
+		GripJoint->SetConstraintReferenceOrientation(EConstraintFrame::Frame2, FVector::ForwardVector, FVector::RightVector);
+		GripJoint->SetAngularOrientationTarget(FRotator::ZeroRotator);
+		GripJoint->SetAngularVelocityTarget(FVector::ZeroVector);
+		GripJoint->SetAngularDriveParams(GripJointTurnStiffness * Alpha, GripJointTurnDamping * Alpha, 0.f);
+	}
 
 	// Torn away by a blow or by the arms pulling apart: the hand lets go for a moment before it takes hold again.
 	const float Gap = static_cast<float>(FVector::Dist(PalmWorld, TargetWorld));

@@ -544,6 +544,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float CrouchFootWidenShare = 0.3f;
 
+	// Crouched in a fight stance, or with the fists up, this share of the stance's own widening of the feet is kept: at 0 the
+	// feet stand as wide as a crouch alone sets them, the stance's step forward and back kept.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Crouch", meta=(ClampMin="0", ClampMax="1"))
+	float CrouchStanceWidthShare = 0.f;
+
 	// Forward bend of the spine at a full crouch.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float CrouchSpineLeanDegrees = 22.f;
@@ -983,6 +988,10 @@ public:
 	// Backward torso lean in degrees at a full kick pose.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
 	float KickSpineLeanDegrees = 6.f;
+
+	// The hips let down on the standing leg at a full kick pose, the knee giving under them, as a kicker sinks into a kick.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
+	float KickHipDropCm = 16.f;
 
 	// A body starts to get up off the ground: the hands and feet set out from where they lie, and the pose of this moment is
 	// worked out at once, outside the tick, so the body never shows, or is pulled towards, the pose it had while limp.

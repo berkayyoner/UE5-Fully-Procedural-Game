@@ -67,6 +67,8 @@ namespace
 	const FLinearColor HudNeedLowColor(0.5f, 0.07f, 0.04f);
 	constexpr float HudPromptLift = 14.f;
 	constexpr float HudPromptFontSize = 13.f;
+	// Names shown in the world, over a thing that can be taken and over the head of someone looked at: small, not to cover what they name.
+	constexpr float HudWorldLabelFontSize = 9.5f;
 	constexpr float HudBarFullThreshold = 0.999f;
 	constexpr float HudBarVisibleThreshold = 0.01f;
 	constexpr float HudBarTrailSpeed = 0.4f;
@@ -798,7 +800,7 @@ void AAedirHUD::DrawPrompt(const AAedirCreature* Creature)
 	}
 
 	const float Scale = AedirUIStyle::ScaleForHeight(static_cast<float>(Canvas->SizeY));
-	const FSlateFontInfo Font = AedirUIStyle::RegularFont(HudPromptFontSize * Scale, 40);
+	const FSlateFontInfo Font = AedirUIStyle::RegularFont(HudWorldLabelFontSize * Scale, 40);
 	const float TextHeight = AedirUIStyle::MeasureText(Name, Font).Y;
 	const FVector2f Position(static_cast<float>(Projected.X), static_cast<float>(Projected.Y) - TextHeight - HudPromptLift * Scale);
 	AedirUIStyle::DrawText(*Canvas, Name, Font, Position, AedirUIStyle::Ivory, EAedirTextAlign::Center, 1.f);
@@ -886,12 +888,12 @@ void AAedirHUD::DrawLookTarget(const AAedirCreature* Creature)
 	{
 		return;
 	}
-	const FSlateFontInfo Font = RegularFont(HudTargetFontSize * Scale, 40);
+	const FSlateFontInfo Font = RegularFont(HudWorldLabelFontSize * Scale, 40);
 	const FVector2f Spot(static_cast<float>(Projected.X), static_cast<float>(Projected.Y));
 	AedirUIStyle::DrawText(*Canvas, Name, Font, Spot, Ivory, EAedirTextAlign::Center, 1.f);
 	if (Npc->CanTalkTo(Creature) && FVector::Dist(Npc->GetActorLocation(), Creature->GetActorLocation()) <= HudTalkRangeCm)
 	{
-		AedirUIStyle::DrawText(*Canvas, TEXT("[F] Talk"), LightFont(HudTargetFontSize * 0.85f * Scale, 20), Spot + FVector2f(0.f, MeasureText(Name, Font).Y + 2.f * Scale), TextDim, EAedirTextAlign::Center, 1.f);
+		AedirUIStyle::DrawText(*Canvas, TEXT("[F] Talk"), LightFont(HudWorldLabelFontSize * 0.85f * Scale, 20), Spot + FVector2f(0.f, MeasureText(Name, Font).Y + 2.f * Scale), TextDim, EAedirTextAlign::Center, 1.f);
 	}
 }
 

@@ -49,6 +49,19 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item")
 	bool bTwoHanded = false;
 
+	// Struck loose by a limb swinging through it (a kick, a stride), a thing is thrown by no more than a blow of a limb of
+	// BodyPushLimbMassKg at BodyPushMaxSpeedCm would throw it: the limb's weight against its own, never as if the limb
+	// were a wall driven through it. A light thing goes further than a heavy one.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Struck")
+	float BodyPushMaxSpeedCm = 300.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Struck", meta=(ClampMin="0.1"))
+	float BodyPushLimbMassKg = 2.5f;
+
+	// A limb slower than this at the touch is not swinging: a thrown thing bouncing off a body keeps its own speed.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Struck")
+	float BodyPushLimbLeastSpeedCm = 120.f;
+
 	// Hold offset relative to the hand bone. The item bounds center is placed at the translation of this transform.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Hold")
 	FTransform HeldTransform;
@@ -87,6 +100,42 @@ public:
 	// The hollow of a closed hand: this share of the way from the wrist to the knuckles and this far off the back of the hand.
 	static constexpr float HandGripPalmShare = 0.62f;
 	static constexpr float HandGripPalmDepthCm = 3.2f;
+
+	// A small thing with no handle (a loaf, an apple, a lump of coal) lies in the palm instead of being closed on like a
+	// grip: its face on the skin of the palm, this far out from the bone of the hand, and the fingers bent round it only as
+	// far as it lets them: PalmHoldCurlBase, less PalmHoldCurlPerThickCm for every cm of its half thickness and
+	// PalmHoldCurlPerLongCm for every cm it reaches along the fingers from its middle, within PalmHoldCurlMinMax (1 is a
+	// full fist round a handle). Measured with HoldGap, the finger tips then come to within about a centimetre of it.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Hold")
+	float PalmHoldSkinCm = 1.6f;
+
+	// No longer or wider than twice this, and no thicker than this, is small enough to lie in the palm.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Hold")
+	float PalmHoldMostHalfCm = 12.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Hold")
+	float PalmHoldCurlBase = 1.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Hold")
+	float PalmHoldCurlPerThickCm = 0.16f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Hold")
+	float PalmHoldCurlPerLongCm = 0.14f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Hold")
+	FVector2D PalmHoldCurlMinMax = FVector2D(0.1, 1.0);
+
+	// Held in the palm (see PalmHoldSkinCm), not closed on by a handle.
+	bool IsPalmHeld() const;
+	// How far the fingers close on it, 1 a full fist round a handle.
+	float GetHoldCurl() const;
+	// Half the thickness of what is shown of it along each of its own axes, in cm. Measured once, its model being made.
+	FVector GetShownHalfSizeCm() const;
+
+private:
+	mutable TOptional<FVector> ShownHalfSizeCm;
+
+public:
 
 	// How far above GripLocalCm the hand it is attached to holds the item. Set while half-swording, where the upper hand carries it.
 	UPROPERTY(Replicated)
@@ -211,6 +260,9 @@ public:
 	virtual void Tick(float DeltaSeconds) override;
 
 private:
+	UFUNCTION()
+	void HandleMeshHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, FVector NormalImpulse, const FHitResult& Hit);
+
 	// The grip being settled into, from the hold it was taken with.
 	FTransform SettleFrom = FTransform::Identity;
 	FTransform SettleTo = FTransform::Identity;

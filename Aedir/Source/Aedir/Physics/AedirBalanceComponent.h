@@ -1109,6 +1109,7 @@ private:
 
 	// Whether a dying body has already let go of what it held.
 	bool bDroppedOnDeath = false;
+	bool bDroppedSenseless = false;
 	void SetBalance(float NewBalance);
 	void AddLeanDirection(const FVector& WorldDirection, float Magnitude);
 public:
