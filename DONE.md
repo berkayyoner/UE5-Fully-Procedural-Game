@@ -688,3 +688,4 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - With a one-handed blade in both hands, Q lets the left hand off the grip to reach, the blade staying in the right; E gives the blade over into the left hand, already on it, and then the right one reaches (HandOverNow).
 - The braies and the trousers sit up on the waist (12 and 14 cm over the pelvis), their weave repeats only every 44 cm and is drawn smoothly, their inside is cloth too (a second face a thickness in), and the trousers have a cord round the band tied in a bigger bow, weighted to the trunk so it stays on the band.
 - Dev: NearestBody, TwoHandInfo, HandKey with a release.
+- Feet are held still on the ground only while standing (under 15 cm/s, let go above 40 cm/s); walking and running, a foot on the ground is on its muscles again: no more skating (a walking foot slid 117 cm/s, now 10)

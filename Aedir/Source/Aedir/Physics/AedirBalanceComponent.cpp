@@ -800,7 +800,11 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	const UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement();
 	const bool bOnGround = Pose.bProceduralActive && Movement && !Movement->IsFalling();
 	BodyControl->SetAirborne(Movement && Movement->IsFalling());
-	BodyControl->SetFeetPlanted(bOnGround && Pose.LeftFootLift < AedirPlantedFootLift, bOnGround && Pose.RightFootLift < AedirPlantedFootLift);
+	// Moving, a foot rolls off the ground on its muscles; held by the pose it would skate behind the stride.
+	const float GroundSpeed = Movement ? Movement->Velocity.Size2D() : 0.f;
+	bStandingForPlant = GroundSpeed < (bStandingForPlant ? PlantedFootSpeedMaxCm : PlantedFootSpeedMinCm);
+	const bool bPlantable = bOnGround && bStandingForPlant;
+	BodyControl->SetFeetPlanted(bPlantable && Pose.LeftFootLift < AedirPlantedFootLift, bPlantable && Pose.RightFootLift < AedirPlantedFootLift);
 
 	// Hips pushed off where the legs would carry them tip the body over them and cost balance, the more the weaker it is.
 	const USkeletalMesh* Model = BodyMesh->GetSkeletalMeshAsset();

@@ -1263,6 +1263,10 @@ void UAedirDevTools::GaitInfo(AAedirPlayerCharacter* Player, const FString& Args
 			State.PelvisRotation.Pitch, State.SpineLeanPitch, State.HipOffsetZ, State.PelvisRollDegrees, State.SpineLeanRoll, State.HipLateralOffset);
 		// How far apart the feet stand across the body.
 		UE_LOG(LogAedir, Display, TEXT("[GaitInfo]   feetApart=%.1f across"), FMath::Abs(FVector::DotProduct(Mesh->GetBoneLocation(TEXT("foot_l")) - Mesh->GetBoneLocation(TEXT("foot_r")), Player->GetActorRightVector())));
+		// Where the balls of the feet are in the world, to tell a foot standing on the ground from one sliding over it.
+		const FVector BallL = Mesh->GetBoneLocation(TEXT("ball_l"));
+		const FVector BallR = Mesh->GetBoneLocation(TEXT("ball_r"));
+		UE_LOG(LogAedir, Display, TEXT("[GaitInfo]   ballW %.1f %.1f %.1f %.1f"), BallL.X, BallL.Y, BallR.X, BallR.Y);
 		// The hips against the capsule: where they are, and where the pose holds them.
 		if (const UAedirBodyControlComponent* Body = Player->FindComponentByClass<UAedirBodyControlComponent>(); Body && Body->IsReady())
 		{

@@ -237,6 +237,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
 	float DownBlowPushShare = 0.35f;
 
+	// A foot on the ground is held still by the pose only while the body stands: slower than the Min it is held,
+	// faster than the Max it is let go to its muscles, so a walking foot rolls off the ground instead of skating.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Feet", meta=(ClampMin="0", Units="cm/s"))
+	float PlantedFootSpeedMinCm = 15.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Feet", meta=(ClampMin="0", Units="cm/s"))
+	float PlantedFootSpeedMaxCm = 40.f;
+
 	// Down but awake, a hand goes to where a blow of at least DownClutchMinPush landed and holds it there, as standing:
 	// for DownClutchMinSeconds to DownClutchMaxSeconds (the harder the blow, the longer, full at DownClutchFullPush), pulled
 	// there by a spring of DownClutchSpringPerSecondSq, never a hand in use.
@@ -1225,6 +1233,9 @@ public:
 	// A step taken to catch the body has landed.
 	void OnRecoveryStepTaken();
 private:
+	// Whether the body stands still enough for its feet on the ground to be held by the pose.
+	bool bStandingForPlant = true;
+
 	void DecayLeanDirection(float Amount);
 	void UpdateFallState();
 	void UpdateServerState(float DeltaTime);
