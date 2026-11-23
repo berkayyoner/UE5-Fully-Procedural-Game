@@ -1414,7 +1414,15 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<
 	const FVector UpMeshDirection = ActorToMesh.RotateVector(FVector::UpVector);
 	const float BehindShare = static_cast<float>(-FVector::DotProduct(Effector - RootPosition, ForwardMesh)) / FMath::Max(LegLength, 1.f);
 	const float HeelAlpha = FMath::Clamp((BehindShare - AedirHeelLiftStartShare) / AedirHeelLiftRangeShare, 0.f, 1.f);
-	Effector += UpMeshDirection * (AedirHeelRaiseCm * HeelAlpha);
+	// Standing, the heel stays down, unless the leg cannot reach the ground with it down: then it rises only as far as the
+	// leg must, the toes on the ground.
+	const FVector FromHip = Effector - RootPosition;
+	const float Below = static_cast<float>(-FVector::DotProduct(FromHip, UpMeshDirection));
+	const float Across = FMath::Sqrt(FMath::Max(static_cast<float>(FromHip.SizeSquared()) - Below * Below, 0.f));
+	const float HeelReach = LegLength * AedirLegMaxReachShare * 0.985f;
+	const float MustRise = Below > 0.f && Across < HeelReach ? FMath::Max(Below - FMath::Sqrt(HeelReach * HeelReach - Across * Across), 0.f) : 0.f;
+	const float Peel = AedirHeelRaiseCm * HeelAlpha;
+	Effector += UpMeshDirection * FMath::Lerp(FMath::Min(MustRise, FMath::Max(Peel, MustRise)), FMath::Max(Peel, MustRise), FMath::Clamp(GaitData.HeelPeelShare, 0.f, 1.f));
 
 	const FVector ToEffector = Effector - RootPosition;
 	const float EffectorDistance = static_cast<float>(ToEffector.Size());

@@ -109,7 +109,7 @@ void UAedirFistArms::SwingWhileDown(const FVector2D& Mouse, float DeltaTime)
 	ACharacter* Owner = Cast<ACharacter>(GetOwner());
 	const UAedirBalanceComponent* OwnBalance = Owner ? Owner->FindComponentByClass<UAedirBalanceComponent>() : nullptr;
 	USkeletalMeshComponent* Mesh = Owner ? Owner->GetMesh() : nullptr;
-	if (!Mesh || !Owner->HasAuthority() || DeltaTime <= 0.f || Mouse.IsNearlyZero() || !OwnBalance || !OwnBalance->IsRagdoll() || OwnBalance->IsHoisting())
+	if (!Mesh || !Owner->HasAuthority() || DeltaTime <= 0.f || Mouse.IsNearlyZero() || !OwnBalance || !OwnBalance->IsRagdoll())
 	{
 		return;
 	}
@@ -122,7 +122,8 @@ void UAedirFistArms::SwingWhileDown(const FVector2D& Mouse, float DeltaTime)
 	const FVector Wanted = ((View.GetUnitAxis(EAxis::Y) * (Mouse.X / FMath::Max(MouseFieldAcross, 1.f)) + View.GetUnitAxis(EAxis::Z) * (Mouse.Y / FMath::Max(MouseFieldUpDown, 1.f))) * (DownSwingReachCm / DeltaTime)).GetClampedToMaxSize(DownSwingMaxSpeed);
 	for (int32 Slot = 0; Slot < 2; ++Slot)
 	{
-		if (!bHeld[Slot] || bArmUseless[Slot])
+		// Getting up, only the one hand kept off the ground swings; the other bears the weight.
+		if (!bHeld[Slot] || bArmUseless[Slot] || (OwnBalance->IsHoisting() && OwnBalance->GetHoistFreeHand() != Slot))
 		{
 			continue;
 		}

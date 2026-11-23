@@ -369,12 +369,12 @@ public:
 	// the head), armed AIWeaponStandOffShare of the weapon's reach; it closes in past AIStandOffBandCm further and backs off
 	// nearer than that much closer.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float AIFistStandOffCm = 88.f;
+	float AIFistStandOffCm = 74.f;
 
 	// Bare-handed, to throw a punch it steps in this close (the middles of the two bodies, for its size), and on in through
 	// the throw: from further a fist reaches only the shoulders and the chest.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
-	float AIFistStrikeInCm = 76.f;
+	float AIFistStrikeInCm = 58.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIWeaponStandOffShare = 1.f;
@@ -407,7 +407,15 @@ public:
 
 	// How often a swing goes for the head rather than the body.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
-	float AIHeadChance = 0.75f;
+	float AIHeadChance = 0.85f;
+
+	// A foe coming in on it faster than AICounterClosingSpeed is met with a fist as it arrives, not waited for: thrown when it
+	// will be within reach in AICounterLeadSeconds (about as long as drawing back and throwing take), whatever the wait.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AICounterClosingSpeed = 150.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
+	float AICounterLeadSeconds = 0.3f;
 
 	// One who is down is closed on and struck at by the upper body, between the chest and the head, not at the hips and the
 	// legs: 0 the chest, 1 the head.
@@ -417,7 +425,7 @@ public:
 	// A swing at the head is aimed this share of the way up higher than the head itself: coming round from the side the
 	// arc is lower than in the middle, and the blow would land on the shoulder.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
-	float AIHeadAimLift = 0.2f;
+	float AIHeadAimLift = 0.35f;
 
 	// Bare-handed, a punch is drawn back this share of the mouse's way to the side (a blade 0.9), and to this share of the
 	// way from the guard's height to the height it goes for, before it is thrown; it is thrown in to just past the middle,
@@ -427,7 +435,7 @@ public:
 	float AIFistWindupAcross = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
-	float AIFistWindupHeightShare = 0.3f;
+	float AIFistWindupHeightShare = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
 	float AIFistThrough = 0.05f;
@@ -549,7 +557,12 @@ public:
 
 	// A kick strikes as a fist does, by the foot's speed into the body where it lands, with this weight behind it.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0.1"))
-	float KickBlowMassKg = 2.5f;
+	float KickBlowMassKg = 4.5f;
+
+	// A kick pushes the body it lands on by this share of what its blow carries: it shoves and fells, it does not throw a
+	// body through the air.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
+	float KickPushShare = 0.5f;
 
 	// At the end of its swing the foot is this far above the level 90 cm below the hip, with the view level; looking up
 	// lifts it up to KickMaxLiftCm more.
@@ -562,20 +575,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
 	float KickCooldown = 1.2f;
 
-	// A kick off the ground stands on one leg: started walking or running, the body carried on over that leg and the hips
-	// let down for the kick throw it off its feet (from KickMovingSpeedMinCm on, surely at KickMovingSpeedMaxCm), that much
-	// balance lost the way it went once the leg is up, KickMovingFallAtSeconds in. A kick from a jump does not stand at all.
+	// A kick off the ground stands on one leg, its foot held where it was put down. The body gone on from that foot by more
+	// than KickOffFootLeastCm (walking or running into the kick) loses balance the way it went, up to
+	// KickOffFootBalancePerSecond a second at KickOffFootMostCm and beyond: a step's carry throws it over, a shuffle does not.
+	// A kick from a jump does not stand at all.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
-	float KickMovingSpeedMinCm = 30.f;
+	float KickOffFootLeastCm = 14.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
-	float KickMovingSpeedMaxCm = 80.f;
+	float KickOffFootMostCm = 35.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
-	float KickMovingFallBalance = 2.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
-	float KickMovingFallAtSeconds = 0.3f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
+	float KickOffFootBalancePerSecond = 4.f;
 
 	// A fist's or a weapon's speed is taken over at least this many seconds, never from a single frame alone.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
@@ -1153,8 +1164,7 @@ private:
 	bool bKickStruck = false;
 	FVector KickPrevFootWorld = FVector::ZeroVector;
 	// How fast and which way the body went over the ground as the kick began, on the ground; lost once, as the leg comes up.
-	FVector KickStartVelocity = FVector::ZeroVector;
-	bool bKickTopplePending = false;
+	float KickLoggedLag = 0.f;
 
 	float AIRetargetTimer = 0.f;
 	float AIAttackTimer = 0.f;

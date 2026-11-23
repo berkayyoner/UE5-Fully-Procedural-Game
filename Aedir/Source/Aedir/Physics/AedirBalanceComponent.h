@@ -215,6 +215,41 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
 	float DownLookMaxDegrees = 60.f;
 
+	// And the trunk turns with it, from the waist, as one lying turns to look: the chest twisted about the spine towards
+	// where the head looks, DownTwistShare as hard as the head (the belly DownTwistBellyShare of that), at most
+	// DownTwistMaxDegrees at once.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
+	float DownTwistShare = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
+	float DownTwistBellyShare = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
+	float DownTwistMaxDegrees = 50.f;
+
+	// Down but awake, the muscles keep this much of their strength (1 as standing): the body lies as one still in it, not
+	// slack; dead or senseless they keep only RagdollMotorShare.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
+	float DownAwakeMotorShare = 0.65f;
+
+	// Down but awake, a hand goes to where a blow of at least DownClutchMinPush landed and holds it there, as standing:
+	// for DownClutchMinSeconds to DownClutchMaxSeconds (the harder the blow, the longer, full at DownClutchFullPush), pulled
+	// there by a spring of DownClutchSpringPerSecondSq, never a hand in use.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
+	float DownClutchMinPush = 150.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
+	float DownClutchFullPush = 400.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
+	float DownClutchMinSeconds = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
+	float DownClutchMaxSeconds = 3.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
+	float DownClutchSpringPerSecondSq = 220.f;
+
 	// Getting up, the hands rest this high over the ground (their middle, in cm for a body of size 1): pulled lower, into
 	// it, they shook against it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
@@ -588,6 +623,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	bool bPhysicalGetUp = true;
 
+	// Just come into the world, the body is held in its pose for this long, its physics off, and only then let into it: from
+	// its first frame it stands as it should instead of its arms and legs flying out of the rest pose it was made in.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0"))
+	float SpawnPosedSeconds = 0.4f;
+
 	// The moves of getting up wait for the physical hips: trailing the pose by up to GetUpHipTrailFreeCm they go on at full
 	// pace, slower the further, and stop at GetUpHipTrailStopCm until the muscles have brought the hips up after them.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
@@ -767,7 +807,71 @@ public:
 	// Hauled up onto its feet, the body is handed back to its capsule; the hold of its hips and feet on the capsule and the
 	// ground, and the muscles' strength, come in over HoistSettleSeconds, so it is taken into the standing pose softly.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistSettleSeconds = 0.5f;
+	float HoistSettleSeconds = 1.f;
+
+	// In the last step and still not up after HoistDoneEasySeconds, the body counts as up from HoistDoneEasyHeightShare of
+	// the standing height and HoistDoneEasyUpright; still not after HoistGiveUpSeconds, it gives up and lies down again to
+	// try anew, never left hanging half up.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistDoneEasySeconds = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistDoneEasyHeightShare = 0.62f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float HoistDoneEasyUpright = 0.85f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistGiveUpSeconds = 5.f;
+
+	// Getting up the body stands on what it has on the ground, and is only as steady as its lift and strength: struck or
+	// worn, the chest leaning off where the step has it is drawn on over by its weight (HoistTipShare of what gravity would
+	// do to it there), and the trunk is held up the less, down to HoistUnsteadyHoldShare. The walking keys lean it back:
+	// pressed off the way they were first held to get up, the chest and the hips are pushed that way at up to
+	// HoistKeyBalanceAccel (cm/s2); a body nobody plays leans back by itself, HoistSelfBalanceShare as well. Leaning over by
+	// more than HoistTipOverCm (for a 95 cm hip height) it goes over and lies down again.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float HoistTipShare = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float HoistUnsteadyHoldShare = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float HoistKeyBalanceAccel = 450.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float HoistSelfBalanceShare = 0.7f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistTipOverCm = 32.f;
+
+	// Only a body less steady than this can go over: one at its full strength holds whatever its trunk does on the way up.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float HoistTipUnsteady = 0.8f;
+
+	// Walked or run into while getting up, the body loses this much of its lift per cm/s it was met at (beyond BumpMinSpeed,
+	// and a little from the touch itself), and its trunk is shoved as a standing one's is.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float GetUpBumpLiftPerSpeed = 0.006f;
+
+	// Getting up even a walk into the body counts: from this closing speed on.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float GetUpBumpMinSpeed = 60.f;
+
+	// The leg put forward getting up is lifted over the ground as it comes: its foot held up by this share of how far it
+	// still has to go, at most HoistStepLiftMaxCm (for a 95 cm hip height), and set down flat once there.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float HoistStepLiftShare = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistStepLiftMaxCm = 16.f;
+
+	// Getting up, the hand that is in use (its button held, or holding something) stays off the ground, free to fight or hold
+	// with: only one may; the other takes the weight alone. -1 for both on the ground.
+	int32 GetHoistFreeHand() const { return bHoisting ? HoistFreeHand : -1; }
+
+	// Walked or run into by someone while getting up.
+	void BumpedGettingUp(const class AAedirCreature* By, const FVector& Point, FName Part = NAME_None);
 
 	// While the hips are being hauled up: how far the pull has come in, 0 to 1.
 	float GetHoistShare() const { return bHoisting ? HoistDrive : 0.f; }
@@ -1190,7 +1294,23 @@ private:
 	float HoistRestFor = 0.f;
 	float HoistHeldSeconds = 0.f;
 	int32 HoistHand = -1;
+	int32 HoistFreeHand = -1;
+	// Down, a hand held to a hurt place: on which bone, where on it, for how long still.
+	void HoldHurtWhileDown(float DeltaTime);
+	FName DownClutchBone[2];
+	FVector DownClutchLocal[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float DownClutchLeft[2] = { 0.f, 0.f };
+	double DownBlowSeen = 0.0;
+	FVector ChestFaceLocal = FVector::ZeroVector;
+	float SpawnPosedLeft = 0.f;
+	float SpawnAge = 0.f;
 	int32 HoistLeadSide = 0;
+	// The way the keys were held to get up, against which the keys lean the body back, and how far it leans off its step.
+	FVector HoistNeutralKey = FVector::ZeroVector;
+	float HoistLeanLogged = 0.f;
+	float HoistLastStepFor = 0.f;
+	FVector HoistSelfLean = FVector::ZeroVector;
+	FVector HoistLeanSmoothed = FVector::ZeroVector;
 	// How the body lay when it started getting up.
 	EAedirGetUpStyle HoistStyle = EAedirGetUpStyle::None;
 	FVector HoistFaceLocal = FVector(0.f, 1.f, 0.f);

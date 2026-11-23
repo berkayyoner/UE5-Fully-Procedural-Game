@@ -1,4 +1,5 @@
 #include "Combat/AedirCombatComponent.h"
+#include "Animation/AedirGaitComponent.h"
 #include "Player/AedirPlayerCharacter.h"
 #include "Fists/AedirFistArms.h"
 #include "Audio/AedirSfxSubsystem.h"
@@ -4148,9 +4149,11 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 	{
 		return;
 	}
-	// Only a living, standing body strikes: a weapon in a dead, senseless or fallen hand only lies or tumbles about.
+	// Only a living, awake body strikes: a weapon in a dead or senseless hand only lies or tumbles about. Fallen, it strikes
+	// with the hand it swings on purpose, its button held; one it lies on or leans on to get up only tumbles about.
 	const bool bHolderDown = (Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying() || Creature->Stats->IsKnockedOut()))
-		|| (Creature->Balance && Creature->Balance->IsRagdoll() && !Creature->Balance->IsGettingUp());
+		|| (Creature->Balance && Creature->Balance->IsRagdoll() && !Creature->Balance->IsGettingUp() && !bFistUp)
+		|| (Creature->Balance && Creature->Balance->IsHoisting() && Creature->Balance->GetHoistFreeHand() != HandIndex(Hand));
 	if (bHolderDown)
 	{
 		return;
@@ -5201,7 +5204,17 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		{
 			UE_LOG(LogAedir, Log, TEXT("[NpcWait] %s is ready but holds: tired %d, %.0f cm off"), *Creature->GetName(), bTired ? 1 : 0, Distance);
 		}
-		if (!bTired && Distance <= (bArmed ? Reach + AedirAIContactRange * 0.25f : (AIFistStrikeInCm + AedirAIFistStrikeSlackCm) * static_cast<float>(Creature->GetActorScale3D().X)) && AIMouseTimer >= Wait)
+		const float StrikeFrom = bArmed ? Reach + AedirAIContactRange * 0.25f : (AIFistStrikeInCm + AedirAIFistStrikeSlackCm) * static_cast<float>(Creature->GetActorScale3D().X);
+		// A foe running in is met as it comes: the fist thrown so it lands as the foe arrives, not after it has struck first.
+		bool bCounter = false;
+		if (AITarget && !bAITargetDown && !bTired && Distance > StrikeFrom * 0.6f)
+		{
+			const FVector Toward = (Creature->GetActorLocation() - AITarget->GetActorLocation()).GetSafeNormal2D();
+			const float Closing = static_cast<float>(FVector::DotProduct(AITarget->GetVelocity() - Creature->GetVelocity(), Toward));
+			bCounter = Closing > AICounterClosingSpeed && (Distance - StrikeFrom) / Closing <= AICounterLeadSeconds;
+			UE_CLOG(bCounter, LogAedir, Log, TEXT("[NpcCounter] %s meets %s coming in at %.0f cm/s, %.0f cm off"), *Creature->GetName(), *GetNameSafe(AITarget.Get()), Closing, Distance);
+		}
+		if (!bTired && ((Distance <= StrikeFrom && AIMouseTimer >= Wait) || bCounter))
 		{
 			// Mostly at the head; now and then into the body. An open side is gone for at the head, and a spent foe more often.
 			const float HeadChance = bGoForOpening ? (AIFoeOpenSide == 2 ? 1.f : AIOpeningHeadChance) : bFoeSpent ? FMath::Max(AIHeadChance, AIFoeSpentHeadChance) : AIHeadChance;
@@ -6159,8 +6172,7 @@ void UAedirCombatComponent::BeginKick()
 	// Crouched to spring, the body is already jumping: a kick out of the jump does not stand on a leg.
 	const UAedirCharacterMovementComponent* Movement = Cast<UAedirCharacterMovementComponent>(Creature->GetCharacterMovement());
 	const bool bJumping = !Movement || !Movement->IsMovingOnGround() || Movement->GetJumpWindupAlpha() > 0.f;
-	KickStartVelocity = bJumping ? FVector::ZeroVector : FVector(Creature->GetVelocity().X, Creature->GetVelocity().Y, 0.0);
-	bKickTopplePending = KickStartVelocity.Size() > KickMovingSpeedMinCm;
+	KickLoggedLag = 0.f;
 	UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicks %s at %.0f cm/s over the ground"), *Creature->GetName(), bJumping ? TEXT("out of a jump") : TEXT("standing"), Creature->GetVelocity().Size2D());
 }
 
@@ -6192,14 +6204,18 @@ void UAedirCombatComponent::UpdateKick(float DeltaTime)
 
 		KickPrevFootWorld = FootWorld;
 
-		// Kicked from a walk or a run, the body goes on over the one leg it stands on, the hips let down, and over it goes.
-		if (bKickTopplePending && KickNet.Elapsed >= KickMovingFallAtSeconds && Creature->Balance)
+		// On one leg the body stands only while it is over the foot it stands on: gone on from it (walking or running into
+		// the kick), the hips sink as the leg reaches back and the balance goes the way the body went, the further the faster.
+		const float Lag = Creature->Gait ? Creature->Gait->GetKickStanceLagCm() : 0.f;
+		if (Lag > KickOffFootLeastCm && Creature->Balance)
 		{
-			bKickTopplePending = false;
-			const float Speed = static_cast<float>(KickStartVelocity.Size());
-			const float Share = FMath::Clamp((Speed - KickMovingSpeedMinCm) / FMath::Max(KickMovingSpeedMaxCm - KickMovingSpeedMinCm, 1.f), 0.f, 1.f);
-			UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicked moving at %.0f cm/s: loses %.2f balance over its standing leg"), *Creature->GetName(), Speed, KickMovingFallBalance * Share);
-			Creature->Balance->ApplyBalanceImpact(KickStartVelocity.GetSafeNormal(), KickMovingFallBalance * Share);
+			const float Share = FMath::Clamp((Lag - KickOffFootLeastCm) / FMath::Max(KickOffFootMostCm - KickOffFootLeastCm, 1.f), 0.f, 1.f);
+			Creature->Balance->ApplyBalanceImpact(Creature->Gait->GetKickStanceLagWay(), KickOffFootBalancePerSecond * Share * DeltaTime);
+			if (Lag > KickLoggedLag + 5.f)
+			{
+				KickLoggedLag = Lag;
+				UE_LOG(LogAedir, Log, TEXT("[Kick] %s is %.0f cm on from the foot it stands on: losing %.2f balance a second, balance %.2f"), *Creature->GetName(), Lag, KickOffFootBalancePerSecond * Share, Creature->Balance->GetBalance());
+			}
 		}
 
 		if (KickNet.Elapsed >= AedirKickDuration)
@@ -6301,7 +6317,8 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 		Impact.Direction = FootMotion.GetSafeNormal();
 		Impact.Location = Hit.ImpactPoint;
 		Impact.MassKg = MassEff;
-		Impact.RelativeSpeed = RelativeSpeed * Knock;
+		Impact.RelativeSpeed = RelativeSpeed * Knock * KickPushShare;
+		Impact.ThrowShare = KickPushShare;
 		Victim->Balance->ApplyHitReaction(Impact);
 	}
 

@@ -266,6 +266,11 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float MotionAlpha = 1.f;
 
+	// How far a foot left behind the hip peels its heel off the ground: fully while walking or running, as at the end of a
+	// step; standing still (in the stance too) not at all, both feet flat.
+	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
+	float HeelPeelShare = 0.f;
+
 	// Lateral pelvis offset in cm along the character right axis, from idle weight shift and gait sway.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float HipLateralOffset = 0.f;
@@ -499,7 +504,11 @@ public:
 	// The ground's surface stands a little over its collision on average (its pebbles and clods): the feet are set down
 	// this much higher, so they stand on it rather than in it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float FootGroundLiftCm = 1.f;
+	float FootGroundLiftCm = 0.3f;
+
+	// The heel of a foot left behind comes down this fast (shares a second) once the body stops, and peels up as fast again.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
+	float HeelPeelInterpSpeed = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float GroundTraceUpCm = 60.f;
@@ -989,15 +998,30 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
 	float KickSpineLeanDegrees = 6.f;
 
-	// The hips let down on the standing leg at a full kick pose, the knee giving under them, as a kicker sinks into a kick.
+	// The hips let down on the standing leg at a full kick pose, the knee giving under them, as a kicker sinks into a kick;
+	// and further by this share of what the standing leg loses in height reaching back to its foot when the body has gone on
+	// from it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
-	float KickHipDropCm = 16.f;
+	float KickHipDropCm = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick", meta=(ClampMin="0"))
+	float KickHipReachShare = 1.f;
+
+	// The standing foot of a kick stays where it was put down up to this far from under its hip; only further is it dragged.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Kick")
+	float KickStanceLeashCm = 70.f;
+
+	// How far the body has gone on from the foot it kicks standing on, and the way it went.
+	float GetKickStanceLagCm() const { return KickStanceLagCm; }
+	FVector GetKickStanceLagWay() const { return KickStanceLagWay; }
 
 	// A body starts to get up off the ground: the hands and feet set out from where they lie, and the pose of this moment is
 	// worked out at once, outside the tick, so the body never shows, or is pulled towards, the pose it had while limp.
 	void BeginGetUpPose();
 
 private:
+	float KickStanceLagCm = 0.f;
+	FVector KickStanceLagWay = FVector::ZeroVector;
 	bool SampleGround(const FVector& WorldXY, float BottomZ, FVector& OutLocation, FVector& OutNormal) const;
 	void ResetForRagdoll();
 	// Getting up off the ground: the hips, trunk, hands and feet go through the moves for the way the body lay, and hand over

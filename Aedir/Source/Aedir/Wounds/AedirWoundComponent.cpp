@@ -563,6 +563,27 @@ void UAedirWoundComponent::MulticastSever_Implementation(FName Bone, FVector Pla
 			Cut.Piece = Piece;
 			Cut.LocalEnd = Piece->GetActorTransform().InverseTransformPosition(Joint);
 			Cut.LocalOut = Piece->GetActorTransform().InverseTransformVectorNoScale(TowardBody);
+			// The wounds and marks it already had go with it: their blood, bruises and runs stay where they were on the skin.
+			int32 Carried = 0;
+			for (const FAedirWound& Wound : ActiveWounds)
+			{
+				if (Wound.Bone != Bone && !Body->BoneIsChildOf(Wound.Bone, Bone))
+				{
+					continue;
+				}
+				if (FAedirWoundVisual* Visual = FindVisual(Wound.Id))
+				{
+					for (UDecalComponent* Mark : { Visual->Decal.Get(), Visual->Run.Get() })
+					{
+						if (Mark && Piece->GetRootComponent())
+						{
+							Mark->AttachToComponent(Piece->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
+							++Carried;
+						}
+					}
+				}
+			}
+			UE_CLOG(Carried > 0, LogAedir, Log, TEXT("[Sever] %s's cut-off %s takes %d of its marks with it"), *GetNameSafe(GetOwner()), *Bone.ToString(), Carried);
 		}
 	}
 }

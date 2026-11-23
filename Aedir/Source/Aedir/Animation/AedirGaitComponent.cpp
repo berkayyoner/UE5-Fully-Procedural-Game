@@ -510,6 +510,17 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			FVector Away = Contact[Foot] - HomeLocation[Foot];
 			Away.Z = 0.f;
 			const float AwayDistance = static_cast<float>(Away.Size());
+			// On one leg for a kick the standing foot holds where it was put down: the body going on leaves it behind, the
+			// hips sink as the leg reaches back to it, and the balance is left to tell whether the body still stands over it.
+			if (bKicking)
+			{
+				KickStanceLagCm = AwayDistance;
+				KickStanceLagWay = AwayDistance > KINDA_SMALL_NUMBER ? -Away / AwayDistance : FVector::ZeroVector;
+				if (AwayDistance <= KickStanceLeashCm * ActorScale)
+				{
+					continue;
+				}
+			}
 			if (AwayDistance > LeashCm)
 			{
 				const FVector Pull = Away / AwayDistance * (AwayDistance - LeashCm);
@@ -573,8 +584,19 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.HipOffsetZ -= ReachLowerCm;
 	GaitState.HipForwardOffset = Interaction ? Interaction->GetReachHipForward() * ActorScale : 0.f;
 	GaitState.HipOffsetZ -= StanceHipLowerCm * SinkAlpha;
-	// Kicking off the ground the hips sink on the standing leg.
-	GaitState.HipOffsetZ -= bKicking && !bAirborne ? KickHipDropCm * ActorScale * KickAlpha : 0.f;
+	// Kicking off the ground the hips sink on the standing leg: a little as the knee gives, and as much more as the leg has to
+	// reach to stay on a foot the body has gone on from.
+	if (!bKicking || bAirborne)
+	{
+		KickStanceLagCm = 0.f;
+	}
+	if (bKicking && !bAirborne)
+	{
+		const float Leg = FMath::Max(LegLengthCm[1 - KickFoot] * ActorScale, 1.f);
+		const float Lag = FMath::Min(KickStanceLagCm, Leg * 0.9f);
+		const float Reach = Leg - FMath::Sqrt(FMath::Max(Leg * Leg - Lag * Lag, 0.f));
+		GaitState.HipOffsetZ -= (KickHipDropCm * ActorScale + Reach * KickHipReachShare) * KickAlpha;
+	}
 
 	// Crouching shrinks the capsule, so the pelvis drops by the same amount and the camera boom stays on the body.
 	const float CrouchDropCm = FMath::Max(CreatureOwner->GetDefaultHalfHeight() - MovementComponent->GetCrouchedHalfHeight(), 0.f) * ActorScale;
@@ -857,6 +879,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const bool bDead = CreatureOwner->Stats && CreatureOwner->Stats->IsDead();
 	const float Alive = bDead ? 0.f : 1.f;
 	GaitState.MotionAlpha = Alive;
+	GaitState.HeelPeelShare = FMath::FInterpTo(GaitState.HeelPeelShare, bMoving || bAirborne ? 1.f : 0.f, DeltaTime, HeelPeelInterpSpeed);
 	MotionClock += DeltaTime;
 
 	const float StaminaFraction = CreatureOwner->Stats ? FMath::Clamp(CreatureOwner->Stats->GetStaminaFraction(), 0.f, 1.f) : 1.f;

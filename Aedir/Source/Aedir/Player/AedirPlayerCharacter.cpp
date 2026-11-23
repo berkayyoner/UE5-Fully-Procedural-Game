@@ -3106,10 +3106,182 @@ void AAedirPlayerCharacter::FeetInfo(const FString& Label)
 			}
 		}
 		UE_LOG(LogAedir, Display, TEXT("[FeetInfo] %s %s: the lowest point of the left sole %.1f, of the right %.1f above the ground under it"), *Label, *Body->GetName(), Sole[0], Sole[1]);
+		// The heel and the ball of each sole apart: a foot standing flat has both on the ground.
+		if (Render && !Render->LODRenderData.IsEmpty())
+		{
+			TArray<FMatrix44f> RefToLocals;
+			const_cast<USkeletalMeshComponent*>(Skin)->CacheRefToLocalMatrices(RefToLocals);
+			TArray<FVector3f> Points;
+			USkeletalMeshComponent::ComputeSkinnedPositions(const_cast<USkeletalMeshComponent*>(Skin), Points, RefToLocals, Render->LODRenderData[0], Render->LODRenderData[0].SkinWeightVertexBuffer);
+			float Part[2][2] = { { -999.f, -999.f }, { -999.f, -999.f } };
+			for (int32 Side = 0; Side < 2; ++Side)
+			{
+				const FVector Ankle = Skin->GetBoneLocation(Side == 0 ? TEXT("foot_l") : TEXT("foot_r"));
+				const FVector Ball = Skin->GetBoneLocation(Side == 0 ? TEXT("ball_l") : TEXT("ball_r"));
+				const FVector Along = (Ball - Ankle).GetSafeNormal2D();
+				for (int32 Which = 0; Which < 2; ++Which)
+				{
+					double Lowest = TNumericLimits<double>::Max();
+					FVector LowestAt = Ankle;
+					for (const FVector3f& Point : Points)
+					{
+						const FVector World = Skin->GetComponentTransform().TransformPosition(FVector(Point));
+						const double Ahead = FVector::DotProduct(World - Ankle, Along);
+						const bool bIn = Which == 0 ? (Ahead < 2.0 && FVector::Dist2D(World, Ankle) < 9.0) : (FVector::Dist2D(World, Ball) < 6.0);
+						if (bIn && World.Z < Ankle.Z && World.Z < Lowest)
+						{
+							Lowest = World.Z;
+							LowestAt = World;
+						}
+					}
+					FHitResult Ground;
+					if (Lowest < TNumericLimits<double>::Max() && GetWorld()->LineTraceSingleByChannel(Ground, LowestAt + FVector(0.f, 0.f, 50.f), LowestAt - FVector(0.f, 0.f, 150.f), ECC_Visibility, Params))
+					{
+						Part[Side][Which] = static_cast<float>(Lowest - Ground.ImpactPoint.Z);
+					}
+				}
+			}
+			UE_LOG(LogAedir, Display, TEXT("[FeetInfo] %s %s: left heel %.1f ball %.1f, right heel %.1f ball %.1f above the ground"), *Label, *Body->GetName(), Part[0][0], Part[0][1], Part[1][0], Part[1][1]);
+		}
 		UE_LOG(LogAedir, Display, TEXT("[FeetInfo] %s %s: above the ground, left ankle %.1f ball %.1f toe %.1f, right ankle %.1f ball %.1f toe %.1f; capsule bottom %.1f above the ground under it"),
 			*Label, *Body->GetName(), Above(TEXT("foot_l")), Above(TEXT("ball_l")), Above(TEXT("ball_l")), Above(TEXT("foot_r")), Above(TEXT("ball_r")), Above(TEXT("ball_r")),
 			bGround ? CapsuleBottom - static_cast<float>(Under.ImpactPoint.Z) : -999.f);
 	}
+}
+
+void AAedirPlayerCharacter::FaceNearest()
+{
+	AAedirCreature* Nearest = nullptr;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())))
+		{
+			Nearest = *It;
+		}
+	}
+	const FVector Hips = Nearest && Nearest->GetMesh() ? Nearest->GetMesh()->GetBoneLocation(TEXT("pelvis")) : FVector::ZeroVector;
+	if (Nearest && GetController())
+	{
+		const float Yaw = static_cast<float>((Hips - GetActorLocation()).GetSafeNormal2D().Rotation().Yaw);
+		GetController()->SetControlRotation(FRotator(0.f, Yaw, 0.f));
+		SetActorRotation(FRotator(0.f, Yaw, 0.f));
+		UE_LOG(LogAedir, Display, TEXT("[Dev] Facing %s's hips, %.0f cm off"), *Nearest->GetName(), FVector::Dist2D(Hips, GetActorLocation()));
+	}
+}
+
+void AAedirPlayerCharacter::WorldJitter(const FString& Args)
+{
+	TArray<FString> Tokens;
+	Args.ParseIntoArrayWS(Tokens);
+	const float Seconds = Tokens.IsValidIndex(0) ? FMath::Clamp(FCString::Atof(*Tokens[0]), 0.2f, 30.f) : 2.f;
+	const FString Label = Tokens.IsValidIndex(1) ? Tokens[1] : FString(TEXT("jitter"));
+	TArray<FName> Bones;
+	for (int32 Index = 2; Index < Tokens.Num(); ++Index)
+	{
+		Bones.Add(FName(*Tokens[Index]));
+	}
+	AAedirCreature* Nearest = nullptr;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())))
+		{
+			Nearest = *It;
+		}
+	}
+	struct FTrack
+	{
+		TWeakObjectPtr<AAedirCreature> Body;
+		FName Bone;
+		FVector Prev = FVector::ZeroVector;
+		FVector PrevSpeed = FVector::ZeroVector;
+		int32 Seen = 0;
+		double SumAccSq = 0.0;
+		int32 Turns = 0;
+		int32 StillFrames = 0;
+		FQuat PrevTurn = FQuat::Identity;
+		FVector PrevSpin = FVector::ZeroVector;
+		double SumSpinAccSq = 0.0;
+		int32 SpinFlips = 0;
+	};
+	TSharedRef<TArray<FTrack>> Tracks = MakeShared<TArray<FTrack>>();
+	for (AAedirCreature* Body : { static_cast<AAedirCreature*>(this), Nearest })
+	{
+		for (const FName& Bone : Body ? Bones : TArray<FName>())
+		{
+			FTrack Track;
+			Track.Body = Body;
+			Track.Bone = Bone;
+			Tracks->Add(Track);
+		}
+	}
+	TSharedRef<float> Left = MakeShared<float>(Seconds);
+	TSharedRef<uint64> LastFrame = MakeShared<uint64>(0);
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(this, [this, Tracks, Left, LastFrame, Handle, Label]()
+	{
+		if (*LastFrame == GFrameCounter)
+		{
+			return;
+		}
+		*LastFrame = GFrameCounter;
+		const float Dt = GetWorld()->GetDeltaSeconds();
+		*Left -= Dt;
+		for (FTrack& Track : *Tracks)
+		{
+			const USkeletalMeshComponent* Skin = Track.Body.IsValid() ? Track.Body->GetMesh() : nullptr;
+			if (!Skin || Dt <= KINDA_SMALL_NUMBER)
+			{
+				continue;
+			}
+			const FVector Now = Skin->GetBoneLocation(Track.Bone);
+			const FQuat Turn = Skin->GetBoneQuaternion(Track.Bone);
+			if (Track.Seen > 0)
+			{
+				// And how it turns: its spin, and how fast that changes and turns round.
+				FVector Axis;
+				float Angle = 0.f;
+				(Turn * Track.PrevTurn.Inverse()).GetNormalized().ToAxisAndAngle(Axis, Angle);
+				Angle = Angle > UE_PI ? Angle - UE_TWO_PI : Angle;
+				const FVector Spin = Axis * FMath::RadiansToDegrees(Angle) / Dt;
+				if (Track.Seen > 1)
+				{
+					Track.SumSpinAccSq += ((Spin - Track.PrevSpin) / Dt).SizeSquared();
+					Track.SpinFlips += FVector::DotProduct(Spin, Track.PrevSpin) < 0.0 && Spin.Size() > 2.0 ? 1 : 0;
+				}
+				Track.PrevSpin = Spin;
+				const FVector Speed = (Now - Track.Prev) / Dt;
+				if (Track.Seen > 1)
+				{
+					Track.SumAccSq += ((Speed - Track.PrevSpeed) / Dt).SizeSquared();
+					// All but still, turning back on itself: shaking where it should hold.
+					if (Speed.Size() < 15.0 && Track.PrevSpeed.Size() < 15.0)
+					{
+						++Track.StillFrames;
+						if (FVector::DotProduct(Speed, Track.PrevSpeed) < 0.0 && Speed.Size() > 1.0)
+						{
+							++Track.Turns;
+						}
+					}
+				}
+				Track.PrevSpeed = Speed;
+			}
+			Track.Prev = Now;
+			Track.PrevTurn = Turn;
+			++Track.Seen;
+		}
+		if (*Left <= 0.f)
+		{
+			for (const FTrack& Track : *Tracks)
+			{
+				UE_LOG(LogAedir, Display, TEXT("[WorldJitter] %s %s %s: shake %.0f cm/s2, turned back %d of %d still frames; turning shake %.0f deg/s2, its spin turned round %d of %d frames"), *Label, *GetNameSafe(Track.Body.Get()), *Track.Bone.ToString(),
+					Track.Seen > 2 ? FMath::Sqrt(Track.SumAccSq / (Track.Seen - 2)) : 0.0, Track.Turns, Track.StillFrames, Track.Seen > 2 ? FMath::Sqrt(Track.SumSpinAccSq / (Track.Seen - 2)) : 0.0, Track.SpinFlips, FMath::Max(Track.Seen - 2, 0));
+			}
+			// Last: clearing the timer lets go of this very lambda and all it holds.
+			const TSharedRef<FTimerHandle> Done = Handle;
+			GetWorldTimerManager().ClearTimer(*Done);
+			return;
+		}
+	}), 0.001f, true);
 }
 
 void AAedirPlayerCharacter::LyingInfo(const FString& Label)

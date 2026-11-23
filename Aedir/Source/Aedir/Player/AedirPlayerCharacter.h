@@ -607,6 +607,16 @@ public:
 	UFUNCTION(Exec)
 	void FeetInfo(const FString& Label);
 
+	// WorldJitter <seconds> <label> <bone> [bone...]: how much each bone shakes where it is in the world, on the body played
+	// and on the nearest other one: the root mean square of its frame-to-frame change of speed, and how often it turns back
+	// while all but still (a planted foot, a hand on the ground).
+	UFUNCTION(Exec)
+	void WorldJitter(const FString& Args);
+
+	// FaceNearest: turns the view and the body to the nearest other body's hips, so a walk forward goes into it.
+	UFUNCTION(Exec)
+	void FaceNearest();
+
 	// Logs how the worn armour sits: the box of the skin of the head as it is drawn now and the box of each worn piece, in the
 	// body's frame (forward, right, up) from the head bone, and the bone each piece hangs from.
 	UFUNCTION(Exec)

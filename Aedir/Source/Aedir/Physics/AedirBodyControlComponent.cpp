@@ -83,6 +83,8 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 	ArmModifiers[1].Reset();
 	bArmPosed[0] = bArmPosed[1] = false;
 	bArmLoose[0] = bArmLoose[1] = false;
+	// The bodies are made anew simulated: posed again from the next frame if they are to be.
+	bWholePosed = false;
 	LegBones.Reset();
 	HeadControls.Reset();
 	LeftArmControls.Reset();

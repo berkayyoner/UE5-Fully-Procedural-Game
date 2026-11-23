@@ -67,7 +67,6 @@ namespace
 	constexpr double ReleaseGraceSeconds = 1.5;
 	// An item let go inside the capsule is pushed out of it gently, not shot away.
 	constexpr float ItemMaxDepenetrationSpeed = 80.f;
-	constexpr float ItemLinearDamping = 0.6f;
 	constexpr float ItemAngularDamping = 2.f;
 }
 
@@ -87,7 +86,7 @@ AAedirItemActor::AAedirItemActor()
 	Mesh->CanCharacterStepUpOn = ECB_No;
 	Mesh->SetSimulatePhysics(true);
 	Mesh->SetUseCCD(true);
-	Mesh->SetLinearDamping(ItemLinearDamping);
+	Mesh->SetLinearDamping(AirLinearDamping);
 	Mesh->SetAngularDamping(ItemAngularDamping);
 }
 
@@ -106,6 +105,7 @@ void AAedirItemActor::BeginPlay()
 	if (Mesh)
 	{
 		Mesh->SetNotifyRigidBodyCollision(true);
+		Mesh->SetLinearDamping(AirLinearDamping);
 		Mesh->OnComponentHit.AddDynamic(this, &AAedirItemActor::HandleMeshHit);
 	}
 }
@@ -117,8 +117,14 @@ void AAedirItemActor::HandleMeshHit(UPrimitiveComponent* HitComponent, AActor* O
 	{
 		return;
 	}
+	// Its own thrower's hand and arm going on through the throw, and a thing already flying faster than the limb that meets it,
+	// are not a kick: it keeps the speed it was thrown with.
+	if (WasJustReleasedBy(OtherActor))
+	{
+		return;
+	}
 	const float LimbSpeed = static_cast<float>(OtherComp->GetPhysicsLinearVelocityAtPoint(Hit.ImpactPoint, Hit.BoneName).Size());
-	if (LimbSpeed < BodyPushLimbLeastSpeedCm)
+	if (LimbSpeed < BodyPushLimbLeastSpeedCm || Mesh->GetPhysicsLinearVelocity().Size() <= LimbSpeed * BodyPushFlyingShare && WasThrownFlying())
 	{
 		return;
 	}
@@ -292,6 +298,12 @@ void AAedirItemActor::AttachCarried(AAedirCreature* Creature)
 	{
 		AttachToComponent(Creature->GetRootComponent(), FAttachmentTransformRules::KeepWorldTransform);
 	}
+}
+
+bool AAedirItemActor::WasThrownFlying() const
+{
+	const UWorld* World = GetWorld();
+	return World && World->GetTimeSeconds() - LastReleaseTime < ReleaseGraceSeconds && LastReleaseSpeed > BodyPushLimbLeastSpeedCm;
 }
 
 bool AAedirItemActor::WasJustReleasedBy(const AActor* Creature) const
@@ -768,6 +780,7 @@ void AAedirItemActor::Detach(const FVector& ThrowVelocity)
 	if (Mesh)
 	{
 		Mesh->SetPhysicsLinearVelocity(CarriedVelocity);
+		LastReleaseSpeed = static_cast<float>(CarriedVelocity.Size());
 		Mesh->SetPhysicsAngularVelocityInRadians(CarriedSpin);
 	}
 }

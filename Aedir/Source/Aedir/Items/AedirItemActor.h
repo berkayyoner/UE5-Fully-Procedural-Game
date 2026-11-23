@@ -53,14 +53,22 @@ public:
 	// BodyPushLimbMassKg at BodyPushMaxSpeedCm would throw it: the limb's weight against its own, never as if the limb
 	// were a wall driven through it. A light thing goes further than a heavy one.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Struck")
-	float BodyPushMaxSpeedCm = 300.f;
+	float BodyPushMaxSpeedCm = 450.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Struck", meta=(ClampMin="0.1"))
-	float BodyPushLimbMassKg = 2.5f;
+	float BodyPushLimbMassKg = 3.5f;
 
 	// A limb slower than this at the touch is not swinging: a thrown thing bouncing off a body keeps its own speed.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Struck")
 	float BodyPushLimbLeastSpeedCm = 120.f;
+
+	// A thrown thing flying this share of the meeting limb's speed or more is past being kicked: it flies on.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Struck", meta=(ClampMin="0"))
+	float BodyPushFlyingShare = 0.5f;
+
+	// Loose in the air a thing is slowed only by the air: this little linear damping, never as if flying through water.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item", meta=(ClampMin="0"))
+	float AirLinearDamping = 0.02f;
 
 	// Hold offset relative to the hand bone. The item bounds center is placed at the translation of this transform.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Item|Hold")
@@ -273,6 +281,9 @@ public:
 	// Server only.
 	void Detach(const FVector& ThrowVelocity);
 
+	// Let go of at speed a moment ago, and so still in its flight.
+	bool WasThrownFlying() const;
+
 	// Server only. A big object in both hands hangs on neither of them: it follows the body and the hands stay on its surface.
 	void AttachCarried(AAedirCreature* Creature);
 
@@ -396,6 +407,7 @@ private:
 
 	TWeakObjectPtr<const AActor> LastHolder;
 	double LastReleaseTime = -1000.0;
+	float LastReleaseSpeed = 0.f;
 	FVector GetStaticBoundsCenter() const;
 
 private:

@@ -90,4 +90,9 @@ struct AEDIR_API FAedirImpactInfo
 	// Closing speed between the attacking tip and the victim in cm/s.
 	UPROPERTY(BlueprintReadWrite, Category="Aedir|Combat")
 	float RelativeSpeed = 0.f;
+
+	// How far the blow carries the body it fells, as a share of what its energy would: a kick fells and shoves, it does not
+	// throw a body through the air.
+	UPROPERTY(BlueprintReadWrite, Category="Aedir|Combat")
+	float ThrowShare = 1.f;
 };
