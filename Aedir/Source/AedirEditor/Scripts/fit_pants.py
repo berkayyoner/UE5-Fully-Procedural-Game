@@ -8,8 +8,8 @@
 #   ankles (ANKLE_ABOVE_FOOT above the ankle joint, into the shoes' cuffs);
 # - below the crotch each leg is carried along the body's leg, the hip to the knee to the ankle, every height of it to
 #   the same share of the body's leg, and widened or narrowed round the leg by how thick the body's leg is there against
-#   how thick the trouser's is (with LEG_ROOM), so their bagginess keeps its shape; above it the seat and waist are
-#   carried onto the hips the same way, by their width and depth; the two meet over BLEND_CM round the crotch;
+#   how thick the trouser's is (with LEG_ROOM), so their bagginess keeps its shape; above it the seat and waist go round
+#   the body's own hips every way out from the middle, HIP_ROOM off the skin, their folds kept; the two meet over BLEND_CM round the crotch;
 # - wherever the skin still comes through, the cloth is pushed out off it to SKIN_ROOM, the push spread over its
 #   neighbours;
 # - weights come from the skin right under it (the legs, the hips and the bottom of the back), smoothed over the cloth.
@@ -29,13 +29,13 @@ ANKLE_ABOVE_FOOT = 2.0    # cm the bottom of the bandages lies above the ankle j
 LEG_ROOM = 0.8            # cm the thinnest of a trouser leg keeps off the skin
 LEG_MOST_WIDENED = 1.25   # a trouser leg is never widened more than this round the body's leg
 HIP_ROOM = 1.4            # cm round the hips and the seat
-# The seat and waist are widened up to this much round the hips: the trousers' waist is cut much narrower than the body's,
-# and what was left of it inside the hips was pushed out of them in lumps.
-HIP_MOST_WIDENED = 1.8
 INNER_MARGIN = 0.4        # cm the inside of a trouser leg keeps from the middle between the legs
 INNER_SOFT = 0.6          # share of the way to it from which the inside is taken in softly
 BLEND_CM = 6.0
 SKIN_ROOM = 0.6
+# Round the crotch, within CROTCH_ROOM_CM of it, the cloth keeps this much more off the skin: the thighs come together as
+# the body stands, and the skin between the buttocks came through it there.
+CROTCH_ROOM, CROTCH_ROOM_CM = 1.5, 8.0
 PUSH_ROUNDS = 16
 BAND = 2.0                # cm half the height of a band measured across
 # Braies: kept from this share of the way from the ankles to the crotch (the knee), and roomier round the legs and seat.
@@ -261,26 +261,120 @@ def extent(points, z):
     xs, ys = [p.x for p in b], [p.y for p in b]
     return Vector(((pct(xs, 0.95) + pct(xs, 0.05)) * 0.5, (pct(ys, 0.95) + pct(ys, 0.05)) * 0.5, z)), (pct(xs, 0.95) - pct(xs, 0.05)) * 0.5, (pct(ys, 0.95) - pct(ys, 0.05)) * 0.5
 hip_skin = [v for v in skin_legs if v.z <= b_top + 4]
-hips = []
-for share in HIP_KEYS:
+
+# The seat and the waist go round the body as the body goes round: at every height, every way out from the middle, the
+# cloth lies HIP_ROOM off the skin, with its own folds kept on that (how far it stood out of, or in from, its own smoothed
+# round there). Carried over by width and depth alone, as a box, the trousers' own seat, cut on another body much narrower
+# at the waist, was stretched flat at the back and square at the sides, and the seat had corners where the body is round.
+SEAT_KEYS = [k / 15.0 for k in range(16)]
+SEAT_WAYS = 48
+SEAT_MOST_WIDENED = 2.0
+# How much of the body's hollows the cloth bridges: all of them at the crotch, SEAT_BRIDGE_HIGH of them from
+# SEAT_BRIDGE_TO of the way up the seat.
+SEAT_BRIDGE_HIGH, SEAT_BRIDGE_TO = 0.5, 0.25
+SEAT_BRIDGE_ROOM = 2.5
+def way_of(d):
+    return int(((math.atan2(d.y, d.x) + math.pi) / (2 * math.pi)) * SEAT_WAYS) % SEAT_WAYS
+def radius_at(table, d):
+    # Between the two ways either side of it, so the cloth goes round smoothly and not in steps.
+    f = ((math.atan2(d.y, d.x) + math.pi) / (2 * math.pi)) * SEAT_WAYS - 0.5
+    w = math.floor(f)
+    t = f - w
+    return table[w % SEAT_WAYS] * (1 - t) + table[(w + 1) % SEAT_WAYS] * t
+def round_of(points, z, centre, smooth):
+    # How far out the outside of what lies at that height is, every way round, the ways nothing lies in filled from those beside.
+    r = [None] * SEAT_WAYS
+    for q in points:
+        if abs(q.z - z) < 1.5:
+            d = Vector((q.x - centre.x, q.y - centre.y, 0))
+            w = way_of(d)
+            r[w] = max(r[w] or 0.0, d.length)
+    known = [w for w in range(SEAT_WAYS) if r[w] is not None]
+    if not known:
+        return [10.0] * SEAT_WAYS
+    full = []
+    for w in range(SEAT_WAYS):
+        if r[w] is not None:
+            full.append(r[w])
+            continue
+        back = next(k for k in range(1, SEAT_WAYS + 1) if r[(w - k) % SEAT_WAYS] is not None)
+        ahead = next(k for k in range(1, SEAT_WAYS + 1) if r[(w + k) % SEAT_WAYS] is not None)
+        a, b = r[(w - back) % SEAT_WAYS], r[(w + ahead) % SEAT_WAYS]
+        full.append(a + (b - a) * back / (back + ahead))
+    return [sum(full[(w + k) % SEAT_WAYS] for k in range(-smooth, smooth + 1)) / (2 * smooth + 1) for w in range(SEAT_WAYS)]
+def hull_round_of(points, z, centre):
+    # Cloth goes over the hollows of the body, not into them (the cleft of the buttocks, the gap between the thighs at the
+    # crotch): every way out, how far out the hull round the body's slice at that height is.
+    flat = sorted({(round(q.x - centre.x, 2), round(q.y - centre.y, 2)) for q in points if abs(q.z - z) < 1.5})
+    if len(flat) < 3:
+        return [10.0] * SEAT_WAYS
+    def turn(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lower, upper = [], []
+    for q in flat:
+        while len(lower) >= 2 and turn(lower[-2], lower[-1], q) <= 0:
+            lower.pop()
+        lower.append(q)
+    for q in reversed(flat):
+        while len(upper) >= 2 and turn(upper[-2], upper[-1], q) <= 0:
+            upper.pop()
+        upper.append(q)
+    hull = lower[:-1] + upper[:-1]
+    out = []
+    for w in range(SEAT_WAYS):
+        ang = (w + 0.5) / SEAT_WAYS * 2 * math.pi - math.pi
+        dx, dy = math.cos(ang), math.sin(ang)
+        best = 0.0
+        for i in range(len(hull)):
+            (x1, y1), (x2, y2) = hull[i], hull[(i + 1) % len(hull)]
+            ex, ey = x2 - x1, y2 - y1
+            den = dx * ey - dy * ex
+            if abs(den) < 1e-9:
+                continue
+            t = (x1 * ey - y1 * ex) / den
+            u = (x1 * dy - y1 * dx) / den
+            if t > 0 and -1e-6 <= u <= 1 + 1e-6:
+                best = max(best, t)
+        out.append(best)
+    return out
+seat = []
+for share in SEAT_KEYS:
     zs_ = s_crotch + (s_top - s_crotch) * share
     zb = b_crotch + (b_top - b_crotch) * share
     sc, sx, sy = extent(MEAS, zs_)
     bc, bx, by = extent(hip_skin, zb)
-    kx = max(min((bx + HIP_ROOM) / max(sx, 1.0), HIP_MOST_WIDENED), 0.7)
-    ky = max(min((by + HIP_ROOM) / max(sy, 1.0), HIP_MOST_WIDENED), 0.7)
-    hips.append((share, sc, bc, kx, ky))
-    print("[fit] hips at %.2f: trousers %.1f by %.1f, body %.1f by %.1f" % (share, sx, sy, bx, by))
+    # Across the gap between the thighs at the crotch the cloth is bridged all the way over (left in it, it opened a slit
+    # there); higher up it keeps to the body's own round, the cleft only partly bridged and the fold under the buttocks
+    # followed, or the seat came out square at its lower corners.
+    own = round_of(hip_skin, zb, bc, 1)
+    hull = hull_round_of(hip_skin, zb, bc)
+    bridge = SEAT_BRIDGE_HIGH + (1.0 - SEAT_BRIDGE_HIGH) * max(1.0 - share / SEAT_BRIDGE_TO, 0.0)
+    # The trousers' own round is taken the same way, so the two are measured alike over the gap.
+    cloth_own = round_of(MEAS, zs_, sc, 3)
+    cloth_hull = hull_round_of(MEAS, zs_, sc)
+    seat.append((share, sc, bc, [o + (h - o) * bridge for o, h in zip(cloth_own, cloth_hull)], [o + (h - o) * bridge for o, h in zip(own, hull)], bridge))
+    if share in (0.0, 0.4, 0.8, 1.0):
+        body_r = seat[-1][4]
+        print("[fit] seat at %.2f: body %.1f to %.1f cm out, back %.1f, side %.1f" % (share, min(body_r), max(body_r), body_r[way_of(Vector((0, 1, 0)))], body_r[way_of(Vector((1, 0, 0)))]))
 def map_hips(p):
     share = max(min((p.z - s_crotch) / max(s_top - s_crotch, 1e-3), 1.0), 0.0)
-    for (s0, sc0, bc0, kx0, ky0), (s1, sc1, bc1, kx1, ky1) in zip(hips, hips[1:]):
+    for (s0, sc0, bc0, cr0, br0, g0), (s1, sc1, bc1, cr1, br1, g1) in zip(seat, seat[1:]):
         if share <= s1:
             t = (share - s0) / max(s1 - s0, 1e-6)
-            t = t * t * (3 - 2 * t)
-            sc, bc, kx, ky = sc0.lerp(sc1, t), bc0.lerp(bc1, t), kx0 + (kx1 - kx0) * t, ky0 + (ky1 - ky0) * t
             break
+    sc, bc = sc0.lerp(sc1, t), bc0.lerp(bc1, t)
+    d = Vector((p.x - sc.x, p.y - sc.y, 0))
+    cloth_r = radius_at(cr0, d) * (1 - t) + radius_at(cr1, d) * t
+    body_r = radius_at(br0, d) * (1 - t) + radius_at(br1, d) * t
+    # Every way out the cloth is widened or narrowed by how far out the body is that way against how far out the
+    # trousers were (with HIP_ROOM, and a little more over the gap between the thighs, for them coming together as the
+    # body stands): its own shape under that, the two legs at the crotch and every fold, is kept. Put each point at the
+    # body's round outright, the insides of the legs low on the seat were folded over each other and the seat tore open
+    # between the buttocks.
+    bridge = g0 + (g1 - g0) * t
+    k = max(min((body_r + HIP_ROOM + bridge * SEAT_BRIDGE_ROOM) / max(cloth_r, 1.0), SEAT_MOST_WIDENED), 0.7)
     zb = b_crotch + (b_top - b_crotch) * share
-    return Vector((bc.x + (p.x - sc.x) * kx, bc.y + (p.y - sc.y) * ky, zb))
+    return Vector((bc.x + d.x * k, bc.y + d.y * k, zb))
 
 out = []
 for p in pts:
@@ -333,9 +427,10 @@ def through():
         if loc is None:
             continue
         gap = (v - loc).dot(normal)
-        if gap < SKIN_ROOM:
-            push[i] = normal * (SKIN_ROOM - gap)
-            worst = max(worst, SKIN_ROOM - gap)
+        room = SKIN_ROOM + (CROTCH_ROOM if abs(v.z - b_crotch) < CROTCH_ROOM_CM and abs(v.x) < CROTCH_ROOM_CM else 0.0)
+        if gap < room:
+            push[i] = normal * (room - gap)
+            worst = max(worst, room - gap)
             count += 1
     return push, worst, count
 push, worst, count = through()
@@ -353,6 +448,22 @@ for r in range(PUSH_ROUNDS):
 tie(out)
 push, worst, count = through()
 print("[fit] through the skin after pushing: %d points, deepest %.2f cm" % (count, worst))
+# How far the seat stands off the skin, by the way it faces: about HIP_ROOM all round on a seat that follows the body.
+seat_mid = Vector((0, 0, 0))
+for name, lo, hi in (("back", 135, 225), ("back-side", 100, 135), ("side", 60, 100), ("front", -45, 45)):
+    gaps = []
+    for v in out:
+        if not (b_crotch + 2 < v.z < b_top - 2):
+            continue
+        a_ = (math.degrees(math.atan2(v.x, -v.y)) + 360) % 360
+        a_ = min(a_, 360 - a_) if name != "front" else (a_ if a_ <= 180 else a_ - 360)
+        if lo <= a_ <= hi:
+            loc, normal, _, _ = tree.find_nearest(v)
+            if loc is not None:
+                gaps.append((v - loc).dot(normal))
+    gaps.sort()
+    if gaps:
+        print("[fit] seat %s: %d points, off the skin %.1f cm in the middle, %.1f at the most of nine in ten" % (name, len(gaps), gaps[len(gaps) // 2], gaps[int(len(gaps) * 0.9)]))
 
 def weigh(v):
     loc, _, face, _ = tree.find_nearest(v)

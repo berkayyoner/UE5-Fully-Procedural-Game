@@ -2384,6 +2384,11 @@ void AAedirPlayerCharacter::GripProbe(const FString& ProbeArgs)
 	RunDevCommand(TEXT("GripProbe"), ProbeArgs, false);
 }
 
+void AAedirPlayerCharacter::ClothGap(const FString& GapArgs)
+{
+	RunDevCommand(TEXT("ClothGap"), GapArgs, false);
+}
+
 void AAedirPlayerCharacter::GrabPiece()
 {
 	RunDevCommand(TEXT("GrabPiece"), FString(), false);

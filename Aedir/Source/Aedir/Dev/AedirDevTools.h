@@ -57,6 +57,9 @@ public:
 	// GrabPiece: steps up to the part cut off last, looks at it and puts out the right hand as the player would; two seconds
 	// on, says what the hand holds.
 	static void GrabPiece(AAedirPlayerCharacter* Player, const FString& Args);
+	// ClothGap <part of the worn model's name>: as the body stands now, how far that garment's points between the crotch and
+	// the waist stand off the nearest skin, by the way they face (back, back-side, side, front).
+	static void ClothGap(AAedirPlayerCharacter* Player, const FString& Args);
 	// GripProbe <seconds> <label>: the second hand on what the first holds, seen from the weapon every frame: how far it
 	// slides along and round it and how far it turns from where it took hold, and how crooked its knuckles lie to the handle.
 	static void GripProbe(AAedirPlayerCharacter* Player, const FString& Args);

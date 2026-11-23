@@ -458,6 +458,8 @@ public:
 	UFUNCTION(Exec)
 	void GrabPiece();
 	UFUNCTION(Exec)
+	void ClothGap(const FString& GapArgs);
+	UFUNCTION(Exec)
 	void GripProbe(const FString& ProbeArgs);
 	// JumpNow: a tap of the jump key.
 	UFUNCTION(Exec)

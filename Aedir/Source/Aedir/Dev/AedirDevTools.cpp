@@ -96,6 +96,8 @@ int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const F
 #include "Animation/AedirProceduralAnimInstance.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Camera/CameraActor.h"
+#include "Rendering/SkeletalMeshRenderData.h"
+#include "Rendering/SkeletalMeshLODRenderData.h"
 #include "Engine/StaticMesh.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Camera/CameraComponent.h"
@@ -617,6 +619,10 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	else if (Command == TEXT("GripProbe"))
 	{
 		GripProbe(Player, Args);
+	}
+	else if (Command == TEXT("ClothGap"))
+	{
+		ClothGap(Player, Args);
 	}
 	else if (Command == TEXT("GrabPiece"))
 	{
@@ -1586,6 +1592,121 @@ void UAedirDevTools::GripProbe(AAedirPlayerCharacter* Player, const FString& Arg
 				*Kept->Label, Kept->Frames, Kept->SumSlide / N, Kept->MostSlide, Kept->SumTurn / N, Kept->MostTurn, Kept->SumCrooked / N, Kept->MostCrooked, Kept->SumFirstCrooked / N, Kept->SumCrookedApart / N);
 		}
 	}), 0.001f, true);
+}
+
+void UAedirDevTools::ClothGap(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	const FString Wanted = Args.TrimStartAndEnd().IsEmpty() ? FString(TEXT("Braies")) : Args.TrimStartAndEnd();
+	USkeletalMeshComponent* Body = Player->GetMesh();
+	USkeletalMeshComponent* Cloth = nullptr;
+	TArray<USkeletalMeshComponent*> Parts;
+	Player->GetComponents<USkeletalMeshComponent>(Parts, true);
+	TArray<AActor*> Attached;
+	Player->GetAttachedActors(Attached, true, true);
+	for (AActor* Other : Attached)
+	{
+		TArray<USkeletalMeshComponent*> More;
+		Other->GetComponents<USkeletalMeshComponent>(More);
+		Parts.Append(More);
+	}
+	for (USkeletalMeshComponent* Part : Parts)
+	{
+		if (Part && Part != Body && Part->IsVisible() && Part->GetSkeletalMeshAsset() && Part->GetSkeletalMeshAsset()->GetName().Contains(Wanted))
+		{
+			Cloth = Part;
+		}
+	}
+	// Every point as it is drawn now, in the world.
+	const auto Skinned = [](USkeletalMeshComponent* Mesh, TArray<FVector>& Out)
+	{
+		FSkeletalMeshRenderData* Render = Mesh->GetSkeletalMeshAsset() ? Mesh->GetSkeletalMeshAsset()->GetResourceForRendering() : nullptr;
+		if (!Render || Render->LODRenderData.IsEmpty())
+		{
+			return;
+		}
+		FSkeletalMeshLODRenderData& Lod = Render->LODRenderData[0];
+		TArray<FMatrix44f> RefToLocals;
+		Mesh->CacheRefToLocalMatrices(RefToLocals);
+		TArray<FVector3f> Points;
+		USkeletalMeshComponent::ComputeSkinnedPositions(Mesh, Points, RefToLocals, Lod, Lod.SkinWeightVertexBuffer);
+		const FTransform Frame = Mesh->GetComponentTransform();
+		for (const FVector3f& Point : Points)
+		{
+			Out.Add(Frame.TransformPosition(FVector(Point)));
+		}
+	};
+	TArray<FVector> Skin;
+	TArray<FVector> Cover;
+	if (Body)
+	{
+		Skinned(Body, Skin);
+	}
+	if (Cloth)
+	{
+		Skinned(Cloth, Cover);
+	}
+	if (Skin.IsEmpty() || Cover.IsEmpty())
+	{
+		DevToolsReport(FString::Printf(TEXT("ClothGap %s: %s"), *Wanted, Cloth ? TEXT("cannot read the points") : TEXT("nothing worn by that name")));
+		return;
+	}
+	// The skin in cells of 3 cm, to find the nearest of it quickly.
+	TMap<FIntVector, TArray<int32>> Cells;
+	const auto CellOf = [](const FVector& P) { return FIntVector(FMath::FloorToInt(P.X / 3.0), FMath::FloorToInt(P.Y / 3.0), FMath::FloorToInt(P.Z / 3.0)); };
+	for (int32 Index = 0; Index < Skin.Num(); ++Index)
+	{
+		Cells.FindOrAdd(CellOf(Skin[Index])).Add(Index);
+	}
+	const FVector Hips = Body->GetBoneLocation(TEXT("pelvis"));
+	const FVector Forward = Player->GetActorForwardVector();
+	const FVector Right = Player->GetActorRightVector();
+	const double Low = Body->GetBoneLocation(TEXT("thigh_l")).Z - 12.0;
+	const double High = Hips.Z + 8.0;
+	TArray<double> Gaps[4];
+	for (const FVector& Point : Cover)
+	{
+		if (Point.Z < Low || Point.Z > High)
+		{
+			continue;
+		}
+		double Best = 1.0e9;
+		const FIntVector Cell = CellOf(Point);
+		for (int32 X = -2; X <= 2; ++X)
+		{
+			for (int32 Y = -2; Y <= 2; ++Y)
+			{
+				for (int32 Z = -2; Z <= 2; ++Z)
+				{
+					if (const TArray<int32>* Near = Cells.Find(Cell + FIntVector(X, Y, Z)))
+					{
+						for (const int32 Index : *Near)
+						{
+							Best = FMath::Min(Best, FVector::DistSquared(Skin[Index], Point));
+						}
+					}
+				}
+			}
+		}
+		const FVector Out = (Point - Hips).GetSafeNormal2D();
+		const double Ahead = FVector::DotProduct(Out, Forward);
+		const double Aside = FMath::Abs(FVector::DotProduct(Out, Right));
+		const int32 Way = Ahead < -0.7 ? 0 : Ahead < -0.35 ? 1 : Aside > 0.8 ? 2 : Ahead > 0.6 ? 3 : -1;
+		if (Way >= 0 && Best < 1.0e8)
+		{
+			Gaps[Way].Add(FMath::Sqrt(Best));
+		}
+	}
+	const TCHAR* Names[4] = { TEXT("back"), TEXT("back-side"), TEXT("side"), TEXT("front") };
+	FString Line = FString::Printf(TEXT("ClothGap %s:"), *Cloth->GetSkeletalMeshAsset()->GetName());
+	for (int32 Way = 0; Way < 4; ++Way)
+	{
+		Gaps[Way].Sort();
+		if (!Gaps[Way].IsEmpty())
+		{
+			Line += FString::Printf(TEXT(" %s %d points %.1f cm (nine in ten under %.1f)"), Names[Way], Gaps[Way].Num(), Gaps[Way][Gaps[Way].Num() / 2], Gaps[Way][Gaps[Way].Num() * 9 / 10]);
+		}
+	}
+	DevToolsReport(Line);
 }
 
 void UAedirDevTools::GrabPiece(AAedirPlayerCharacter* Player, const FString& Args)
