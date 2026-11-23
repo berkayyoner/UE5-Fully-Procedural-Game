@@ -24,6 +24,8 @@ struct AEDIR_API FAedirGaitState
 	// A body down and loose: its weak muscles pull it to a slack, half-bent shape, not to the stiff reference pose.
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	bool bLimpPose = false;
+	// Lying awake: the limp pose also looks about and holds up the fists.
+	bool bDownAwakePose = false;
 
 	// Hauled up off the ground by the hips: how far the slack shape gives way to the bends of the step of getting up the
 	// body is at, 0 to 1, and those bends in degrees (hips and knees forward, the back bowed forward, the arms raised
@@ -685,7 +687,7 @@ public:
 	float ClutchFlinchMaxSeconds = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
-	float ClutchBlowShare = 0.9f;
+	float ClutchBlowShare = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchFlankDegrees = 45.f;
@@ -701,7 +703,12 @@ public:
 	float ClutchWoundMinSeverity = 0.15f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
-	float ClutchWoundShare = 0.9f;
+	float ClutchWoundShare = 1.f;
+
+	// A wound held already counts this many times as bad as it is, so the hand stays on it rather than going over to
+	// another nearly as bad.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="1"))
+	float ClutchKeepBonus = 1.5f;
 
 	// How fast the hand goes there and comes away again, in shares a second.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
@@ -1058,6 +1065,10 @@ private:
 	// Where each hand holds a hurt place and how far it is there (left, right).
 	FVector ClutchTarget[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	float ClutchAlpha[2] = { 0.f, 0.f };
+	// The wound a hand holds on to, and which hand.
+	int32 HeldWoundId = INDEX_NONE;
+	int32 HeldWoundSlot = INDEX_NONE;
+	double NextClutchLogTime = 0.0;
 	// Whether the hand's hold is a flinch, over the swing and the fists' guard too.
 	bool bClutchFlinch[2] = { false, false };
 	// The flinch each hand has going (left, right): where on which bone, how bad, and how long it still lasts.
@@ -1182,4 +1193,20 @@ private:
 	FVector PreviousPlanarVelocity = FVector::ZeroVector;
 	FVector SmoothedAcceleration = FVector::ZeroVector;
 	bool bMotionInitialized = false;
+
+public:
+	// Lying awake, the waist turns this share of what it does standing towards where it looks: lying on the arms and
+	// hips, more would roll the body over.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Down", meta=(ClampMin="0", ClampMax="1"))
+	float DownSpineTwistShare = 0.4f;
+
+private:
+	// Lying on the ground: where the eyes go, as a yaw and a pitch about the chest as it lies.
+	bool DownLookAngles(float& OutYaw, float& OutPitch) const;
+	// Lying awake: the look and the fists, for the limp pose.
+	void UpdateDownAwakePose(float DeltaTime, bool bHoisted);
+	// What the fists' arms hold up, for the pose.
+	void FillFistArms(const UAedirInteractionComponent* Interaction);
+	// Lying, the look eased in, yaw and pitch.
+	FVector2D DownLook = FVector2D::ZeroVector;
 };

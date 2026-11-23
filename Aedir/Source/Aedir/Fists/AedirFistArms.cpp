@@ -161,7 +161,9 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	{
 		const UAedirBalanceComponent* OwnBalance = GetOwner() ? GetOwner()->FindComponentByClass<UAedirBalanceComponent>() : nullptr;
-		bBodyDown = OwnBalance && (OwnBalance->IsRagdoll() || OwnBalance->IsGettingUp());
+		// Lying awake on the ground the arms guard and strike as they do standing, about the chest as it lies; only getting
+		// up, the hands are on the ground bearing the body.
+		bBodyDown = OwnBalance && (OwnBalance->IsGettingUp() || OwnBalance->IsHoisting());
 		const AAedirCreature* OwnCreature = Cast<AAedirCreature>(GetOwner());
 		const UAedirWoundComponent* OwnWounds = OwnCreature ? OwnCreature->Wounds.Get() : nullptr;
 		bArmUseless[0] = OwnWounds && OwnWounds->HasUselessArm(true);

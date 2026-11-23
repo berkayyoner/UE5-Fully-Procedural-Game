@@ -1,5 +1,6 @@
 #include "Animation/AedirGaitComponent.h"
 #include "Aedir.h"
+#include "AnimationRuntime.h"
 #include "HAL/IConsoleManager.h"
 #include "Fists/AedirFistArms.h"
 
@@ -139,6 +140,124 @@ UAedirGaitComponent::UAedirGaitComponent()
 	PrimaryComponentTick.TickGroup = TG_PostPhysics;
 }
 
+void UAedirGaitComponent::FillFistArms(const UAedirInteractionComponent* Interaction)
+{
+	if (const UAedirFistArms* Fists = CreatureOwner->FindComponentByClass<UAedirFistArms>())
+	{
+		Fists->GetArm(EAedirHand::Left, GaitState.FistArmHandWorld[0], GaitState.FistArmElbowWorld[0], GaitState.FistArmAlpha[0]);
+		Fists->GetArm(EAedirHand::Right, GaitState.FistArmHandWorld[1], GaitState.FistArmElbowWorld[1], GaitState.FistArmAlpha[1]);
+		GaitState.FistArmTurn[0] = Fists->GetFistTurn(EAedirHand::Left);
+		GaitState.FistArmTurn[1] = Fists->GetFistTurn(EAedirHand::Right);
+		for (int32 Slot = 0; Slot < 2; ++Slot)
+		{
+			const EAedirHand ArmHand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
+			const AAedirItemActor* Blade = Interaction ? Interaction->GetHeldItem(ArmHand) : nullptr;
+			GaitState.FistArmArmed[Slot] = Fists->IsArmed(ArmHand) && Blade && Blade->GetRootComponent();
+			GaitState.FistArmBladeAhead[Slot] = Fists->GetBladeAhead(ArmHand);
+			GaitState.FistArmBladeAim[Slot] = Fists->GetBladeAim(ArmHand);
+			GaitState.FistArmBladeWristUp[Slot] = Fists->GetBladeWristUp(ArmHand);
+			GaitState.FistArmBladeLean[Slot] = Fists->GetBladeLean(ArmHand);
+			GaitState.FistArmBladeAimWay[Slot] = Fists->GetBladeAimWay(ArmHand);
+			GaitState.FistArmItemInHand[Slot] = GaitState.FistArmArmed[Slot] ? Blade->GetRootComponent()->GetRelativeTransform().GetRotation() : FQuat::Identity;
+			GaitState.FistArmItemPlace[Slot] = GaitState.FistArmArmed[Slot] ? Blade->GetRootComponent()->GetRelativeTransform().GetLocation() : FVector::ZeroVector;
+		}
+		GaitState.FistArmGripAlpha = GaitState.FistArmArmed[1] ? Fists->GetGripAlpha() : 0.f;
+		const AAedirItemActor* RightBlade = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
+		GaitState.FistArmGripElbowOutShare = Fists->TwoHandElbowOutShare;
+		GaitState.FistArmGripElbowFrontCm = Fists->TwoHandElbowFrontCm;
+		GaitState.FistArmGripRaised = Fists->GetRaised(EAedirHand::Right);
+		GaitState.FistArmGripRight = FMath::Clamp(static_cast<float>(Fists->GetAim().X), 0.f, 1.f) * GaitState.FistArmGripRaised;
+		GaitState.FistArmGripElbowRiseCm = Fists->TwoHandElbowRiseCm;
+		GaitState.FistArmGripRestElbowBelowCm = Fists->TwoHandRestElbowBelowShoulderCm;
+		GaitState.FistArmGripWristMaxDegrees = Fists->TwoHandWristMaxDegrees;
+		GaitState.FistArmGripGapCm = Fists->GetGripGapCm(RightBlade);
+		GaitState.FistArmBladeUpShare = Fists->BladeGuardUpShare;
+		GaitState.FistArmBladeBendDegrees = Fists->BladeWristBendDegrees;
+		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmGripAlpha);
+		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmAlpha[0]);
+		GaitState.FistAlphaRight = FMath::Max(GaitState.FistAlphaRight, GaitState.FistArmAlpha[1]);
+	}
+}
+
+void UAedirGaitComponent::UpdateDownAwakePose(float DeltaTime, bool bHoisted)
+{
+	const UAedirStatsComponent* Stats = CreatureOwner->Stats;
+	const bool bAwake = !(Stats && (Stats->IsDead() || Stats->IsDying() || Stats->IsKnockedOut()));
+	float Yaw = 0.f;
+	float Pitch = 0.f;
+	if (!bAwake || bHoisted || !DownLookAngles(Yaw, Pitch))
+	{
+		DownLook = FVector2D::ZeroVector;
+		return;
+	}
+	// Lying awake: the neck, the head and the waist turn to where it looks, as they would standing.
+	DownLook.X = FMath::FInterpTo(DownLook.X, Yaw, DeltaTime, LookInterpSpeed);
+	DownLook.Y = FMath::FInterpTo(DownLook.Y, Pitch, DeltaTime, LookInterpSpeed);
+	const float LookYaw = static_cast<float>(DownLook.X);
+	const float LookPitch = static_cast<float>(DownLook.Y);
+	GaitState.bDownAwakePose = true;
+	GaitState.HeadLookRotation = FRotator(LookPitch * HeadPitchShare, FMath::Clamp(LookYaw * HeadYawScale, -HeadYawLimitDegrees, HeadYawLimitDegrees), 0.f);
+	GaitState.NeckLookRotation = FRotator(LookPitch * NeckPitchShare, FMath::Clamp(LookYaw * NeckYawScale, -NeckYawLimitDegrees, NeckYawLimitDegrees), 0.f);
+	GaitState.SpineTwistYaw = FMath::Clamp(LookYaw * SpineTwistScale, -SpineTwistLimitDegrees, SpineTwistLimitDegrees) * DownSpineTwistShare;
+
+	// The fists are held, guarded and thrown about the chest as it lies. Their places are taken from the chest as it is to
+	// where they would be about a chest standing in the mesh's rest pose, which the pose is worked out for.
+	const UAedirInteractionComponent* Interaction = CreatureOwner->FindComponentByClass<UAedirInteractionComponent>();
+	FillFistArms(Interaction);
+	const USkeletalMesh* Model = BodyMesh->GetSkeletalMeshAsset();
+	const int32 Chest = Model ? Model->GetRefSkeleton().FindBoneIndex(TEXT("spine_05")) : INDEX_NONE;
+	if (Chest == INDEX_NONE)
+	{
+		return;
+	}
+	FTransform ChestNow = BodyMesh->GetBoneTransform(TEXT("spine_05"));
+	ChestNow.SetScale3D(FVector::OneVector);
+	FTransform ChestStanding = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), Chest) * BodyMesh->GetComponentTransform();
+	ChestStanding.SetScale3D(FVector::OneVector);
+	// The fists' places are worked out from the shoulders as they lie, in the capsule's upright frame: each is carried by
+	// as much as its shoulder is moved from where it lies to where it is on the standing chest.
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		const FVector ShoulderLying = BodyMesh->GetBoneLocation(Slot == 1 ? TEXT("upperarm_r") : TEXT("upperarm_l"));
+		const FVector Moved = ChestStanding.TransformPosition(ChestNow.InverseTransformPosition(ShoulderLying)) - ShoulderLying;
+		GaitState.FistArmHandWorld[Slot] += Moved;
+		GaitState.FistArmElbowWorld[Slot] += Moved;
+	}
+}
+
+bool UAedirGaitComponent::DownLookAngles(float& OutYaw, float& OutPitch) const
+{
+	const USkeletalMeshComponent* Mesh = CreatureOwner ? CreatureOwner->GetMesh() : nullptr;
+	const USkeletalMesh* Model = Mesh ? Mesh->GetSkeletalMeshAsset() : nullptr;
+	const int32 Chest = Model ? Model->GetRefSkeleton().FindBoneIndex(TEXT("spine_05")) : INDEX_NONE;
+	if (Chest == INDEX_NONE)
+	{
+		return false;
+	}
+	FVector View = FVector::ZeroVector;
+	if (CreatureOwner->IsPlayerControlled())
+	{
+		View = CreatureOwner->GetControlRotation().Vector();
+	}
+	else if (CreatureOwner->Combat && CreatureOwner->Combat->GetAITarget())
+	{
+		View = (CreatureOwner->Combat->GetAITarget()->GetActorLocation() - Mesh->GetBoneLocation(TEXT("head"))).GetSafeNormal();
+	}
+	if (View.IsNearlyZero())
+	{
+		return false;
+	}
+	// The way it looks, in the chest's own frame as it lies; then where that is for a chest standing in its rest pose, and
+	// in the capsule's frame from there.
+	const FQuat ChestNow = Mesh->GetBoneQuaternion(TEXT("spine_05"));
+	const FQuat ChestRest = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), Chest).GetRotation();
+	const FVector InMesh = ChestRest.RotateVector(ChestNow.UnrotateVector(View));
+	const FVector InActor = CreatureOwner->GetBaseRotationOffset().RotateVector(InMesh);
+	OutYaw = FMath::RadiansToDegrees(FMath::Atan2(static_cast<float>(InActor.Y), static_cast<float>(InActor.X)));
+	OutPitch = FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(static_cast<float>(InActor.Z), static_cast<float>(InActor.Size2D()))), -MaxLookPitchDegrees, MaxLookPitchDegrees);
+	return true;
+}
+
 void UAedirGaitComponent::BeginPlay()
 {
 	Super::BeginPlay();
@@ -185,6 +304,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		GaitState.HoistLead = Stage.Lead;
 		GaitState.HoistLeadHipBend = Stage.LeadHipBend;
 		GaitState.HoistLeadKneeBend = Stage.LeadKneeBend;
+		UpdateDownAwakePose(DeltaTime, bHoisted);
 		return;
 	}
 
@@ -704,8 +824,14 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	const float ReachLean = Interaction ? Interaction->GetReachLeanDegrees() : 0.f;
 	GaitState.PelvisRotation = FRotator(BalanceLean.Pitch - ReachLean * AedirReachHipHingeShare, PelvisYaw + SmoothedSwingTwist * AedirSwingPelvisShare + BalanceLean.Yaw, BalanceLean.Roll + TrunkInertia.Y + LoadRoll);
 
-	const float LookYaw = MovementComponent->GetYawDeltaToControl();
-	const float LookPitch = FMath::Clamp(FRotator::NormalizeAxis(CreatureOwner->GetControlRotation().Pitch), -MaxLookPitchDegrees, MaxLookPitchDegrees);
+	float LookYaw = MovementComponent->GetYawDeltaToControl();
+	float LookPitch = FMath::Clamp(FRotator::NormalizeAxis(CreatureOwner->GetControlRotation().Pitch), -MaxLookPitchDegrees, MaxLookPitchDegrees);
+	// Lying awake on the ground, the look is taken about the chest as it lies, not about the capsule: the neck, the head and
+	// the waist turn to where the eyes go as they would standing, and the muscles hold the body to that.
+	if (BalanceComponent && BalanceComponent->IsRagdoll() && !BalanceComponent->IsHoisting() && !BalanceComponent->IsGettingUp())
+	{
+		DownLookAngles(LookYaw, LookPitch);
+	}
 
 	// The trunk leans the way the body runs, forward going forward and back going backwards, and rocks with the strides.
 	const float RunRock = FMath::Sin(4.f * UE_PI * Phase) * RunStridePitchDegrees * RunBlend * GaitSwagger;
@@ -833,41 +959,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.RightReachTargetWorld = RightReachTarget;
 	GaitState.FistAlphaLeft = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Left), 0.f, 1.f) : 0.f;
 	GaitState.FistAlphaRight = Combat ? FMath::Clamp(Combat->GetFistAlpha(EAedirHand::Right), 0.f, 1.f) : 0.f;
-	if (const UAedirFistArms* Fists = CreatureOwner->FindComponentByClass<UAedirFistArms>())
-	{
-		Fists->GetArm(EAedirHand::Left, GaitState.FistArmHandWorld[0], GaitState.FistArmElbowWorld[0], GaitState.FistArmAlpha[0]);
-		Fists->GetArm(EAedirHand::Right, GaitState.FistArmHandWorld[1], GaitState.FistArmElbowWorld[1], GaitState.FistArmAlpha[1]);
-		GaitState.FistArmTurn[0] = Fists->GetFistTurn(EAedirHand::Left);
-		GaitState.FistArmTurn[1] = Fists->GetFistTurn(EAedirHand::Right);
-		for (int32 Slot = 0; Slot < 2; ++Slot)
-		{
-			const EAedirHand ArmHand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
-			const AAedirItemActor* Blade = Interaction ? Interaction->GetHeldItem(ArmHand) : nullptr;
-			GaitState.FistArmArmed[Slot] = Fists->IsArmed(ArmHand) && Blade && Blade->GetRootComponent();
-			GaitState.FistArmBladeAhead[Slot] = Fists->GetBladeAhead(ArmHand);
-			GaitState.FistArmBladeAim[Slot] = Fists->GetBladeAim(ArmHand);
-			GaitState.FistArmBladeWristUp[Slot] = Fists->GetBladeWristUp(ArmHand);
-			GaitState.FistArmBladeLean[Slot] = Fists->GetBladeLean(ArmHand);
-			GaitState.FistArmBladeAimWay[Slot] = Fists->GetBladeAimWay(ArmHand);
-			GaitState.FistArmItemInHand[Slot] = GaitState.FistArmArmed[Slot] ? Blade->GetRootComponent()->GetRelativeTransform().GetRotation() : FQuat::Identity;
-			GaitState.FistArmItemPlace[Slot] = GaitState.FistArmArmed[Slot] ? Blade->GetRootComponent()->GetRelativeTransform().GetLocation() : FVector::ZeroVector;
-		}
-		GaitState.FistArmGripAlpha = GaitState.FistArmArmed[1] ? Fists->GetGripAlpha() : 0.f;
-		const AAedirItemActor* RightBlade = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
-		GaitState.FistArmGripElbowOutShare = Fists->TwoHandElbowOutShare;
-		GaitState.FistArmGripElbowFrontCm = Fists->TwoHandElbowFrontCm;
-		GaitState.FistArmGripRaised = Fists->GetRaised(EAedirHand::Right);
-		GaitState.FistArmGripRight = FMath::Clamp(static_cast<float>(Fists->GetAim().X), 0.f, 1.f) * GaitState.FistArmGripRaised;
-		GaitState.FistArmGripElbowRiseCm = Fists->TwoHandElbowRiseCm;
-		GaitState.FistArmGripRestElbowBelowCm = Fists->TwoHandRestElbowBelowShoulderCm;
-		GaitState.FistArmGripWristMaxDegrees = Fists->TwoHandWristMaxDegrees;
-		GaitState.FistArmGripGapCm = Fists->GetGripGapCm(RightBlade);
-		GaitState.FistArmBladeUpShare = Fists->BladeGuardUpShare;
-		GaitState.FistArmBladeBendDegrees = Fists->BladeWristBendDegrees;
-		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmGripAlpha);
-		GaitState.FistAlphaLeft = FMath::Max(GaitState.FistAlphaLeft, GaitState.FistArmAlpha[0]);
-		GaitState.FistAlphaRight = FMath::Max(GaitState.FistAlphaRight, GaitState.FistArmAlpha[1]);
-	}
+	FillFistArms(Interaction);
 	// A broken arm's hand hangs open: it closes on nothing.
 	if (const UAedirWoundComponent* HandWounds = CreatureOwner->Wounds.Get())
 	{
@@ -1920,9 +2012,11 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		{
 			float Worst = 0.f;
 			int32 Slot = INDEX_NONE;
+			int32 WoundId = INDEX_NONE;
+			bool bKeptByFlinch = false;
 			FVector Point = FVector::ZeroVector;
 			FVector Outward = FVector::ZeroVector;
-			const auto Consider = [&](float Score, int32 Hand, const FVector& At, const FVector& Out)
+			const auto Consider = [&](float Score, int32 Hand, const FVector& At, const FVector& Out, int32 Id = INDEX_NONE)
 			{
 				if (Hand != INDEX_NONE && HandFlinch[Hand].Left <= 0.f && Score > Worst)
 				{
@@ -1930,6 +2024,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 					Slot = Hand;
 					Point = At;
 					Outward = Out;
+					WoundId = Id;
 				}
 			};
 			const AGameStateBase* GameState = World->GetGameState();
@@ -1945,7 +2040,32 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 				}
 				const FTransform Frame = Body->GetBoneTransform(Wound.Bone);
 				const FVector At = Frame.TransformPosition(Wound.Offset);
-				Consider(Severity, PickHand(Wound.Bone, At, Always, Always), At, Frame.TransformVectorNoScale(Wound.Normal).GetSafeNormal());
+				// A hand that went to it when it was struck keeps it afterwards: the other one does not come over meanwhile.
+				int32 Flinching = INDEX_NONE;
+				for (int32 Hand = 0; Hand < 2; ++Hand)
+				{
+					if (HandFlinch[Hand].Left > 0.f && HandFlinch[Hand].Bone == Wound.Bone && FVector::Dist(HandFlinch[Hand].Local, Wound.Offset) < SamePlace)
+					{
+						Flinching = Hand;
+					}
+				}
+				if (Flinching != INDEX_NONE)
+				{
+					if (Severity * ClutchKeepBonus > Worst)
+					{
+						Worst = Severity * ClutchKeepBonus;
+						Slot = INDEX_NONE;
+						WoundId = INDEX_NONE;
+					}
+					HeldWoundId = Wound.Id;
+					HeldWoundSlot = Flinching;
+					bKeptByFlinch = true;
+					continue;
+				}
+				// The wound held already is held on by the same hand: in the middle of the belly or the chest the side it is on
+				// changes with every sway of a step, and the hands would take turns at it, letting go and holding again.
+				const bool bHeldOn = Wound.Id == HeldWoundId && HeldWoundSlot != INDEX_NONE && Free(HeldWoundSlot) && ClutchAlpha[HeldWoundSlot] > KINDA_SMALL_NUMBER;
+				Consider(Severity * (bHeldOn ? ClutchKeepBonus : 1.f), bHeldOn ? HeldWoundSlot : PickHand(Wound.Bone, At, Always, Always), At, Frame.TransformVectorNoScale(Wound.Normal).GetSafeNormal(), Wound.Id);
 			}
 			// A lost arm is held at the stump by the other hand, a lost thigh by the hand on its side; a broken arm at the
 			// middle of the upper arm by the other hand, a broken leg above the knee by the hand on its side.
@@ -1982,6 +2102,19 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			{
 				Wanted[Slot] = ClutchWoundShare;
 				Goal[Slot] = WristAt(Slot, Point, Outward);
+				static const IConsoleVariable* ClutchLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+				if (ClutchLog && ClutchLog->GetInt() != 0 && World->GetTimeSeconds() >= NextClutchLogTime)
+				{
+					NextClutchLogTime = World->GetTimeSeconds() + 0.5;
+					const FVector Palm = Body->GetBoneLocation(Slot == 0 ? TEXT("hand_l") : TEXT("hand_r"));
+					UE_LOG(LogAedir, Log, TEXT("[Clutch] %s holds a wound with the %s hand: the wrist %.0f cm from where it should be, the wound %.0f cm from the wrist, alpha %.2f"),
+						*GetNameSafe(CreatureOwner), Slot == 0 ? TEXT("left") : TEXT("right"), FVector::Dist(Palm, Goal[Slot]), FVector::Dist(Palm, Point), ClutchAlpha[Slot]);
+				}
+			}
+			if (!bKeptByFlinch || Slot != INDEX_NONE)
+			{
+				HeldWoundId = Slot != INDEX_NONE ? WoundId : INDEX_NONE;
+				HeldWoundSlot = Slot != INDEX_NONE && WoundId != INDEX_NONE ? Slot : INDEX_NONE;
 			}
 		}
 	}

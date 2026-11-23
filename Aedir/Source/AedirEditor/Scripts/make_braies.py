@@ -27,7 +27,7 @@ BAND_CM = 3.2              # how tall the waistband is
 HEM_INNER_CM = 9.0         # the hem lies this far under the crotch on the inside of the leg
 HEM_OUTER_CM = 5.0         # and this far on the outside, the leg opening rising to the side
 WAIST_ROOM = 1.0           # cm the elastic stands off the skin
-SEAT_ROOM = 2.2            # round the hips and the seat
+SEAT_ROOM = 1.3            # round the hips and the seat: close, or it stands off them like a woman's
 LEG_ROOM_TOP, LEG_ROOM_HEM = 2.8, 3.9   # the legs widen to the hem
 INNER_ROOM = 1.6           # the inside of a leg keeps closer, where the thighs meet
 CROTCH_SAG = 2.2           # cm the gusset hangs under the body
@@ -49,7 +49,7 @@ if TROUSERS:
     NAME = "MedievalTrousers"
     WAIST_ABOVE_PELVIS, BAND_CM = 14.0, 4.0
     GATHERS, GATHER_CM = 16, 0.4
-    SEAT_ROOM, LEG_ROOM_TOP = 2.6, 3.2
+    SEAT_ROOM, LEG_ROOM_TOP = 1.7, 3.2
     LEG_ROWS = 34
     LEG_FOLD_CM = 0.5
 ANKLE_ABOVE_CM = 6.0      # the trousers end this far over the ankle joint, into the bands

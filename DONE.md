@@ -689,3 +689,15 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - The braies and the trousers sit up on the waist (12 and 14 cm over the pelvis), their weave repeats only every 44 cm and is drawn smoothly, their inside is cloth too (a second face a thickness in), and the trousers have a cord round the band tied in a bigger bow, weighted to the trunk so it stays on the band.
 - Dev: NearestBody, TwoHandInfo, HandKey with a release.
 - Feet are held still on the ground only while standing (under 15 cm/s, let go above 40 cm/s); walking and running, a foot on the ground is on its muscles again: no more skating (a walking foot slid 117 cm/s, now 10)
+- Killed or knocked senseless on the ground, a body goes slack there: its muscles were set only while it stood, so one killed lying down stayed as stiff as the living
+- Down and awake the trunk and legs keep 0.55 of their standing muscle instead of all of it (no statue on the ground), the arms all of it, and all again while hauling itself up
+- Lying awake the neck, head and waist turn to where it looks about the chest as it lies (the head up to 78 deg off the chest), pushed off the part below so the body no longer spins on the ground like a top (hips turn under 8 deg)
+- Lying awake the fists guard and punch from the ground as standing, about the lying chest, instead of the arms being flung by pushes
+- Getting up faster (about 4 s instead of 5-6): the steps 1.35 times as fast, the hips followed harder, waited for less
+- Just hauled up, the capsule is held under the body for its settling second instead of walking off, so the body is no longer thrown after it a metre in a frame; the hair starts afresh when the mesh goes back on the capsule
+- A wound is held on by the hand that first went to it, the other hand no longer taking over, and walking no longer swaps hands at a wound in the middle of the belly or chest; the hand holds it fully (2.5-6 cm off instead of 7-10)
+- Things picked up by their surface or as objects are brought into the hand when it closes, not left hanging 22 cm off the palm
+- The view shakes plainly when struck (1.5-6 deg) and when striking (0.8-2.5 deg)
+- No black flash when the weather turns wet: the wet decals are made at the start and kept drawn at no strength, so the scene's shaders are ready for them
+- Braies and trousers closer round the hips and seat (1.3 and 1.7 cm off the skin instead of 2.2 and 2.6)
+- Dev: JumpWatch, SpinWatch and FaceInfo probes; GaitInfo logs where the balls of the feet are

@@ -309,6 +309,8 @@ private:
 
 	void BeginReach(EAedirHand Hand, AAedirItemActor* Item);
 	void GrabItem(EAedirHand Hand, AAedirItemActor* Item);
+	// Moves an item so the spot on it the hand went for is where the hand is now.
+	void BringIntoHand(EAedirHand Hand, AAedirItemActor* Item, const FVector& SpotWorld) const;
 	void UpdateReach(EAedirHand Hand, float DeltaTime);
 	void UpdateReachBlend(float DeltaTime);
 	void UpdatePelvisLower(float DeltaTime);

@@ -149,6 +149,10 @@ private:
 	UPROPERTY(Transient)
 	TObjectPtr<class UMaterialInstanceDynamic> WetGlossMaterial;
 	float AppliedWet = -1.f;
+	// When the wet decals were made; they are not shown before WetShowAfterSeconds and their shaders are ready.
+	double WetMadeTime = -1.0;
+	static constexpr float WetShowAfterSeconds = 1.f;
+	bool IsWetReady() const;
 	FLinearColor FogSkyColor = FLinearColor::White;
 	bool bFogColorKnown = false;
 

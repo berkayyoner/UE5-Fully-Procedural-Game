@@ -122,16 +122,16 @@ public:
 
 	// Hurt by a blow the view shakes, the more the more harm it did: Min degrees for the least, Max from HurtShakeFullDamage on.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float HurtShakeDegreesMin = 0.4f;
+	float HurtShakeDegreesMin = 1.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float HurtShakeDegreesMax = 3.f;
+	float HurtShakeDegreesMax = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
 	float HurtShakeFullDamage = 25.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float HurtShakeSeconds = 0.35f;
+	float HurtShakeSeconds = 0.45f;
 
 	// A blow that does less harm than this, taken or landed, does not shake the view at all.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
@@ -139,16 +139,16 @@ public:
 
 	// Landing a blow of one's own with a fist, a foot or a weapon in hand shakes it a little too, for the weight of the hit.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float StrikeShakeDegreesMin = 0.15f;
+	float StrikeShakeDegreesMin = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float StrikeShakeDegreesMax = 0.9f;
+	float StrikeShakeDegreesMax = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
 	float StrikeShakeFullDamage = 25.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float StrikeShakeSeconds = 0.18f;
+	float StrikeShakeSeconds = 0.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	FVector ThirdPersonShoulderOffset = FVector(0.f, 26.f, 10.f);
@@ -522,6 +522,18 @@ public:
 	// Where the view looks and where the camera stands against the head.
 	UFUNCTION(Exec)
 	void CamInfo();
+
+	// Logs every frame in which the capsule, the mesh, the head, the camera or the view jumps, for that many seconds.
+	UFUNCTION(Exec)
+	void JumpWatch(float Seconds);
+
+	// Logs how far the body turned as a whole on the ground, how far the head looked off the chest, and how much the right hand moved.
+	UFUNCTION(Exec)
+	void SpinWatch(float Seconds);
+
+	// Logs what the face can be moved with.
+	UFUNCTION(Exec)
+	void FaceInfo();
 
 	// Where each arm aims, where its hand is and where it is wanted, against the body.
 	UFUNCTION(Exec)

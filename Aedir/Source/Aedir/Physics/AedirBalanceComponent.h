@@ -227,10 +227,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
 	float DownTwistMaxDegrees = 50.f;
 
-	// Down but awake, the muscles keep this much of their strength (1 as standing): the body lies as one still in it, not
-	// slack; dead or senseless they keep only RagdollMotorShare.
+	// Down but awake, the muscles keep this much of their strength (1 as standing): enough to hold and move the limbs,
+	// loose enough for the body to lie on the ground rather than stand stiff on it like a statue; dead or senseless they
+	// keep only RagdollMotorShare.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
-	float DownAwakeMotorShare = 1.f;
+	float DownAwakeMotorShare = 0.55f;
+
+	// Down but awake, the arms keep this much (1 as standing), to guard and strike from the ground as they do standing.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
+	float DownAwakeArmShare = 1.f;
 
 	// A body already lying on the ground takes this share of the push of a blow or a kick a standing one would: it has
 	// the ground under it and nothing to be thrown off, so it is shoved, not sent flying.
@@ -244,6 +249,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Feet", meta=(ClampMin="0", Units="cm/s"))
 	float PlantedFootSpeedMaxCm = 40.f;
+
+	// Getting up, the mesh put back on the capsule further than this (or turned more than 20 degrees) starts the hair's
+	// simulation afresh.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", Units="cm"))
+	float HairResetMeshMoveCm = 20.f;
 
 	// Down but awake, a hand goes to where a blow of at least DownClutchMinPush landed and holds it there, as standing:
 	// for DownClutchMinSeconds to DownClutchMaxSeconds (the harder the blow, the longer, full at DownClutchFullPush), pulled
@@ -708,23 +718,28 @@ public:
 	// The steps go on only while the hips keep up with them: trailing where the step has them by up to HoistTrailFreeCm at
 	// full pace, slower the further, not at all from HoistTrailStopCm.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistTrailFreeCm = 15.f;
+	float HoistTrailFreeCm = 22.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistTrailStopCm = 40.f;
 
 	// The hips come within this much of where a step has them before the next step begins (in cm for a 95 cm hip height).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistStepArriveCm = 8.f;
+	float HoistStepArriveCm = 12.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistStepWaitSeconds = 0.6f;
+	float HoistStepWaitSeconds = 0.45f;
+
+	// How much faster than the steps' own seconds a body hauls itself up: the steps, the hands going down and the waits all
+	// go this many times as fast.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0.25", ClampMax="3"))
+	float HoistPace = 1.35f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistSpringPerSecondSq = 30.f;
+	float HoistSpringPerSecondSq = 50.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistDampingPerSecond = 11.f;
+	float HoistDampingPerSecond = 14.f;
 
 	// The hips carry less of the weight the higher they are above where the step has them, none this far above (in cm for
 	// a 95 cm hip height).
@@ -809,7 +824,7 @@ public:
 	float HoistDoneHeightShare = 0.72f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
-	float HoistDoneUpright = 0.95f;
+	float HoistDoneUpright = 0.9f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistDoneSpeedCm = 90.f;
@@ -1235,6 +1250,9 @@ public:
 private:
 	// Whether the body stands still enough for its feet on the ground to be held by the pose.
 	bool bStandingForPlant = true;
+
+	// Hands the body control what the body is down: dead, senseless or awake, and how much muscle it keeps.
+	void UpdateDownMuscles();
 
 	void DecayLeanDirection(float Amount);
 	void UpdateFallState();

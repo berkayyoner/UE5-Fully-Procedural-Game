@@ -1537,6 +1537,29 @@ void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, con
 	const float LeadKnee = FMath::Lerp(LimpKneeBendDegrees, GaitData.HoistLeadKneeBend, Step);
 	Turn(BoneNameSet.LeftTibia, FRotator(-(bLeftLeads ? LeadKnee : Knee), 0.f, 0.f));
 	Turn(BoneNameSet.RightTibia, FRotator(-(bLeftLeads ? Knee : LeadKnee), 0.f, 0.f));
+	if (!GaitData.bDownAwakePose)
+	{
+		return;
+	}
+	// Lying awake: the waist, the neck and the head turn to where it looks, and the fists are held up and thrown as standing,
+	// all about the chest as it lies (the gait has put their places about a standing chest).
+	const float TwistPerBone = BoneNameSet.Spine.Num() > 0 ? GaitData.SpineTwistYaw / BoneNameSet.Spine.Num() : 0.f;
+	for (const FName& Spine : BoneNameSet.Spine)
+	{
+		Turn(Spine, FRotator(0.f, TwistPerBone, 0.f));
+	}
+	Turn(BoneNameSet.Neck, GaitData.NeckLookRotation);
+	Turn(BoneNameSet.Head, GaitData.HeadLookRotation);
+	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1], GaitData.FistArmTurn[1],
+		GaitData.FistArmArmed[1], GaitData.FistArmBladeAhead[1], GaitData.FistArmItemInHand[1], GaitData.FistArmBladeBendDegrees,
+		FVector::ZeroVector, GaitData.FistArmBladeAim[1], GaitData.FistArmBladeWristUp[1], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[1]),
+		MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeAimWay[1]));
+	ApplyFistArm(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.FistArmHandWorld[0], GaitData.FistArmElbowWorld[0], GaitData.FistArmAlpha[0], GaitData.FistArmTurn[0],
+		GaitData.FistArmArmed[0], GaitData.FistArmBladeAhead[0], GaitData.FistArmItemInHand[0], GaitData.FistArmBladeBendDegrees,
+		FVector::ZeroVector, GaitData.FistArmBladeAim[0], GaitData.FistArmBladeWristUp[0], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[0]),
+		MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeAimWay[0]));
+	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
+	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
 }
 
 UAedirGaitComponent* UAedirProceduralAnimInstance::GetGaitComponent() const

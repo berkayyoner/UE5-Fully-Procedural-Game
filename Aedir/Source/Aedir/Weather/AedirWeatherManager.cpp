@@ -8,6 +8,8 @@
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/VolumetricCloudComponent.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/Material.h"
+#include "MaterialShared.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PointLightComponent.h"
@@ -269,6 +271,21 @@ void AAedirWeatherManager::Tick(float DeltaSeconds)
 	}
 }
 
+bool AAedirWeatherManager::IsWetReady() const
+{
+	// Both decals' materials have their shaders for this machine.
+	for (const UMaterialInstanceDynamic* Material : { WetDarkenMaterial.Get(), WetGlossMaterial.Get() })
+	{
+		UMaterial* Base = Material ? const_cast<UMaterialInstanceDynamic*>(Material)->GetMaterial() : nullptr;
+		const FMaterialResource* Resource = Base ? Base->GetMaterialResource(GMaxRHIShaderPlatform) : nullptr;
+		if (!Resource || !Resource->IsCompilationFinished())
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
 void AAedirWeatherManager::StepWet()
 {
 	const UAedirWeatherSettings* Settings = GetDefault<UAedirWeatherSettings>();
@@ -276,13 +293,12 @@ void AAedirWeatherManager::StepWet()
 	const float Wet = FMath::Clamp(Held >= 0.f ? Held : SmoothedWetness, 0.f, 1.f);
 	if (!WetDarken)
 	{
-		if (Wet <= 0.01f)
-		{
-			return;
-		}
+		// Made from the start, hidden, whatever the weather: made only when it first gets wet, its shaders were not ready
+		// and the engine drew the decals' fallback in their place, dark and glossy over everything for a moment.
 		// A box round the eye pointing down, as deep as the land goes up and down near by.
 		const FVector Size(3000.f, Settings->WetReachCm, Settings->WetReachCm);
-		const auto Make = [this, &Size](const TCHAR* Path, TObjectPtr<UMaterialInstanceDynamic>& OutMaterial, int32 Order) -> UDecalComponent*
+		const FVector StartEye = ViewLocation();
+		const auto Make = [this, &Size, &StartEye](const TCHAR* Path, TObjectPtr<UMaterialInstanceDynamic>& OutMaterial, int32 Order) -> UDecalComponent*
 		{
 			UMaterialInterface* Base = LoadObject<UMaterialInterface>(nullptr, Path, nullptr, LOAD_NoWarn | LOAD_Quiet);
 			if (!Base)
@@ -290,13 +306,18 @@ void AAedirWeatherManager::StepWet()
 				UE_LOG(LogAedir, Warning, TEXT("[Weather] No wet material at %s"), Path);
 				return nullptr;
 			}
+			// Made with nothing of the wet in it, where it will be, and hidden: drawn for a frame with the material's own
+			// full strength and turned the wrong way, it darkened and glossed the whole scene black for a moment.
 			OutMaterial = UMaterialInstanceDynamic::Create(Base, this);
+			OutMaterial->SetScalarParameterValue(TEXT("Strength"), 0.f);
 			UDecalComponent* Decal = NewObject<UDecalComponent>(this);
 			Decal->SetAbsolute(true, true, true);
 			Decal->SetupAttachment(GetRootComponent());
 			Decal->SetDecalMaterial(OutMaterial);
 			Decal->SortOrder = Order;
 			Decal->DecalSize = Size;
+			Decal->SetWorldLocationAndRotation(StartEye, FRotator(-90.f, 0.f, 0.f));
+			Decal->SetVisibility(false);
 			Decal->RegisterComponent();
 			return Decal;
 		};
@@ -308,12 +329,20 @@ void AAedirWeatherManager::StepWet()
 		}
 	}
 	const FVector Eye = ViewLocation();
+	// Just made, it is shown only once its shaders have had time to be made and its strength is set.
+	if (WetMadeTime < 0.0 && GetWorld())
+	{
+		WetMadeTime = GetWorld()->GetTimeSeconds();
+	}
+	const bool bJustMade = AppliedWet < 0.f || !GetWorld() || GetWorld()->GetTimeSeconds() - WetMadeTime < WetShowAfterSeconds || !IsWetReady();
 	for (UDecalComponent* Decal : { WetDarken.Get(), WetGloss.Get() })
 	{
 		if (Decal)
 		{
 			Decal->SetWorldLocationAndRotation(Eye, FRotator(-90.f, 0.f, 0.f));
-			Decal->SetVisibility(Wet > 0.01f);
+			// Kept drawn, at no strength while dry: the first decal shown makes every surface's shaders change to take it, and
+			// shown only when it first got wet, the scene was drawn with fallbacks for a frame while they were made.
+			Decal->SetVisibility(!bJustMade);
 		}
 	}
 	if (FMath::Abs(Wet - AppliedWet) > 0.005f)

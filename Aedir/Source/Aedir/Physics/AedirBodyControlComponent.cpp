@@ -296,12 +296,15 @@ void UAedirBodyControlComponent::SetLimp(bool bInLimp)
 	}
 }
 
-void UAedirBodyControlComponent::SetDownAwake(float Share)
+void UAedirBodyControlComponent::SetDownAwake(float Share, float ArmShare)
 {
 	const float Clamped = FMath::Clamp(Share, 0.f, 1.f);
-	if (!FMath::IsNearlyEqual(DownAwake, Clamped, 0.02f))
+	const float ArmClamped = FMath::Clamp(ArmShare, 0.f, 1.f);
+	if (!FMath::IsNearlyEqual(DownAwake, Clamped, 0.02f) || !FMath::IsNearlyEqual(DownAwakeArms, ArmClamped, 0.02f))
 	{
 		DownAwake = Clamped;
+		DownAwakeArms = ArmClamped;
+		AppliedKey = -1.f;
 		ApplyMultipliers();
 	}
 }
@@ -713,7 +716,8 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
 	// A broken arm hangs as a limp body's arm does, the muscle in it still there (LimpShare, its forearm and wrist slacker
 	// as a limp one's); a hurt one keeps at least some of its strength.
-	const float LimpArm = FMath::Lerp(Limp, HoistArmShare, Hauled);
+	const float ArmAwake = bLimp && !bDead ? DownAwakeArms : 0.f;
+	const float LimpArm = FMath::Lerp(bDead ? Limp : FMath::Lerp(LimpShare, 1.f, ArmAwake), HoistArmShare, Hauled);
 	const float LeftArmHz = ArmHz * (bLimp ? LimpArm : bBroken[0] ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
 	const float RightArmHz = ArmHz * (bLimp ? LimpArm : bBroken[1] ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
 	Apply(LeftArmControls, LeftArmHz * Soft, 0.f);
@@ -729,7 +733,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// The wrists are looser than the arm above them, less so with both hands on one thing.
 	const float Wrist = FMath::Lerp(WristShare, TwoHandWristShare, TwoHandGrip);
 	// Down or dead, the elbows and the wrists go slacker still than the rest of the arm.
-	const float LimpForearm = FMath::Lerp(LimpForearmShare, 1.f, Awake);
+	const float LimpForearm = FMath::Lerp(LimpForearmShare, 1.f, ArmAwake);
 	const float Slack[2] = { bBroken[0] ? LimpForearmShare : bLimp ? LimpForearm : 1.f, bBroken[1] ? LimpForearmShare : bLimp ? LimpForearm : 1.f };
 	Apply(LeftHandControls, LeftArmHz * Wrist * Slack[0], 0.f);
 	Apply(RightHandControls, RightArmHz * Wrist * Slack[1], 0.f);

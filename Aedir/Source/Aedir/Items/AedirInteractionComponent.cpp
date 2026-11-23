@@ -1121,6 +1121,9 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 		const double Floor = Creature->GetActorLocation().Z - Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
 		UE_LOG(LogAedir, Log, TEXT("[Reach] %s holds %s by its surface %.0f cm above the feet, the wrist %.0f cm off that spot; the item's middle %.0f cm above the feet, %.0f cm across."),
 			*GetNameSafe(Creature), *Item->GetName(), Took.Z - Floor, FVector::Dist(GetHandWorld(Hand), Took), Item->GetBoundsCenterWorld().Z - Floor, Item->GetHoldRadiusCm() * 2.f);
+		// The hand closes once it is near, not on it: the spot it went for is brought into the hand, or the thing would hang
+		// there a hand's breadth off the palm.
+		BringIntoHand(Hand, Item, Took);
 		Item->AttachToHandInPlace(Creature, Hand);
 		Slot.State = EAedirHandState::Holding;
 		Slot.Item = Item;
@@ -1138,6 +1141,7 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 		}
 		else
 		{
+			BringIntoHand(Hand, Item, GetReachTargetWorld(Hand, Item));
 			Item->AttachToHandInPlace(Creature, Hand);
 		}
 
@@ -1164,6 +1168,15 @@ void UAedirInteractionComponent::GrabItem(EAedirHand Hand, AAedirItemActor* Item
 	}
 
 	UpdateCarriedWeight();
+}
+
+void UAedirInteractionComponent::BringIntoHand(EAedirHand Hand, AAedirItemActor* Item, const FVector& SpotWorld) const
+{
+	const FVector Gap = GetHandWorld(Hand) - SpotWorld;
+	if (Item && Gap.SizeSquared() > 1.f)
+	{
+		Item->SetActorLocation(Item->GetActorLocation() + Gap, false, nullptr, ETeleportType::TeleportPhysics);
+	}
 }
 
 void UAedirInteractionComponent::UpdateReach(EAedirHand Hand, float DeltaTime)

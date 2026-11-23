@@ -1078,7 +1078,8 @@ FVector UAedirCombatComponent::GetTipWorld(EAedirHand Hand) const
 
 bool UAedirCombatComponent::IsGuardActive(EAedirHand Hand) const
 {
-	const bool bDown = Creature && Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsRagdoll());
+	// Lying awake the guard is held as standing; getting up the hands are on the ground.
+	const bool bDown = Creature && Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsHoisting());
 	return (Hand == EAedirHand::Left ? bLeftGuard : bRightGuard) && FlinchLeft[HandIndex(Hand)] <= 0.f && !bDown;
 }
 
