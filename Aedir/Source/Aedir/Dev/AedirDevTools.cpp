@@ -99,6 +99,8 @@ int32 UAedirDevTools::SpawnBandits(UWorld* World, const FVector& Center, const F
 #include "Rendering/SkeletalMeshRenderData.h"
 #include "Rendering/SkeletalMeshLODRenderData.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/StaticMeshActor.h"
+#include "Components/StaticMeshComponent.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -583,6 +585,10 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	else if (Command == TEXT("CrouchTest"))
 	{
 		CrouchTest(Player, Args);
+	}
+	else if (Command == TEXT("PlaceWall"))
+	{
+		PlaceWall(Player, Args);
 	}
 	else if (Command == TEXT("AutoMove"))
 	{
@@ -2278,6 +2284,32 @@ void UAedirDevTools::ReachTest(AAedirPlayerCharacter* Player, const FString& Arg
 			DevToolsReport(TEXT("Right hand reaching"));
 		}
 	}), FMath::Max(Delay, 0.01f), false);
+}
+
+void UAedirDevTools::PlaceWall(AAedirPlayerCharacter* Player, const FString& Args)
+{
+	// A fixed block of stone this far ahead of the player (cm), across its way, chest high, to strike.
+	UWorld* World = Player->GetWorld();
+	UStaticMesh* Cube = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cube.Cube"));
+	if (!World || !Cube)
+	{
+		DevToolsReport(TEXT("PlaceWall: no cube"));
+		return;
+	}
+	const float Ahead = Args.IsEmpty() ? 70.f : FCString::Atof(*Args);
+	const FVector Forward = Player->GetActorForwardVector().GetSafeNormal2D();
+	FActorSpawnParameters Params;
+	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	AStaticMeshActor* Wall = World->SpawnActor<AStaticMeshActor>(Player->GetActorLocation() + Forward * (Ahead + 10.f) + FVector(0.f, 0.f, 20.f), Forward.Rotation(), Params);
+	if (!Wall)
+	{
+		return;
+	}
+	Wall->GetStaticMeshComponent()->SetMobility(EComponentMobility::Movable);
+	Wall->GetStaticMeshComponent()->SetStaticMesh(Cube);
+	Wall->SetActorScale3D(FVector(0.2f, 2.f, 2.5f));
+	Wall->GetStaticMeshComponent()->SetCollisionProfileName(TEXT("BlockAll"));
+	DevToolsReport(FString::Printf(TEXT("PlaceWall: a wall %.0f cm ahead"), Ahead));
 }
 
 void UAedirDevTools::CrouchTest(AAedirPlayerCharacter* Player, const FString& Args)

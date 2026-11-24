@@ -231,16 +231,42 @@ public:
 	// loose enough for the body to lie on the ground rather than stand stiff on it like a statue; dead or senseless they
 	// keep only RagdollMotorShare.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
-	float DownAwakeMotorShare = 0.35f;
+	float DownAwakeMotorShare = 0.2f;
 
 	// Down but awake, the arms keep this much (1 as standing), to guard and strike from the ground as they do standing.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
-	float DownAwakeArmShare = 0.6f;
+	float DownAwakeArmShare = 0.35f;
 
 	// Lying awake, an arm meeting the ground is hurt only when stopped faster than this (a punch or a guard thrown from
 	// the ground is not), as an arm thrown on it by a fall would be.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", Units="cm/s"))
 	float DownArmHarmlessSpeed = 1600.f;
+
+	// A fist (or a hand) driven into something fixed, a wall, a tree, a rock, standing: it sounds as a fist on a forearm
+	// from this speed on, the slow take up to the middle of these two and the hard one past it (cm/s); it is hurt past the
+	// harmless speed, the wound this share of the blow's energy and this much damage for each cm/s past it; and it springs
+	// back off the thing with this share of the speed it came in at.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", Units="cm/s"))
+	float FistWorldSoundMinSpeed = 150.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", Units="cm/s"))
+	float FistWorldSoundMaxSpeed = 1300.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", Units="cm/s"))
+	float FistWorldHarmlessSpeed = 150.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0"))
+	float FistWorldWoundShare = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0"))
+	float FistWorldDamagePerSpeed = 0.012f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", ClampMax="1"))
+	float FistWorldBounceShare = 0.3f;
+
+	// The fist swept against fixed things is this round (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0.5"))
+	float FistKnockRadiusCm = 7.f;
 
 	// A body already lying on the ground takes this share of the push of a blow or a kick a standing one would: it has
 	// the ground under it and nothing to be thrown off, so it is shoved, not sent flying.
@@ -1281,6 +1307,12 @@ private:
 	void RunIntoWall(const FVector& OwnerVelocity, const FHitResult& Hit, class UAedirStatsComponent* StatsComponent, float Athletism);
 	// Lying loose, each part is watched for being stopped short against the ground or something fixed.
 	void WatchPartImpacts();
+	// Standing, each hand swept from where it was to where it is against fixed things, and knocked on what it meets.
+	void WatchFistKnocks();
+	void KnockFist(FName Bone, float Speed, const FHitResult& Hit);
+	FVector LastFistAt[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	bool bLastFistValid[2] = { false, false };
+	double LastFistKnock[2] = { -1.0, -1.0 };
 	TArray<FVector> LastPartVelocity;
 	double NextStumbleLogTime = 0.0;
 	void UpdateHitSway(float DeltaTime);

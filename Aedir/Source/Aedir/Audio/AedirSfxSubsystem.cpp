@@ -52,8 +52,8 @@ namespace
 		{ TEXT("/Game/Aedir/Sounds/S_PunchFace_0"), TEXT("/Game/Aedir/Sounds/S_PunchFace_20"), TEXT("/Game/Aedir/Sounds/S_PunchFace_40"), TEXT("/Game/Aedir/Sounds/S_PunchFace_60"), TEXT("/Game/Aedir/Sounds/S_PunchFace_80") },
 		// A fist on a forearm, a wrist or a hand.
 		{ TEXT("/Game/Aedir/Sounds/S_PunchForearm_30"), TEXT("/Game/Aedir/Sounds/S_PunchForearm_60") },
-		// A body struck.
-		{ TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_5-1"), TEXT("/Game/Free_Sounds_Pack/wav/Hit_Generic_2-1"), TEXT("/Game/Free_Sounds_Pack/wav/Punch_2-1") },
+		// A body struck, or bumping into the ground or another body: the same thud as a fist in the face.
+		{ TEXT("/Game/Aedir/Sounds/S_PunchFace_40") },
 		// A cut into flesh.
 		{ TEXT("/Game/SmallSoundKit/SSKWav/DarkWav/Impact_Guts_Gore_01"), TEXT("/Game/SmallSoundKit/SSKWav/DarkWav/Blood_01") },
 		// A stab.

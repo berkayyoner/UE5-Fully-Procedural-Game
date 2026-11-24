@@ -30,6 +30,23 @@ struct AEDIR_API FAedirGaitState
 	float ClutchHandAlpha[2] = { 0.f, 0.f };
 	FVector ClutchPalmWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector ClutchFingersWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	// How much of its own sideways bend a holding hand's wrist keeps (0: none, the hand in line with the forearm that way).
+	float ClutchWristSideShare = 0.f;
+
+	// The face, each 0 to 1: hurting, straining, set for a fight, slack (out cold or dead), the lids shut in a blink.
+	float FacePain = 0.f;
+	float FaceEffort = 0.f;
+	float FaceFight = 0.f;
+	float FaceSlack = 0.f;
+	float FaceBlink = 0.f;
+	// Where the eyes look and how much (0: straight ahead), and how far they turn at most each way (degrees), and the turn the
+	// face rig takes at full.
+	FVector EyeTargetWorld = FVector::ZeroVector;
+	float EyeTargetAlpha = 0.f;
+	float EyeMaxSideDegrees = 30.f;
+	float EyeMaxUpDegrees = 20.f;
+	float EyeMaxDownDegrees = 25.f;
+	float EyeFullDegrees = 35.f;
 
 	// Hauled up off the ground by the hips: how far the slack shape gives way to the bends of the step of getting up the
 	// body is at, 0 to 1, and those bends in degrees (hips and knees forward, the back bowed forward, the arms raised
@@ -566,7 +583,15 @@ public:
 
 	// Forward bend of the spine at a full crouch.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
-	float CrouchSpineLeanDegrees = 40.f;
+	float CrouchSpineLeanDegrees = 62.f;
+
+	// Crouched, the neck and the head are lifted back by this much in all (degrees), the neck taking this share of it, so
+	// the face still looks on ahead over the bent back.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Crouch")
+	float CrouchHeadLiftDegrees = 38.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Crouch", meta=(ClampMin="0", ClampMax="1"))
+	float CrouchHeadLiftNeckShare = 0.45f;
 
 	// On one leg for a kick the body cannot keep moving at its full pace: its top speed is brought down to this share of it, the
 	// planted foot braking the body, so a kick on the move carries it on a little and slows rather than throwing it past its foot.
@@ -729,6 +754,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
 	float ClutchHandLieShare = 1.f;
 
+	// How much of the sideways bend at the wrist, towards the thumb or the little finger, a holding hand may take on to lie on
+	// the place; it still turns and bends up and down at the wrist as it needs.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchWristSideShare = 0.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchPalmCm = 7.f;
 
@@ -749,6 +779,60 @@ public:
 	// It leads the elbow fully for a place this far below the shoulder, less for one higher up, not at all from the shoulder up (cm).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchElbowHintFullBelowCm = 6.f;
+
+	// The eyes go to the creature or thing nearest the way the body looks (the view, for the player) within this cone
+	// (degrees) and this distance (cm), searched for this often (seconds); with none there they look straight on.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float EyeConeDegrees = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float EyeSearchRadiusCm = 1500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float EyeSearchSeconds = 0.25f;
+
+	// How far the eyes turn in the head at most: to the side, up and down (degrees); past half as far again they give the
+	// place up and look straight on. And the turn the face's rig gives at a full look (degrees).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float EyeMaxSideDegrees = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float EyeMaxUpDegrees = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float EyeMaxDownDegrees = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float EyeFullDegrees = 35.f;
+
+	// Blinks: one every so often at random (seconds), each this long (seconds).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float BlinkIntervalMinSeconds = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float BlinkIntervalMaxSeconds = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float BlinkSeconds = 0.16f;
+
+	// A blow's pain on the face: this much for each whole of the health it takes, fading by this much a second; and the
+	// lasting pain of the health already lost, at most this much.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float FacePainPerHealth = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float FacePainFadePerSecond = 0.45f;
+
+	// A new wound or a hard blow screws the face up at least this much, fully for the worst.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face", meta=(ClampMin="0", ClampMax="1"))
+	float FacePainHurtMin = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float FaceLastingPainMax = 0.45f;
+
+	// How quickly the face goes over from one look to the next (per second).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
+	float FaceInterpSpeed = 5.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MaxArmSwingWalkDegrees = 9.f;
@@ -1241,6 +1325,18 @@ private:
 	bool DownLookAngles(float& OutYaw, float& OutPitch) const;
 	// Lying awake: the look and the fists, for the limp pose.
 	void UpdateDownAwakePose(float DeltaTime, bool bHoisted);
+	// The face's look and the eyes' place, into the gait state.
+	void UpdateFace(float DeltaTime, bool bHoisted);
+	float FacePainFlash = 0.f;
+	float FaceLastHealth = -1.f;
+	float FaceLevels[4] = { 0.f, 0.f, 0.f, 0.f };
+	float BlinkLeft = 0.f;
+	float NextBlinkIn = 1.f;
+	float NextEyeSearch = 0.f;
+	float FaceLastExertion = 0.f;
+	TWeakObjectPtr<AActor> EyeActor;
+	FVector EyePoint = FVector::ZeroVector;
+	float EyeAlphaNow = 0.f;
 	// What the fists' arms hold up, for the pose.
 	void FillFistArms(const UAedirInteractionComponent* Interaction);
 	// Lying, the look eased in, yaw and pitch.

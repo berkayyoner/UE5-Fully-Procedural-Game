@@ -35,6 +35,7 @@ namespace
 {
 	const TCHAR* const AedirBraiesPath = TEXT("/Game/Megascans/3D_Assets/MedievalBraies/SK_MedievalBraies.SK_MedievalBraies");
 	const TCHAR* const AedirManBodyPath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Body/SKM_MHC_AedirMan_BodyMesh.SKM_MHC_AedirMan_BodyMesh");
+	const TCHAR* const AedirManFaceAnimPath = TEXT("/Game/Aedir/Characters/MetaHuman/Common/Face/ABP_Face.ABP_Face_C");
 	const TCHAR* const AedirManFacePath = TEXT("/Game/Aedir/Characters/MetaHuman/Build/MHC_AedirMan/Face/SKM_MHC_AedirMan_FaceMesh.SKM_MHC_AedirMan_FaceMesh");
 }
 
@@ -142,7 +143,19 @@ void AAedirCreature::UseManBody()
 		{
 			Face->SetSkeletalMeshAsset(LoadObject<USkeletalMesh>(nullptr, AedirManFacePath, nullptr, LOAD_NoWarn | LOAD_Quiet));
 		}
-		Face->SetLeaderPoseComponent(GetMesh());
+		// The face runs its own animation, which takes the body's pose and curves and works the face's rig from the curves:
+		// following the body's bones alone it would keep one look forever.
+		static TSubclassOf<UAnimInstance> FaceAnim = LoadClass<UAnimInstance>(nullptr, AedirManFaceAnimPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (FaceAnim)
+		{
+			Face->SetLeaderPoseComponent(nullptr);
+			Face->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+			Face->SetAnimInstanceClass(FaceAnim);
+		}
+		else
+		{
+			Face->SetLeaderPoseComponent(GetMesh());
+		}
 	}
 }
 

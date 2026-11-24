@@ -11,6 +11,7 @@
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Engine/World.h"
+#include "Engine/OverlapResult.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/GameStateBase.h"
 #include "Items/AedirInteractionComponent.h"
@@ -185,12 +186,13 @@ void UAedirGaitComponent::UpdateDownAwakePose(float DeltaTime, bool bHoisted)
 	const bool bAwake = !(Stats && (Stats->IsDead() || Stats->IsDying() || Stats->IsKnockedOut()));
 	float Yaw = 0.f;
 	float Pitch = 0.f;
-	if (!bAwake || bHoisted || !DownLookAngles(Yaw, Pitch))
+	if (!bAwake || !DownLookAngles(Yaw, Pitch))
 	{
 		DownLook = FVector2D::ZeroVector;
 		return;
 	}
-	// Lying awake: the neck, the head and the waist turn to where it looks, as they would standing.
+	// Lying awake, and getting up as well: the neck, the head and the waist turn to where it looks, as they would standing,
+	// and the fists are its own to hold up and throw.
 	DownLook.X = FMath::FInterpTo(DownLook.X, Yaw, DeltaTime, DownLookInterpSpeed);
 	DownLook.Y = FMath::FInterpTo(DownLook.Y, Pitch, DeltaTime, DownLookInterpSpeed);
 	const float LookYaw = static_cast<float>(DownLook.X);
@@ -305,9 +307,11 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		GaitState.HoistLeadHipBend = Stage.LeadHipBend;
 		GaitState.HoistLeadKneeBend = Stage.LeadKneeBend;
 		UpdateDownAwakePose(DeltaTime, bHoisted);
+		UpdateFace(DeltaTime, bHoisted);
 		bWasDown = true;
 		return;
 	}
+	UpdateFace(DeltaTime, false);
 
 	const FTransform ActorTransform = CreatureOwner->GetActorTransform();
 	const float ActorScale = FMath::Max(FMath::Abs(CreatureOwner->GetActorScale3D().X), KINDA_SMALL_NUMBER);
@@ -874,12 +878,13 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	// The spine carries the chest from the hips' turn round to its own.
 	GaitState.SpineTwistYaw += ChestStrideYaw - PelvisYaw;
 
+	const float CrouchLift = CrouchHeadLiftDegrees * CrouchAlpha;
 	const FRotator HeadTarget(
-		LookPitch * HeadPitchShare + TrunkInertia.X * AedirInertiaHeadShare,
+		LookPitch * HeadPitchShare + TrunkInertia.X * AedirInertiaHeadShare + CrouchLift * (1.f - CrouchHeadLiftNeckShare),
 		FMath::Clamp(LookYaw * HeadYawScale, -HeadYawLimitDegrees, HeadYawLimitDegrees),
 		0.f);
 	const FRotator NeckTarget(
-		LookPitch * NeckPitchShare,
+		LookPitch * NeckPitchShare + CrouchLift * CrouchHeadLiftNeckShare,
 		FMath::Clamp(LookYaw * NeckYawScale, -NeckYawLimitDegrees, NeckYawLimitDegrees),
 		0.f);
 	// The chest turns with a swing, a punch or a reach, and the neck and head turn back against it: the eyes stay on the
@@ -1784,6 +1789,125 @@ namespace
 	}
 }
 
+void UAedirGaitComponent::UpdateFace(float DeltaTime, bool bHoisted)
+{
+	UWorld* World = GetWorld();
+	const USkeletalMeshComponent* Body = CreatureOwner ? CreatureOwner->GetMesh() : nullptr;
+	if (!World || !Body)
+	{
+		return;
+	}
+	const UAedirStatsComponent* Stats = CreatureOwner->Stats;
+	const bool bDead = Stats && (Stats->IsDead() || Stats->IsDying());
+	const bool bOut = bDead || (Stats && Stats->IsKnockedOut());
+	const UAedirCombatComponent* Combat = CreatureOwner->Combat;
+
+	// Pain: a sharp look at each blow that takes health, fading, over a lasting one for the health already gone.
+	const float Health = Stats ? Stats->GetHealthFraction() : 1.f;
+	if (FaceLastHealth >= 0.f && Health < FaceLastHealth)
+	{
+		FacePainFlash = FMath::Min(1.f, FacePainFlash + (FaceLastHealth - Health) * FacePainPerHealth);
+	}
+	FaceLastHealth = Health;
+	FacePainFlash = FMath::Max(0.f, FacePainFlash - FacePainFadePerSecond * DeltaTime);
+	const float Pain = FMath::Clamp(FMath::Max(FacePainFlash, (1.f - Health) * FaceLastingPainMax), 0.f, 1.f);
+	// Strain: out of breath, swinging, hauling up off the ground.
+	if (!(BalanceComponent && BalanceComponent->IsRagdoll()))
+	{
+		FaceLastExertion = GaitState.BreathExertion;
+	}
+	float Swing = 0.f;
+	FVector Unused;
+	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
+	{
+		float Alpha = 0.f;
+		if (Combat && Combat->GetSwingPose(Hand, Unused, Alpha))
+		{
+			Swing = FMath::Max(Swing, Alpha);
+		}
+	}
+	const float Effort = FMath::Clamp(FMath::Max3(FaceLastExertion * 0.6f, Swing * 0.7f, bHoisted ? 0.85f : 0.f), 0.f, 1.f);
+	const float Fight = FMath::Max(GaitState.StanceAlpha, FistStanceAlpha);
+	const float Want[4] = { bOut ? 0.f : Pain, bOut ? 0.f : Effort, bOut ? 0.f : Fight, bOut ? 1.f : 0.f };
+	for (int32 Part = 0; Part < 4; ++Part)
+	{
+		FaceLevels[Part] = FMath::FInterpTo(FaceLevels[Part], Want[Part], DeltaTime, FaceInterpSpeed);
+	}
+	GaitState.FacePain = FaceLevels[0];
+	GaitState.FaceEffort = FaceLevels[1];
+	GaitState.FaceFight = FaceLevels[2];
+	GaitState.FaceSlack = FaceLevels[3];
+
+	// Blinks, at random, none while out cold.
+	NextBlinkIn -= DeltaTime;
+	if (NextBlinkIn <= 0.f && !bOut)
+	{
+		BlinkLeft = BlinkSeconds;
+		NextBlinkIn = FMath::FRandRange(BlinkIntervalMinSeconds, FMath::Max(BlinkIntervalMinSeconds, BlinkIntervalMaxSeconds));
+	}
+	BlinkLeft = FMath::Max(0.f, BlinkLeft - DeltaTime);
+	GaitState.FaceBlink = BlinkSeconds > KINDA_SMALL_NUMBER ? FMath::Sin(UE_PI * FMath::Clamp(1.f - BlinkLeft / BlinkSeconds, 0.f, 1.f)) * (BlinkLeft > 0.f ? 1.f : 0.f) : 0.f;
+
+	// The eyes: the creature or thing nearest the way the body looks, else straight on.
+	const FVector Eyes = Body->GetBoneLocation(TEXT("head"));
+	const FVector Aim = CreatureOwner->GetControlRotation().Vector();
+	const auto PlaceOf = [](const AActor* Actor)
+	{
+		if (const AAedirCreature* Creature = Cast<AAedirCreature>(Actor))
+		{
+			if (Creature->GetMesh() && Creature->GetMesh()->GetBoneIndex(TEXT("head")) != INDEX_NONE)
+			{
+				return Creature->GetMesh()->GetBoneLocation(TEXT("head"));
+			}
+		}
+		FVector Origin;
+		FVector Extent;
+		Actor->GetActorBounds(true, Origin, Extent);
+		return Origin;
+	};
+	const float Cone = FMath::Cos(FMath::DegreesToRadians(EyeConeDegrees));
+	if (World->GetTimeSeconds() >= NextEyeSearch)
+	{
+		NextEyeSearch = World->GetTimeSeconds() + EyeSearchSeconds;
+		EyeActor = nullptr;
+		if (!bOut)
+		{
+			TArray<FOverlapResult> Hits;
+			FCollisionObjectQueryParams Types;
+			Types.AddObjectTypesToQuery(ECC_Pawn);
+			Types.AddObjectTypesToQuery(ECC_PhysicsBody);
+			Types.AddObjectTypesToQuery(ECC_WorldDynamic);
+			FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirEyes), false, CreatureOwner);
+			World->OverlapMultiByObjectType(Hits, Eyes, FQuat::Identity, Types, FCollisionShape::MakeSphere(EyeSearchRadiusCm), Params);
+			float Best = Cone;
+			for (const FOverlapResult& Hit : Hits)
+			{
+				const AActor* Other = Hit.GetActor();
+				if (!Other || Other == CreatureOwner || Other->IsAttachedTo(CreatureOwner) || Other->GetOwner() == CreatureOwner)
+				{
+					continue;
+				}
+				const float Dot = static_cast<float>(FVector::DotProduct((PlaceOf(Other) - Eyes).GetSafeNormal(), Aim));
+				if (Dot > Best)
+				{
+					Best = Dot;
+					EyeActor = const_cast<AActor*>(Other);
+				}
+			}
+		}
+	}
+	const AActor* Seen = EyeActor.Get();
+	const FVector Point = Seen ? PlaceOf(Seen) : Eyes + Aim * 1000.f;
+	EyePoint = EyeAlphaNow <= KINDA_SMALL_NUMBER ? Point : FMath::VInterpTo(EyePoint, Point, DeltaTime, 18.f);
+	EyeAlphaNow = FMath::FInterpTo(EyeAlphaNow, bOut ? 0.f : 1.f, DeltaTime, 8.f);
+	GaitState.EyeTargetWorld = EyePoint;
+	GaitState.EyeTargetAlpha = EyeAlphaNow;
+	GaitState.EyeMaxSideDegrees = EyeMaxSideDegrees;
+	GaitState.EyeMaxUpDegrees = EyeMaxUpDegrees;
+	GaitState.EyeMaxDownDegrees = EyeMaxDownDegrees;
+	GaitState.EyeFullDegrees = EyeFullDegrees;
+}
+
 FVector UAedirGaitComponent::ClutchLineFrom(const FVector& Shoulder, const FVector& PointWorld, const FVector& OutwardWorld) const
 {
 	FVector Line = PointWorld - Shoulder;
@@ -1917,6 +2041,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime,const UAedirCombatCompone
 				if (Blow.Push >= ClutchBlowMinPush && Struck != EAedirClutchPart::None && Struck != EAedirClutchPart::Arm && Body->GetBoneIndex(Blow.Bone) != INDEX_NONE)
 				{
 					NewHurts.Add({ Blow.Bone, Blow.Local, FMath::Clamp((Blow.Push - ClutchBlowMinPush) / FMath::Max(ClutchBlowFullPush - ClutchBlowMinPush, 1.f), 0.f, 1.f) });
+					FacePainFlash = FMath::Max(FacePainFlash, FMath::Lerp(FacePainHurtMin, 1.f, NewHurts.Last().Severity));
 				}
 			}
 		}
@@ -1933,6 +2058,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime,const UAedirCombatCompone
 					continue;
 				}
 				NewHurts.Add({ Wound.Bone, Wound.Offset, Wound.GetSeverity() });
+				FacePainFlash = FMath::Max(FacePainFlash, FMath::Lerp(FacePainHurtMin, 1.f, FMath::Clamp(Wound.GetSeverity(), 0.f, 1.f)));
 			}
 			// A healed wound's number may come again for a new one.
 			for (auto It = FlinchWoundsSeen.CreateIterator(); It; ++It)
@@ -2196,6 +2322,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime,const UAedirCombatCompone
 		GaitState.ClutchHandAlpha[Slot] = Out.IsNearlyZero() || Along.IsNearlyZero() ? 0.f : ClutchAlpha[Slot] * ClutchHandLieShare;
 		GaitState.ClutchPalmWorld[Slot] = -Out;
 		GaitState.ClutchFingersWorld[Slot] = Along;
+		GaitState.ClutchWristSideShare = ClutchWristSideShare;
 	}
 }
 

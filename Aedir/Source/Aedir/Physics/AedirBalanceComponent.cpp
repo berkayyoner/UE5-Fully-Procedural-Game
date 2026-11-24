@@ -184,7 +184,7 @@ namespace
 	// Below this balance a body steps to catch itself; every step that lands wins back this much of it, less when tired.
 	constexpr float AedirStepCatchBelowBalance = 0.7f;
 	// How much of its strength a living body keeps while it is down.
-	constexpr float AedirLivingFallMotorShare = 0.22f;
+	constexpr float AedirLivingFallMotorShare = 0.15f;
 	constexpr float AedirStepCatchGain = 0.16f;
 	constexpr float AedirStepCatchTiredShare = 0.4f;
 	constexpr float ComBalanceSampleIntervalSeconds = 0.1f;
@@ -513,6 +513,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 	}
 	WatchPartImpacts();
+	WatchFistKnocks();
 	UpdateHoist(DeltaTime);
 	LookWhileDown();
 	HoldHurtWhileDown(DeltaTime);
@@ -4289,6 +4290,85 @@ void UAedirBalanceComponent::HurtPartOnImpact(FName Bone, const FVector& NormalI
 	}
 	UAedirSfxSubsystem::Play(this, EAedirSfx::BodyImpact, Hit.ImpactPoint, FMath::Clamp((Speed - Harmless) / ImpactHarmlessSpeed, 0.2f, 1.f));
 	UE_LOG(LogAedir, Log, TEXT("[Impact] %s %s hits %s at %.0f cm/s, %.0f J, %.1f damage"), *GetNameSafe(GetOwner()), *Bone.ToString(), *GetNameSafe(Hit.GetActor()), Speed, Joules, (Speed - Harmless) * ImpactDamagePerSpeed);
+}
+
+void UAedirBalanceComponent::WatchFistKnocks()
+{
+	UWorld* World = GetWorld();
+	if (bIsRagdoll || !BodyMesh || !World || !IsAuthoritative())
+	{
+		bLastFistValid[0] = bLastFistValid[1] = false;
+		return;
+	}
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		const FName Bone = Slot == 0 ? FName(TEXT("hand_l")) : FName(TEXT("hand_r"));
+		const FBodyInstance* Hand = BodyMesh->GetBodyInstance(Bone);
+		if (!Hand)
+		{
+			bLastFistValid[Slot] = false;
+			continue;
+		}
+		// The knuckles: a little on from the wrist along the hand.
+		const FTransform At = Hand->GetUnrealWorldTransform();
+		const FVector Now = At.GetLocation();
+		const FVector Was = LastFistAt[Slot];
+		const bool bWasValid = bLastFistValid[Slot];
+		LastFistAt[Slot] = Now;
+		bLastFistValid[Slot] = true;
+		if (!bWasValid || FVector::DistSquared(Was, Now) < 0.25)
+		{
+			continue;
+		}
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirFistKnock), false, GetOwner());
+		FCollisionObjectQueryParams Types;
+		Types.AddObjectTypesToQuery(ECC_WorldStatic);
+		Types.AddObjectTypesToQuery(ECC_WorldDynamic);
+		FHitResult Hit;
+		if (!World->SweepSingleByObjectType(Hit, Was, Now, FQuat::Identity, Types, FCollisionShape::MakeSphere(FistKnockRadiusCm), Params)
+			|| Cast<AAedirCreature>(Hit.GetActor()) || (Hit.GetComponent() && Hit.GetComponent()->IsSimulatingPhysics()) || Hit.bStartPenetrating)
+		{
+			continue;
+		}
+		const float Dt = World->GetDeltaSeconds();
+		const FVector Velocity = Dt > KINDA_SMALL_NUMBER ? (Now - Was) / Dt : FVector::ZeroVector;
+		const float Speed = static_cast<float>(FVector::DotProduct(Velocity, -Hit.ImpactNormal));
+		if (Speed > FistWorldSoundMinSpeed && World->GetTimeSeconds() - LastFistKnock[Slot] > 0.25)
+		{
+			LastFistKnock[Slot] = World->GetTimeSeconds();
+			KnockFist(Bone, Speed, Hit);
+		}
+	}
+}
+
+void UAedirBalanceComponent::KnockFist(FName Bone, float Speed, const FHitResult& Hit)
+{
+	// A fist driven into something fixed: the knuckles' knock, the hand hurt by it and sprung back off it.
+	const float SpeedShare = FMath::Clamp(FMath::GetRangePct(FistWorldSoundMinSpeed, FistWorldSoundMaxSpeed, Speed), 0.f, 1.f);
+	UAedirSfxSubsystem::Play(this, EAedirSfx::PunchForearm, Hit.ImpactPoint, FMath::Lerp(0.5f, 1.f, SpeedShare), FMath::Lerp(0.3f, 0.6f, SpeedShare));
+	const FVector Away = Hit.ImpactNormal.GetSafeNormal();
+	FBodyInstance* Struck = BodyMesh ? BodyMesh->GetBodyInstance(Bone) : nullptr;
+	if (Struck)
+	{
+		Struck->SetLinearVelocity(Away * (Speed * FistWorldBounceShare), true);
+	}
+	float Damage = 0.f;
+	if (Speed > FistWorldHarmlessSpeed)
+	{
+		const float Mass = Struck ? FMath::Max(Struck->GetBodyMass(), 0.3f) : 0.5f;
+		const float Joules = 0.5f * Mass * FMath::Square(Speed / 100.f) * FistWorldWoundShare;
+		const AAedirCreature* Puncher = Cast<AAedirCreature>(GetOwner());
+		if (Puncher && Puncher->Wounds)
+		{
+			Puncher->Wounds->AddWound(Bone, Hit.ImpactPoint, Away, EAedirDamageType::Blunt, Joules, 0.f, -Away, Speed);
+		}
+		Damage = (Speed - FistWorldHarmlessSpeed) * FistWorldDamagePerSpeed;
+		if (UAedirStatsComponent* StatsComponent = FindStats())
+		{
+			StatsComponent->ApplyDamage(Damage);
+		}
+	}
+	UE_LOG(LogAedir, Log, TEXT("[Impact] %s punches %s with the %s at %.0f cm/s: %.1f damage, sprung back at %.0f cm/s"), *GetNameSafe(GetOwner()), *GetNameSafe(Hit.GetActor()), *Bone.ToString(), Speed, Damage, Speed * FistWorldBounceShare);
 }
 
 void UAedirBalanceComponent::WatchPartImpacts()

@@ -228,7 +228,14 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 			FCSPose<FCompactPose> LimpPose;
 			LimpPose.InitPose(Output.Pose);
 			ApplyLimpPose(LimpPose, GetRequiredBones());
+			ApplyFace(Output, LimpPose);
 			FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(LimpPose, Output.Pose);
+		}
+		else
+		{
+			FCSPose<FCompactPose> StillPose;
+			StillPose.InitPose(Output.Pose);
+			ApplyFace(Output, StillPose);
 		}
 		return true;
 	}
@@ -330,6 +337,7 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 			}
 		}
 	}
+	ApplyFace(Output, CSPose);
 	FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(CSPose, Output.Pose);
 	Output.Pose.NormalizeRotations();
 	LimitArmJointSpeed(Output.Pose, Bones);
@@ -473,6 +481,70 @@ void FAedirProceduralAnimProxy::ApplyNeckAndHead(FCSPose<FCompactPose>& CSPose, 
 	}
 }
 
+void FAedirProceduralAnimProxy::ApplyFace(FPoseContext& Output, FCSPose<FCompactPose>& CSPose) const
+{
+	const auto Set = [&Output](const FName& Name, float Value)
+	{
+		Output.Curve.Set(Name, FMath::Clamp(Value, 0.f, 1.f));
+	};
+	// Each look as a few of the face rig's controls, on both sides alike.
+	const auto Both = [&Set](const TCHAR* Control, float Value)
+	{
+		Set(FName(FString::Printf(TEXT("CTRL_expressions_%sL"), Control)), Value);
+		Set(FName(FString::Printf(TEXT("CTRL_expressions_%sR"), Control)), Value);
+	};
+	const float Pain = GaitData.FacePain;
+	const float Effort = GaitData.FaceEffort;
+	const float Fight = GaitData.FaceFight * (1.f - 0.5f * FMath::Max(Pain, Effort));
+	const float Slack = GaitData.FaceSlack;
+	Both(TEXT("browDown"), 0.8f * Pain + 0.65f * Effort + 0.7f * Fight);
+	Both(TEXT("browRaiseIn"), 0.9f * Pain);
+	Both(TEXT("browLateral"), 0.5f * Pain + 0.5f * Fight + 0.3f * Effort);
+	Both(TEXT("eyeSquintInner"), 0.9f * Pain + 0.7f * Effort + 0.5f * Fight);
+	Both(TEXT("eyeCheekRaise"), 0.8f * Pain + 0.5f * Effort);
+	Both(TEXT("noseWrinkle"), 0.7f * Pain + 0.45f * Effort);
+	Both(TEXT("mouthUpperLipRaise"), 0.6f * Pain + 0.3f * Effort);
+	Both(TEXT("mouthStretch"), 0.7f * Pain + 0.55f * Effort);
+	Both(TEXT("mouthCornerDepress"), 0.45f * Pain + 0.25f * Fight);
+	Both(TEXT("mouthLipsPress"), 0.5f * Effort * (1.f - Pain) + 0.45f * Fight);
+	Both(TEXT("jawClench"), 0.7f * Effort + 0.4f * Fight);
+	Both(TEXT("eyeBlink"), FMath::Max3(GaitData.FaceBlink, 0.3f * Pain, 0.75f * Slack));
+	Set(FName(TEXT("CTRL_expressions_jawOpen")), 0.25f * Pain + 0.28f * Slack);
+
+	// The eyes, turned in the head towards the place, as far as they go; past that they look straight on.
+	const FCompactPoseBoneIndex Head = ResolveCompactBone(GetRequiredBones(), BoneNameSet.Head);
+	if (!Head.IsValid() || GaitData.EyeTargetAlpha <= 0.01f)
+	{
+		return;
+	}
+	FCompactPose RefCopy = Output.Pose;
+	RefCopy.ResetToRefPose();
+	FCSPose<FCompactPose> RefCSPose;
+	RefCSPose.InitPose(RefCopy);
+	const FTransform HeadNow = CSPose.GetComponentSpaceTransform(Head);
+	const FQuat Turn = HeadNow.GetRotation() * RefCSPose.GetComponentSpaceTransform(Head).GetRotation().Inverse();
+	const FVector Forward = Turn.RotateVector(ActorToMesh.RotateVector(FVector::ForwardVector));
+	const FVector Up = Turn.RotateVector(ActorToMesh.RotateVector(FVector::UpVector));
+	const FVector Left = Turn.RotateVector(ActorToMesh.RotateVector(-FVector::RightVector));
+	const FVector EyesAt = HeadNow.GetLocation() + Forward * 9.0 + Up * 7.0;
+	const FVector Dir = (MeshToWorld.InverseTransformPosition(GaitData.EyeTargetWorld) - EyesAt).GetSafeNormal();
+	if (Dir.IsNearlyZero())
+	{
+		return;
+	}
+	const float Side = FMath::RadiansToDegrees(FMath::Atan2(FVector::DotProduct(Dir, Left), FVector::DotProduct(Dir, Forward)));
+	const float Rise = FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(FVector::DotProduct(Dir, Up), -1.0, 1.0)));
+	const bool bBeyond = FMath::Abs(Side) > GaitData.EyeMaxSideDegrees * 1.5f || Rise > GaitData.EyeMaxUpDegrees * 1.5f || -Rise > GaitData.EyeMaxDownDegrees * 1.5f;
+	const float Full = FMath::Max(GaitData.EyeFullDegrees, 1.f);
+	const float Alpha = bBeyond ? 0.f : GaitData.EyeTargetAlpha;
+	const float SideTurn = FMath::Clamp(Side, -GaitData.EyeMaxSideDegrees, GaitData.EyeMaxSideDegrees) * Alpha / Full;
+	const float RiseTurn = FMath::Clamp(Rise, -GaitData.EyeMaxDownDegrees, GaitData.EyeMaxUpDegrees) * Alpha / Full;
+	Both(TEXT("eyeLookLeft"), SideTurn);
+	Both(TEXT("eyeLookRight"), -SideTurn);
+	Both(TEXT("eyeLookUp"), RiseTurn);
+	Both(TEXT("eyeLookDown"), -RiseTurn);
+}
+
 void FAedirProceduralAnimProxy::ApplyClutchHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, int32 Slot) const
 {
 	const float Alpha = FMath::Clamp(GaitData.ClutchHandAlpha[Slot], 0.f, 1.f);
@@ -506,7 +578,25 @@ void FAedirProceduralAnimProxy::ApplyClutchHand(FCSPose<FCompactPose>& CSPose, F
 	const FQuat FrameInHand = RefCSPose.GetComponentSpaceTransform(Hand).GetRotation().Inverse() * FRotationMatrix::MakeFromXZ(RestFingers, RestPalm).ToQuat();
 	const FQuat Now = CSPose.GetComponentSpaceTransform(Hand).GetRotation() * FrameInHand;
 	const FQuat Want = FRotationMatrix::MakeFromXZ(WantFingers, WantPalm).ToQuat();
-	RotateBone(CSPose, Hand, FQuat::Slerp(FQuat::Identity, (Want * Now.Inverse()).GetNormalized(), Alpha));
+	FQuat Turn = FQuat::Slerp(FQuat::Identity, (Want * Now.Inverse()).GetNormalized(), Alpha);
+	// The wrist bends sideways no further than it does at rest: the fingers keep in line with the forearm in the palm's plane.
+	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, Slot == 0 ? BoneNameSet.LeftRadius : BoneNameSet.RightRadius);
+	const float SideKeep = FMath::Clamp(GaitData.ClutchWristSideShare, 0.f, 1.f);
+	if (Radius.IsValid() && SideKeep < 1.f)
+	{
+		const auto SideAngle = [](const FVector& Fingers, const FVector& Palm, const FVector& Forearm)
+		{
+			const FVector Line = FVector::VectorPlaneProject(Forearm, Palm).GetSafeNormal();
+			return Line.IsNearlyZero() ? 0.0 : FMath::Atan2(FVector::DotProduct(FVector::CrossProduct(Line, Fingers), Palm), FVector::DotProduct(Line, Fingers));
+		};
+		const double RestSide = SideAngle(RestFingers, RestPalm, (RestAt - RefCSPose.GetComponentSpaceTransform(Radius).GetLocation()).GetSafeNormal());
+		const FQuat Turned = Turn * Now;
+		const FVector TurnedPalm = Turned.GetAxisZ();
+		const FVector Forearm = (CSPose.GetComponentSpaceTransform(Hand).GetLocation() - CSPose.GetComponentSpaceTransform(Radius).GetLocation()).GetSafeNormal();
+		const double SideNow = SideAngle(Turned.GetAxisX(), TurnedPalm, Forearm);
+		Turn = (FQuat(TurnedPalm, -(SideNow - RestSide) * (1.0 - SideKeep)) * Turn).GetNormalized();
+	}
+	RotateBone(CSPose, Hand, Turn);
 }
 
 float FAedirProceduralAnimProxy::GetBreathWave() const

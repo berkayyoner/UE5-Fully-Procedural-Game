@@ -710,3 +710,14 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Dev: JumpWatch takes a speed to log above and watches the pelvis; SpinWatch can watch the nearest other body
 - A hand held to a wound turns flat onto it at last: its frame is carried on the hand's turn instead of read off fingers that stayed behind
 - A hand held to the chest or belly comes across with the elbow out to its own side and the fingers lying sideways over the skin
+- Lying awake the trunk and legs keep a fifth of their standing strength and the arms a little over a third
+- A hand held to a wound turns and bends up and down at the wrist but no longer bends sideways
+- The face runs its own rig: pain, strain, a fight's frown, a slack face out cold or dead, and blinks, as rig curves from the body's pose
+- The eyes turn, within how far eyes go, to the creature or thing nearest the way the body looks, else straight on
+- Getting up the head still looks about and the fists can be held up and thrown
+- Locked on to one lying down, the view turns to the middle of the body from the player's own feet and holds still close in, instead of going round
+- Crouched, the back bends further forward and the neck and head lift so the face looks on ahead
+- Bodies bumping and knocking into things thud as a fist in the face (punch-on-face-40)
+- A fist driven into something fixed knocks as on a forearm (30 or 60 by speed), springs back off it and is hurt by it
+- The trousers' cord is tied in a smaller bow
+- Dev: PlaceWall puts a fixed block ahead to strike

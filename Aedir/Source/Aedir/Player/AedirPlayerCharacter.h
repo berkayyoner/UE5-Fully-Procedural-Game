@@ -94,6 +94,9 @@ public:
 	float LockOnTurnSpeed = 7.f;
 
 	TWeakObjectPtr<class AAedirCreature> LockOnTarget;
+	// The place looked at on a target lying down, followed smoothly, and the one it belongs to.
+	FVector LockOnDownAim = FVector::ZeroVector;
+	TWeakObjectPtr<class AAedirCreature> LockOnDownAimOf;
 
 	// The capsule put somewhere at once, further than it moved by its own speed and this much more (as when it is set
 	// under a body that has got up), leaves the view where it was in the world and eases it over from there.
@@ -193,6 +196,15 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float LockOnLevelDistanceCm = 220.f;
+
+	// Locked on to one lying down, the view turns to the middle of the body, not to the head thrown about with it, and turns
+	// from the player's own feet; nearer than this across the ground it keeps its way and only tips (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnStillYawCm = 80.f;
+
+	// How quickly the place looked at on a body lying down follows it (per second).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
+	float LockOnDownAimFollowSpeed = 4.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera")
 	float LockOnSteepestPitch = -35.f;
@@ -779,6 +791,10 @@ public:
 
 	UFUNCTION(Exec)
 	void CrouchTest();
+
+	// A fixed block this far ahead (cm), to strike.
+	UFUNCTION(Exec)
+	void PlaceWall(float AheadCm);
 
 	// FallTest 300: lift the body by that many cm and let it fall.
 	UFUNCTION(Exec)

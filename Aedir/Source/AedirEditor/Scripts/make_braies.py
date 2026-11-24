@@ -466,7 +466,7 @@ def string(points, radius=0.32):
     bpy.context.scene.collection.objects.link(o)
     return o
 pieces = []
-BOW = 1.6 if TROUSERS else 1.0
+BOW = 0.95 if TROUSERS else 1.0
 if TROUSERS:
     # The cord runs round the waist over the band and comes out at the front to the knot.
     cord_z = waist_z - BAND_CM * 0.5
@@ -482,12 +482,12 @@ if TROUSERS:
     pieces.append(string(ring, 0.42))
 for side in (1, -1):
     loop = [knot + Vector((side * 4.2 * BOW * math.sin(math.pi * s) * (0.6 + 0.4 * s), -0.45 * math.sin(math.pi * s) - 0.05, BOW * (2.2 * math.sin(2 * math.pi * s) * 0.6 + 0.4 * s))) for s in [i / 14 for i in range(15)]]
-    pieces.append(string(loop, 0.32 * (1.3 if TROUSERS else 1.0)))
+    pieces.append(string(loop, 0.32 * (1.05 if TROUSERS else 1.0)))
     tail = [knot + Vector((side * (0.6 + 1.4 * s) + side * 0.6 * math.sin(3 * s), -0.4 - 0.25 * s, -9.0 * BOW * s)) for s in [i / 12 for i in range(13)]]
-    pieces.append(string(tail, 0.32 * (1.3 if TROUSERS else 1.0)))
+    pieces.append(string(tail, 0.32 * (1.05 if TROUSERS else 1.0)))
 knot_mesh = bpy.data.meshes.new("Knot")
 bmk = bmesh.new()
-bmesh.ops.create_uvsphere(bmk, u_segments=10, v_segments=6, radius=0.75 * (1.35 if TROUSERS else 1.0))
+bmesh.ops.create_uvsphere(bmk, u_segments=10, v_segments=6, radius=0.75 * (0.9 if TROUSERS else 1.0))
 bmesh.ops.scale(bmk, vec=(1.1, 0.7, 0.8), verts=bmk.verts)
 bmesh.ops.translate(bmk, vec=knot, verts=bmk.verts)
 bmk.to_mesh(knot_mesh)

@@ -41,6 +41,7 @@ public:
 	static void GaitInfo(AAedirPlayerCharacter* Player, const FString& Args);
 	static void ReachTest(AAedirPlayerCharacter* Player, const FString& Args);
 	static void CrouchTest(AAedirPlayerCharacter* Player, const FString& Args);
+	static void PlaceWall(AAedirPlayerCharacter* Player, const FString& Args);
 	static void AutoMove(AAedirPlayerCharacter* Player, const FString& Args);
 	static void ShotCam(AAedirPlayerCharacter* Player, const FString& Args);
 	static void PlaceItem(AAedirPlayerCharacter* Player, const FString& Args);

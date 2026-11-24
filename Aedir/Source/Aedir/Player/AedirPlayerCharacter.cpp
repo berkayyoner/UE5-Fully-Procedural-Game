@@ -802,15 +802,39 @@ void AAedirPlayerCharacter::UpdateLockOn(float DeltaSeconds)
 	const FVector Pivot = GetMesh() && GetMesh()->GetBoneIndex(TEXT("head")) != INDEX_NONE ? GetMesh()->GetBoneLocation(TEXT("head")) : GetPawnViewLocation();
 	// Close in, the height between the two counts as if seen from LockOnLevelDistanceCm away, or the view would tip down
 	// steeply at a foe at arm's length.
+	// One lying down is looked at in the middle of the body, the place followed smoothly, and the way to turn is taken from
+	// the player's own feet: the head of a body on the ground is thrown about and lies near the player's own, which itself
+	// moves as the body turns, and turning after it the view went round and round.
+	const bool bTargetDown = Target->Balance && Target->Balance->IsRagdoll();
+	if (bTargetDown)
+	{
+		if (const USkeletalMeshComponent* TargetMesh = Target->GetMesh(); TargetMesh && TargetMesh->GetBoneIndex(TEXT("spine_03")) != INDEX_NONE)
+		{
+			Aim = TargetMesh->GetBoneLocation(TEXT("spine_03"));
+		}
+		LockOnDownAim = LockOnDownAimOf.Get() == Target ? FMath::VInterpTo(LockOnDownAim, Aim, DeltaSeconds, LockOnDownAimFollowSpeed) : Aim;
+		LockOnDownAimOf = Target;
+		Aim = LockOnDownAim;
+	}
+	else
+	{
+		LockOnDownAimOf.Reset();
+	}
 	const FVector ToAim = Aim - Pivot;
 	const double Across = FMath::Max(ToAim.Size2D(), static_cast<double>(LockOnLevelDistanceCm));
 	FRotator Want = ToAim.Rotation();
 	Want.Pitch = FMath::RadiansToDegrees(FMath::Atan2(ToAim.Z, Across));
 	FRotator Control = PlayerController->GetControlRotation();
+	const FVector FromFeet = Aim - GetActorLocation();
+	if (bTargetDown)
+	{
+		Want.Yaw = FromFeet.Size2D() < LockOnStillYawCm ? Control.Yaw : FromFeet.Rotation().Yaw;
+	}
 	// Down at one lying on the ground, but never steeper than this.
 	const float WantPitch = FMath::Clamp(static_cast<float>(FRotator::NormalizeAxis(Want.Pitch)) + LockOnPitchLiftDegrees, LockOnSteepestPitch, LockOnHighestPitch);
 	static const IConsoleVariable* LockLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
-	UE_CLOG(GFrameCounter % 60 == 0 && LockLog && LockLog->GetInt() != 0, LogAedir, Log, TEXT("[LockOn] Looking at %s: wanted pitch %.1f, the view at %.1f"), *GetNameSafe(Target), WantPitch, static_cast<float>(FRotator::NormalizeAxis(Control.Pitch)));
+	UE_CLOG(GFrameCounter % 10 == 0 && LockLog && LockLog->GetInt() != 0, LogAedir, Log, TEXT("[LockOn] Looking at %s%s: wanted pitch %.1f, the view at %.1f, yaw wanted %.1f, the view at %.1f"), *GetNameSafe(Target), bTargetDown ? TEXT(" (down)") : TEXT(""), WantPitch,
+		static_cast<float>(FRotator::NormalizeAxis(Control.Pitch)), static_cast<float>(FRotator::NormalizeAxis(Want.Yaw)), static_cast<float>(FRotator::NormalizeAxis(Control.Yaw)));
 	const FRotator Turned = FMath::RInterpTo(Control, FRotator(FMath::Clamp(WantPitch, MinViewPitch, MaxViewPitch), Want.Yaw, Control.Roll), DeltaSeconds, LockOnTurnSpeed);
 	PlayerController->SetControlRotation(FRotator(Turned.Pitch, Turned.Yaw, Control.Roll));
 }
@@ -4318,6 +4342,11 @@ void AAedirPlayerCharacter::ReachTest(float DelaySeconds, int32 BothHands)
 void AAedirPlayerCharacter::CrouchTest()
 {
 	RunDevCommand(TEXT("CrouchTest"), FString(), false);
+}
+
+void AAedirPlayerCharacter::PlaceWall(float AheadCm)
+{
+	RunDevCommand(TEXT("PlaceWall"), FString::SanitizeFloat(AheadCm), false);
 }
 
 void AAedirPlayerCharacter::FallTest(float HeightCm)
