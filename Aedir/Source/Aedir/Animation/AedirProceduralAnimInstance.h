@@ -30,6 +30,8 @@ struct FAedirProceduralAnimProxy : public FAnimInstanceProxy
 	mutable int32 DevWristClamped[2] = { 0, 0 };
 	// The last pose's upper arm, forearm and hand in world space, left arm first.
 	mutable FTransform PoseArmWorld[2][3];
+	// Lying, where the pose has each hand in its chest's frame.
+	FVector PoseHandOnChest[2] = { FVector::ZeroVector, FVector::ZeroVector };
 
 private:
 	FQuat ActorRotationToMesh(const FQuat& ActorLocalRotation) const;
@@ -68,6 +70,9 @@ private:
 	// Where each hand was turned to in the last pose, so it can only turn so fast from there.
 	mutable FQuat LastHandRotation[2] = { FQuat::Identity, FQuat::Identity };
 	mutable bool bLastHandValid[2] = { false, false };
+	// How far a holding hand is turned on its forearm, degrees.
+	mutable float ClutchTwistKept[2] = { 0.f, 0.f };
+	float PoseDeltaSeconds = 0.f;
 	// Each arm joint's turn in the last pose given (collarbone, upper arm, forearm, hand of each side): no joint turns faster
 	// than a living one can, so a target that jumps from one frame to the next is followed round smoothly instead.
 	mutable FQuat LastArmJoint[2][4];
@@ -107,7 +112,7 @@ private:
 	float LimpBackBowDegrees = 0.f;
 	float LimpNeckBowDegrees = 0.f;
 	// The slack shape of a body that is down, which its weak muscles pull it to.
-	void ApplyLimpPose(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const;
+	void ApplyLimpPose(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones);
 };
 
 UCLASS()
@@ -122,6 +127,7 @@ public:
 	FQuat DevGetPoseHand(int32 HandSlot);
 	// Where the last pose has an arm's part (0 upper arm, 1 forearm, 2 hand), in world space; slot 0 is the left arm.
 	FTransform GetPoseArmWorld(int32 HandSlot, int32 Part);
+	FVector GetPoseHandOnChest(int32 HandSlot);
 	FString DevWrists();
 
 	// Finger bones per hand, ordered thumb, index, middle, ring, pinky with three joints each from the base.

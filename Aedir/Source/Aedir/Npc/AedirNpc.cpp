@@ -163,6 +163,13 @@ void AAedirNpc::Tick(float DeltaSeconds)
 		return;
 	}
 
+	// Dev: everyone stands where they are.
+	static const IConsoleVariable* Still = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.NpcStill"));
+	if (Still && Still->GetInt() != 0)
+	{
+		MoveLocal(FVector2D::ZeroVector);
+		return;
+	}
 	UpdateNeeds(DeltaSeconds);
 	UpdateChatter(DeltaSeconds);
 	if (TalkPartner.IsValid())

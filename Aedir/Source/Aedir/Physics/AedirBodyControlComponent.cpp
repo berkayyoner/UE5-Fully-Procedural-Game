@@ -276,6 +276,16 @@ void UAedirBodyControlComponent::SetKickLeg(int32 Leg)
 	}
 }
 
+void UAedirBodyControlComponent::SetHoistFreeArm(int32 Arm)
+{
+	if (HoistFreeArm != Arm)
+	{
+		HoistFreeArm = Arm;
+		AppliedKey = -1.0;
+		ApplyMultipliers();
+	}
+}
+
 void UAedirBodyControlComponent::SetAirborne(bool bInAirborne)
 {
 	if (bAirborne != bInAirborne)
@@ -719,9 +729,10 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// A broken arm hangs as a limp body's arm does, the muscle in it still there (LimpShare, its forearm and wrist slacker
 	// as a limp one's); a hurt one keeps at least some of its strength.
 	const float ArmAwake = bLimp && !bDead ? DownAwakeArms : 0.f;
-	const float LimpArm = FMath::Lerp(bDead ? Limp : FMath::Lerp(LimpShare, 1.f, ArmAwake), HoistArmShare, Hauled);
-	const float LeftArmHz = ArmHz * (bLimp ? LimpArm : bBroken[0] ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
-	const float RightArmHz = ArmHz * (bLimp ? LimpArm : bBroken[1] ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
+	const auto LimpArmOf = [&](int32 Side) { return FMath::Lerp(bDead ? Limp : FMath::Lerp(LimpShare, 1.f, ArmAwake), Side == HoistFreeArm ? HoistFreeArmShare : HoistArmShare, Hauled); };
+	const float LimpArm[2] = { LimpArmOf(0), LimpArmOf(1) };
+	const float LeftArmHz = ArmHz * (bLimp ? LimpArm[0] : bBroken[0] ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
+	const float RightArmHz = ArmHz * (bLimp ? LimpArm[1] : bBroken[1] ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
 	Apply(LeftArmControls, LeftArmHz * Soft, 0.f);
 	Apply(RightArmControls, RightArmHz * Soft, 0.f);
 	// A broken arm's shoulder still holds it hanging.

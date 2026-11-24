@@ -145,7 +145,10 @@ void AAedirCreature::UseManBody()
 		}
 		// The face runs its own animation, which takes the body's pose and curves and works the face's rig from the curves:
 		// following the body's bones alone it would keep one look forever.
-		static TSubclassOf<UAnimInstance> FaceAnim = LoadClass<UAnimInstance>(nullptr, AedirManFaceAnimPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		if (!FaceAnim)
+		{
+			FaceAnim = LoadClass<UAnimInstance>(nullptr, AedirManFaceAnimPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
+		}
 		if (FaceAnim)
 		{
 			Face->SetLeaderPoseComponent(nullptr);

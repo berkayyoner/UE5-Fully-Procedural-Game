@@ -796,6 +796,11 @@ public:
 	UFUNCTION(Exec)
 	void PlaceWall(float AheadCm);
 
+	// Dev: the fixed things standing about (aside from the land), and the player put before the one of this number, so far off
+	// it as a fist strikes from, facing it.
+	UFUNCTION(Exec)
+	void FaceSolid(int32 Number, float OffCm);
+
 	// FallTest 300: lift the body by that many cm and let it fall.
 	UFUNCTION(Exec)
 	void FallTest(float HeightCm);

@@ -54,17 +54,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float MouseFieldUpDown = 122.f;
 
-	// Down on the ground but awake, a fist's button held, the mouse still swings that arm, slack as the body lying there:
-	// the hand is sent across and up as seen from the camera, DownSwingReachCm for the mouse's whole travel, at most
-	// DownSwingMaxSpeed (cm/s), taking DownSwingShare of the way to that speed each frame.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Down")
-	float DownSwingReachCm = 50.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Down")
-	float DownSwingMaxSpeed = 300.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Down", meta=(ClampMin="0", ClampMax="1"))
-	float DownSwingShare = 0.3f;
+	// Knocked off something fixed, the arm's own way round the arc is turned back by this share of its speed.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", ClampMax="1"))
+	float KnockBackAimShare = 0.3f;
 
 	// The guard: how far before the middle of the shoulders the fists are, how far apart, how high over the shoulders, and the
 	// angle between the two elbows.
@@ -492,6 +484,8 @@ public:
 	// Hurt just now: that arm comes down out of the guard for this long, whatever its button says, and goes back up after if
 	// it is still held; the other arm goes on. A longer one already going is kept.
 	// Out of the fight for exactly this long from now (0 back in it at once).
+	// A fist stopped by something it struck: the punch is over and the arm comes back in.
+	void KnockBack(EAedirHand Hand);
 	void Flinch(EAedirHand Hand, float Seconds) { FlinchLeft[Index(Hand)] = FMath::Max(Seconds, 0.f); }
 	// Someone's hand holds this arm at that place, by that share of the struggle (0 to 1): the fist gets only so far from it
 	// and is thrown out the slower. It lasts as long as it is told again every moment.
@@ -512,7 +506,6 @@ public:
 
 	// The mouse moved while a button is held (mouse axis units, up positive).
 	void AddMouse(const FVector2D& Delta);
-	void SwingWhileDown(const FVector2D& Mouse, float DeltaTime);
 
 	// A one-handed blade in the right hand with the left hand empty: the right button clicked takes it in both hands or
 	// back in one, held down it lets the left hand go and raises it on its own.
@@ -580,11 +573,11 @@ private:
 	FVector HeldAt[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	float HeldShare[2] = { 0.f, 0.f };
 	float HeldLeft[2] = { 0.f, 0.f };
-	// Down or getting up, no arm comes up into the fight.
-	bool bBodyDown = false;
+	// Getting up, an arm the body leans on does not come up into the fight; the one kept off the ground does.
+	bool bOnGround[2] = { false, false };
 	// A broken (or lost) arm does not come up at all.
 	bool bArmUseless[2] = { false, false };
-	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft[Slot] <= 0.f && !bBodyDown && !bArmUseless[Slot]; }
+	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft[Slot] <= 0.f && !bOnGround[Slot] && !bArmUseless[Slot]; }
 	float Alpha[2] = { 0.f, 0.f };
 	// How far each arm is the fists' to pose: up, or carried in both hands.
 	float ShownAlpha[2] = { 0.f, 0.f };

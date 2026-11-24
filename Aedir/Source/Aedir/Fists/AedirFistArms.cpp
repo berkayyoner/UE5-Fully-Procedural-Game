@@ -104,46 +104,16 @@ void UAedirFistArms::AddMouse(const FVector2D& Delta)
 	}
 }
 
-void UAedirFistArms::SwingWhileDown(const FVector2D& Mouse, float DeltaTime)
+void UAedirFistArms::KnockBack(EAedirHand Hand)
 {
-	ACharacter* Owner = Cast<ACharacter>(GetOwner());
-	const UAedirBalanceComponent* OwnBalance = Owner ? Owner->FindComponentByClass<UAedirBalanceComponent>() : nullptr;
-	USkeletalMeshComponent* Mesh = Owner ? Owner->GetMesh() : nullptr;
-	if (!Mesh || !Owner->HasAuthority() || DeltaTime <= 0.f || Mouse.IsNearlyZero() || !OwnBalance || !OwnBalance->IsRagdoll())
+	// The blow is over: the arm comes back in to its guard, off what it struck.
+	const int32 Slot = Index(Hand);
+	if (PunchSlot == Slot || !(HeldNow(0) && HeldNow(1)))
 	{
-		return;
-	}
-	const AAedirCreature* Creature = Cast<AAedirCreature>(Owner);
-	if (Creature && Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying() || Creature->Stats->IsKnockedOut()))
-	{
-		return;
-	}
-	const FRotationMatrix View(Owner->GetControlRotation());
-	const FVector Wanted = ((View.GetUnitAxis(EAxis::Y) * (Mouse.X / FMath::Max(MouseFieldAcross, 1.f)) + View.GetUnitAxis(EAxis::Z) * (Mouse.Y / FMath::Max(MouseFieldUpDown, 1.f))) * (DownSwingReachCm / DeltaTime)).GetClampedToMaxSize(DownSwingMaxSpeed);
-	for (int32 Slot = 0; Slot < 2; ++Slot)
-	{
-		// Getting up, only the one hand kept off the ground swings; the other bears the weight.
-		if (!bHeld[Slot] || bArmUseless[Slot] || (OwnBalance->IsHoisting() && OwnBalance->GetHoistFreeHand() != Slot))
-		{
-			continue;
-		}
-		const TCHAR* Suffix = Slot == 0 ? TEXT("_l") : TEXT("_r");
-		FBodyInstance* HandBody = Mesh->GetBodyInstance(FName(FString(TEXT("hand")) + Suffix));
-		if (!HandBody || !HandBody->IsInstanceSimulatingPhysics())
-		{
-			continue;
-		}
-		// The whole arm is swung, the hand most and the upper arm least, as an arm is from the shoulder.
-		const FVector Change = (Wanted - HandBody->GetUnrealWorldVelocity()) * DownSwingShare;
-		for (const TPair<const TCHAR*, float>& Part : { TPair<const TCHAR*, float>(TEXT("hand"), 1.f), TPair<const TCHAR*, float>(TEXT("lowerarm"), 0.8f), TPair<const TCHAR*, float>(TEXT("upperarm"), 0.45f) })
-		{
-			if (FBodyInstance* Piece = Mesh->GetBodyInstance(FName(FString(Part.Key) + Suffix)); Piece && Piece->IsInstanceSimulatingPhysics())
-			{
-				Piece->AddImpulse(Change * Part.Value, true);
-			}
-		}
-		static const IConsoleVariable* HitLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
-		UE_CLOG(HitLog && HitLog->GetInt() != 0, LogAedir, Log, TEXT("[DownSwing] %s swings its %s arm lying down: wanted %.0f cm/s, the hand at %.0f cm/s"), *Owner->GetName(), Slot == 0 ? TEXT("left") : TEXT("right"), Wanted.Size(), HandBody->GetUnrealWorldVelocity().Size());
+		Punch = 0.f;
+		PunchHoldLeft = 0.f;
+		MouseCarry = FVector2D::ZeroVector;
+		AimSpeed *= -KnockBackAimShare;
 	}
 }
 
@@ -161,9 +131,10 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 	{
 		const UAedirBalanceComponent* OwnBalance = GetOwner() ? GetOwner()->FindComponentByClass<UAedirBalanceComponent>() : nullptr;
-		// Lying awake on the ground the arms guard and strike as they do standing, about the chest as it lies; only getting
-		// up, the hands are on the ground bearing the body.
-		bBodyDown = OwnBalance && (OwnBalance->IsGettingUp() || OwnBalance->IsHoisting());
+		// Lying awake on the ground the arms guard and strike as they do standing, about the chest as it lies; getting up one
+		// does as well, the other bearing the body on the ground.
+		bOnGround[0] = OwnBalance && OwnBalance->IsHandOnGround(0);
+		bOnGround[1] = OwnBalance && OwnBalance->IsHandOnGround(1);
 		const AAedirCreature* OwnCreature = Cast<AAedirCreature>(GetOwner());
 		const UAedirWoundComponent* OwnWounds = OwnCreature ? OwnCreature->Wounds.Get() : nullptr;
 		bArmUseless[0] = OwnWounds && OwnWounds->HasUselessArm(true);
@@ -206,10 +177,6 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 	MouseCarry += PendingMouse;
 	const FVector2D MouseNow = MouseSmoothSeconds > KINDA_SMALL_NUMBER ? MouseCarry * (1.f - FMath::Exp(-DeltaTime / MouseSmoothSeconds)) : MouseCarry;
 	MouseCarry -= MouseNow;
-	if (bBodyDown)
-	{
-		SwingWhileDown(MouseNow, DeltaTime);
-	}
 	if (bSteering && !bDevFrozen)
 	{
 		const float Before = static_cast<float>(MouseAim.X);

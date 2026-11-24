@@ -57,6 +57,7 @@ namespace
 	constexpr float AedirAIMouseArrivedShare = 0.08f;
 	constexpr float AedirAIMouseRecoverSeconds = 0.15f;
 	constexpr float AedirAIMouseOverheadChance = 0.3f;
+	TAutoConsoleVariable<int32> CVarAedirNpcStill(TEXT("aedir.NpcStill"), 0, TEXT("The ones nobody plays stand still and fight nobody (1)."));
 	TAutoConsoleVariable<int32> CVarAedirNpcFists(TEXT("aedir.NpcFists"), 1, TEXT("Others fight bare-handed or with a one-handed blade as the player does, moving a mouse (1), or the older way (0)."));
 	// The closed loop between the pose and what is shown: how quickly it learns, how far it may ask beyond the pose, how still
 	// the pose must be for it to learn, and how quickly it forgets out of the stance.
@@ -685,7 +686,6 @@ namespace
 	constexpr float AedirKickChamberRightCm = 6.f;
 	constexpr float AedirKickExtendCm = 85.f;
 	constexpr float AedirKickMaxYawDegrees = 70.f;
-	constexpr float AedirKickMinLiftCm = -15.f;
 	constexpr float AedirKickPointStartTime = 0.2f;
 	constexpr float AedirKickPointFullTime = 0.55f;
 	constexpr float AedirKickPointEndTime = 0.9f;
@@ -1078,8 +1078,8 @@ FVector UAedirCombatComponent::GetTipWorld(EAedirHand Hand) const
 
 bool UAedirCombatComponent::IsGuardActive(EAedirHand Hand) const
 {
-	// Lying awake the guard is held as standing; getting up the hands are on the ground.
-	const bool bDown = Creature && Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsHoisting());
+	// Lying awake the guard is held as standing; getting up, only by the one hand kept off the ground.
+	const bool bDown = Creature && Creature->Balance && Creature->Balance->IsHandOnGround(HandIndex(Hand));
 	return (Hand == EAedirHand::Left ? bLeftGuard : bRightGuard) && FlinchLeft[HandIndex(Hand)] <= 0.f && !bDown;
 }
 
@@ -4209,6 +4209,10 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 			UAedirSfxSubsystem::Play(this, EAedirSfx::Whoosh, To, FMath::GetRangePct(WhooshMinSpeed, WhooshFullSpeed, Swing));
 		}
 	}
+	if (!Item && bFistUp)
+	{
+		StrikeFixedThing(Hand, Arm, From, To, PrevTo, Radius);
+	}
 	if (FastestEnd <= AedirArmMinSpeed || (bLoose && FastestEnd < AedirLooseStrikeMinSpeed))
 	{
 		return;
@@ -4223,6 +4227,61 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 	{
 		const double T = static_cast<double>(Step) / Steps;
 		ProcessImpactSweep(Hand, Arm, FMath::Lerp(PrevFrom, From, T), FMath::Lerp(PrevTo, To, T), FromVelocity, ToVelocity, Radius, MassEff, Now);
+	}
+}
+
+void UAedirCombatComponent::StrikeFixedThing(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& From, const FVector& To, const FVector& PrevTo, float RadiusCm)
+{
+	UWorld* World = GetWorld();
+	if (!World || !Creature->Balance || !IsAuthoritative() || Creature->Balance->IsRagdoll())
+	{
+		return;
+	}
+	// The hand's own body is stopped by what it meets before the knuckle's bone gets to it: felt for a little further out and
+	// a little wider than a blow on a body is.
+	const FVector Along = (To - From).GetSafeNormal();
+	const float Wide = RadiusCm + FistFixedMarginCm;
+	FCollisionObjectQueryParams Types(ECC_WorldStatic);
+	Types.AddObjectTypesToQuery(ECC_WorldDynamic);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirFistFixed), false, Creature);
+	TArray<FHitResult> Hits;
+	World->SweepMultiByObjectType(Hits, FMath::Lerp(From, PrevTo, 0.5), To + Along * FistFixedReachCm, FQuat::Identity, Types, FCollisionShape::MakeSphere(Wide), Params);
+	const double Now = World->GetTimeSeconds();
+	const FVector Own = Creature->GetVelocity();
+	for (const FHitResult& Hit : Hits)
+	{
+		UPrimitiveComponent* Part = Hit.GetComponent();
+		AActor* Thing = Hit.GetActor();
+		if (!Part || !Thing || Part->IsSimulatingPhysics() || Part->GetCollisionResponseToChannel(ECC_PhysicsBody) != ECR_Block || Cast<AAedirCreature>(Thing) || Cast<AAedirCreature>(Thing->GetOwner())
+			|| Cast<AAedirTrainingDummy>(Thing) || Cast<AAedirItemActor>(Thing) || IsImpactOnCooldown(Hand, Thing, Now))
+		{
+			continue;
+		}
+		const FVector Into = Hit.bStartPenetrating || Hit.ImpactNormal.IsNearlyZero() ? Along : -FVector(Hit.ImpactNormal);
+		// Stopped against it the hand shows slow in the frame it touches: what counts is the speed it came in at a moment
+		// before, on top of the body's own moving.
+		double Came = 0.0;
+		for (const TPair<double, FVector>& Entry : RecentStrikeVelocity[HandIndex(Hand)])
+		{
+			Came = FMath::Max(Came, FVector::DotProduct(Entry.Value - Own, Into));
+		}
+		if (Came < Creature->Balance->FistWorldSoundMinSpeed || Came >= AedirImpactMaxSpeed)
+		{
+			continue;
+		}
+		RegisterImpact(Hand, Thing, Now);
+		FHitResult Knock = Hit;
+		Knock.ImpactNormal = -Into;
+		Knock.ImpactPoint = Hit.bStartPenetrating ? To : FVector(Hit.ImpactPoint);
+		const FName HandBone = Hand == EAedirHand::Left ? FName(TEXT("hand_l")) : FName(TEXT("hand_r"));
+		const float Harm = Creature->Balance->KnockFist(HandBone, FMath::Min(static_cast<float>(Came), AedirImpactCountedMaxSpeed), Knock);
+		ApplyLimbInjury(GetArmLimb(Hand), Harm * AedirImpactInjuryPerDamage);
+		if (UAedirFistArms* Fists = Creature->FindComponentByClass<UAedirFistArms>())
+		{
+			Fists->KnockBack(Hand);
+		}
+		BlockAgainstBody(Arm, AedirBluntBounce);
+		return;
 	}
 }
 
@@ -4773,6 +4832,16 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		return;
 	}
 
+	static const IConsoleVariable* Still = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.NpcStill"));
+	if (Still && Still->GetInt() != 0)
+	{
+		AITarget = nullptr;
+		ReleaseAIFistArms();
+		ReleaseAIGrab();
+		SetGuardInternal(EAedirHand::Left, false);
+		SetGuardInternal(EAedirHand::Right, false);
+		return;
+	}
 	AIRetargetTimer -= DeltaTime;
 	if (AIRetargetTimer <= 0.f)
 	{
@@ -5857,6 +5926,12 @@ bool UAedirCombatComponent::GetKickPose(bool& bOutLeftLeg, FVector& OutFootTarge
 	}
 
 	const float T01 = FMath::Clamp(KickNet.Elapsed / AedirKickDuration, 0.f, 1.f);
+	if (KickNet.bLanded)
+	{
+		// Stopped by what it struck, it springs back from there, as a fist does.
+		OutFootTargetWorld = FMath::Lerp(FVector(KickNet.LandedWorld), FVector(KickNet.StartWorld), CombatSmoothStep01((KickNet.Elapsed - KickNet.LandedElapsed) / FMath::Max(KickRecoilSeconds, 0.05f)));
+		return true;
+	}
 	OutFootTargetWorld = EvaluateKickArc(KickNet.StartWorld, GetPelvisWorld(), KickNet.Direction, T01, KickNet.LiftCm, KickWindUpBackCm, KickWindUpBelowHipCm, KickExtendHeightCm);
 	return true;
 }
@@ -6164,12 +6239,39 @@ void UAedirCombatComponent::BeginKick()
 	KickNet.bActive = true;
 	KickNet.bLeftLeg = bLeftLeg;
 	KickNet.Elapsed = 0.f;
+	KickNet.bLanded = false;
 	KickNet.StartWorld = GetFootBoneWorld(bLeftLeg);
 	KickNet.Direction = KickWay;
 	UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicks with the %s leg %.0f degrees from straight ahead: the left foot %.0f cm towards it, the right %.0f"), *Creature->GetName(), bLeftLeg ? TEXT("left") : TEXT("right"), YawFromBody, LeftAhead, RightAhead);
-	KickNet.LiftCm = FMath::Clamp(AedirKickExtendCm * FMath::Sin(FMath::DegreesToRadians(static_cast<float>(FRotator::NormalizeAxis(View.Pitch)))), AedirKickMinLiftCm, KickMaxLiftCm);
+	KickNet.LiftCm = FMath::Clamp(AedirKickExtendCm * FMath::Sin(FMath::DegreesToRadians(static_cast<float>(FRotator::NormalizeAxis(View.Pitch)))), -KickMaxDropCm, KickMaxLiftCm);
+	// At somebody lying before it the kick goes down to them.
+	{
+		const FVector Hip = GetPelvisWorld();
+		float Nearest = KickDownReachCm;
+		for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+		{
+			const USkeletalMeshComponent* Lying = It->GetMesh();
+			const bool bLying = *It != Creature && Lying && ((It->Stats && It->Stats->IsDead()) || (It->Balance && It->Balance->IsRagdoll() && !It->Balance->IsHoisting()));
+			for (const TCHAR* Part : { TEXT("pelvis"), TEXT("spine_03"), TEXT("spine_05"), TEXT("head"), TEXT("thigh_l"), TEXT("thigh_r"), TEXT("calf_l"), TEXT("calf_r") })
+			{
+				if (!bLying || Lying->GetBoneIndex(Part) == INDEX_NONE)
+				{
+					break;
+				}
+				const FVector At = Lying->GetBoneLocation(Part);
+				const FVector Off = FVector(At.X - Hip.X, At.Y - Hip.Y, 0.0);
+				const double Ahead = FVector::DotProduct(Off, KickWay);
+				if (Ahead > 10.0 && Off.Size() < Nearest && (Off - KickWay * Ahead).Size() < KickDownSideCm)
+				{
+					Nearest = static_cast<float>(Off.Size());
+					KickNet.LiftCm = FMath::Clamp(static_cast<float>(At.Z - Hip.Z) + AedirKickGroundBelowHipCm - KickExtendHeightCm, -KickMaxDropCm, KickMaxLiftCm);
+				}
+			}
+		}
+	}
 	KickPrevFootWorld = KickNet.StartWorld;
 	bKickStruck = false;
+	bKickPrevShin = false;
 	KickCooldownRemaining = KickCooldown;
 	// Crouched to spring, the body is already jumping: a kick out of the jump does not stand on a leg.
 	const UAedirCharacterMovementComponent* Movement = Cast<UAedirCharacterMovementComponent>(Creature->GetCharacterMovement());
@@ -6201,7 +6303,22 @@ void UAedirCombatComponent::UpdateKick(float DeltaTime)
 		const FVector FootWorld = GetFootBoneWorld(KickNet.bLeftLeg);
 		if (!bKickStruck && KickNet.Elapsed >= AedirKickStrikeStart && KickNet.Elapsed <= AedirKickStrikeEnd)
 		{
+			// The foot first; nearer than that, the shin.
+			const FName Calf = KickNet.bLeftLeg ? FName(TEXT("calf_l")) : FName(TEXT("calf_r"));
+			const FVector ShinWorld = Creature->GetMesh() ? FMath::Lerp(Creature->GetMesh()->GetBoneLocation(Calf), FootWorld, 0.5) : FootWorld;
 			ResolveKickSweep(KickPrevFootWorld, FootWorld, DeltaTime);
+			if (!bKickStruck && bKickPrevShin)
+			{
+				ResolveKickSweep(KickPrevShinWorld, ShinWorld, DeltaTime);
+			}
+			KickPrevShinWorld = ShinWorld;
+			bKickPrevShin = true;
+			if (bKickStruck)
+			{
+				KickNet.bLanded = true;
+				KickNet.LandedWorld = FootWorld;
+				KickNet.LandedElapsed = KickNet.Elapsed;
+			}
 		}
 
 		KickPrevFootWorld = FootWorld;
@@ -6220,62 +6337,9 @@ void UAedirCombatComponent::UpdateKick(float DeltaTime)
 			}
 		}
 
-		// Bodies lying in the leg's way are shoved along, never sent flying by the force that drives the foot.
-		LimitKickedDownBodies();
-
-		if (KickNet.Elapsed >= AedirKickDuration)
+		if (KickNet.Elapsed >= AedirKickDuration || (KickNet.bLanded && KickNet.Elapsed >= KickNet.LandedElapsed + KickRecoilSeconds))
 		{
 			KickNet.bActive = false;
-		}
-	}
-}
-
-void UAedirCombatComponent::LimitKickedDownBodies()
-{
-	UWorld* World = GetWorld();
-	if (!World || !Creature)
-	{
-		return;
-	}
-	const FVector Origin = Creature->GetActorLocation();
-	for (TActorIterator<AAedirCreature> It(World); It; ++It)
-	{
-		AAedirCreature* Other = *It;
-		USkeletalMeshComponent* OtherMesh = Other ? Other->GetMesh() : nullptr;
-		if (!OtherMesh || Other == Creature || FVector::DistSquared2D(Other->GetActorLocation(), Origin) > FMath::Square(250.f))
-		{
-			continue;
-		}
-		const bool bDead = Other->Stats && (Other->Stats->IsDead() || Other->Stats->IsDying());
-		const bool bDown = bDead || (Other->Balance && Other->Balance->IsRagdoll() && !Other->Balance->IsHoisting());
-		if (!bDown)
-		{
-			continue;
-		}
-		float Fastest = 0.f;
-		for (FBodyInstance* Body : OtherMesh->Bodies)
-		{
-			if (!Body || !Body->IsInstanceSimulatingPhysics())
-			{
-				continue;
-			}
-			const FVector V = Body->GetUnrealWorldVelocity();
-			FVector Flat(V.X, V.Y, 0.f);
-			const float FlatSpeed = static_cast<float>(Flat.Size());
-			const bool bTooFast = FlatSpeed > KickDownBodyMaxSpeedCm || V.Z > KickDownBodyUpMaxSpeedCm;
-			Fastest = FMath::Max(Fastest, FlatSpeed);
-			if (bTooFast)
-			{
-				if (FlatSpeed > KickDownBodyMaxSpeedCm)
-				{
-					Flat *= KickDownBodyMaxSpeedCm / FlatSpeed;
-				}
-				Body->SetLinearVelocity(FVector(Flat.X, Flat.Y, FMath::Min(V.Z, static_cast<double>(KickDownBodyUpMaxSpeedCm))), false);
-			}
-		}
-		if (Fastest > KickDownBodyMaxSpeedCm * 1.5f)
-		{
-			UE_LOG(LogAedir, Log, TEXT("[Kick] %s's leg runs into %s lying down: a part of it going %.0f cm/s is held to %.0f"), *Creature->GetName(), *Other->GetName(), Fastest, KickDownBodyMaxSpeedCm);
 		}
 	}
 }
@@ -6298,12 +6362,22 @@ void UAedirCombatComponent::ResolveKickSweep(const FVector& From, const FVector&
 	TArray<FHitResult> Hits;
 	World->SweepMultiByObjectType(Hits, From, To, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(AedirKickHitRadius), Params);
 
+	UE_CLOG(CVarAedirHitLog.GetValueOnGameThread() != 0, LogAedir, Log, TEXT("[Kick] %s's leg at %.2f s: %.0f cm ahead, %.0f cm over the feet, going %.0f cm/s, %d met"), *Creature->GetName(), KickNet.Elapsed,
+		FVector::DotProduct(To - Creature->GetActorLocation(), FVector(KickNet.Direction)), To.Z - Creature->GetActorLocation().Z + Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight(), FVector::Dist(From, To) / DeltaTime, Hits.Num());
 	const FVector FootMotion = To - From;
 	const float FootSpeed = FMath::Min(static_cast<float>(FootMotion.Size() / DeltaTime), AedirKickMaxFootSpeed);
 
 	for (const FHitResult& Hit : Hits)
 	{
 		AAedirCreature* Victim = Cast<AAedirCreature>(Hit.GetActor());
+		// A loose thing in the way is knocked along.
+		if (!Victim && Hit.GetComponent() && Hit.GetComponent()->IsSimulatingPhysics() && !Cast<AAedirCreature>(Hit.GetActor() ? Hit.GetActor()->GetOwner() : nullptr))
+		{
+			const float Push = FMath::Min(KickBlowMassKg * GetStrengthBlowScale() * FootSpeed * AedirImpactPropImpulseScale, Hit.GetComponent()->GetMass() * AedirPropMaxSpeedChange);
+			Hit.GetComponent()->AddImpulseAtLocation(FootMotion.GetSafeNormal() * Push, Hit.ImpactPoint);
+			bKickStruck = true;
+			return;
+		}
 		if (!Victim || Victim == Creature || Hit.GetComponent() != Victim->GetMesh())
 		{
 			continue;
@@ -6367,13 +6441,12 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 		FAedirImpactInfo Impact;
 		Impact.Bone = Bone;
 		Impact.Zone = Zone;
-		const float Knock = CombatKnockbackScale(nullptr, true) * FistPushShare;
+		const float Knock = CombatKnockbackScale(nullptr, true) * FistPushShare * KickPushShare;
 		Impact.EnergyJoules = Energy * AedirImpactBodyEnergyShare * Knock;
 		Impact.Direction = FootMotion.GetSafeNormal();
 		Impact.Location = Hit.ImpactPoint;
 		Impact.MassKg = MassEff;
-		Impact.RelativeSpeed = RelativeSpeed * Knock * KickPushShare;
-		Impact.ThrowShare = KickPushShare;
+		Impact.RelativeSpeed = RelativeSpeed * Knock;
 		Victim->Balance->ApplyHitReaction(Impact);
 	}
 

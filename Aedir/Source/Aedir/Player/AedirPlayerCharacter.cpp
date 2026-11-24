@@ -4344,6 +4344,45 @@ void AAedirPlayerCharacter::CrouchTest()
 	RunDevCommand(TEXT("CrouchTest"), FString(), false);
 }
 
+void AAedirPlayerCharacter::FaceSolid(int32 Number, float OffCm)
+{
+	TArray<FHitResult> Found;
+	const FVector Eye = GetActorLocation() + FVector(0.f, 0.f, 30.f);
+	FCollisionObjectQueryParams Types(ECC_WorldStatic);
+	Types.AddObjectTypesToQuery(ECC_WorldDynamic);
+	for (int32 Step = 0; Step < 72; ++Step)
+	{
+		TArray<FHitResult> Along;
+		const FVector Way = FRotator(0.f, Step * 5.f, 0.f).Vector();
+		GetWorld()->LineTraceMultiByObjectType(Along, Eye, Eye + Way * 4000.f, Types, FCollisionQueryParams(SCENE_QUERY_STAT(AedirFaceSolid), false, this));
+		for (const FHitResult& Hit : Along)
+		{
+			if (Hit.GetComponent() && !Hit.GetActor()->IsA<ALandscapeProxy>() && !Cast<AAedirCreature>(Hit.GetActor()) && !Hit.GetComponent()->IsSimulatingPhysics()
+				&& !Found.ContainsByPredicate([&](const FHitResult& Had) { return Had.GetComponent() == Hit.GetComponent(); }))
+			{
+				Found.Add(Hit);
+			}
+		}
+	}
+	Found.Sort([](const FHitResult& A, const FHitResult& B) { return A.Distance < B.Distance; });
+	for (int32 Index = 0; Index < Found.Num() && Number < 0; ++Index)
+	{
+		const UPrimitiveComponent* Part = Found[Index].GetComponent();
+		UE_LOG(LogAedir, Display, TEXT("[FaceSolid] %d: %s (%s), %.0f cm off, object type %d, collision %d, answers to bodies %d"), Index, *Found[Index].GetActor()->GetName(), *Part->GetClass()->GetName(), Found[Index].Distance, static_cast<int32>(Part->GetCollisionObjectType()), static_cast<int32>(Part->GetCollisionEnabled()), static_cast<int32>(Part->GetCollisionResponseToChannel(ECC_PhysicsBody)));
+	}
+	if (Found.IsValidIndex(Number))
+	{
+		const FVector Out = FVector(Found[Number].ImpactNormal).GetSafeNormal2D();
+		const FVector Back = Out.IsNearlyZero() ? (Eye - Found[Number].ImpactPoint).GetSafeNormal2D() : Out;
+		SetActorLocationAndRotation(FVector(Found[Number].ImpactPoint) + Back * OffCm - FVector(0.f, 0.f, 25.f), (-Back).Rotation(), false, nullptr, ETeleportType::TeleportPhysics);
+		if (GetController())
+		{
+			GetController()->SetControlRotation((-Back).Rotation());
+		}
+		UE_LOG(LogAedir, Display, TEXT("[FaceSolid] before %s"), *Found[Number].GetActor()->GetName());
+	}
+}
+
 void AAedirPlayerCharacter::PlaceWall(float AheadCm)
 {
 	RunDevCommand(TEXT("PlaceWall"), FString::SanitizeFloat(AheadCm), false);

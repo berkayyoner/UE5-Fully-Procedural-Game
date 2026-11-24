@@ -32,6 +32,15 @@ struct AEDIR_API FAedirGaitState
 	FVector ClutchFingersWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	// How much of its own sideways bend a holding hand's wrist keeps (0: none, the hand in line with the forearm that way).
 	float ClutchWristSideShare = 0.f;
+	// And how far its wrist bends and turns on the forearm at most (degrees), and how fast it may turn (degrees a second).
+	float ClutchWristBendDegrees = 55.f;
+	float ClutchWristTwistDegrees = 75.f;
+	float ClutchWristTwistSpeed = 360.f;
+	// Lying, the same hold in the chest's own frame, for a pose worked out about a standing chest.
+	float ClutchDownAlpha[2] = { 0.f, 0.f };
+	FVector ClutchChestLocal[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector ClutchPalmChest[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector ClutchFingersChest[2] = { FVector::ZeroVector, FVector::ZeroVector };
 
 	// The face, each 0 to 1: hurting, straining, set for a fight, slack (out cold or dead), the lids shut in a blink.
 	float FacePain = 0.f;
@@ -42,6 +51,8 @@ struct AEDIR_API FAedirGaitState
 	// Where the eyes look and how much (0: straight ahead), and how far they turn at most each way (degrees), and the turn the
 	// face rig takes at full.
 	FVector EyeTargetWorld = FVector::ZeroVector;
+	// The way there in the head bone's own frame, as the head really is.
+	FVector EyeDirInHead = FVector::ZeroVector;
 	float EyeTargetAlpha = 0.f;
 	float EyeMaxSideDegrees = 30.f;
 	float EyeMaxUpDegrees = 20.f;
@@ -739,9 +750,75 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="1"))
 	float ClutchKeepBonus = 1.5f;
 
-	// How fast the hand goes there and comes away again, in shares a second.
+	// How fast the hand goes to a blow just taken, to a wound that goes on hurting, and comes away again, in shares a second.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
-	float ClutchInSpeed = 7.f;
+	float ClutchInSpeed = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchWoundInSpeed = 3.f;
+
+	// Holding, the hand goes from one place over to another, or after a place that moves, no faster than this over the body
+	// (cm/s), and turns no faster than this (degrees a second).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchMoveSpeedCm = 220.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchTurnSpeed = 260.f;
+
+	// A place further round the trunk, the neck or a thigh from the front than the first of these is held at that far round;
+	// past the second it is not held at all (nobody reaches round behind). Round an arm the front is where the other hand
+	// comes from, and a place behind is held from the side (degrees).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchRoundHoldDegrees = 75.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchRoundGiveUpDegrees = 115.f;
+
+	// A holding arm reaches out to this share of its length; a place up to this much further is held as near as it gets to it,
+	// one further off is not (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0.5", ClampMax="1"))
+	float ClutchReachShare = 0.96f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchReachSlackCm = 12.f;
+
+	// A holding wrist is never further back than this behind the line of the shoulders, nor further across than this past
+	// the other shoulder (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchWristBehindMaxCm = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchWristAcrossMaxCm = 16.f;
+
+	// Where the wrist of a hurt forearm is held before the belly for the other hand to hold it: ahead of the middle of the
+	// shoulders, out to its own side and up (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	FVector ClutchCradle = FVector(24.f, -4.f, -26.f);
+
+	// Lying, a place facing down by at least this much (1 straight down) is under the body, and not held.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchUnderShare = 0.45f;
+
+	// Before the chest (from this far above the line of the shoulders to this far below it) a holding wrist is at least this
+	// far ahead of that line (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchChestAheadCm = 19.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchChestTopCm = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchChestBottomCm = 35.f;
+
+	// A holding hand bends at the wrist and turns on the forearm no further than this (degrees), the turn no faster than this.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchWristBendDegrees = 55.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchWristTwistDegrees = 75.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchWristTwistSpeed = 360.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchOutSpeed = 2.5f;
@@ -776,7 +853,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
 	float ClutchElbowHintShare = 0.85f;
 
-	// It leads the elbow fully for a place this far below the shoulder, less for one higher up, not at all from the shoulder up (cm).
+	// It leads the elbow not at all for a place this far above the shoulder, and fully from this much below that (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchElbowHintAboveCm = 11.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchElbowHintFullBelowCm = 6.f;
 
@@ -829,6 +909,61 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
 	float FaceLastingPainMax = 0.45f;
+
+	// A wound that still bleeds, or a broken limb, keeps the face in pain: this much for the worst; and lying on the ground
+	// awake it is never easier than this.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face", meta=(ClampMin="0", ClampMax="1"))
+	float FaceWoundPainMax = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face", meta=(ClampMin="0", ClampMax="1"))
+	float FaceDownPain = 0.35f;
+
+	// Who nobody plays looks about: every so often (seconds, about 3 on average) at another creature, thing or part of what
+	// lies before them, within this far to either side of the way the body faces (degrees) and this far off (cm), without
+	// turning the body; with the eyes first, then the head, then the waist.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionMinSeconds = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionMaxSeconds = 4.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionFieldDegrees = 100.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionRadiusCm = 1500.f;
+
+	// How much a creature, a thing and the land about draw the eyes, against each other.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionCreatureWeight = 3.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionThingWeight = 1.f;
+
+	// The dead and the senseless draw them this share of what the living do.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention", meta=(ClampMin="0"))
+	float AttentionStillShare = 0.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionLandWeight = 2.5f;
+
+	// Someone going by at least this fast (cm/s) within this far (cm) draws the eyes at once, not again within this long of
+	// the last time (seconds).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionMoverSpeedCm = 60.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionMoverRadiusCm = 900.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionMoverAgainSeconds = 5.f;
+
+	// How far the head and waist together turn to it at most (degrees), and how quickly they come round.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionTurnMaxDegrees = 80.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Attention")
+	float AttentionTurnInterpSpeed = 4.5f;
 
 	// How quickly the face goes over from one look to the next (per second).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
@@ -1229,10 +1364,39 @@ private:
 	float LegLogChestSpeed = 0.f;
 	float LegLogLeanMin = 0.f;
 	float LegLogLeanMax = 0.f;
-	void UpdateClutch(float DeltaTime,const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);
+	void UpdateClutch(float DeltaTime, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& BodyFrame);
+	// The chest's frame, X the way the chest faces, Z up it, whether it stands or lies.
+	FTransform ChestFrame() const;
 	// The way a holding hand's fingers run over the skin at a place: from its shoulder on, with most of the drop to a place
-	// below the shoulder taken out.
-	FVector ClutchLineFrom(const FVector& Shoulder, const FVector& PointWorld, const FVector& OutwardWorld) const;
+	// below the shoulder (down the body, Up being up it) taken out.
+	FVector ClutchLineFrom(const FVector& Shoulder, const FVector& PointWorld, const FVector& OutwardWorld, const FVector& Up) const;
+	// Where each hand holds, the place it holds and the way out of the body there, in the chest's frame: they go with the body.
+	FVector ClutchTargetIn[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector ClutchPlaceIn[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector ClutchOutwardIn[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector ClutchUp = FVector::UpVector;
+	// Dev: the worst each holding hand does (aedir.ClutchWatch).
+	void WatchClutch(float DeltaTime, const FTransform& BodyFrame);
+	struct FAedirClutchWatch
+	{
+		FVector LastHand = FVector::ZeroVector;
+		FVector LastElbow = FVector::ZeroVector;
+		FQuat LastTurn = FQuat::Identity;
+		bool bValid = false;
+		int32 Frames = 0;
+		int32 Behind = 0;
+		int32 Fast = 0;
+		int32 Spin = 0;
+		int32 Bent = 0;
+		float MostBehind = -1000.f;
+		float Fastest = 0.f;
+		float MostSpin = 0.f;
+		float MostBent = 0.f;
+		double OffSum = 0.0;
+		double PoseOffSum = 0.0;
+	};
+	FAedirClutchWatch ClutchWatch[2];
+	double NextClutchWatchLog = 0.0;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirCreature> CreatureOwner;
@@ -1335,6 +1499,16 @@ private:
 	float NextEyeSearch = 0.f;
 	float FaceLastExertion = 0.f;
 	TWeakObjectPtr<AActor> EyeActor;
+	// Where the attention is of one nobody plays, and where that turns the head and waist to about the body.
+	void UpdateAttention(float DeltaTime);
+	bool bAttentionOn = false;
+	TWeakObjectPtr<AActor> AttentionActor;
+	FVector AttentionPoint = FVector::ZeroVector;
+	double NextAttentionAt = 0.0;
+	double NextAttentionMoverLook = 0.0;
+	double LastAttentionMover = -100.0;
+	float AttentionYaw = 0.f;
+	float AttentionPitch = 0.f;
 	FVector EyePoint = FVector::ZeroVector;
 	float EyeAlphaNow = 0.f;
 	// What the fists' arms hold up, for the pose.

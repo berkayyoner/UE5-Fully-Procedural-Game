@@ -187,6 +187,7 @@ void FAedirProceduralAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float D
 	}
 
 	GaitData = Gait->GetGaitState();
+	PoseDeltaSeconds = DeltaSeconds;
 	Gait->FillBoneNames(BoneNameSet);
 
 	LeftFingerBoneNames = Instance->LeftFingerBoneNames;
@@ -227,7 +228,10 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 		{
 			FCSPose<FCompactPose> LimpPose;
 			LimpPose.InitPose(Output.Pose);
-			ApplyLimpPose(LimpPose, GetRequiredBones());
+			FCompactPose RefLimpCopy = Output.Pose;
+			FCSPose<FCompactPose> RefLimpPose;
+			RefLimpPose.InitPose(RefLimpCopy);
+			ApplyLimpPose(LimpPose, RefLimpPose, GetRequiredBones());
 			ApplyFace(Output, LimpPose);
 			FCSPose<FCompactPose>::ConvertComponentPosesToLocalPosesSafe(LimpPose, Output.Pose);
 		}
@@ -526,8 +530,8 @@ void FAedirProceduralAnimProxy::ApplyFace(FPoseContext& Output, FCSPose<FCompact
 	const FVector Forward = Turn.RotateVector(ActorToMesh.RotateVector(FVector::ForwardVector));
 	const FVector Up = Turn.RotateVector(ActorToMesh.RotateVector(FVector::UpVector));
 	const FVector Left = Turn.RotateVector(ActorToMesh.RotateVector(-FVector::RightVector));
-	const FVector EyesAt = HeadNow.GetLocation() + Forward * 9.0 + Up * 7.0;
-	const FVector Dir = (MeshToWorld.InverseTransformPosition(GaitData.EyeTargetWorld) - EyesAt).GetSafeNormal();
+	// Taken about the head as it really is, not about the one of this pose: lying, the two are far apart.
+	const FVector Dir = HeadNow.GetRotation().RotateVector(GaitData.EyeDirInHead).GetSafeNormal();
 	if (Dir.IsNearlyZero())
 	{
 		return;
@@ -550,6 +554,7 @@ void FAedirProceduralAnimProxy::ApplyClutchHand(FCSPose<FCompactPose>& CSPose, F
 	const float Alpha = FMath::Clamp(GaitData.ClutchHandAlpha[Slot], 0.f, 1.f);
 	if (Alpha <= 0.01f)
 	{
+		ClutchTwistKept[Slot] = 0.f;
 		return;
 	}
 	const TCHAR* Side = Slot == 0 ? TEXT("_l") : TEXT("_r");
@@ -595,6 +600,46 @@ void FAedirProceduralAnimProxy::ApplyClutchHand(FCSPose<FCompactPose>& CSPose, F
 		const FVector Forearm = (CSPose.GetComponentSpaceTransform(Hand).GetLocation() - CSPose.GetComponentSpaceTransform(Radius).GetLocation()).GetSafeNormal();
 		const double SideNow = SideAngle(Turned.GetAxisX(), TurnedPalm, Forearm);
 		Turn = (FQuat(TurnedPalm, -(SideNow - RestSide) * (1.0 - SideKeep)) * Turn).GetNormalized();
+	}
+	// On the forearm the hand turns and bends only as far as a wrist and a forearm go. The turn keeps to the side it is on
+	// and changes only so fast: near half a turn the shorter way flips from one side to the other, and the hand spun.
+	if (Radius.IsValid())
+	{
+		const FTransform RadiusNow = CSPose.GetComponentSpaceTransform(Radius);
+		const FVector Axis = (CSPose.GetComponentSpaceTransform(Hand).GetLocation() - RadiusNow.GetLocation()).GetSafeNormal();
+		const FQuat RestInForearm = RefCSPose.GetComponentSpaceTransform(Radius).GetRotation().Inverse() * RefCSPose.GetComponentSpaceTransform(Hand).GetRotation();
+		const FQuat RestNow = RadiusNow.GetRotation() * RestInForearm;
+		const FQuat OnForearm = (Turn * CSPose.GetComponentSpaceTransform(Hand).GetRotation() * RestNow.Inverse()).GetNormalized();
+		if (!Axis.IsNearlyZero())
+		{
+			FQuat Swing;
+			FQuat Twist;
+			OnForearm.ToSwingTwist(Axis, Swing, Twist);
+			const double TwistWanted = FMath::RadiansToDegrees(FMath::UnwindRadians(2.0 * FMath::Atan2(FVector::DotProduct(FVector(Twist.X, Twist.Y, Twist.Z), Axis), Twist.W)));
+			float& Kept = ClutchTwistKept[Slot];
+			// The one of its equals a turn apart nearest to where it is.
+			double Wanted = TwistWanted;
+			while (Wanted - Kept > 180.0)
+			{
+				Wanted -= 360.0;
+			}
+			while (Wanted - Kept < -180.0)
+			{
+				Wanted += 360.0;
+			}
+			const float Most = FMath::Max(GaitData.ClutchWristTwistDegrees, 1.f);
+			Kept = FMath::FInterpConstantTo(Kept, FMath::Clamp(static_cast<float>(Wanted), -Most, Most), PoseDeltaSeconds, GaitData.ClutchWristTwistSpeed);
+			FVector BendAxis;
+			double BendAngle = 0.0;
+			Swing.GetNormalized().ToAxisAndAngle(BendAxis, BendAngle);
+			BendAngle = FMath::UnwindRadians(BendAngle);
+			BendAngle = FMath::Clamp(BendAngle, -FMath::DegreesToRadians(static_cast<double>(GaitData.ClutchWristBendDegrees)), FMath::DegreesToRadians(static_cast<double>(GaitData.ClutchWristBendDegrees)));
+			const FQuat Limited = FQuat(BendAxis, BendAngle) * FQuat(Axis, FMath::DegreesToRadians(Kept)) * RestNow;
+			FTransform HandLimited = CSPose.GetComponentSpaceTransform(Hand);
+			HandLimited.SetRotation(FQuat::Slerp(HandLimited.GetRotation(), Limited, FMath::Min(Alpha * 2.f, 1.f)).GetNormalized());
+			CSPose.SetComponentSpaceTransform(Hand, HandLimited);
+			return;
+		}
 	}
 	RotateBone(CSPose, Hand, Turn);
 }
@@ -1629,7 +1674,7 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<
 	CSPose.SetComponentSpaceTransform(Foot, NewFoot);
 }
 
-void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones) const
+void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones)
 {
 	// Every turn is in the body's own frame, forward bends a positive pitch for the limbs hanging down and a negative one for
 	// the back; each bone is turned after its parent, on top of what it inherited.
@@ -1678,6 +1723,19 @@ void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, con
 	}
 	Turn(BoneNameSet.Neck, GaitData.NeckLookRotation);
 	Turn(BoneNameSet.Head, GaitData.HeadLookRotation);
+	// A hand held to a hurt place, carried from the chest as it lies onto the chest of this pose.
+	const FCompactPoseBoneIndex Chest = ResolveCompactBone(Bones, TEXT("spine_05"));
+	const FTransform ChestPose = Chest.IsValid() ? CSPose.GetComponentSpaceTransform(Chest) : FTransform::Identity;
+	for (int32 Slot = 0; Slot < 2 && Chest.IsValid(); ++Slot)
+	{
+		const FVector OutwardMesh = ActorToMesh.RotateVector(Slot == 0 ? -FVector::RightVector : FVector::RightVector);
+		const FVector HandWorld = MeshToWorld.TransformPosition(ChestPose.TransformPosition(GaitData.ClutchChestLocal[Slot]));
+		GaitData.ClutchPalmWorld[Slot] = MeshToWorld.TransformVectorNoScale(ChestPose.TransformVectorNoScale(GaitData.ClutchPalmChest[Slot]));
+		GaitData.ClutchFingersWorld[Slot] = MeshToWorld.TransformVectorNoScale(ChestPose.TransformVectorNoScale(GaitData.ClutchFingersChest[Slot]));
+		ApplyArmReach(CSPose, Bones, Slot == 0 ? BoneNameSet.LeftHumerus : BoneNameSet.RightHumerus, Slot == 0 ? BoneNameSet.LeftRadius : BoneNameSet.RightRadius, Slot == 0 ? BoneNameSet.LeftHand : BoneNameSet.RightHand,
+			HandWorld, GaitData.ClutchDownAlpha[Slot], OutwardMesh, ActorToMesh.RotateVector(-FVector::UpVector), ActorToMesh.RotateVector(FVector::ForwardVector),
+			Slot == 0 ? GaitData.LeftElbowHint : GaitData.RightElbowHint, Slot == 0 ? GaitData.LeftElbowHintAlpha : GaitData.RightElbowHintAlpha);
+	}
 	ApplyFistArm(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.FistArmHandWorld[1], GaitData.FistArmElbowWorld[1], GaitData.FistArmAlpha[1], GaitData.FistArmTurn[1],
 		GaitData.FistArmArmed[1], GaitData.FistArmBladeAhead[1], GaitData.FistArmItemInHand[1], GaitData.FistArmBladeBendDegrees,
 		FVector::ZeroVector, GaitData.FistArmBladeAim[1], GaitData.FistArmBladeWristUp[1], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[1]),
@@ -1686,6 +1744,19 @@ void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, con
 		GaitData.FistArmArmed[0], GaitData.FistArmBladeAhead[0], GaitData.FistArmItemInHand[0], GaitData.FistArmBladeBendDegrees,
 		FVector::ZeroVector, GaitData.FistArmBladeAim[0], GaitData.FistArmBladeWristUp[0], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[0]),
 		MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeAimWay[0]));
+	ApplyClutchHand(CSPose, RefCSPose, Bones, 0);
+	ApplyClutchHand(CSPose, RefCSPose, Bones, 1);
+	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
+	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.RightRadius, BoneNameSet.RightHand, TEXT("_r"));
+	// Where this pose has the hands on its chest, for the dev watch.
+	for (int32 Slot = 0; Slot < 2 && Chest.IsValid(); ++Slot)
+	{
+		const FCompactPoseBoneIndex HandBone = ResolveCompactBone(Bones, Slot == 0 ? BoneNameSet.LeftHand : BoneNameSet.RightHand);
+		if (HandBone.IsValid())
+		{
+			PoseHandOnChest[Slot] = CSPose.GetComponentSpaceTransform(Chest).InverseTransformPosition(CSPose.GetComponentSpaceTransform(HandBone).GetLocation());
+		}
+	}
 	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
 	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
 }
@@ -1698,6 +1769,11 @@ UAedirGaitComponent* UAedirProceduralAnimInstance::GetGaitComponent() const
 FVector UAedirProceduralAnimInstance::DevGetPoseBlade(int32 Stage, int32 HandSlot)
 {
 	return GetProxyOnGameThread<FAedirProceduralAnimProxy>().DevBladeWorld[FMath::Clamp(Stage, 0, 2)][FMath::Clamp(HandSlot, 0, 1)];
+}
+
+FVector UAedirProceduralAnimInstance::GetPoseHandOnChest(int32 HandSlot)
+{
+	return GetProxyOnGameThread<FAedirProceduralAnimProxy>().PoseHandOnChest[FMath::Clamp(HandSlot, 0, 1)];
 }
 
 FTransform UAedirProceduralAnimInstance::GetPoseArmWorld(int32 HandSlot, int32 Part)

@@ -49,6 +49,10 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Body")
 	TObjectPtr<USkeletalMeshComponent> Face;
 
+	// The animation that works the face's rig.
+	UPROPERTY(Transient)
+	TSubclassOf<UAnimInstance> FaceAnim;
+
 	// Undyed linen braies to the knee, worn under everything (the body's own underwear is a modern cut): put away while
 	// something worn covers the thighs, as trousers do.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Body")

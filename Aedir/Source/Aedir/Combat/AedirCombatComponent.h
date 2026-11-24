@@ -82,6 +82,16 @@ struct AEDIR_API FAedirKickNetState
 
 	UPROPERTY()
 	float LiftCm = 0.f;
+
+	// Landed: where the foot was then and when in the kick; from there it springs back to where it started.
+	UPROPERTY()
+	bool bLanded = false;
+
+	UPROPERTY()
+	FVector_NetQuantize LandedWorld = FVector::ZeroVector;
+
+	UPROPERTY()
+	float LandedElapsed = 0.f;
 };
 
 // Local simulation state of one arm. Not replicated; the server copy is published through FAedirArmNetState.
@@ -315,6 +325,13 @@ public:
 	// How thick a bare fist is where it strikes, in cm. A held thing strikes with its own shape.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float FistRadius = 5.f;
+
+	// Something fixed is felt by a fist this much wider and this much further out than a body is (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact", meta=(ClampMin="0"))
+	float FistFixedMarginCm = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact", meta=(ClampMin="0"))
+	float FistFixedReachCm = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat")
 	float SwingCooldown = 0.15f;
@@ -562,7 +579,11 @@ public:
 	// A kick pushes the body it lands on by this share of what its blow carries: it shoves and fells, it does not throw a
 	// body through the air.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
-	float KickPushShare = 0.5f;
+	float KickPushShare = 0.35f;
+
+	// The foot that has landed is drawn back to the ground in this long (seconds).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0.05"))
+	float KickRecoilSeconds = 0.4f;
 
 	// At the end of its swing the foot is this far above the level 90 cm below the hip, with the view level; looking up
 	// lifts it up to KickMaxLiftCm more.
@@ -571,6 +592,16 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
 	float KickMaxLiftCm = 55.f;
+
+	// Looking down, or at somebody lying before it within this far ahead and to the side, it goes lower, by at most this.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
+	float KickMaxDropCm = 68.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
+	float KickDownReachCm = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
+	float KickDownSideCm = 35.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
 	float KickCooldown = 1.2f;
@@ -587,14 +618,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
 	float KickOffFootBalancePerSecond = 2.f;
-
-	// A body lying on the ground (fallen, senseless or dead) that the kicking leg runs into is shoved along, not launched: while
-	// the kick lasts no part of it is let go faster than this along the ground, nor up off it.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
-	float KickDownBodyMaxSpeedCm = 180.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
-	float KickDownBodyUpMaxSpeedCm = 90.f;
 
 	// A fist's or a weapon's speed is taken over at least this many seconds, never from a single frame alone.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
@@ -931,6 +954,8 @@ private:
 	// The arm is stopped where it met a body: it goes back to where it was before this frame's move and loses its speed,
 	// a share of it thrown back the other way.
 	void BlockAgainstBody(FAedirArmDynamics& Arm, float Bounce);
+	// A bare fist thrown at something fixed: a wall, a tree, a rock.
+	void StrikeFixedThing(EAedirHand Hand, FAedirArmDynamics& Arm, const FVector& From, const FVector& To, const FVector& PrevTo, float RadiusCm);
 
 	// What the hand holds is kept out of the body that holds it: the blade turns aside from the trunk, the head and the legs.
 	void KeepOutOfOwnBody(EAedirHand Hand, FAedirArmDynamics& Arm);
@@ -1170,8 +1195,9 @@ private:
 	float KickCooldownRemaining = 0.f;
 	float KickPoseAlpha = 0.f;
 	bool bKickStruck = false;
+	bool bKickPrevShin = false;
+	FVector KickPrevShinWorld = FVector::ZeroVector;
 
-	void LimitKickedDownBodies();
 	FVector KickPrevFootWorld = FVector::ZeroVector;
 	// How fast and which way the body went over the ground as the kick began, on the ground; lost once, as the leg comes up.
 	float KickLoggedLag = 0.f;

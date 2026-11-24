@@ -250,7 +250,7 @@ public:
 	float FistWorldSoundMinSpeed = 150.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", Units="cm/s"))
-	float FistWorldSoundMaxSpeed = 1300.f;
+	float FistWorldSoundMaxSpeed = 700.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", Units="cm/s"))
 	float FistWorldHarmlessSpeed = 150.f;
@@ -264,9 +264,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", ClampMax="1"))
 	float FistWorldBounceShare = 0.3f;
 
-	// The fist swept against fixed things is this round (cm).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0.5"))
-	float FistKnockRadiusCm = 7.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", Units="cm/s"))
+	float FistWorldBounceMaxSpeed = 250.f;
+
+	// Called as a fist meets something fixed, at the speed it came in with; gives back the harm done to the hand.
+	float KnockFist(FName Bone, float Speed, const FHitResult& Hit);
 
 	// A body already lying on the ground takes this share of the push of a blow or a kick a standing one would: it has
 	// the ground under it and nothing to be thrown off, so it is shoved, not sent flying.
@@ -285,24 +287,6 @@ public:
 	// simulation afresh.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", Units="cm"))
 	float HairResetMeshMoveCm = 20.f;
-
-	// Down but awake, a hand goes to where a blow of at least DownClutchMinPush landed and holds it there, as standing:
-	// for DownClutchMinSeconds to DownClutchMaxSeconds (the harder the blow, the longer, full at DownClutchFullPush), pulled
-	// there by a spring of DownClutchSpringPerSecondSq, never a hand in use.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
-	float DownClutchMinPush = 150.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
-	float DownClutchFullPush = 400.f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
-	float DownClutchMinSeconds = 1.5f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
-	float DownClutchMaxSeconds = 3.5f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down")
-	float DownClutchSpringPerSecondSq = 220.f;
 
 	// Getting up, the hands rest this high over the ground (their middle, in cm for a body of size 1): pulled lower, into
 	// it, they shook against it.
@@ -929,6 +913,9 @@ public:
 	// with: only one may; the other takes the weight alone. -1 for both on the ground.
 	int32 GetHoistFreeHand() const { return bHoisting ? HoistFreeHand : -1; }
 
+	// Getting up, this hand (0 left, 1 right) is needed on the ground and not the body's own to fight with.
+	bool IsHandOnGround(int32 Side) const { return bHoisting ? HoistFreeHand != Side : IsGettingUp(); }
+
 	// Walked or run into by someone while getting up.
 	void BumpedGettingUp(const class AAedirCreature* By, const FVector& Point, FName Part = NAME_None);
 
@@ -1307,12 +1294,6 @@ private:
 	void RunIntoWall(const FVector& OwnerVelocity, const FHitResult& Hit, class UAedirStatsComponent* StatsComponent, float Athletism);
 	// Lying loose, each part is watched for being stopped short against the ground or something fixed.
 	void WatchPartImpacts();
-	// Standing, each hand swept from where it was to where it is against fixed things, and knocked on what it meets.
-	void WatchFistKnocks();
-	void KnockFist(FName Bone, float Speed, const FHitResult& Hit);
-	FVector LastFistAt[2] = { FVector::ZeroVector, FVector::ZeroVector };
-	bool bLastFistValid[2] = { false, false };
-	double LastFistKnock[2] = { -1.0, -1.0 };
 	TArray<FVector> LastPartVelocity;
 	double NextStumbleLogTime = 0.0;
 	void UpdateHitSway(float DeltaTime);
@@ -1366,12 +1347,10 @@ private:
 	float HoistHeldSeconds = 0.f;
 	int32 HoistHand = -1;
 	int32 HoistFreeHand = -1;
-	// Down, a hand held to a hurt place: on which bone, where on it, for how long still.
-	void HoldHurtWhileDown(float DeltaTime);
-	FName DownClutchBone[2];
-	FVector DownClutchLocal[2] = { FVector::ZeroVector, FVector::ZeroVector };
-	float DownClutchLeft[2] = { 0.f, 0.f };
-	double DownBlowSeen = 0.0;
+	// The leg of a kick goes through other bodies: what it strikes is moved by the blow alone, not by the force that drives
+	// the leg, which threw bodies about.
+	void UpdateKickLegContacts();
+	int32 KickThroughLeg = -1;
 	FVector ChestFaceLocal = FVector::ZeroVector;
 	float SpawnPosedLeft = 0.f;
 	float SpawnAge = 0.f;
@@ -1479,7 +1458,9 @@ private:
 	// holds begins, and drew every limb and the trunk shorter once the physics held the body: each joint is put back on
 	// the child bone's own origin, as the skeleton has it.
 	void FitJointsToSkeleton();
-	void ApplyJointLimits(bool bRagdoll);
+	void ApplyJointLimits(bool bRagdoll, bool bArmsOnly = false);
+	// Lying awake, the arms' joints have the room they have standing.
+	bool bDownArmsAwake = false;
 	TArray<FConstraintProfileProperties> LooseJointLimits;
 	FString AppliedFreeJoint;
 	FVector AppliedArmTuning = FVector::ZeroVector;

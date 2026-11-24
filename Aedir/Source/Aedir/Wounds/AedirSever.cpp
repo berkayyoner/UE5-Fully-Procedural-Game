@@ -4,6 +4,7 @@
 
 #include "Aedir.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Creature/AedirCreature.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Actor.h"
@@ -114,11 +115,14 @@ AActor* AedirSever::CutLimb(USkeletalMeshComponent* Body, FName SeverBone, const
 	}
 
 	// What is worn over the limb goes with it: every piece of armour or clothing that follows the body's pose.
+	// The face runs its own animation on the body's bones, and is cut with it all the same.
+	const AAedirCreature* Creature = Cast<AAedirCreature>(Body->GetOwner());
+	const USkeletalMeshComponent* FaceMesh = Creature ? Creature->Face.Get() : nullptr;
 	TArray<USkeletalMeshComponent*> Layers = { Body };
 	for (USceneComponent* Child : Body->GetAttachChildren())
 	{
 		USkeletalMeshComponent* Worn = Cast<USkeletalMeshComponent>(Child);
-		if (Worn && Worn->LeaderPoseComponent.Get() == Body && Worn->IsVisible() && Worn->GetSkeletalMeshAsset())
+		if (Worn && (Worn->LeaderPoseComponent.Get() == Body || Worn == FaceMesh) && Worn->IsVisible() && Worn->GetSkeletalMeshAsset())
 		{
 			Layers.Add(Worn);
 		}

@@ -721,3 +721,13 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - A fist driven into something fixed knocks as on a forearm (30 or 60 by speed), springs back off it and is hurt by it
 - The trousers' cord is tied in a smaller bow
 - Dev: PlaceWall puts a fixed block ahead to strike
+- A fist thrown at a wall, a tree or a rock is felt where the hand's own body meets it, by the speed it came in at, so a punch thrown with the mouse knocks, hurts the hand and springs back every time
+- Getting up, one hand at most, the one whose button is held, stays off the ground to guard and punch with while the other bears the body
+- A kick moves what it strikes as a punch does: its leg goes through bodies instead of driving them along, it springs back off what it lands on, and it goes down at somebody lying before it
+- A hand held to a hurt place is kept in the chest's frame, never behind the shoulders, out of reach or inside the chest, and turns on its forearm only as far and as fast as a wrist does
+- A hurt forearm is brought in before the belly for the other hand to hold it
+- Lying awake, hurt places are held by the hands as standing, the arms' joints with the room they have standing, and the face shows pain, strain and a fight
+- A wound that still bleeds and a broken limb keep the face in pain
+- Those nobody plays look about with eyes, head and waist without turning the body, at creatures, things and the land, about every 3 seconds, and at once at somebody going by
+- The face is cut with a severed head though it runs its own animation
+- Dev: FaceSolid lists the fixed things about and stands the player before one, aedir.NpcStill holds everyone still, aedir.ClutchWatch logs the worst a holding hand does

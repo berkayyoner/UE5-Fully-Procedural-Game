@@ -513,10 +513,9 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 	}
 	WatchPartImpacts();
-	WatchFistKnocks();
 	UpdateHoist(DeltaTime);
 	LookWhileDown();
-	HoldHurtWhileDown(DeltaTime);
+	UpdateKickLegContacts();
 	{
 		// Just hauled up, the capsule stays under the body while it finds its feet; walked or pushed off, it would leave the
 		// body behind, and the body would then be put back after it in one jump.
@@ -747,6 +746,15 @@ void UAedirBalanceComponent::UpdateDownMuscles()
 	const float Share = bHoisting ? 1.f : DownAwakeMotorShare;
 	const float Senses = Breath * (1.f - 0.6f * GetDazeFactor());
 	BodyControl->SetDownAwake(bSenseless ? 0.f : Share * Senses, bSenseless ? 0.f : (bHoisting ? 1.f : DownAwakeArmShare) * Senses);
+	BodyControl->SetHoistFreeArm(bHoisting ? HoistFreeHand : -1);
+	if (const bool bAwakeNow = bIsRagdoll && !bSenseless; bAwakeNow != bDownArmsAwake)
+	{
+		bDownArmsAwake = bAwakeNow;
+		if (bIsRagdoll)
+		{
+			ApplyJointLimits(true, true);
+		}
+	}
 }
 
 void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
@@ -3031,98 +3039,37 @@ void UAedirBalanceComponent::LookWhileDown()
 	}
 }
 
-void UAedirBalanceComponent::HoldHurtWhileDown(float DeltaTime)
+void UAedirBalanceComponent::UpdateKickLegContacts()
 {
-	const UAedirStatsComponent* StatsComponent = FindStats();
-	const bool bAwake = !(StatsComponent && (StatsComponent->IsDead() || StatsComponent->IsDying() || StatsComponent->IsKnockedOut()));
-	if (!bIsRagdoll || bHoisting || !bAwake || !BodyMesh || !CharacterOwner || !IsAuthoritative())
+	const AAedirCreature* Self = Cast<AAedirCreature>(CharacterOwner);
+	bool bLeft = false;
+	FVector Foot = FVector::ZeroVector;
+	float Alpha = 0.f;
+	// Until the leg is wholly back from the kick: let solid again inside a body it would be thrown out of it.
+	const int32 Leg = Self && Self->Combat && Self->Combat->GetKickPose(bLeft, Foot, Alpha) ? (bLeft ? 0 : 1) : -1;
+	if (Leg == KickThroughLeg || !BodyMesh)
 	{
-		DownClutchLeft[0] = DownClutchLeft[1] = 0.f;
-		DownBlowSeen = RecentBlows.Num() ? RecentBlows.Last().Time : DownBlowSeen;
 		return;
 	}
-	const AAedirCreature* Self = Cast<AAedirCreature>(CharacterOwner);
-	const UAedirFistArms* Fists = CharacterOwner->FindComponentByClass<UAedirFistArms>();
-	const auto Busy = [&](int32 Side)
+	const auto Let = [this](int32 Side, ECollisionResponse Response)
 	{
-		const EAedirHand Hand = Side == 0 ? EAedirHand::Left : EAedirHand::Right;
-		return (Fists && Fists->IsHeld(Hand)) || (Self && Self->Interaction && Self->Interaction->GetHeldItem(Hand)) || (Self && Self->Wounds && Self->Wounds->HasUselessArm(Side == 0));
-	};
-	// A new blow hard enough: the hand that reaches it goes there, the head and the thighs by their own side, the chest, the
-	// neck, a shoulder or an arm by the other.
-	const FVector BodyRight = (BodyMesh->GetBoneLocation(TEXT("thigh_r")) - BodyMesh->GetBoneLocation(TEXT("thigh_l"))).GetSafeNormal();
-	const FVector Middle = BodyMesh->GetBoneLocation(TEXT("spine_03"));
-	for (const FAedirBlowLanded& Blow : RecentBlows)
-	{
-		if (Blow.Time <= DownBlowSeen)
+		for (const TCHAR* Part : { TEXT("thigh"), TEXT("calf"), TEXT("foot"), TEXT("ball") })
 		{
-			continue;
-		}
-		DownBlowSeen = Blow.Time;
-		const FString Name = Blow.Bone.ToString();
-		if (Blow.Push < DownClutchMinPush || Name.StartsWith(TEXT("hand")) || Name.StartsWith(TEXT("lowerarm")) || Name.StartsWith(TEXT("calf")) || Name.StartsWith(TEXT("foot")) || BodyMesh->GetBoneIndex(Blow.Bone) == INDEX_NONE)
-		{
-			continue;
-		}
-		const int32 PointSide = FVector::DotProduct(Blow.World - Middle, BodyRight) >= 0.0 ? 1 : 0;
-		const bool bOwnSide = Name.StartsWith(TEXT("head")) || Name.StartsWith(TEXT("thigh")) || Name.StartsWith(TEXT("pelvis"));
-		int32 Side = bOwnSide ? PointSide : 1 - PointSide;
-		if (Busy(Side))
-		{
-			Side = 1 - Side;
-		}
-		if (Busy(Side) || ((Name.StartsWith(TEXT("upperarm")) || Name.StartsWith(TEXT("clavicle"))) && Name.EndsWith(Side == 0 ? TEXT("_l") : TEXT("_r"))))
-		{
-			continue;
-		}
-		const float Hard = FMath::Clamp((Blow.Push - DownClutchMinPush) / FMath::Max(DownClutchFullPush - DownClutchMinPush, 1.f), 0.f, 1.f);
-		DownClutchBone[Side] = Blow.Bone;
-		DownClutchLocal[Side] = Blow.Local;
-		DownClutchLeft[Side] = FMath::Lerp(DownClutchMinSeconds, DownClutchMaxSeconds, Hard);
-		UE_LOG(LogAedir, Log, TEXT("[Clutch] %s lying down holds its %s hand to %s for %.1f s"), *GetNameSafe(GetOwner()), Side == 0 ? TEXT("left") : TEXT("right"), *Blow.Bone.ToString(), DownClutchLeft[Side]);
-	}
-	const float Gravity = GetWorld() ? FMath::Abs(GetWorld()->GetGravityZ()) : 980.f;
-	for (int32 Side = 0; Side < 2; ++Side)
-	{
-		DownClutchLeft[Side] = Busy(Side) ? 0.f : FMath::Max(DownClutchLeft[Side] - DeltaTime, 0.f);
-		const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
-		FBodyInstance* HandBody = BodyMesh->GetBodyInstance(FName(FString(TEXT("hand")) + Suffix));
-		if (DownClutchLeft[Side] <= 0.f || !HandBody || !HandBody->IsInstanceSimulatingPhysics() || BodyMesh->GetBoneIndex(DownClutchBone[Side]) == INDEX_NONE)
-		{
-			continue;
-		}
-		// Held on the skin over the place, the palm on it, and let go of gently at the end.
-		const FTransform BoneWorld = BodyMesh->GetBoneTransform(DownClutchBone[Side]);
-		const FVector Point = BoneWorld.TransformPosition(DownClutchLocal[Side]);
-		const FVector Out = (Point - BoneWorld.GetLocation()).GetSafeNormal();
-		const FVector Spot = Point + Out * (5.f * static_cast<float>(BodyMesh->GetComponentScale().Z));
-		const float Share = FMath::Clamp(DownClutchLeft[Side] / 0.4f, 0.f, 1.f);
-		const float K = DownClutchSpringPerSecondSq;
-		const FVector HandAt = HandBody->GetUnrealWorldTransform().GetLocation();
-		const FVector Accel = ((Spot - HandAt) * K - HandBody->GetUnrealWorldVelocity() * (2.f * FMath::Sqrt(K)) + FVector(0.f, 0.f, Gravity * 0.5f)) * Share;
-		float ArmMass = 0.f;
-		for (const TCHAR* Part : { TEXT("hand"), TEXT("lowerarm"), TEXT("upperarm") })
-		{
-			if (const FBodyInstance* Piece = BodyMesh->GetBodyInstance(FName(FString(Part) + Suffix)))
+			if (FBodyInstance* Body = BodyMesh->GetBodyInstance(FName(*FString::Printf(TEXT("%s%s"), Part, Side == 0 ? TEXT("_l") : TEXT("_r")))))
 			{
-				ArmMass += Piece->GetBodyMass();
+				Body->SetResponseToChannel(ECC_PhysicsBody, Response);
 			}
 		}
-		// The arm pulls the hand there off the body it holds: the place held takes the pull back, or the hand dragged the
-		// whole body round on the ground after it.
-		const FVector Pull = Accel.GetClampedToMaxSize(3000.f) * FMath::Max(ArmMass, HandBody->GetBodyMass());
-		HandBody->AddForce(Pull, true, false);
-		FBodyInstance* Held = BodyMesh->GetBodyInstance(DownClutchBone[Side]);
-		FBodyInstance* Shoulder = BodyMesh->GetBodyInstance(FName(FString(TEXT("upperarm")) + Suffix));
-		if (Held && Held->IsInstanceSimulatingPhysics() && Held != HandBody)
-		{
-			Held->AddForceAtPosition(-Pull * 0.5f, Point, true, false);
-		}
-		if (Shoulder && Shoulder->IsInstanceSimulatingPhysics())
-		{
-			Shoulder->AddForce(-Pull * (Held && Held != HandBody ? 0.5f : 1.f), true, false);
-		}
+	};
+	if (KickThroughLeg >= 0)
+	{
+		Let(KickThroughLeg, ECR_Block);
 	}
+	if (Leg >= 0)
+	{
+		Let(Leg, ECR_Ignore);
+	}
+	KickThroughLeg = Leg;
 }
 
 void UAedirBalanceComponent::StopHoist(const TCHAR* Why)
@@ -3481,7 +3428,7 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 	{
 		const AAedirCreature* Self = Cast<AAedirCreature>(CharacterOwner);
 		const UAedirFistArms* Fists = CharacterOwner->FindComponentByClass<UAedirFistArms>();
-		const auto Pressed = [&](int32 Side) { return Fists && Fists->IsHeld(Side == 0 ? EAedirHand::Left : EAedirHand::Right); };
+		const auto Pressed = [&](int32 Side) { return Fists && Fists->IsButtonHeld(Side == 0 ? EAedirHand::Left : EAedirHand::Right); };
 		const auto HeldIn = [&](int32 Side) { return Self && Self->Interaction ? Self->Interaction->GetHeldItem(Side == 0 ? EAedirHand::Left : EAedirHand::Right) : nullptr; };
 		const int32 Was = HoistFreeHand;
 		HoistFreeHand = Pressed(1) ? 1 : Pressed(0) ? 0 : (HoistFreeHand >= 0 && HeldIn(HoistFreeHand)) ? HoistFreeHand : HeldIn(1) ? 1 : HeldIn(0) ? 0 : -1;
@@ -3866,7 +3813,7 @@ void UAedirBalanceComponent::FitJointsToSkeleton()
 	}
 }
 
-void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll)
+void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll, bool bArmsOnly)
 {
 	if (!BodyMesh)
 	{
@@ -3906,7 +3853,13 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll)
 		const FString JointName = Joint->JointName.ToString();
 		const bool bBrokenArm = (JointName.StartsWith(TEXT("upperarm")) || JointName.StartsWith(TEXT("lowerarm")) || JointName.StartsWith(TEXT("hand")))
 			&& ((JointName.EndsWith(TEXT("_l")) && (BrokenArmJoints & 1)) || (JointName.EndsWith(TEXT("_r")) && (BrokenArmJoints & 2)));
-		const bool bLimpJoint = bRagdoll || bBrokenArm;
+		const bool bArmJoint = JointName.StartsWith(TEXT("upperarm")) || JointName.StartsWith(TEXT("lowerarm")) || JointName.StartsWith(TEXT("hand")) || JointName.StartsWith(TEXT("clavicle"));
+		// Down but awake the arms are the body's own to use, with the room they have standing.
+		const bool bLimpJoint = (bRagdoll && !(bArmJoint && bDownArmsAwake)) || bBrokenArm;
+		if (bArmsOnly && !bArmJoint)
+		{
+			continue;
+		}
 		const EAngularConstraintMotion Swing1Motion = Living(bLimpJoint, Loose.ConeLimit.Swing1Motion, Loose.ConeLimit.Swing1LimitDegrees, Swing1);
 		const EAngularConstraintMotion Swing2Motion = Living(bLimpJoint, Loose.ConeLimit.Swing2Motion, Loose.ConeLimit.Swing2LimitDegrees, Swing2);
 		const EAngularConstraintMotion TwistMotion = Living(bLimpJoint, Loose.TwistLimit.TwistMotion, Loose.TwistLimit.TwistLimitDegrees, Twist);
@@ -4292,65 +4245,24 @@ void UAedirBalanceComponent::HurtPartOnImpact(FName Bone, const FVector& NormalI
 	UE_LOG(LogAedir, Log, TEXT("[Impact] %s %s hits %s at %.0f cm/s, %.0f J, %.1f damage"), *GetNameSafe(GetOwner()), *Bone.ToString(), *GetNameSafe(Hit.GetActor()), Speed, Joules, (Speed - Harmless) * ImpactDamagePerSpeed);
 }
 
-void UAedirBalanceComponent::WatchFistKnocks()
+float UAedirBalanceComponent::KnockFist(FName Bone, float Speed, const FHitResult& Hit)
 {
-	UWorld* World = GetWorld();
-	if (bIsRagdoll || !BodyMesh || !World || !IsAuthoritative())
-	{
-		bLastFistValid[0] = bLastFistValid[1] = false;
-		return;
-	}
-	for (int32 Slot = 0; Slot < 2; ++Slot)
-	{
-		const FName Bone = Slot == 0 ? FName(TEXT("hand_l")) : FName(TEXT("hand_r"));
-		const FBodyInstance* Hand = BodyMesh->GetBodyInstance(Bone);
-		if (!Hand)
-		{
-			bLastFistValid[Slot] = false;
-			continue;
-		}
-		// The knuckles: a little on from the wrist along the hand.
-		const FTransform At = Hand->GetUnrealWorldTransform();
-		const FVector Now = At.GetLocation();
-		const FVector Was = LastFistAt[Slot];
-		const bool bWasValid = bLastFistValid[Slot];
-		LastFistAt[Slot] = Now;
-		bLastFistValid[Slot] = true;
-		if (!bWasValid || FVector::DistSquared(Was, Now) < 0.25)
-		{
-			continue;
-		}
-		FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirFistKnock), false, GetOwner());
-		FCollisionObjectQueryParams Types;
-		Types.AddObjectTypesToQuery(ECC_WorldStatic);
-		Types.AddObjectTypesToQuery(ECC_WorldDynamic);
-		FHitResult Hit;
-		if (!World->SweepSingleByObjectType(Hit, Was, Now, FQuat::Identity, Types, FCollisionShape::MakeSphere(FistKnockRadiusCm), Params)
-			|| Cast<AAedirCreature>(Hit.GetActor()) || (Hit.GetComponent() && Hit.GetComponent()->IsSimulatingPhysics()) || Hit.bStartPenetrating)
-		{
-			continue;
-		}
-		const float Dt = World->GetDeltaSeconds();
-		const FVector Velocity = Dt > KINDA_SMALL_NUMBER ? (Now - Was) / Dt : FVector::ZeroVector;
-		const float Speed = static_cast<float>(FVector::DotProduct(Velocity, -Hit.ImpactNormal));
-		if (Speed > FistWorldSoundMinSpeed && World->GetTimeSeconds() - LastFistKnock[Slot] > 0.25)
-		{
-			LastFistKnock[Slot] = World->GetTimeSeconds();
-			KnockFist(Bone, Speed, Hit);
-		}
-	}
-}
-
-void UAedirBalanceComponent::KnockFist(FName Bone, float Speed, const FHitResult& Hit)
-{
-	// A fist driven into something fixed: the knuckles' knock, the hand hurt by it and sprung back off it.
+	// A fist driven into something fixed: the knuckles' knock, the hand hurt by it and sprung back off it, the forearm with it.
 	const float SpeedShare = FMath::Clamp(FMath::GetRangePct(FistWorldSoundMinSpeed, FistWorldSoundMaxSpeed, Speed), 0.f, 1.f);
-	UAedirSfxSubsystem::Play(this, EAedirSfx::PunchForearm, Hit.ImpactPoint, FMath::Lerp(0.5f, 1.f, SpeedShare), FMath::Lerp(0.3f, 0.6f, SpeedShare));
+	UAedirSfxSubsystem::Play(this, EAedirSfx::PunchForearm, Hit.ImpactPoint, FMath::Lerp(0.7f, 1.f, SpeedShare), FMath::Lerp(0.3f, 0.6f, SpeedShare));
 	const FVector Away = Hit.ImpactNormal.GetSafeNormal();
+	const float Back = FMath::Clamp(Speed * FistWorldBounceShare, 0.f, FistWorldBounceMaxSpeed);
+	const FName Forearm(*Bone.ToString().Replace(TEXT("hand"), TEXT("lowerarm")));
 	FBodyInstance* Struck = BodyMesh ? BodyMesh->GetBodyInstance(Bone) : nullptr;
-	if (Struck)
+	FBodyInstance* Behind = BodyMesh ? BodyMesh->GetBodyInstance(Forearm) : nullptr;
+	for (const TPair<FBodyInstance*, float>& Part : { TPair<FBodyInstance*, float>(Struck, 1.f), TPair<FBodyInstance*, float>(Behind, 0.6f) })
 	{
-		Struck->SetLinearVelocity(Away * (Speed * FistWorldBounceShare), true);
+		if (Part.Key && Part.Key->IsInstanceSimulatingPhysics())
+		{
+			// Whatever speed it still has into the thing goes, and it comes off it.
+			const FVector Going = Part.Key->GetUnrealWorldVelocity();
+			Part.Key->SetLinearVelocity(Going - Away * FMath::Min(FVector::DotProduct(Going, Away), 0.0) + Away * (Back * Part.Value), false);
+		}
 	}
 	float Damage = 0.f;
 	if (Speed > FistWorldHarmlessSpeed)
@@ -4368,7 +4280,8 @@ void UAedirBalanceComponent::KnockFist(FName Bone, float Speed, const FHitResult
 			StatsComponent->ApplyDamage(Damage);
 		}
 	}
-	UE_LOG(LogAedir, Log, TEXT("[Impact] %s punches %s with the %s at %.0f cm/s: %.1f damage, sprung back at %.0f cm/s"), *GetNameSafe(GetOwner()), *GetNameSafe(Hit.GetActor()), *Bone.ToString(), Speed, Damage, Speed * FistWorldBounceShare);
+	UE_LOG(LogAedir, Log, TEXT("[Impact] %s punches %s with the %s at %.0f cm/s: %.1f damage, sprung back at %.0f cm/s"), *GetNameSafe(GetOwner()), *GetNameSafe(Hit.GetActor()), *Bone.ToString(), Speed, Damage, Back);
+	return Damage;
 }
 
 void UAedirBalanceComponent::WatchPartImpacts()

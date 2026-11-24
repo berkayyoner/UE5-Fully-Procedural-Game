@@ -115,6 +115,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
 	float HoistArmShare = 0.3f;
 
+	// The arm kept off the ground to fight with while the body gets up has this share of its muscle.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
+	float HoistFreeArmShare = 0.6f;
+
 	// What is left of the muscles of a leg whose bone is broken: it swings loose, still hanging together. A broken arm keeps
 	// what a limp body's arm has (LimpShare).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -166,6 +170,9 @@ public:
 
 	// The leg throwing a kick (0 left, 1 right, -1 none): its foot is driven along the kick much harder than a step.
 	void SetKickLeg(int32 Leg);
+
+	// Getting up, the arm free to fight with (0 left, 1 right, -1 neither).
+	void SetHoistFreeArm(int32 Arm);
 
 	// How much harder a kicking foot is driven than a stepping one.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
@@ -278,6 +285,7 @@ private:
 	FName LeftFootControl;
 	FName RightFootControl;
 	int32 KickLeg = -1;
+	int32 HoistFreeArm = -1;
 	FPhysicsControlData HipData;
 	FName HipModifier;
 	FName LeftFootModifiers[2];
