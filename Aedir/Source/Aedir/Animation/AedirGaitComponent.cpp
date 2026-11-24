@@ -956,6 +956,24 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	};
 	ReadArmShape(EAedirHand::Left, GaitState.LeftWristMinDegrees, GaitState.LeftElbowHint, GaitState.LeftElbowHintAlpha);
 	ReadArmShape(EAedirHand::Right, GaitState.RightWristMinDegrees, GaitState.RightElbowHint, GaitState.RightElbowHintAlpha);
+	// A hand held to a hurt place has its elbow out to its own side, the forearm across the body.
+	for (int32 Slot = 0; Slot < 2; ++Slot)
+	{
+		// Only for a place below the shoulder: up at the face or the neck the elbow is left to hang.
+		const USkeletalMeshComponent* HintBody = CreatureOwner ? CreatureOwner->GetMesh() : nullptr;
+		const float Below = HintBody ? static_cast<float>(HintBody->GetBoneLocation(Slot == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r")).Z - ClutchPlace[Slot].Z) : 0.f;
+		const float Hold = FMath::Clamp(ClutchAlpha[Slot], 0.f, 1.f) * ClutchElbowHintShare
+			* FMath::Clamp(Below / FMath::Max(ClutchElbowHintFullBelowCm * static_cast<float>(ActorTransform.GetScale3D().X), 1.f), 0.f, 1.f);
+		if (Hold <= KINDA_SMALL_NUMBER)
+		{
+			continue;
+		}
+		FVector& Hint = Slot == 0 ? GaitState.LeftElbowHint : GaitState.RightElbowHint;
+		float& HintAlpha = Slot == 0 ? GaitState.LeftElbowHintAlpha : GaitState.RightElbowHintAlpha;
+		const FVector Want = FVector(ClutchElbowHint.X, Slot == 0 ? ClutchElbowHint.Y : -ClutchElbowHint.Y, ClutchElbowHint.Z).GetSafeNormal();
+		Hint = (HintAlpha > KINDA_SMALL_NUMBER ? FMath::Lerp(Hint.GetSafeNormal(), Want, Hold) : Want).GetSafeNormal();
+		HintAlpha = FMath::Max(HintAlpha, Hold);
+	}
 	GaitState.LeftArmLedShare = FMath::FInterpConstantTo(GaitState.LeftArmLedShare, Combat ? Combat->GetArmLedShare(EAedirHand::Left) : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.RightArmLedShare = FMath::FInterpConstantTo(GaitState.RightArmLedShare, Combat ? Combat->GetArmLedShare(EAedirHand::Right) : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.KickLeftLeg = bKickLeftLeg;
@@ -1766,7 +1784,17 @@ namespace
 	}
 }
 
-void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform)
+FVector UAedirGaitComponent::ClutchLineFrom(const FVector& Shoulder, const FVector& PointWorld, const FVector& OutwardWorld) const
+{
+	FVector Line = PointWorld - Shoulder;
+	if (Line.Z < 0.0)
+	{
+		Line.Z *= ClutchFingersDropShare;
+	}
+	return FVector::VectorPlaneProject(Line, OutwardWorld).GetSafeNormal();
+}
+
+void UAedirGaitComponent::UpdateClutch(float DeltaTime,const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform)
 {
 	const USkeletalMeshComponent* Body = CreatureOwner ? CreatureOwner->GetMesh() : nullptr;
 	const UAedirWoundComponent* WoundComponent = CreatureOwner ? CreatureOwner->Wounds.Get() : nullptr;
@@ -1848,7 +1876,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 	const auto WristAt = [&](int32 Slot, const FVector& PointWorld, const FVector& OutwardWorld)
 	{
 		const FVector Shoulder = Body->GetBoneLocation(Slot == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r"));
-		const FVector Back = FVector::VectorPlaneProject(Shoulder - PointWorld, OutwardWorld).GetSafeNormal();
+		const FVector Back = -ClutchLineFrom(Shoulder, PointWorld, OutwardWorld);
 		const float Scale = static_cast<float>(ActorTransform.GetScale3D().X);
 		return PointWorld + (OutwardWorld * ClutchSkinCm + Back * ClutchPalmCm) * Scale;
 	};
@@ -2131,8 +2159,15 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 					NextClutchLogTime = World->GetTimeSeconds() + 0.5;
 					const FVector Palm = Body->GetBoneLocation(Slot == 0 ? TEXT("hand_l") : TEXT("hand_r"));
 					const FVector Hips = Body->GetBoneLocation(TEXT("pelvis"));
-					UE_LOG(LogAedir, Log, TEXT("[Clutch] %s holds a wound with the %s hand: the wrist %.0f cm from where it should be, the wound %.0f cm from the wrist, alpha %.2f | from the hips in the capsule's frame: wound %s, goal %s, wrist %s, pose target %s"),
-						*GetNameSafe(CreatureOwner), Slot == 0 ? TEXT("left") : TEXT("right"), FVector::Dist(Palm, Goal[Slot]), FVector::Dist(Palm, Point), ClutchAlpha[Slot],
+					// How the hand lies: its fingers against the way they should run, and its palm against the skin's outward.
+					const TCHAR* const HandSide = Slot == 0 ? TEXT("_l") : TEXT("_r");
+					const FVector FingersNow = (Body->GetBoneLocation(FName(FString(TEXT("middle_01")) + HandSide)) - Palm).GetSafeNormal();
+					const FVector AcrossNow = (Body->GetBoneLocation(FName(FString(TEXT("index_01")) + HandSide)) - Body->GetBoneLocation(FName(FString(TEXT("pinky_01")) + HandSide))).GetSafeNormal();
+					const FVector WantLine = ClutchLineFrom(Body->GetBoneLocation(Slot == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r")), Point, Outward);
+					const float FingersOff = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(FingersNow, WantLine), -1.f, 1.f)));
+					const float PalmFacing = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FMath::Abs(FVector::DotProduct(FVector::CrossProduct(FingersNow, AcrossNow), Outward)), 0.f, 1.f)));
+					UE_LOG(LogAedir, Log, TEXT("[Clutch] %s holds a wound with the %s hand: the wrist %.0f cm from where it should be, the wound %.0f cm from the wrist, alpha %.2f, the fingers %.0f deg off their way, the palm %.0f deg off the skin, the fingers' up %.2f | from the hips in the capsule's frame: wound %s, goal %s, wrist %s, pose target %s"),
+						*GetNameSafe(CreatureOwner), Slot == 0 ? TEXT("left") : TEXT("right"), FVector::Dist(Palm, Goal[Slot]), FVector::Dist(Palm, Point), ClutchAlpha[Slot], FingersOff, PalmFacing, FingersNow.Z,
 						*ActorTransform.InverseTransformVectorNoScale(Point - Hips).ToCompactString(), *ActorTransform.InverseTransformVectorNoScale(Goal[Slot] - Hips).ToCompactString(),
 						*ActorTransform.InverseTransformVectorNoScale(Palm - Hips).ToCompactString(), *ActorTransform.InverseTransformVectorNoScale(ClutchTarget[Slot] - Hips).ToCompactString());
 				}
@@ -2157,7 +2192,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		// The hand lies flat on the place: the palm onto it, the fingers on along the way the arm comes, over the skin.
 		const FVector Shoulder = Body ? Body->GetBoneLocation(Slot == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r")) : FVector::ZeroVector;
 		const FVector Out = ClutchOutward[Slot].GetSafeNormal();
-		const FVector Along = FVector::VectorPlaneProject(ClutchPlace[Slot] - Shoulder, Out).GetSafeNormal();
+		const FVector Along = ClutchLineFrom(Shoulder, ClutchPlace[Slot], Out);
 		GaitState.ClutchHandAlpha[Slot] = Out.IsNearlyZero() || Along.IsNearlyZero() ? 0.f : ClutchAlpha[Slot] * ClutchHandLieShare;
 		GaitState.ClutchPalmWorld[Slot] = -Out;
 		GaitState.ClutchFingersWorld[Slot] = Along;

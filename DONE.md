@@ -708,3 +708,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - A hand held to a hurt place lies flat on it, the palm onto the skin and the fingers on along the way the arm comes, nearer the skin (2 cm)
 - The view is kicked and sways back on a soft spring when striking or struck instead of trembling
 - Dev: JumpWatch takes a speed to log above and watches the pelvis; SpinWatch can watch the nearest other body
+- A hand held to a wound turns flat onto it at last: its frame is carried on the hand's turn instead of read off fingers that stayed behind
+- A hand held to the chest or belly comes across with the elbow out to its own side and the fingers lying sideways over the skin

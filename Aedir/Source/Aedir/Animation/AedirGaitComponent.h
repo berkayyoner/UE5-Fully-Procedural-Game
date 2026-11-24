@@ -732,6 +732,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchPalmCm = 7.f;
 
+	// How much of the drop from the shoulder down to a place below it the hand's line keeps: little, so the forearm comes
+	// across the trunk and the fingers lie over it sideways, not hanging down from a wrist held up by the shoulder.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchFingersDropShare = 0.3f;
+
+	// Where a holding hand's elbow is led, in the capsule's frame for the left arm (the right one mirrored): out to its own
+	// side and a little down, so the forearm lies across the body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	FVector ClutchElbowHint = FVector(-0.25f, -1.f, -0.45f);
+
+	// How strongly that leads the elbow while the hand holds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchElbowHintShare = 0.85f;
+
+	// It leads the elbow fully for a place this far below the shoulder, less for one higher up, not at all from the shoulder up (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchElbowHintFullBelowCm = 6.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float MaxArmSwingWalkDegrees = 9.f;
 
@@ -1128,6 +1146,9 @@ private:
 	float LegLogLeanMin = 0.f;
 	float LegLogLeanMax = 0.f;
 	void UpdateClutch(float DeltaTime,const UAedirCombatComponent* Combat, const UAedirInteractionComponent* Interaction, const FTransform& ActorTransform);
+	// The way a holding hand's fingers run over the skin at a place: from its shoulder on, with most of the drop to a place
+	// below the shoulder taken out.
+	FVector ClutchLineFrom(const FVector& Shoulder, const FVector& PointWorld, const FVector& OutwardWorld) const;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AAedirCreature> CreatureOwner;

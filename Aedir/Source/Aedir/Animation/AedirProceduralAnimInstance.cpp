@@ -489,31 +489,24 @@ void FAedirProceduralAnimProxy::ApplyClutchHand(FCSPose<FCompactPose>& CSPose, F
 	{
 		return;
 	}
-	// The hand's own frame: along the fingers, and the palm's side, which way round across the knuckles it is told by the
-	// rest pose, whose palms face down.
-	const auto Frame = [&](FCSPose<FCompactPose>& Pose, FVector& OutFingers, FVector& OutAcross)
-	{
-		const FVector At = Pose.GetComponentSpaceTransform(Hand).GetLocation();
-		OutFingers = (Pose.GetComponentSpaceTransform(Middle).GetLocation() - At).GetSafeNormal();
-		OutAcross = (Pose.GetComponentSpaceTransform(Index).GetLocation() - Pose.GetComponentSpaceTransform(Pinky).GetLocation()).GetSafeNormal();
-	};
-	FVector RestFingers;
-	FVector RestAcross;
-	Frame(RefCSPose, RestFingers, RestAcross);
+	// The hand's own frame, along the fingers and out of the palm, is read once from the rest pose, whose palms face down,
+	// and carried on the hand's turn: reading the fingers of the pose itself would fix them where they are, so that they
+	// stayed behind when the hand turned.
+	const FVector RestAt = RefCSPose.GetComponentSpaceTransform(Hand).GetLocation();
+	const FVector RestFingers = (RefCSPose.GetComponentSpaceTransform(Middle).GetLocation() - RestAt).GetSafeNormal();
+	const FVector RestAcross = (RefCSPose.GetComponentSpaceTransform(Index).GetLocation() - RefCSPose.GetComponentSpaceTransform(Pinky).GetLocation()).GetSafeNormal();
 	const float PalmSign = FVector::DotProduct(FVector::CrossProduct(RestFingers, RestAcross), -FVector::UpVector) >= 0.f ? 1.f : -1.f;
-	FVector Fingers;
-	FVector Across;
-	Frame(CSPose, Fingers, Across);
-	const FVector Palm = (FVector::CrossProduct(Fingers, Across) * PalmSign).GetSafeNormal();
+	const FVector RestPalm = (FVector::CrossProduct(RestFingers, RestAcross) * PalmSign).GetSafeNormal();
 	const FVector WantFingers = MeshToWorld.InverseTransformVectorNoScale(GaitData.ClutchFingersWorld[Slot]).GetSafeNormal();
 	const FVector WantPalm = MeshToWorld.InverseTransformVectorNoScale(GaitData.ClutchPalmWorld[Slot]).GetSafeNormal();
-	if (Fingers.IsNearlyZero() || Palm.IsNearlyZero() || WantFingers.IsNearlyZero() || WantPalm.IsNearlyZero())
+	if (RestFingers.IsNearlyZero() || RestPalm.IsNearlyZero() || WantFingers.IsNearlyZero() || WantPalm.IsNearlyZero())
 	{
 		return;
 	}
-	const FQuat Now = FRotationMatrix::MakeFromXZ(Fingers, Palm).ToQuat();
+	const FQuat FrameInHand = RefCSPose.GetComponentSpaceTransform(Hand).GetRotation().Inverse() * FRotationMatrix::MakeFromXZ(RestFingers, RestPalm).ToQuat();
+	const FQuat Now = CSPose.GetComponentSpaceTransform(Hand).GetRotation() * FrameInHand;
 	const FQuat Want = FRotationMatrix::MakeFromXZ(WantFingers, WantPalm).ToQuat();
-	RotateBone(CSPose, Hand, FQuat::Slerp(FQuat::Identity, Want * Now.Inverse(), Alpha));
+	RotateBone(CSPose, Hand, FQuat::Slerp(FQuat::Identity, (Want * Now.Inverse()).GetNormalized(), Alpha));
 }
 
 float FAedirProceduralAnimProxy::GetBreathWave() const
