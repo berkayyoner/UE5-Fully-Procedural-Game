@@ -43,6 +43,8 @@ private:
 	float GetBreathWave() const;
 	void ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh, const FVector& ElbowHint = FVector::ZeroVector, float ElbowHintAlpha = 0.f) const;
 	void ApplyFingers(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const TArray<FName>& FingerBoneNames, float FistAlpha, float CurlSign) const;
+	// A hand held to a hurt place turned to lie flat on it.
+	void ApplyClutchHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, int32 Slot) const;
 	// Turns the forearm, by the elbow and shoulder, so a blade held at one fixed angle in the hand points where it should,
 	// and gives back the way the blade then points.
 	// The weapon arm placed straight from where the hand and blade are wanted: the forearm runs across the blade as a fist

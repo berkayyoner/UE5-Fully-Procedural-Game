@@ -26,6 +26,10 @@ struct AEDIR_API FAedirGaitState
 	bool bLimpPose = false;
 	// Lying awake: the limp pose also looks about and holds up the fists.
 	bool bDownAwakePose = false;
+	// A hand held to a hurt place: how much it lies flat on it, the way the palm faces (into the body) and the fingers point.
+	float ClutchHandAlpha[2] = { 0.f, 0.f };
+	FVector ClutchPalmWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector ClutchFingersWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 
 	// Hauled up off the ground by the hips: how far the slack shape gives way to the bends of the step of getting up the
 	// body is at, 0 to 1, and those bends in degrees (hips and knees forward, the back bowed forward, the arms raised
@@ -719,7 +723,11 @@ public:
 
 	// The wrist sits this far off the skin and this far back towards the hand's own side, so the palm lies on the place.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
-	float ClutchSkinCm = 5.f;
+	float ClutchSkinCm = 2.f;
+
+	// How fully a hand held to a hurt place is turned to lie flat on it, the palm onto the skin.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchHandLieShare = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchPalmCm = 7.f;
@@ -1064,6 +1072,9 @@ private:
 
 	// Where each hand holds a hurt place and how far it is there (left, right).
 	FVector ClutchTarget[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	// The place each hand holds and the way out of the body there.
+	FVector ClutchPlace[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector ClutchOutward[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	float ClutchAlpha[2] = { 0.f, 0.f };
 	// The wound a hand holds on to, and which hand.
 	int32 HeldWoundId = INDEX_NONE;
@@ -1198,7 +1209,11 @@ public:
 	// Lying awake, the waist turns this share of what it does standing towards where it looks: lying on the arms and
 	// hips, more would roll the body over.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Down", meta=(ClampMin="0", ClampMax="1"))
-	float DownSpineTwistShare = 0.4f;
+	float DownSpineTwistShare = 0.f;
+
+	// Lying, how quickly the neck and head come round to a new look: quicker, they threw the body on the ground round.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Down", meta=(ClampMin="0.1"))
+	float DownLookInterpSpeed = 2.5f;
 
 private:
 	// Lying on the ground: where the eyes go, as a yaw and a pitch about the chest as it lies.
@@ -1209,4 +1224,8 @@ private:
 	void FillFistArms(const UAedirInteractionComponent* Interaction);
 	// Lying, the look eased in, yaw and pitch.
 	FVector2D DownLook = FVector2D::ZeroVector;
+	// Down last frame; and just up, how far below standing the hips still are and how fast they rise out of it.
+	bool bWasDown = false;
+	float StandUpDrop = 0.f;
+	float StandUpDropRate = 0.f;
 };

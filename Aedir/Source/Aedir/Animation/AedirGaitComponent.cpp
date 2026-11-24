@@ -191,8 +191,8 @@ void UAedirGaitComponent::UpdateDownAwakePose(float DeltaTime, bool bHoisted)
 		return;
 	}
 	// Lying awake: the neck, the head and the waist turn to where it looks, as they would standing.
-	DownLook.X = FMath::FInterpTo(DownLook.X, Yaw, DeltaTime, LookInterpSpeed);
-	DownLook.Y = FMath::FInterpTo(DownLook.Y, Pitch, DeltaTime, LookInterpSpeed);
+	DownLook.X = FMath::FInterpTo(DownLook.X, Yaw, DeltaTime, DownLookInterpSpeed);
+	DownLook.Y = FMath::FInterpTo(DownLook.Y, Pitch, DeltaTime, DownLookInterpSpeed);
 	const float LookYaw = static_cast<float>(DownLook.X);
 	const float LookPitch = static_cast<float>(DownLook.Y);
 	GaitState.bDownAwakePose = true;
@@ -305,6 +305,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		GaitState.HoistLeadHipBend = Stage.LeadHipBend;
 		GaitState.HoistLeadKneeBend = Stage.LeadKneeBend;
 		UpdateDownAwakePose(DeltaTime, bHoisted);
+		bWasDown = true;
 		return;
 	}
 
@@ -694,6 +695,24 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	// The pelvis only ever sinks below its standing height, deepest while both feet are down, so no foot is lifted off the ground by it.
 	const float Bounce = -HipBounceCm * FMath::Lerp(1.f, HipBounceRunScale, RunBlend) * (0.5f + 0.5f * FMath::Cos(2.f * UE_PI * Phase * AedirMovingBounceFrequency)) * GaitIntensity;
 	GaitState.HipOffsetZ = DynamicHipOffset + RunLowering + Bounce;
+	// Just hauled up off the ground, the body stands where it came up, the hips still low: the pose starts from there and
+	// rises to standing as the body settles, instead of straightening the legs from it in a frame or two.
+	if (bWasDown)
+	{
+		bWasDown = false;
+		StandUpDrop = 0.f;
+		const USkeletalMesh* Model = BodyMesh->GetSkeletalMeshAsset();
+		const int32 PelvisIndex = Model ? Model->GetRefSkeleton().FindBoneIndex(TEXT("pelvis")) : INDEX_NONE;
+		if (PelvisIndex != INDEX_NONE && BalanceComponent && !BalanceComponent->IsGettingUp())
+		{
+			const FVector Standing = BodyMesh->GetComponentTransform().TransformPosition(FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), PelvisIndex).GetLocation());
+			StandUpDrop = FMath::Min(static_cast<float>(BodyMesh->GetBoneLocation(TEXT("pelvis")).Z - Standing.Z), 0.f);
+			StandUpDropRate = -StandUpDrop / FMath::Max(BalanceComponent->HoistSettleSeconds, 0.2f);
+			UE_LOG(LogAedir, Log, TEXT("[GetUp] %s stands up with the hips %.0f cm low, risen out of over %.1f s"), *GetNameSafe(CreatureOwner), -StandUpDrop, BalanceComponent->HoistSettleSeconds);
+		}
+	}
+	StandUpDrop = FMath::FInterpConstantTo(StandUpDrop, 0.f, DeltaTime, StandUpDropRate);
+	GaitState.HipOffsetZ += StandUpDrop;
 	// Limping: while the sound foot is in the air the broken leg alone bears the weight, and gives under it.
 	const float LimpBearing = BrokenLeg >= 0 && !bAirborne ? Lift[1 - BrokenLeg] : 0.f;
 	const float BrokenSide = BrokenLeg == 1 ? 1.f : -1.f;
@@ -1994,6 +2013,8 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			}
 			Wanted[FlinchSlot] = ClutchBlowShare;
 			Goal[FlinchSlot] = WristAt(FlinchSlot, HoldAt, Outward);
+			ClutchPlace[FlinchSlot] = HoldAt;
+			ClutchOutward[FlinchSlot] = Outward;
 			bFlinchHand[FlinchSlot] = true;
 			// Dev: the biggest jump the elbow makes from one frame to the next while the hand goes there.
 			const FVector Elbow = Body->GetBoneLocation(FlinchSlot == 0 ? TEXT("lowerarm_l") : TEXT("lowerarm_r"));
@@ -2102,13 +2123,18 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			{
 				Wanted[Slot] = ClutchWoundShare;
 				Goal[Slot] = WristAt(Slot, Point, Outward);
+				ClutchPlace[Slot] = Point;
+				ClutchOutward[Slot] = Outward;
 				static const IConsoleVariable* ClutchLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
 				if (ClutchLog && ClutchLog->GetInt() != 0 && World->GetTimeSeconds() >= NextClutchLogTime)
 				{
 					NextClutchLogTime = World->GetTimeSeconds() + 0.5;
 					const FVector Palm = Body->GetBoneLocation(Slot == 0 ? TEXT("hand_l") : TEXT("hand_r"));
-					UE_LOG(LogAedir, Log, TEXT("[Clutch] %s holds a wound with the %s hand: the wrist %.0f cm from where it should be, the wound %.0f cm from the wrist, alpha %.2f"),
-						*GetNameSafe(CreatureOwner), Slot == 0 ? TEXT("left") : TEXT("right"), FVector::Dist(Palm, Goal[Slot]), FVector::Dist(Palm, Point), ClutchAlpha[Slot]);
+					const FVector Hips = Body->GetBoneLocation(TEXT("pelvis"));
+					UE_LOG(LogAedir, Log, TEXT("[Clutch] %s holds a wound with the %s hand: the wrist %.0f cm from where it should be, the wound %.0f cm from the wrist, alpha %.2f | from the hips in the capsule's frame: wound %s, goal %s, wrist %s, pose target %s"),
+						*GetNameSafe(CreatureOwner), Slot == 0 ? TEXT("left") : TEXT("right"), FVector::Dist(Palm, Goal[Slot]), FVector::Dist(Palm, Point), ClutchAlpha[Slot],
+						*ActorTransform.InverseTransformVectorNoScale(Point - Hips).ToCompactString(), *ActorTransform.InverseTransformVectorNoScale(Goal[Slot] - Hips).ToCompactString(),
+						*ActorTransform.InverseTransformVectorNoScale(Palm - Hips).ToCompactString(), *ActorTransform.InverseTransformVectorNoScale(ClutchTarget[Slot] - Hips).ToCompactString());
 				}
 			}
 			if (!bKeptByFlinch || Slot != INDEX_NONE)
@@ -2128,6 +2154,13 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		ClutchAlpha[Slot] = FMath::FInterpConstantTo(ClutchAlpha[Slot], Wanted[Slot], DeltaTime, Wanted[Slot] > ClutchAlpha[Slot] ? ClutchInSpeed : ClutchOutSpeed);
 		// Still over the rest while it lets go, so the arm does not snap back to the guard.
 		bClutchFlinch[Slot] = bFlinchHand[Slot] || (bClutchFlinch[Slot] && Wanted[Slot] <= 0.f && ClutchAlpha[Slot] > KINDA_SMALL_NUMBER);
+		// The hand lies flat on the place: the palm onto it, the fingers on along the way the arm comes, over the skin.
+		const FVector Shoulder = Body ? Body->GetBoneLocation(Slot == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r")) : FVector::ZeroVector;
+		const FVector Out = ClutchOutward[Slot].GetSafeNormal();
+		const FVector Along = FVector::VectorPlaneProject(ClutchPlace[Slot] - Shoulder, Out).GetSafeNormal();
+		GaitState.ClutchHandAlpha[Slot] = Out.IsNearlyZero() || Along.IsNearlyZero() ? 0.f : ClutchAlpha[Slot] * ClutchHandLieShare;
+		GaitState.ClutchPalmWorld[Slot] = -Out;
+		GaitState.ClutchFingersWorld[Slot] = Along;
 	}
 }
 

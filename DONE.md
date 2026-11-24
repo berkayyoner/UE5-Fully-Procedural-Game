@@ -701,3 +701,10 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - No black flash when the weather turns wet: the wet decals are made at the start and kept drawn at no strength, so the scene's shaders are ready for them
 - Braies and trousers closer round the hips and seat (1.3 and 1.7 cm off the skin instead of 2.2 and 2.6)
 - Dev: JumpWatch, SpinWatch and FaceInfo probes; GaitInfo logs where the balls of the feet are
+- Lying awake, looking about no longer rolls the body over on the ground (hips 0 deg instead of 56 while the view swept round): the waist no longer twists after the look, the neck and head come round slower, and a hand held to a hurt place lying down pulls against the body instead of dragging it round
+- Down and awake looser still: the trunk and legs 0.35 of their standing muscle, the arms 0.6
+- Lying awake, an arm punched or put against the ground is hurt only above 1600 cm/s, as by a fall
+- No snap up of the hips as the body stands up: the pose rises from where the hips came up over the settling 1.8 s, the legs and the hold on the hips come in gradually, and a body is only stood up with its hips at 0.8 of their height
+- A hand held to a hurt place lies flat on it, the palm onto the skin and the fingers on along the way the arm comes, nearer the skin (2 cm)
+- The view is kicked and sways back on a soft spring when striking or struck instead of trembling
+- Dev: JumpWatch takes a speed to log above and watches the pelvis; SpinWatch can watch the nearest other body

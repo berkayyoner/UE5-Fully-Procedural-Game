@@ -115,17 +115,24 @@ public:
 	float FightPullBackAlpha = 0.f;
 	FRotator FightCameraSway = FRotator::ZeroRotator;
 
-	// How far through the view's shake it is (1 at its start, 0 still), how far it turns at its start and how long it lasts.
-	float HitShake = 0.f;
-	float HitShakeStrength = 0.f;
-	float HitShakeSeconds = 0.25f;
+	// The view's kick: a turn away (pitch, yaw, roll) on a soft spring that sways back through still once or twice and
+	// settles, and how fast it is turning.
+	FVector ViewKick = FVector::ZeroVector;
+	FVector ViewKickSpeed = FVector::ZeroVector;
+
+	// The kick's spring: how often it would sway back and forth, and how quickly that dies away (1 never past still).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake", meta=(ClampMin="0.3", Units="Hz"))
+	float ViewKickHz = 2.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake", meta=(ClampMin="0.05", ClampMax="1"))
+	float ViewKickDamping = 0.42f;
 
 	// Hurt by a blow the view shakes, the more the more harm it did: Min degrees for the least, Max from HurtShakeFullDamage on.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float HurtShakeDegreesMin = 1.5f;
+	float HurtShakeDegreesMin = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float HurtShakeDegreesMax = 6.f;
+	float HurtShakeDegreesMax = 3.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
 	float HurtShakeFullDamage = 25.f;
@@ -139,10 +146,10 @@ public:
 
 	// Landing a blow of one's own with a fist, a foot or a weapon in hand shakes it a little too, for the weight of the hit.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float StrikeShakeDegreesMin = 0.8f;
+	float StrikeShakeDegreesMin = 0.35f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
-	float StrikeShakeDegreesMax = 2.5f;
+	float StrikeShakeDegreesMax = 1.4f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Camera|Shake")
 	float StrikeShakeFullDamage = 25.f;
@@ -525,11 +532,11 @@ public:
 
 	// Logs every frame in which the capsule, the mesh, the head, the camera or the view jumps, for that many seconds.
 	UFUNCTION(Exec)
-	void JumpWatch(float Seconds);
+	void JumpWatch(float Seconds, float LimitCmPerSec = 0.f);
 
 	// Logs how far the body turned as a whole on the ground, how far the head looked off the chest, and how much the right hand moved.
 	UFUNCTION(Exec)
-	void SpinWatch(float Seconds);
+	void SpinWatch(float Seconds, int32 Nearest = 0);
 
 	// Logs what the face can be moved with.
 	UFUNCTION(Exec)

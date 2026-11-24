@@ -231,11 +231,16 @@ public:
 	// loose enough for the body to lie on the ground rather than stand stiff on it like a statue; dead or senseless they
 	// keep only RagdollMotorShare.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
-	float DownAwakeMotorShare = 0.55f;
+	float DownAwakeMotorShare = 0.35f;
 
 	// Down but awake, the arms keep this much (1 as standing), to guard and strike from the ground as they do standing.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
-	float DownAwakeArmShare = 1.f;
+	float DownAwakeArmShare = 0.6f;
+
+	// Lying awake, an arm meeting the ground is hurt only when stopped faster than this (a punch or a guard thrown from
+	// the ground is not), as an arm thrown on it by a fall would be.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", Units="cm/s"))
+	float DownArmHarmlessSpeed = 1600.f;
 
 	// A body already lying on the ground takes this share of the push of a blow or a kick a standing one would: it has
 	// the ground under it and nothing to be thrown off, so it is shoved, not sent flying.
@@ -821,7 +826,7 @@ public:
 	float HoistTurnHz = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistDoneHeightShare = 0.72f;
+	float HoistDoneHeightShare = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
 	float HoistDoneUpright = 0.9f;
@@ -835,7 +840,7 @@ public:
 	// Hauled up onto its feet, the body is handed back to its capsule; the hold of its hips and feet on the capsule and the
 	// ground, and the muscles' strength, come in over HoistSettleSeconds, so it is taken into the standing pose softly.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistSettleSeconds = 1.f;
+	float HoistSettleSeconds = 1.8f;
 
 	// In the last step and still not up after HoistDoneEasySeconds, the body counts as up from HoistDoneEasyHeightShare of
 	// the standing height and HoistDoneEasyUpright; still not after HoistGiveUpSeconds, it gives up and lies down again to

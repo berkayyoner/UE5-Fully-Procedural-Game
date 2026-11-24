@@ -3107,7 +3107,20 @@ void UAedirBalanceComponent::HoldHurtWhileDown(float DeltaTime)
 				ArmMass += Piece->GetBodyMass();
 			}
 		}
-		HandBody->AddForce(Accel.GetClampedToMaxSize(3000.f) * FMath::Max(ArmMass, HandBody->GetBodyMass()), true, false);
+		// The arm pulls the hand there off the body it holds: the place held takes the pull back, or the hand dragged the
+		// whole body round on the ground after it.
+		const FVector Pull = Accel.GetClampedToMaxSize(3000.f) * FMath::Max(ArmMass, HandBody->GetBodyMass());
+		HandBody->AddForce(Pull, true, false);
+		FBodyInstance* Held = BodyMesh->GetBodyInstance(DownClutchBone[Side]);
+		FBodyInstance* Shoulder = BodyMesh->GetBodyInstance(FName(FString(TEXT("upperarm")) + Suffix));
+		if (Held && Held->IsInstanceSimulatingPhysics() && Held != HandBody)
+		{
+			Held->AddForceAtPosition(-Pull * 0.5f, Point, true, false);
+		}
+		if (Shoulder && Shoulder->IsInstanceSimulatingPhysics())
+		{
+			Shoulder->AddForce(-Pull * (Held && Held != HandBody ? 0.5f : 1.f), true, false);
+		}
 	}
 }
 
@@ -4250,8 +4263,16 @@ void UAedirBalanceComponent::HurtPartOnImpact(FName Bone, const FVector& NormalI
 	{
 		UE_LOG(LogAedir, Log, TEXT("[Impact] %s %s touches %s, stopped by %.0f cm/s"), *GetNameSafe(GetOwner()), *Bone.ToString(), *GetNameSafe(Hit.GetActor()), Speed);
 	}
+	// Lying awake, an arm swung against the ground or brought down on it is moved on purpose: a punch or a guard thrown
+	// from the ground, a hand put down. It is hurt only by a blow far harder than that, as from a fall.
+	const FString PartName = Bone.ToString();
+	const bool bArm = PartName.StartsWith(TEXT("hand")) || PartName.StartsWith(TEXT("lowerarm")) || PartName.StartsWith(TEXT("upperarm")) || PartName.StartsWith(TEXT("clavicle"))
+		|| PartName.StartsWith(TEXT("index")) || PartName.StartsWith(TEXT("middle")) || PartName.StartsWith(TEXT("ring")) || PartName.StartsWith(TEXT("pinky")) || PartName.StartsWith(TEXT("thumb"));
+	const UAedirStatsComponent* LyingStats = FindStats();
+	const bool bAwakeDown = bIsRagdoll && FallWatchLeft <= 0.f && !(LyingStats && (LyingStats->IsDead() || LyingStats->IsDying() || LyingStats->IsKnockedOut()));
+	const float Harmless = bArm && bAwakeDown ? FMath::Max(ImpactHarmlessSpeed, DownArmHarmlessSpeed) : ImpactHarmlessSpeed;
 	double& Last = LastPartImpactTime.FindOrAdd(Bone);
-	if (Speed <= ImpactHarmlessSpeed || Now - Last < 0.25)
+	if (Speed <= Harmless || Now - Last < 0.25)
 	{
 		return;
 	}
@@ -4264,10 +4285,10 @@ void UAedirBalanceComponent::HurtPartOnImpact(FName Bone, const FVector& NormalI
 	}
 	if (UAedirStatsComponent* StatsComponent = FindStats())
 	{
-		StatsComponent->ApplyDamage((Speed - ImpactHarmlessSpeed) * ImpactDamagePerSpeed);
+		StatsComponent->ApplyDamage((Speed - Harmless) * ImpactDamagePerSpeed);
 	}
-	UAedirSfxSubsystem::Play(this, EAedirSfx::BodyImpact, Hit.ImpactPoint, FMath::Clamp((Speed - ImpactHarmlessSpeed) / ImpactHarmlessSpeed, 0.2f, 1.f));
-	UE_LOG(LogAedir, Log, TEXT("[Impact] %s %s hits %s at %.0f cm/s, %.0f J, %.1f damage"), *GetNameSafe(GetOwner()), *Bone.ToString(), *GetNameSafe(Hit.GetActor()), Speed, Joules, (Speed - ImpactHarmlessSpeed) * ImpactDamagePerSpeed);
+	UAedirSfxSubsystem::Play(this, EAedirSfx::BodyImpact, Hit.ImpactPoint, FMath::Clamp((Speed - Harmless) / ImpactHarmlessSpeed, 0.2f, 1.f));
+	UE_LOG(LogAedir, Log, TEXT("[Impact] %s %s hits %s at %.0f cm/s, %.0f J, %.1f damage"), *GetNameSafe(GetOwner()), *Bone.ToString(), *GetNameSafe(Hit.GetActor()), Speed, Joules, (Speed - Harmless) * ImpactDamagePerSpeed);
 }
 
 void UAedirBalanceComponent::WatchPartImpacts()

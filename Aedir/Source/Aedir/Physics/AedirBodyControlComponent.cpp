@@ -693,7 +693,9 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// standing pose over a moment rather than straightening the legs from kneeling in a step or two.
 	const float Standing = FMath::Lerp(0.35f, 1.f, Upright);
 	const float Body = bLimp ? FMath::Lerp(Limp, HoistMuscleShare, Hauled) : FMath::Lerp(HoistMuscleShare, Standing, HoldEase);
-	const float LegBody = bLimp ? FMath::Lerp(Limp, HoistLegShare, Hauled) : FMath::Lerp(HoistLegShare, Standing, HoldEase);
+	// Just hauled up, the legs come from a little of their strength to all of it: started at what lifted the body, they
+	// straightened from the crouch it ended in at once and threw the hips up a fifth of a metre in two frames.
+	const float LegBody = bLimp ? FMath::Lerp(Limp, HoistLegShare, Hauled) : FMath::Lerp(SettleLegStartShare, Standing, HoldEase);
 	const auto Apply = [this](const TArray<FName>& Names, float AngularHz, float LinearHz)
 	{
 		FPhysicsControlMultiplier Multiplier;
@@ -750,7 +752,7 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	// Rising, the hips are lifted along the moves by the muscles, as hard as the body has it in it, never carried.
 	const float Rise = CVarAedirBodyRise.GetValueOnGameThread() >= 0.f ? CVarAedirBodyRise.GetValueOnGameThread() : RiseHipShare;
 	const float HipShare = bRising ? Rise * Body : Body;
-	Apply({ HipControl }, bHold ? HipAngularStrength * HipShare * HoldEase : 0.f, bHold ? Hips * HipShare * HoldEase : 0.f);
+	Apply({ HipControl }, bHold ? HipAngularStrength * HipShare * HoldEase * HoldEase : 0.f, bHold ? Hips * HipShare * HoldEase * HoldEase : 0.f);
 	Control->SetControlEnabled(HipControl, bHold);
 
 	// The trunk is kept upright as a whole, and standing it carries only part of its weight.

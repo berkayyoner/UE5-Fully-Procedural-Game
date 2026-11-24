@@ -327,13 +327,13 @@ void AAedirPlayerCharacter::PossessedBy(AController* NewController)
 
 void AAedirPlayerCharacter::ShakeView(float Degrees, float Seconds)
 {
-	// The shake still going is kept if it is the bigger.
-	if (Degrees >= HitShakeStrength * HitShake * HitShake)
-	{
-		HitShake = 1.f;
-		HitShakeStrength = Degrees;
-		HitShakeSeconds = Seconds;
-	}
+	// A kick rather than a tremble: the view is thrown up and a little to a side at once, and the spring brings it back
+	// with a sway or two. A kick still going takes the new one on top, up to twice the bigger of the two.
+	const float W = UE_TWO_PI * FMath::Max(ViewKickHz, 0.3f);
+	const float Side = FMath::FRandRange(-1.f, 1.f);
+	// Set off at this speed, the spring's first swing goes about as far as the degrees asked.
+	const FVector Push = FVector(Degrees, Degrees * 0.45f * Side, Degrees * 0.6f * -Side) * (W * 1.35f);
+	ViewKickSpeed = (ViewKickSpeed + Push).GetClampedToMaxSize(FMath::Max(ViewKickSpeed.Size(), Push.Size()) * 2.f);
 	UE_LOG(LogAedir, Log, TEXT("[Shake] %s's view shakes %.2f degrees for %.2f s"), *GetName(), Degrees, Seconds);
 }
 
@@ -1199,12 +1199,20 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 			(FMath::Sin(Time * 0.9f + 1.f) * 0.15f + MouseLean.X * 0.2f) * FightCameraAlpha,
 			(FMath::Sin(Time * 1.1f + 2.f) * 0.15f + MouseLean.X * 0.4f) * FightCameraAlpha);
 		FightCameraSway = FMath::RInterpTo(FightCameraSway, Sway, DeltaSeconds, 6.f);
-		// A blow taken jolts the view a little, quickly and fading, never so much that the fight is lost from sight.
-		HitShake = FMath::Max(HitShake - DeltaSeconds / FMath::Max(HitShakeSeconds, 0.05f), 0.f);
-		// Falling off as the square of what is left, from a jolt the whole size at once: noise this quick stays near half
-		// its range, so it is doubled to reach the degrees asked.
-		const float ShakeDegrees = HitShakeStrength * HitShake * HitShake * UAedirSettingsSubsystem::GetValues().CameraShake * 2.f;
-		const FRotator Shake(FMath::PerlinNoise1D(Time * 31.f) * ShakeDegrees, FMath::PerlinNoise1D(Time * 27.f + 7.f) * ShakeDegrees, FMath::PerlinNoise1D(Time * 23.f + 13.f) * ShakeDegrees * 0.6f);
+		// A blow taken or landed kicks the view, which sways back on its spring and settles: never so much that the fight is
+		// lost from sight. In small steps, so a long frame cannot throw the spring out.
+		{
+			const float W = UE_TWO_PI * FMath::Max(ViewKickHz, 0.3f);
+			const int32 Steps = FMath::Clamp(FMath::CeilToInt(DeltaSeconds / 0.004f), 1, 16);
+			const float Step = DeltaSeconds / Steps;
+			for (int32 Index = 0; Index < Steps; ++Index)
+			{
+				ViewKickSpeed += (-ViewKick * (W * W) - ViewKickSpeed * (2.f * ViewKickDamping * W)) * Step;
+				ViewKick += ViewKickSpeed * Step;
+			}
+		}
+		const FVector Kick = ViewKick * UAedirSettingsSubsystem::GetValues().CameraShake;
+		const FRotator Shake(Kick.X, Kick.Y, Kick.Z);
 		FollowCamera->SetRelativeRotation(FightCameraSway + Shake);
 	}
 
@@ -3659,14 +3667,14 @@ void AAedirPlayerCharacter::CamInfo()
 		FRotator::NormalizeAxis(GetControlRotation().Pitch), Camera.Z - Head.Z, FVector::Dist2D(Camera, Head), bLockOnEnabled ? 1 : 0, Combat && Combat->IsInFightStance() ? 1 : 0);
 }
 
-void AAedirPlayerCharacter::JumpWatch(float Seconds)
+void AAedirPlayerCharacter::JumpWatch(float Seconds, float LimitCmPerSec)
 {
 	// Frame by frame: whatever of the capsule, the mesh, the head, the camera and the view jumps further in one frame than
 	// a body could move in it is logged, with all the others as they were, to tell what is torn where.
 	struct FWatch
 	{
 		FTimerHandle Timer;
-		FVector Last[5];
+		FVector Last[6];
 		FRotator LastView;
 		bool bStarted = false;
 		double Start = 0.0;
@@ -3679,7 +3687,7 @@ void AAedirPlayerCharacter::JumpWatch(float Seconds)
 	Params.bLoop = true;
 	Params.bMaxOncePerFrame = true;
 	const float Total = FMath::Clamp(Seconds, 0.2f, 60.f);
-	GetWorldTimerManager().SetTimer(Watch->Timer, FTimerDelegate::CreateWeakLambda(this, [this, Watch, Total]()
+	GetWorldTimerManager().SetTimer(Watch->Timer, FTimerDelegate::CreateWeakLambda(this, [this, Watch, Total, LimitCmPerSec]()
 	{
 		if (Watch->LastFrame == GFrameCounter)
 		{
@@ -3687,25 +3695,26 @@ void AAedirPlayerCharacter::JumpWatch(float Seconds)
 		}
 		Watch->LastFrame = GFrameCounter;
 		const APlayerController* PC = Cast<APlayerController>(GetController());
-		const FVector Now[5] = {
+		const FVector Now[6] = {
 			GetActorLocation(),
 			GetMesh()->GetComponentLocation(),
 			GetMesh()->GetBoneLocation(TEXT("head")),
 			FollowCamera ? FollowCamera->GetComponentLocation() : FVector::ZeroVector,
-			PC && PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector };
+			PC && PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector,
+			GetMesh()->GetBoneLocation(TEXT("pelvis")) };
 		const FRotator View = PC && PC->PlayerCameraManager ? PC->PlayerCameraManager->GetCameraRotation() : FRotator::ZeroRotator;
 		const double Elapsed = GetWorld()->GetTimeSeconds() - Watch->Start;
 		if (Watch->bStarted)
 		{
 			const float Delta = FMath::Max(GetWorld()->GetDeltaSeconds(), 1.f / 240.f);
 			// More than 12 m/s, or the view turning more than 300 deg/s.
-			static const TCHAR* Names[5] = { TEXT("capsule"), TEXT("mesh"), TEXT("head"), TEXT("cameraComp"), TEXT("view") };
+			static const TCHAR* Names[6] = { TEXT("capsule"), TEXT("mesh"), TEXT("head"), TEXT("cameraComp"), TEXT("view"), TEXT("pelvis") };
 			const float ViewTurn = static_cast<float>(FQuat(View).AngularDistance(FQuat(Watch->LastView)) * 180.0 / UE_PI);
 			FString Moved;
-			for (int32 Index = 0; Index < 5; ++Index)
+			for (int32 Index = 0; Index < 6; ++Index)
 			{
 				const float Step = static_cast<float>(FVector::Dist(Now[Index], Watch->Last[Index]));
-				if (Step / Delta > 1200.f)
+				if (Step / Delta > (LimitCmPerSec > 0.f ? LimitCmPerSec : 1200.f))
 				{
 					Moved += FString::Printf(TEXT(" %s %.0fcm"), Names[Index], Step);
 				}
@@ -3723,7 +3732,7 @@ void AAedirPlayerCharacter::JumpWatch(float Seconds)
 					*Watch->Last[0].ToCompactString(), *Watch->Last[1].ToCompactString(), *Watch->Last[2].ToCompactString(), *Watch->Last[4].ToCompactString(), *GetNameSafe(GetMesh()->GetAttachParent()));
 			}
 		}
-		for (int32 Index = 0; Index < 5; ++Index)
+		for (int32 Index = 0; Index < 6; ++Index)
 		{
 			Watch->Last[Index] = Now[Index];
 		}
@@ -3737,19 +3746,40 @@ void AAedirPlayerCharacter::JumpWatch(float Seconds)
 	}), 0.001f, Params);
 }
 
-void AAedirPlayerCharacter::SpinWatch(float Seconds)
+void AAedirPlayerCharacter::SpinWatch(float Seconds, int32 Nearest)
 {
+	// Nearest: the nearest other creature's body instead of the player's own.
+	AAedirCreature* Who = this;
+	if (Nearest != 0)
+	{
+		AAedirCreature* Found = nullptr;
+		for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+		{
+			if (*It != this && (!Found || FVector::DistSquared(It->GetMesh()->GetBoneLocation(TEXT("pelvis")), GetActorLocation()) < FVector::DistSquared(Found->GetMesh()->GetBoneLocation(TEXT("pelvis")), GetActorLocation())))
+			{
+				Found = *It;
+			}
+		}
+		Who = Found ? Found : this;
+	}
+	TWeakObjectPtr<AAedirCreature> Body = Who;
 	// How the body turns as a whole about the vertical (the hips' yaw) and how far the head looks off the chest, over a time.
 	struct FWatch { FTimerHandle Timer; float LastYaw = 0.f; float Turned = 0.f; float TopRate = 0.f; float Elapsed = 0.f; float HeadOff = 0.f; float FistMove = 0.f; FVector LastFist = FVector::ZeroVector; bool bStarted = false; };
 	TSharedRef<FWatch> Watch = MakeShared<FWatch>();
 	const float Total = FMath::Clamp(Seconds, 0.2f, 30.f);
-	GetWorldTimerManager().SetTimer(Watch->Timer, FTimerDelegate::CreateWeakLambda(this, [this, Watch, Total]()
+	GetWorldTimerManager().SetTimer(Watch->Timer, FTimerDelegate::CreateWeakLambda(this, [this, Watch, Total, Body]()
 	{
 		const float Step = 1.f / 60.f;
-		const FTransform Hips = GetMesh()->GetBoneTransform(TEXT("pelvis"));
-		const FVector Across = GetMesh()->GetBoneLocation(TEXT("thigh_r")) - GetMesh()->GetBoneLocation(TEXT("thigh_l"));
+		if (!Body.IsValid())
+		{
+			GetWorldTimerManager().ClearTimer(Watch->Timer);
+			return;
+		}
+		USkeletalMeshComponent* GetMeshOf = Body->GetMesh();
+		const FTransform Hips = GetMeshOf->GetBoneTransform(TEXT("pelvis"));
+		const FVector Across = GetMeshOf->GetBoneLocation(TEXT("thigh_r")) - GetMeshOf->GetBoneLocation(TEXT("thigh_l"));
 		const float Yaw = static_cast<float>(FMath::RadiansToDegrees(FMath::Atan2(Across.Y, Across.X)));
-		const FVector Fist = GetMesh()->GetBoneLocation(TEXT("hand_r")) - Hips.GetLocation();
+		const FVector Fist = GetMeshOf->GetBoneLocation(TEXT("hand_r")) - Hips.GetLocation();
 		if (Watch->bStarted)
 		{
 			const float Change = FMath::FindDeltaAngleDegrees(Watch->LastYaw, Yaw);
@@ -3757,8 +3787,8 @@ void AAedirPlayerCharacter::SpinWatch(float Seconds)
 			Watch->TopRate = FMath::Max(Watch->TopRate, FMath::Abs(Change) / Step);
 			Watch->FistMove += static_cast<float>(FVector::Dist(Fist, Watch->LastFist));
 		}
-		const FVector HeadFwd = GetMesh()->GetBoneQuaternion(TEXT("head")).GetAxisY();
-		const FVector ChestFwd = GetMesh()->GetBoneQuaternion(TEXT("spine_05")).GetAxisY();
+		const FVector HeadFwd = GetMeshOf->GetBoneQuaternion(TEXT("head")).GetAxisY();
+		const FVector ChestFwd = GetMeshOf->GetBoneQuaternion(TEXT("spine_05")).GetAxisY();
 		Watch->HeadOff = FMath::Max(Watch->HeadOff, static_cast<float>(FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(HeadFwd, ChestFwd), -1.0, 1.0)))));
 		Watch->LastYaw = Yaw;
 		Watch->LastFist = Fist;
@@ -3767,8 +3797,8 @@ void AAedirPlayerCharacter::SpinWatch(float Seconds)
 		if (Watch->Elapsed >= Total)
 		{
 			const FAedirGaitState* GaitNow = Gait ? &Gait->GetGaitState() : nullptr;
-			UE_LOG(LogAedir, Display, TEXT("[SpinWatch] the hips turned %.0f deg in all, at most %.0f deg/s; the head looked up to %.0f deg off the chest; the right hand moved %.0f cm against the hips; ragdoll %d | view %s, pose head %s neck %s twist %.0f"),
-				Watch->Turned, Watch->TopRate, Watch->HeadOff, Watch->FistMove, Balance && Balance->IsRagdoll() ? 1 : 0, *GetControlRotation().ToCompactString(),
+			UE_LOG(LogAedir, Display, TEXT("[SpinWatch] %s: the hips turned %.0f deg in all, at most %.0f deg/s; the head looked up to %.0f deg off the chest; the right hand moved %.0f cm against the hips; ragdoll %d | view %s, pose head %s neck %s twist %.0f"),
+				*Body->GetName(), Watch->Turned, Watch->TopRate, Watch->HeadOff, Watch->FistMove, Body->Balance && Body->Balance->IsRagdoll() ? 1 : 0, *GetControlRotation().ToCompactString(),
 				GaitNow ? *GaitNow->HeadLookRotation.ToCompactString() : TEXT("-"), GaitNow ? *GaitNow->NeckLookRotation.ToCompactString() : TEXT("-"), GaitNow ? GaitNow->SpineTwistYaw : 0.f);
 			GetWorldTimerManager().ClearTimer(Watch->Timer);
 		}
