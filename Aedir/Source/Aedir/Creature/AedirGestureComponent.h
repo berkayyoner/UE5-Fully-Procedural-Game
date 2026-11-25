@@ -35,6 +35,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender")
 	FVector SurrenderElbow = FVector(-0.1f, 0.6f, -0.8f);
 
+	// On the way up off the ground they are held here instead, by the chest as it is bent: before the shoulders, not over the
+	// head. As the chest comes up (how far up its up points, from the first to the second) they go to where they are held
+	// standing, and to a standing body's way of holding them over SurrenderRisenSeconds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender")
+	FVector SurrenderRisingHandCm = FVector(26.f, 33.f, 0.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender", meta=(ClampMin="-1", ClampMax="1"))
+	float SurrenderRisingUprightMin = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender", meta=(ClampMin="-1", ClampMax="1"))
+	float SurrenderRisingUprightMax = 0.97f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender", meta=(ClampMin="0.05", Units="s"))
+	float SurrenderRisenSeconds = 0.6f;
+
 	// Lying on the face, the wrists are this far ahead of the chest instead (cm): beside the head.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender")
 	float SurrenderFaceDownAheadCm = 2.f;

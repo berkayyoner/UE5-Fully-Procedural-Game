@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Audio/AedirSfxSubsystem.h"
 #include "Components/ActorComponent.h"
 #include "Combat/AedirCombatTypes.h"
 #include "Engine/NetSerialization.h"
@@ -16,7 +17,6 @@ struct FHitResult;
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FAedirHitDealt, AAedirCreature*, Victim, float, Damage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FAedirImpact, AActor*, Victim, FName, Bone, float, Energy, float, Damage);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirClash, AAedirCreature*, Other);
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirShove, AAedirCreature*, Victim);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FAedirKick, AAedirCreature*, Victim);
 
 USTRUCT(BlueprintType)
@@ -182,10 +182,6 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Aedir|Combat")
 	FAedirClash OnClash;
-
-	// Broadcast on the server when a shove reaches a creature.
-	UPROPERTY(BlueprintAssignable, Category="Aedir|Combat")
-	FAedirShove OnShove;
 
 	// Broadcast on the server when a kick reaches a creature.
 	UPROPERTY(BlueprintAssignable, Category="Aedir|Combat")
@@ -418,6 +414,37 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float AIRestBackOffCm = 250.f;
 
+	// A fighter of the world goes in for a run of so many blows (the first for one not aggressive at all, the second for the
+	// most aggressive), draws back this much further than it fights from (for at most AIWithdrawSecondsMax), and circles the
+	// foe there, at AICircleInput of its walking pace, for this long before going in again. Driven back off its balance
+	// below AIWithdrawBelowBalance it draws back at once. A foe down, spent or open is gone in on at once.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Tactics", meta=(ClampMin="1"))
+	int32 AIFlurryBlowsMin = 2;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Tactics", meta=(ClampMin="1"))
+	int32 AIFlurryBlowsMax = 4;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Tactics", meta=(ClampMin="0", Units="cm"))
+	float AIWithdrawCmMin = 70.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Tactics", meta=(ClampMin="0", Units="cm"))
+	float AIWithdrawCmMax = 140.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Tactics", meta=(ClampMin="0.1", Units="s"))
+	float AIWithdrawSecondsMax = 1.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Tactics", meta=(ClampMin="0", Units="s"))
+	float AICircleSecondsMin = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Tactics", meta=(ClampMin="0", Units="s"))
+	float AICircleSecondsMax = 2.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Tactics", meta=(ClampMin="0", ClampMax="1"))
+	float AICircleInput = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Tactics", meta=(ClampMin="0", ClampMax="1"))
+	float AIWithdrawBelowBalance = 0.55f;
+
 	// Bare-handed on guard, the mouse is held this share of the way from the chest (0) to the foe's head (1), and
 	// AIFistGuardLift higher still (a share of the mouse's way up), so the fists cover the face.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat", meta=(ClampMin="0", ClampMax="1"))
@@ -561,16 +588,98 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Grip")
 	float GripPrimaryStiffnessScale = 1.35f;
 
-	// Stamina paid for a shove.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Shove")
-	float ShoveStaminaCost = 12.f;
+	// A headbutt: it costs this much stamina, can be thrown again after this long, and not with less balance than this.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0"))
+	float HeadbuttStaminaCost = 10.f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Shove")
-	float ShoveCooldown = 0.9f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0", Units="s"))
+	float HeadbuttCooldown = 0.8f;
 
-	// Reach in cm from the owner to the first creature a shove can hit.
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Shove")
-	float ShoveRange = 130.f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0", ClampMax="1"))
+	float HeadbuttLeastBalance = 0.35f;
+
+	// The head is drawn back over the first, thrown forward over the second, and comes back over the third (seconds); the
+	// trunk leans back this far drawn back and forward this far thrown (degrees), the hips go this far forward (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0.01", Units="s"))
+	float HeadbuttWindSeconds = 0.18f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0.01", Units="s"))
+	float HeadbuttThrowSeconds = 0.13f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0.01", Units="s"))
+	float HeadbuttRecoverSeconds = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt")
+	float HeadbuttBackDegrees = 12.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt")
+	float HeadbuttLeanDegrees = 34.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt")
+	float HeadbuttHipForwardCm = 10.f;
+
+	// Thrown, the body steps into it at this speed and the head is driven forward at this speed (cm/s).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0"))
+	float HeadbuttLungeSpeed = 150.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0"))
+	float HeadbuttHeadSpeed = 250.f;
+
+	// The forehead lies this far ahead of and above the head's bone (cm); what it meets within this radius and this much
+	// further on, until this long into the way back, is struck, with this much weight behind it, at no more than this speed.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt")
+	float HeadbuttForeheadAheadCm = 9.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt")
+	float HeadbuttForeheadUpCm = 7.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="1"))
+	float HeadbuttRadiusCm = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0"))
+	float HeadbuttReachCm = 8.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0", Units="s"))
+	float HeadbuttStrikeAfterSeconds = 0.08f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0.1"))
+	float HeadbuttMassKg = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0"))
+	float HeadbuttMaxSpeed = 600.f;
+
+	// It pushes the body it lands on by this share of what its blow carries; head on head the striker loses this share of
+	// the senses the struck one did.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0"))
+	float HeadbuttPushShare = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0", ClampMax="1"))
+	float HeadbuttOwnSensesShare = 0.2f;
+
+	// Into something fixed coming at least this fast the head is knocked, costing this much balance and this much of the
+	// senses for each cm/s past it; it sounds as the take of a fist on the body for this share of a full blow's speed.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0", Units="cm/s"))
+	float HeadbuttFixedMinSpeed = 120.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0"))
+	float HeadbuttFixedRecoilBalance = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0"))
+	float HeadbuttFixedSensesPerSpeed = 0.06f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0", ClampMax="1"))
+	float HeadbuttSoundTake = 0.4f;
+
+	// Bare-handed, a fighter of the world this near the foe headbutts instead of throwing a fist this share of the time.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0", ClampMax="1"))
+	float AIHeadbuttChance = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Headbutt", meta=(ClampMin="0", Units="cm"))
+	float AIHeadbuttInCm = 72.f;
+
+	// A kick is heard on whatever it meets from this speed of the foot on (cm/s), whether it harms or not.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0", Units="cm/s"))
+	float KickSoundMinSpeed = 120.f;
 
 	// Stamina paid for a kick.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
@@ -817,9 +926,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat")
 	bool StartSwing(EAedirHand Hand, EAedirSwingType Type);
 
-	// Owning client predicts the shove and asks the server to apply it. The server and NPCs apply it directly.
-	UFUNCTION(BlueprintCallable, Category="Aedir|Combat|Shove")
-	bool StartShove();
+	// The head drawn back and thrown at what is before it. The owning client starts it at once and asks the server, which
+	// works out what it strikes; the server and NPCs start it directly.
+	UFUNCTION(BlueprintCallable, Category="Aedir|Combat|Headbutt")
+	bool StartHeadbutt();
+	bool CanStartHeadbutt() const;
+	bool IsHeadbutting() const { return HeadbuttElapsed >= 0.f; }
+	// How far the head is drawn back (-1) or thrown (1) just now.
+	float GetHeadbuttShare() const;
+	static float EvaluateHeadbutt(float Elapsed, float WindSeconds, float ThrowSeconds, float RecoverSeconds);
 
 	// Owning client predicts the kick and asks the server to apply it. The server and NPCs apply it directly.
 	UFUNCTION(BlueprintCallable, Category="Aedir|Combat|Kick")
@@ -906,9 +1021,6 @@ public:
 	static float ComputeDamageTypeFactor(EAedirDamageType Type, float AxialAlignment);
 	static bool GetBoneLimb(FName BoneName, EAedirLimb& OutLimb);
 
-	// Energy in joules of a shove. Scales with strength and with the stamina fraction, between half and full.
-	static float ComputeShoveEnergy(float Strength, float StaminaFraction);
-
 	// Foot target of the kick arc. T01 is 0 at the start; the foot is drawn back and up to the wind-up by 0.42, swings round the
 	// hip up through the front to the full extension at 0.62, and is back at the start at 1.
 	static FVector EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm = 0.f, float WindUpBackCm = 18.f, float WindUpBelowHipCm = 70.f, float ExtendHeightCm = 80.f);
@@ -948,13 +1060,15 @@ private:
 	void UpdateTwoHandGrip();
 	FVector GetGripPointWorld() const;
 
-	bool CanStartShove() const;
-	bool TryStartShove();
-	void BeginShove();
-	void EndShove();
-	void UpdateShove(float DeltaTime);
-	FVector GetShoveWorldTarget(EAedirHand Hand, float Elapsed) const;
-	void ResolveShoveStrike();
+	void BeginHeadbutt();
+	void UpdateHeadbutt(float DeltaTime);
+	void ResolveHeadbuttSweep(const FVector& From, const FVector& To, float DeltaTime);
+	FVector GetForeheadWorld() const;
+	UFUNCTION()
+	void OnRep_HeadbuttCount();
+	// A blow of some part of the body (a foot, the head) landing on another, as a fist does: by how fast it came in where it
+	// met it, with that much weight behind it, heard as that take of that sound.
+	void ApplyBodyPartBlow(AAedirCreature* Victim, const FHitResult& Hit, const FVector& Motion, float Speed, float SoundSpeed, float MassKg, float PushShare, EAedirSfx Sound, float SoundTake, const TCHAR* Label);
 
 	bool CanStartKick() const;
 	bool TryStartKick();
@@ -1144,6 +1258,19 @@ private:
 	bool CanAIStrikeWhileResting() const;
 	bool bAIStandAside = false;
 	bool bAIResting = false;
+	// The fight as a run of blows: pressed in for a few, then drawn back out of reach, then circled round the foe a while
+	// before it goes in again.
+	enum class EAedirAITactic : uint8 { Press, Withdraw, Circle };
+	EAedirAITactic AITactic = EAedirAITactic::Press;
+	int32 AIBlowsLeft = 2;
+	float AITacticTimer = 0.f;
+	float AITacticOffCm = 0.f;
+	float AICircleSide = 1.f;
+	void UpdateAITactic(float DeltaTime, float Distance, bool bArmed);
+	void SetAITactic(EAedirAITactic Tactic, const TCHAR* Why);
+	// A blow has been thrown at the foe.
+	void NoteAIBlow();
+	float GetAIAggression() const;
 	int32 AIGrabSlot = INDEX_NONE;
 	float AIGrabTimer = 0.f;
 	void UpdateAIGrab(bool bArmed, float Distance, float DeltaTime);
@@ -1196,7 +1323,7 @@ private:
 	EAedirHand LastGripHand = EAedirHand::Right;
 
 	UFUNCTION(Server, Reliable)
-	void ServerStartShove();
+	void ServerStartHeadbutt();
 
 	UFUNCTION(Server, Reliable)
 	void ServerStartKick();
@@ -1218,11 +1345,14 @@ private:
 	float ClashCandidateTimer = 0.f;
 	float ArmAimSendTimer = 0.f;
 
-	// Shove timeline. Runs on the server and on the owning client; only the server applies the strike.
-	bool bShoving = false;
-	float ShoveElapsed = 0.f;
-	bool bShoveStruck = false;
-	float ShoveCooldownRemaining = 0.f;
+	// Headbutt timeline (below 0 none). Runs on every machine; only the server sweeps for what it strikes.
+	float HeadbuttElapsed = -1.f;
+	float HeadbuttCooldownRemaining = 0.f;
+	bool bHeadbuttStruck = false;
+	bool bHeadbuttThrown = false;
+	FVector HeadbuttPrevForehead = FVector::ZeroVector;
+	UPROPERTY(ReplicatedUsing=OnRep_HeadbuttCount)
+	uint8 HeadbuttCount = 0;
 
 	// Kick timeline. Runs on every machine; only the server sweeps for the strike.
 	float KickCooldownRemaining = 0.f;

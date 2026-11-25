@@ -107,6 +107,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
 	float SettleLegStartShare = 0.4f;
 
+	// And its feet are held where they stand by this share of what they are later.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
+	float SettleFootStartShare = 0.5f;
+
 	// And for the neck, which holds the head up and turns it the way the body rises.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
 	float HoistHeadShare = 0.6f;

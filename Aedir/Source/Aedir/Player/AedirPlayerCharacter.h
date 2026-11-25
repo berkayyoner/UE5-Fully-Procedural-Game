@@ -1102,7 +1102,7 @@ private:
 	void HandleRightUseReleased() { HandleUseReleased(EAedirHand::Right); }
 	void HandleLeftUsePressed() { HandleUsePressed(EAedirHand::Left); }
 	void HandleLeftUseReleased() { HandleUseReleased(EAedirHand::Left); }
-	void HandleShovePressed();
+	void HandleHeadbuttPressed();
 	TWeakObjectPtr<AAedirNpc> PointingNpc;
 	void AimForTest(TWeakObjectPtr<AActor> Target, bool bPress);
 

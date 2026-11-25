@@ -166,7 +166,7 @@ void UAedirGestureComponent::UpdateCrouch(float DeltaTime)
 		return;
 	}
 	const UAedirBalanceComponent* Balance = Creature->Balance;
-	if (Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()))
+	if (Balance && (Balance->IsRagdoll() || Balance->IsGettingUp() || Balance->IsSettling()))
 	{
 		SteadySeconds = 0.f;
 	}

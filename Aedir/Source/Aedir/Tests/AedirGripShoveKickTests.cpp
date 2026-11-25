@@ -5,21 +5,18 @@
 #include "Combat/AedirCombatComponent.h"
 #include "Misc/AutomationTest.h"
 
-IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAedirMeleeShoveEnergyTest, "Aedir.Melee.ShoveEnergy", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAedirMeleeHeadbuttCurveTest, "Aedir.Melee.HeadbuttCurve", EAutomationTestFlags::EditorContext | EAutomationTestFlags::ClientContext | EAutomationTestFlags::ProductFilter)
 
-bool FAedirMeleeShoveEnergyTest::RunTest(const FString& Parameters)
+bool FAedirMeleeHeadbuttCurveTest::RunTest(const FString& Parameters)
 {
-	const float Full = UAedirCombatComponent::ComputeShoveEnergy(10.f, 1.f);
-	TestTrue(TEXT("Strength 10 at full stamina shoves with 36 to 40 J"), Full >= 36.f && Full <= 40.f);
-
-	const float Weak = UAedirCombatComponent::ComputeShoveEnergy(5.f, 1.f);
-	const float Strong = UAedirCombatComponent::ComputeShoveEnergy(20.f, 1.f);
-	TestTrue(TEXT("Shove energy grows with strength"), Strong > Full && Full > Weak);
-
-	const float Exhausted = UAedirCombatComponent::ComputeShoveEnergy(10.f, 0.f);
-	const float Ratio = Exhausted / Full;
-	TestTrue(TEXT("Zero stamina roughly halves the shove"), Ratio >= 0.45f && Ratio <= 0.55f);
-
+	const auto At = [](float Seconds) { return UAedirCombatComponent::EvaluateHeadbutt(Seconds, 0.2f, 0.1f, 0.3f); };
+	TestTrue(TEXT("Not begun, the head is where it was"), FMath::IsNearlyZero(At(0.f)));
+	TestTrue(TEXT("The head is drawn back first"), At(0.1f) < -0.3f && At(0.1f) > -1.f);
+	TestTrue(TEXT("Drawn all the way back at the end of the wind-up"), FMath::IsNearlyEqual(At(0.1999f), -1.f, 0.01f));
+	TestTrue(TEXT("Thrown fast: past the middle a third of the way through the throw"), At(0.2f + 0.1f / 3.f) > 0.f);
+	TestTrue(TEXT("Thrown all the way at the end of the throw"), FMath::IsNearlyEqual(At(0.2999f), 1.f, 0.01f));
+	TestTrue(TEXT("On the way back after it"), At(0.45f) > 0.f && At(0.45f) < 1.f);
+	TestTrue(TEXT("Back where it was at the end"), FMath::IsNearlyZero(At(0.61f)));
 	return true;
 }
 

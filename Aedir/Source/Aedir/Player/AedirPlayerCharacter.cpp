@@ -685,7 +685,7 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::Y, IE_Released, this, &AAedirPlayerCharacter::HandleLeftUseReleased);
 
 	PlayerInputComponent->BindKey(EKeys::F, IE_Pressed, this, &AAedirPlayerCharacter::HandleTalkPressed);
-	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AAedirPlayerCharacter::HandleShovePressed);
+	PlayerInputComponent->BindKey(EKeys::G, IE_Pressed, this, &AAedirPlayerCharacter::HandleHeadbuttPressed);
 	PlayerInputComponent->BindKey(EKeys::X, IE_Pressed, this, &AAedirPlayerCharacter::HandleChangeHandsPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Pressed, this, &AAedirPlayerCharacter::HandleThrustPressed);
 	PlayerInputComponent->BindKey(EKeys::LeftAlt, IE_Released, this, &AAedirPlayerCharacter::HandleThrustReleased);
@@ -1548,7 +1548,7 @@ void AAedirPlayerCharacter::ServerNpcAction_Implementation(AAedirNpc* Npc, EAedi
 	}
 }
 
-void AAedirPlayerCharacter::HandleShovePressed()
+void AAedirPlayerCharacter::HandleHeadbuttPressed()
 {
 	if (HasHandsUp())
 	{
@@ -1559,7 +1559,7 @@ void AAedirPlayerCharacter::HandleShovePressed()
 		return;
 	}
 
-	Combat->StartShove();
+	Combat->StartHeadbutt();
 }
 
 void AAedirPlayerCharacter::HandleThrustPressed()

@@ -784,7 +784,9 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 		Control->SetControlEnabled(Name, !bLimp && Posture > 0.f);
 	}
 	const float Foot = CVarAedirBodyFoot.GetValueOnGameThread() >= 0.f ? CVarAedirBodyFoot.GetValueOnGameThread() : FootStrength;
-	Apply(FootControls, bLimp ? 0.f : Foot * Body * HoldEase, bLimp ? 0.f : Foot * Body * HoldEase);
+	// Hauled up with its feet on the ground, they are held there from the start.
+	const float FootHold = FMath::Lerp(SettleFootStartShare, 1.f, HoldEase);
+	Apply(FootControls, bLimp ? 0.f : Foot * Body * FootHold, bLimp ? 0.f : Foot * Body * FootHold);
 	// A kicking foot is thrown along its arc by the whole leg, much harder than a step sets a foot down.
 	if (!bLimp && KickLeg >= 0)
 	{

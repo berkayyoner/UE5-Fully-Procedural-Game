@@ -104,6 +104,8 @@ namespace
 	constexpr float AedirLivingJointExtraDegrees = 30.f;
 	constexpr float AedirLivingLockedExtraDegrees = 15.f;
 	constexpr float AedirLivingJointMaxDegrees = 150.f;
+	// How much of its strength a body coming round gets back before its arms' joints are laid out anew.
+	constexpr float AedirJointWakeStep = 0.08f;
 	constexpr float AedirLivingWristDegrees = 140.f;
 	constexpr float AedirLivingForearmSwingDegrees = 85.f;
 	constexpr float AedirLivingForearmTwistDegrees = 150.f;
@@ -476,6 +478,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 	KeepHeadOnNeck(DeltaTime);
 	WatchFall(DeltaTime);
+	WatchRisingFeet(DeltaTime);
 	SettleRagdollEntry(DeltaTime);
 	ForgetThingsSteppedOff();
 
@@ -532,7 +535,9 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		HoistSettleLeft = FMath::Max(HoistSettleLeft - DeltaTime, 0.f);
 		if (UCharacterMovementComponent* SettleMovement = CharacterOwner->GetCharacterMovement(); SettleMovement && !bIsRagdoll)
 		{
-			if (HoistSettleLeft > 0.f)
+			// Well on its way into the standing pose it may step off.
+			const bool bHeldStill = HoistSettleLeft > HoistSettleSeconds * (1.f - HoistSettleMoveShare);
+			if (bHeldStill)
 			{
 				SettleMovement->StopMovementImmediately();
 			}
@@ -567,7 +572,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	else if (BodyControl && BodyControl->IsReady())
 	{
 		// Down, the muscles still follow what the body is: killed or knocked senseless on the ground it goes slack there.
-		UpdateDownMuscles();
+		UpdateDownMuscles(DeltaTime);
 	}
 	else if (!bIsRagdoll)
 	{
@@ -738,13 +743,29 @@ bool UAedirBalanceComponent::UsesBodyControl() const
 	return Forced < 0 ? bUseBodyControl : Forced != 0;
 }
 
-void UAedirBalanceComponent::UpdateDownMuscles()
+void UAedirBalanceComponent::UpdateDownMuscles(float DeltaTime)
 {
+	const UAedirStatsComponent* Stats = FindStats();
+	// Come round, the strength comes back little by little, the more slowly the worse off the body is.
+	if (Stats && (Stats->IsDead() || Stats->IsDying() || Stats->IsKnockedOut()))
+	{
+		WakeShare = 0.f;
+	}
+	else if (!bIsRagdoll)
+	{
+		WakeShare = 1.f;
+	}
+	else
+	{
+		const float Well = Stats ? FMath::Min(Stats->GetStaminaFraction(), Stats->GetHealth() / FMath::Max(Stats->GetMaxHealth(), 1.f)) : 1.f;
+		const float Before = WakeShare;
+		WakeShare = FMath::Min(WakeShare + DeltaTime / FMath::Max(FMath::Lerp(WakeSecondsMax, WakeSecondsMin, FMath::Clamp(Well, 0.f, 1.f)), 0.1f), 1.f);
+		UE_CLOG(Before <= 0.f, LogAedir, Log, TEXT("[Senses] %s comes round; its strength comes back over %.1f s."), *GetNameSafe(GetOwner()), FMath::Lerp(WakeSecondsMax, WakeSecondsMin, FMath::Clamp(Well, 0.f, 1.f)));
+	}
 	if (!BodyControl)
 	{
 		return;
 	}
-	const UAedirStatsComponent* Stats = FindStats();
 	const AAedirCreature* Creature = Cast<AAedirCreature>(CharacterOwner);
 	BodyControl->SetDead(Creature && Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying()));
 	// Down but awake the body keeps a share of the muscle it has on its feet, less with breath gone or the senses dazed;
@@ -753,12 +774,15 @@ void UAedirBalanceComponent::UpdateDownMuscles()
 	const float Breath = FMath::Lerp(TiredStrengthShare, 1.f, Stats ? FMath::Clamp(Stats->GetStaminaFraction(), 0.f, 1.f) : 1.f);
 	// Hauling itself up it puts all it has into it.
 	const float Share = bHoisting ? 1.f : DownAwakeMotorShare;
-	const float Senses = Breath * (1.f - 0.6f * GetDazeFactor());
+	const float Senses = Breath * (1.f - 0.6f * GetDazeFactor()) * GetWakeStrength();
 	BodyControl->SetDownAwake(bSenseless ? 0.f : Share * Senses, bSenseless ? 0.f : (bHoisting ? 1.f : DownAwakeArmShare) * Senses);
 	BodyControl->SetHoistFreeArm(bHoisting ? HoistFreeHand : -1);
-	if (const bool bAwakeNow = bIsRagdoll && !bSenseless; bAwakeNow != bDownArmsAwake)
+	const bool bAwakeNow = bIsRagdoll && !bSenseless;
+	const float Wake = GetWakeStrength();
+	if (bAwakeNow != bDownArmsAwake || (bAwakeNow && (FMath::Abs(Wake - JointsWake) > AedirJointWakeStep || (Wake >= 1.f && JointsWake < 1.f))))
 	{
 		bDownArmsAwake = bAwakeNow;
+		JointsWake = Wake;
 		if (bIsRagdoll)
 		{
 			ApplyJointLimits(true, true);
@@ -844,7 +868,7 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 		Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftLeg), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightLeg));
 	const bool bGettingUp = IsGettingUp();
 	BodyControl->SetRising(bGettingUp);
-	UpdateDownMuscles();
+	UpdateDownMuscles(DeltaTime);
 
 	// A foot the steps have put down stays there; one in the air, or both while jumping or falling, swings free.
 	FAedirGaitState Pose;
@@ -866,7 +890,7 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 		const FBodyInstance* Foot = BodyMesh->GetBodyInstance(Bone);
 		// Just come into the world it has no pose yet to be measured against.
 		const bool bThere = bFootPlanted[Side] || !Foot || SpawnAge < SpawnPosedSeconds + 0.5f || FVector::DistSquared(Foot->GetUnrealWorldTransform().GetLocation(), BodyControl->GetPoseLocation(Bone)) < FMath::Square(PlantedFootCatchCm);
-		bFootPlanted[Side] = bPlantable && Lift < AedirPlantedFootLift && bThere && HoistSettleLeft <= 0.f;
+		bFootPlanted[Side] = bPlantable && Lift < AedirPlantedFootLift && bThere && HoistSettleLeft <= HoistSettleSeconds * (1.f - HoistSettleMoveShare);
 		return bFootPlanted[Side];
 	};
 	const bool bPlantLeft = Plant(0, Pose.LeftFootLift);
@@ -2127,7 +2151,7 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	{
 		LyingStyle = ReadLyingStyle();
 		const bool bWasReady = bReadyToGetUp;
-		bReadyToGetUp = !bDead && !bSenseless && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds;
+		bReadyToGetUp = !bDead && !bSenseless && WakeShare >= WakeGetUpShare && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds;
 		if (bReadyToGetUp && !bWasReady && BodyMesh)
 		{
 			UE_LOG(LogAedir, Verbose, TEXT("[GetUp] %s can get up, lies %s, head %s from the pelvis."), *GetNameSafe(GetOwner()),
@@ -2629,6 +2653,60 @@ void UAedirBalanceComponent::WatchFall(float DeltaTime)
 	}
 }
 
+void UAedirBalanceComponent::WatchRisingFeet(float DeltaTime)
+{
+	static const IConsoleVariable* Watch = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.GetUpWatch"));
+	if (!Watch)
+	{
+		Watch = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.GetUpWatch"));
+	}
+	if (!Watch || Watch->GetInt() == 0 || !BodyMesh)
+	{
+		return;
+	}
+	const bool bRising = bHoisting && HoistProgress >= static_cast<float>(HoistStages().Num() - 1) - 1.f;
+	const bool bSettled = HoistSettleLeft > 0.f;
+	if (bRising || bSettled)
+	{
+		FeetWatchLeft = 0.8f;
+	}
+	else if (FeetWatchLeft <= 0.f)
+	{
+		return;
+	}
+	FeetWatchLeft -= DeltaTime;
+	if (FeetWatchLeft <= 0.f || (bIsRagdoll && !bHoisting && !bHoistFinished))
+	{
+		UE_LOG(LogAedir, Log, TEXT("[RiseFeet] %s: coming up %.2f s, both feet off the ground %.2f s of it (at most %.1f cm); stood up %.2f s, off the ground %.2f s (at most %.1f cm)%s"), *GetNameSafe(GetOwner()), FeetWatchSeconds[0], FeetWatchAir[0], FeetWatchMost[0], FeetWatchSeconds[1], FeetWatchAir[1], FeetWatchMost[1], bIsRagdoll ? TEXT(", and down again") : TEXT(""));
+		FeetWatchLeft = 0.f;
+		for (int32 Part = 0; Part < 2; ++Part)
+		{
+			FeetWatchSeconds[Part] = FeetWatchAir[Part] = FeetWatchMost[Part] = 0.f;
+		}
+		return;
+	}
+	const int32 Part = bHoisting ? 0 : 1;
+	float Lowest = UE_BIG_NUMBER;
+	for (const TCHAR* Name : { TEXT("foot_l"), TEXT("ball_l"), TEXT("foot_r"), TEXT("ball_r") })
+	{
+		if (const FBodyInstance* Foot = BodyMesh->GetBodyInstance(FName(Name)))
+		{
+			const FBox Bounds = Foot->GetBodyBounds();
+			FVector Under;
+			if (TraceStandingGround(Bounds.GetCenter() + FVector(0.f, 0.f, 30.f), Bounds.GetCenter() - FVector(0.f, 0.f, 200.f), Under, false))
+			{
+				Lowest = FMath::Min(Lowest, static_cast<float>(Bounds.Min.Z - Under.Z));
+			}
+		}
+	}
+	FeetWatchSeconds[Part] += DeltaTime;
+	if (Lowest < UE_BIG_NUMBER && Lowest > 3.f)
+	{
+		FeetWatchAir[Part] += DeltaTime;
+		FeetWatchMost[Part] = FMath::Max(FeetWatchMost[Part], Lowest);
+	}
+}
+
 void UAedirBalanceComponent::DrivePelvis()
 {
 	FBodyInstance* Pelvis = BodyMesh->GetBodyInstance(PelvisBoneName);
@@ -2965,6 +3043,7 @@ void UAedirBalanceComponent::StartHoist()
 	HoistLeanSmoothed = FVector::ZeroVector;
 	HoistLeadSide = FMath::RandBool() ? 1 : 0;
 	HoistProgress = 0.f;
+	bHoistFeetSet = false;
 	HoistStyle = LyingStyle;
 	HoistHeadward = (BodyMesh->GetBoneLocation(ChestBoneName) - HoistAnchor).GetSafeNormal2D();
 	if (HoistHeadward.IsNearlyZero())
@@ -3008,6 +3087,23 @@ void UAedirBalanceComponent::StartHoist()
 		if (Head != INDEX_NONE)
 		{
 			HoistFaceLocal = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), Head).GetRotation().UnrotateVector(FVector(0.f, 1.f, 0.f)).GetSafeNormal();
+		}
+	}
+	// How the feet stand flat, and how high their ankles are over the ground then.
+	if (const USkeletalMesh* Model = BodyMesh->GetSkeletalMeshAsset())
+	{
+		const FReferenceSkeleton& Bones = Model->GetRefSkeleton();
+		for (int32 Side = 0; Side < 2; ++Side)
+		{
+			const int32 Foot = Bones.FindBoneIndex(Side == 0 ? FootLeftBone : FootRightBone);
+			if (Foot != INDEX_NONE)
+			{
+				const FTransform FootRef = FAnimationRuntime::GetComponentSpaceTransformRefPose(Bones, Foot);
+				HoistFootRest[Side] = FootRef.GetRotation();
+				HoistAnkleCm = static_cast<float>(FootRef.GetLocation().Z * BodyMesh->GetComponentScale().Z);
+				const int32 Ball = Bones.FindBoneIndex(Side == 0 ? BallLeftBone : BallRightBone);
+				HoistBallCm = Ball != INDEX_NONE ? static_cast<float>(FAnimationRuntime::GetComponentSpaceTransformRefPose(Bones, Ball).GetLocation().Z * BodyMesh->GetComponentScale().Z) : 3.f;
+			}
 		}
 	}
 	UE_LOG(LogAedir, Log, TEXT("[GetUp] %s starts hauling itself up by the hips, lying %s."), *GetNameSafe(GetOwner()), LyingStyle == EAedirGetUpStyle::FromFront ? TEXT("face down") : TEXT("on its back"));
@@ -3305,13 +3401,32 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 		HoistAnchor = Hips;
 	}
 
+	const float Last = static_cast<float>(Stages.Num() - 1);
+	// The last of the way it stands on its feet: the hips go up no further than the legs reach from them.
+	const float FindFeet = FMath::Clamp((HoistProgress - (Last - HoistFeetFromSteps)) / FMath::Max(HoistFeetEaseSteps, 0.05f), 0.f, 1.f);
+	float HipsMostCm = UE_BIG_NUMBER;
+	for (int32 Side = 0; Side < 2 && FindFeet > 0.f && bHoistFeetSet; ++Side)
+	{
+		if (bHoistFootStepping[Side])
+		{
+			continue;
+		}
+		const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
+		const FVector Thigh = BodyMesh->GetBoneLocation(FName(FString(TEXT("thigh")) + Suffix));
+		const FVector Knee = BodyMesh->GetBoneLocation(FName(FString(TEXT("calf")) + Suffix));
+		const FVector Ankle = BodyMesh->GetBoneLocation(FName(FString(TEXT("foot")) + Suffix));
+		const float Leg = static_cast<float>(FVector::Dist(Thigh, Knee) + FVector::Dist(Knee, Ankle)) * HoistLegReachShare;
+		const float Aside = FMath::Min(static_cast<float>(FVector::Dist2D(Thigh, HoistFootSpot[Side])), Leg * 0.9f);
+		const float Down = FMath::Sqrt(FMath::Square(Leg) - FMath::Square(Aside));
+		HipsMostCm = FMath::Min(HipsMostCm, static_cast<float>(HoistFootSpot[Side].Z - Ground.Z) + HoistAnkleCm + Down + static_cast<float>(Hips.Z - Thigh.Z));
+	}
 	// Where the step has the hips, and how far behind it they are.
 	const auto HipsAt = [&](const FAedirGetUpStage& Stage)
 	{
 		const FVector Flat = FVector(HoistAnchor.X, HoistAnchor.Y, 0.f) - Headward * (Stage.HipBackCm * Size);
-		return FVector(Flat.X, Flat.Y, Ground.Z + Stage.HipHeightCm * Size);
+		const float HeightCm = Stage.HipHeightCm * Size;
+		return FVector(Flat.X, Flat.Y, Ground.Z + FMath::Lerp(HeightCm, FMath::Min(HeightCm, HipsMostCm), FindFeet));
 	};
-	const float Last = static_cast<float>(Stages.Num() - 1);
 	HoistTrailLogged = static_cast<float>(FVector::Dist(Hips, HipsAt(SampleHoistStage(HoistProgress))));
 
 	// Held, the head comes up, then the hands go down, and once both are down the steps go on, as fast as the hips keep up
@@ -3498,10 +3613,18 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 		{
 			HoistFreeHand = -1;
 		}
-		// Giving up, both are held up as soon as the step lets go of them.
-		if (Self && Self->Gesture && Self->Gesture->IsSurrendering() && Stage.Hands <= HoistSurrenderHandsBelow)
+		// Giving up, both are held up as soon as the step lets go of them, and one of them, the one not first on the ground,
+		// before that.
+		if (Self && Self->Gesture && Self->Gesture->IsSurrendering())
 		{
-			HoistFreeHand = AedirBothHands;
+			if (Stage.Hands <= HoistSurrenderHandsBelow)
+			{
+				HoistFreeHand = AedirBothHands;
+			}
+			else if (bHoistSurrenderOneHand && HoistHand >= 0 && HoistHand <= 1)
+			{
+				HoistFreeHand = 1 - HoistHand;
+			}
 		}
 		UE_CLOG(Was != HoistFreeHand, LogAedir, Log, TEXT("[GetUp] %s getting up keeps %s off the ground."), *GetNameSafe(GetOwner()), HoistFreeHand == AedirBothHands ? TEXT("both hands") : HoistFreeHand == 0 ? TEXT("its left hand") : HoistFreeHand == 1 ? TEXT("its right hand") : TEXT("neither hand"));
 		if (HoistHand >= 0 && HoistHand == HoistFreeHand)
@@ -3633,14 +3756,16 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 			LegBody->AddForce(LegAccel.GetClampedToMaxSize(HoistHandMaxAccel) * FMath::Max(LegMass, LegBody->GetBodyMass()), true, false);
 		};
 		const FVector Flat = FVector(HoistAnchor.X, HoistAnchor.Y, Ground.Z) - Headward * ((bFront ? GetUpKneeBackCm : GetUpFeetBackCm) * Size) + Right * (Outward * GetUpLegOutCm * Size);
-		Hold(bFront ? TEXT("calf") : TEXT("foot"), Flat + FVector(0.f, 0.f, (bFront ? 6.f : 5.f) * Size), Stage.Legs * (1.f - Forward));
+		const float Kept = 1.f - FindFeet;
+		Hold(bFront ? TEXT("calf") : TEXT("foot"), Flat + FVector(0.f, 0.f, (bFront ? 6.f : 5.f) * Size), Stage.Legs * (1.f - Forward) * Kept);
 		const FVector Ahead = FVector(HipsWanted.X, HipsWanted.Y, Ground.Z) + Headward * (Stage.LeadFootAheadCm * Size) + Right * (Outward * GetUpLegOutCm * Size);
 		// The foot coming forward is carried over the ground, not dragged along it, and set down flat where it goes.
 		const FVector FootNow = BodyMesh->GetBoneLocation(FName(FString(TEXT("foot")) + Suffix));
 		const float StillToGo = static_cast<float>(FVector::Dist2D(FootNow, Ahead));
 		const float StepLift = Forward > 0.f && Forward < 0.98f ? FMath::Min(StillToGo * HoistStepLiftShare, HoistStepLiftMaxCm * Size) : 0.f;
-		Hold(TEXT("foot"), Ahead + FVector(0.f, 0.f, 5.f * Size + StepLift), Stage.Legs * Forward);
+		Hold(TEXT("foot"), Ahead + FVector(0.f, 0.f, 5.f * Size + StepLift), Stage.Legs * Forward * Kept);
 	}
+	const bool bFeetFound = UpdateHoistFeet(FindFeet, Hips, Right, Ground.Z, Size, Strength, DeltaTime);
 
 	// And the hips are turned to face the way the body will stand: face down where the head lay, on the back the feet's way.
 	const FVector Facing = FVector::CrossProduct(BodyMesh->GetBoneLocation(TEXT("thigh_r")) - BodyMesh->GetBoneLocation(TEXT("thigh_l")), Up).GetSafeNormal2D();
@@ -3670,16 +3795,19 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 	}
 
 	// Into the last step, up far enough, upright and steady for a moment: on its feet, standing and stepping take it over.
-	HoistLastStepFor = HoistProgress >= Last - 0.5f ? HoistLastStepFor + DeltaTime : 0.f;
+	// With both feet on the ground under it that is sooner.
+	const bool bLastStep = HoistProgress >= Last - (bFeetFound ? FMath::Max(HoistDoneFromSteps, 0.5f) : 0.5f);
+	HoistLastStepFor = bLastStep ? HoistLastStepFor + DeltaTime : 0.f;
 	// Giving up it stands only to sink again: it need not have come all the way upright.
 	const bool bGivingUp = HoistFreeHand == AedirBothHands;
 	const bool bEasy = bGivingUp || HoistLastStepFor >= HoistDoneEasySeconds;
 	// High enough on its legs but its trunk still swaying over them, it stands on it all the same before long: the muscles
 	// of standing bring the trunk up, where the pull at the hips alone keeps it swaying.
 	const float Late = FMath::Clamp((HoistLastStepFor - HoistDoneEasySeconds) / FMath::Max(HoistDoneLateSeconds - HoistDoneEasySeconds, 0.05f), 0.f, 1.f);
-	const float UprightAsked = FMath::Min(bEasy ? FMath::Lerp(HoistDoneEasyUpright, HoistDoneLateUpright, Late) : HoistDoneUpright, bGivingUp ? HoistSurrenderUpright : 1.f);
+	const float UprightAsked = FMath::Min3(bEasy ? FMath::Lerp(HoistDoneEasyUpright, HoistDoneLateUpright, Late) : HoistDoneUpright, bGivingUp ? HoistSurrenderUpright : 1.f, bFeetFound ? HoistDoneFeetUpright : 1.f);
 	const float SpeedAsked = HoistDoneSpeedCm * FMath::Lerp(1.f, 1.6f, Late);
-	const bool bUp = HoistProgress >= Last - 0.5f && Height >= Stand * (bEasy ? HoistDoneEasyHeightShare : HoistDoneHeightShare) && ChestUp >= UprightAsked && HipsSpeed.Size() < SpeedAsked;
+	const float HeightAsked = Stand * FMath::Min(bEasy ? HoistDoneEasyHeightShare : HoistDoneHeightShare, bFeetFound ? HoistDoneFeetHeightShare : 1.f);
+	const bool bUp = bLastStep && Height >= HeightAsked && ChestUp >= UprightAsked && HipsSpeed.Size() < SpeedAsked;
 	if (!bUp && HoistLastStepFor >= HoistGiveUpSeconds)
 	{
 		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s cannot come up the last of the way (hips %.0f of %.0f cm, chest up %.2f): it lies down to try again."), *GetNameSafe(GetOwner()), Height, Stand, ChestUp);
@@ -3688,9 +3816,9 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 		return;
 	}
 	HoistDoneFor = bUp ? HoistDoneFor + DeltaTime : 0.f;
-	if (HoistDoneFor >= HoistDoneHoldSeconds)
+	if (HoistDoneFor >= (bFeetFound ? FMath::Min(HoistDoneFeetHoldSeconds, HoistDoneHoldSeconds) : HoistDoneHoldSeconds))
 	{
-		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is hauled up onto its feet in %.2f s, the hips %.0f cm up, the chest up %.2f, lift %.2f."), *GetNameSafe(GetOwner()), HoistSeconds, Height, ChestUp, GetUpLift);
+		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s is hauled up onto its feet in %.2f s, the hips %.0f cm up, the chest up %.2f, lift %.2f, step %.2f of %.0f, its feet %s."), *GetNameSafe(GetOwner()), HoistSeconds, Height, ChestUp, GetUpLift, HoistProgress, Last, bFeetFound ? TEXT("found") : TEXT("not found"));
 		bHoisting = false;
 		bHoistFinished = true;
 		return;
@@ -3701,6 +3829,110 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 	{
 		StopHoist(TEXT("let go"));
 	}
+}
+
+bool UAedirBalanceComponent::UpdateHoistFeet(float Share, const FVector& Hips, const FVector& Right, double GroundZ, float Size, float Strength, float DeltaTime)
+{
+	if (Share <= 0.f || !BodyMesh)
+	{
+		bHoistFeetSet = false;
+		return false;
+	}
+	const FVector Facing = HoistStyle == EAedirGetUpStyle::FromFront ? HoistHeadward : -HoistHeadward;
+	const auto GroundAt = [&](const FVector& At)
+	{
+		FVector Under;
+		return FVector(At.X, At.Y, TraceStandingGround(FVector(At.X, At.Y, Hips.Z + 10.0), FVector(At.X, At.Y, GroundZ - 80.0), Under, false) ? Under.Z : GroundZ);
+	};
+	FVector Home[2];
+	FVector Ankle[2];
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
+		const float Outward = FVector::DotProduct(BodyMesh->GetBoneLocation(FName(FString(TEXT("thigh")) + Suffix)) - Hips, Right) >= 0.0 ? 1.f : -1.f;
+		Home[Side] = GroundAt(Hips + Right * (Outward * GetUpLegOutCm * Size) + Facing * (HoistFootAheadCm * Size));
+		Ankle[Side] = BodyMesh->GetBoneLocation(Side == 0 ? FootLeftBone : FootRightBone);
+		if (!bHoistFeetSet)
+		{
+			// Each foot stands where it is.
+			HoistFootSpot[Side] = GroundAt(Ankle[Side]);
+			bHoistFootStepping[Side] = false;
+		}
+	}
+	bHoistFeetSet = true;
+	// The one further from under its hip is stepped in first, the other bearing the body meanwhile.
+	if (!bHoistFootStepping[0] && !bHoistFootStepping[1])
+	{
+		const double Off[2] = { FVector::Dist2D(HoistFootSpot[0], Home[0]), FVector::Dist2D(HoistFootSpot[1], Home[1]) };
+		const int32 Side = Off[0] > Off[1] ? 0 : 1;
+		if (Off[Side] > HoistFootTriggerCm * Size)
+		{
+			bHoistFootStepping[Side] = true;
+			HoistFootElapsed[Side] = 0.f;
+			HoistFootFrom[Side] = FVector(Ankle[Side].X, Ankle[Side].Y, FMath::Max(Ankle[Side].Z - HoistAnkleCm, HoistFootSpot[Side].Z));
+			UE_LOG(LogAedir, Verbose, TEXT("[GetUp] %s steps its %s foot %.0f cm in under it."), *GetNameSafe(GetOwner()), Side == 0 ? TEXT("left") : TEXT("right"), Off[Side]);
+		}
+	}
+	bool bFound = Share >= 1.f;
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
+		FBodyInstance* Foot = BodyMesh->GetBodyInstance(Side == 0 ? FootLeftBone : FootRightBone);
+		if (!Foot || !Foot->IsInstanceSimulatingPhysics())
+		{
+			continue;
+		}
+		const FVector At = Foot->GetUnrealWorldTransform().GetLocation();
+		// Hanging from the shin or up on its toes, the ankle is over the ground by as much more as the toes are under it.
+		const float ToesBelow = static_cast<float>(At.Z - BodyMesh->GetBoneLocation(Side == 0 ? BallLeftBone : BallRightBone).Z) + HoistBallCm;
+		FVector Spot = HoistFootSpot[Side];
+		FVector SpotSpeed = FVector::ZeroVector;
+		if (bHoistFootStepping[Side])
+		{
+			HoistFootElapsed[Side] += DeltaTime;
+			const float T = FMath::Clamp(HoistFootElapsed[Side] / FMath::Max(HoistFootStepSeconds, 0.05f), 0.f, 1.f);
+			Spot = FMath::Lerp(HoistFootFrom[Side], Home[Side], FMath::SmoothStep(0.f, 1.f, T)) + FVector(0.f, 0.f, FMath::Sin(UE_PI * T) * HoistFootStepCm * Size);
+			if (T < 1.f)
+			{
+				SpotSpeed = ((Home[Side] - HoistFootFrom[Side]) * (6.f * T * (1.f - T)) + FVector(0.f, 0.f, UE_PI * FMath::Cos(UE_PI * T) * HoistFootStepCm * Size)) / FMath::Max(HoistFootStepSeconds, 0.05f);
+			}
+			HoistFootSpot[Side] = Home[Side];
+			// Left behind on the way it is given as long again to get there.
+			bHoistFootStepping[Side] = T < 1.f || (FVector::Dist2D(At, Home[Side]) > HoistFeetFoundCm * Size && HoistFootElapsed[Side] < HoistFootStepSeconds * 2.f);
+		}
+		const FVector Wanted = Spot + FVector(0.f, 0.f, FMath::Max(HoistAnkleCm, ToesBelow));
+		bFound &= !bHoistFootStepping[Side] && FVector::Dist(Wanted, At) < HoistFeetFoundCm * Size;
+		float LegMass = 0.f;
+		for (const TCHAR* Part : { TEXT("thigh"), TEXT("calf"), TEXT("foot") })
+		{
+			if (const FBodyInstance* Piece = BodyMesh->GetBodyInstance(FName(FString(Part) + Suffix)))
+			{
+				LegMass += Piece->GetBodyMass();
+			}
+		}
+		const float K = HoistFootSpringPerSecondSq * Strength;
+		const float Pull = Share * HoistDrive;
+		FVector Accel = ((Wanted - At) * K + (SpotSpeed - Foot->GetUnrealWorldVelocity()) * (2.f * FMath::Sqrt(K))) * (Pull * AedirStableSpring(FMath::Sqrt(K), DeltaTime));
+		// A foot standing on its toes is not pushed down any further: through the straight leg that pulled the hips down.
+		const float ToesOff = static_cast<float>(BodyMesh->GetBoneLocation(Side == 0 ? BallLeftBone : BallRightBone).Z - HoistBallCm - HoistFootSpot[Side].Z);
+		if (!bHoistFootStepping[Side] && ToesOff < HoistToesDownCm * Size)
+		{
+			Accel.Z = FMath::Max(Accel.Z, 0.0);
+		}
+		Foot->AddForce(Accel.GetClampedToMaxSize(HoistHandMaxAccel) * FMath::Max(LegMass, Foot->GetBodyMass()), true, false);
+		// Flat on the ground, the toes the way the body faces.
+		const FQuat Flat = FRotator(0.f, static_cast<float>(Facing.Rotation().Yaw) - 90.f, 0.f).Quaternion() * HoistFootRest[Side];
+		FQuat Turn = Flat * Foot->GetUnrealWorldTransform().GetRotation().Inverse();
+		Turn.EnforceShortestArcWith(FQuat::Identity);
+		const float W = UE_TWO_PI * HoistFootHz;
+		const FVector Spin = Turn.ToRotationVector() * (W * W) - Foot->GetUnrealWorldAngularVelocityInRadians() * (2.f * W);
+		Foot->AddTorqueInRadians(Spin * (Pull * AedirStableSpring(W, DeltaTime)), true, true);
+		static const IConsoleVariable* HitLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+		UE_CLOG(HitLog && HitLog->GetInt() != 0 && GFrameCounter % 15 == 0, LogAedir, Log, TEXT("[HoistFoot] %s's %s foot: %s, %.0f cm from where it should be (%.0f up), %.0f cm from under its hip, turned %.0f deg (toes %.0f cm under the ankle, pointing %.2f up, %.2f the way it faces), hips %.0f cm up"), *GetNameSafe(GetOwner()), Side == 0 ? TEXT("left") : TEXT("right"),
+			bHoistFootStepping[Side] ? TEXT("stepping") : TEXT("standing"), FVector::Dist(Wanted, At), Wanted.Z - At.Z, FVector::Dist2D(At, Home[Side]), FMath::RadiansToDegrees(Turn.GetAngle()), ToesBelow,
+			(BodyMesh->GetBoneLocation(Side == 0 ? BallLeftBone : BallRightBone) - At).GetSafeNormal().Z, FVector::DotProduct((BodyMesh->GetBoneLocation(Side == 0 ? BallLeftBone : BallRightBone) - At).GetSafeNormal(), Facing), Hips.Z - GroundZ);
+	}
+	return bFound;
 }
 
 void UAedirBalanceComponent::UpdateGetUp(float DeltaTime)
@@ -3952,9 +4184,9 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll, bool bArmsOnly)
 		{
 			continue;
 		}
-		const EAngularConstraintMotion Swing1Motion = Living(bLimpJoint, Loose.ConeLimit.Swing1Motion, Loose.ConeLimit.Swing1LimitDegrees, Swing1);
-		const EAngularConstraintMotion Swing2Motion = Living(bLimpJoint, Loose.ConeLimit.Swing2Motion, Loose.ConeLimit.Swing2LimitDegrees, Swing2);
-		const EAngularConstraintMotion TwistMotion = Living(bLimpJoint, Loose.TwistLimit.TwistMotion, Loose.TwistLimit.TwistLimitDegrees, Twist);
+		EAngularConstraintMotion Swing1Motion = Living(bLimpJoint, Loose.ConeLimit.Swing1Motion, Loose.ConeLimit.Swing1LimitDegrees, Swing1);
+		EAngularConstraintMotion Swing2Motion = Living(bLimpJoint, Loose.ConeLimit.Swing2Motion, Loose.ConeLimit.Swing2LimitDegrees, Swing2);
+		EAngularConstraintMotion TwistMotion = Living(bLimpJoint, Loose.TwistLimit.TwistMotion, Loose.TwistLimit.TwistLimitDegrees, Twist);
 		// A living wrist and forearm turn a held weapon much further than the limp ones of the asset: the weapon's poses ask it.
 		static IConsoleVariable* WideArmJoints = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.WideArmJoints"), 1, TEXT("Living wrists and forearms turn further than the limp limits (1) or not (0)."));
 		if (!bLimpJoint && WideArmJoints->GetInt() != 0)
@@ -3980,6 +4212,20 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll, bool bArmsOnly)
 					Twist = FMath::Min(Twist, DownElbowBendDegrees);
 				}
 			}
+		}
+		// Only just come round, the arms' joints go from a limp body's room to theirs little by little: at once, an arm lying
+		// past it was thrown into it.
+		if (bRagdoll && bArmJoint && !bLimpJoint && JointsWake < 1.f)
+		{
+			const auto Ease = [this](EAngularConstraintMotion& Motion, float& Degrees, EAngularConstraintMotion LimpMotion, float LimpDegrees)
+			{
+				const float From = LimpMotion == ACM_Locked ? 0.f : LimpMotion == ACM_Free ? AedirLivingJointMaxDegrees : LimpDegrees;
+				Degrees = FMath::Lerp(From, Degrees, JointsWake);
+				Motion = Degrees > 0.5f ? ACM_Limited : LimpMotion;
+			};
+			Ease(Swing1Motion, Swing1, Loose.ConeLimit.Swing1Motion, Loose.ConeLimit.Swing1LimitDegrees);
+			Ease(Swing2Motion, Swing2, Loose.ConeLimit.Swing2Motion, Loose.ConeLimit.Swing2LimitDegrees);
+			Ease(TwistMotion, Twist, Loose.TwistLimit.TwistMotion, Loose.TwistLimit.TwistLimitDegrees);
 		}
 		static IConsoleVariable* FreeWrist = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.DevFreeJoint"), TEXT(""), TEXT("Dev: joints whose name holds this are left free."));
 		const FString FreeName = FreeWrist->GetString();
@@ -4360,10 +4606,15 @@ float UAedirBalanceComponent::KnockFoot(FName Bone, float Speed, const FHitResul
 	return KnockPart(Bone, Shin, Speed, KickWorldBounceShare, KickWorldBounceMaxSpeed, Hit);
 }
 
-float UAedirBalanceComponent::KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit)
+float UAedirBalanceComponent::KnockHead(float Speed, const FHitResult& Hit, float SoundTake)
+{
+	return KnockPart(HeadBoneName, TEXT("neck_01"), Speed, KickWorldBounceShare, KickWorldBounceMaxSpeed, Hit, EAedirSfx::PunchBody, SoundTake);
+}
+
+float UAedirBalanceComponent::KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit, EAedirSfx Sound, float SoundTake)
 {
 	const float SpeedShare = FMath::Clamp(FMath::GetRangePct(FistWorldSoundMinSpeed, FistWorldSoundMaxSpeed, Speed), 0.f, 1.f);
-	UAedirSfxSubsystem::Play(this, EAedirSfx::PunchForearm, Hit.ImpactPoint, FMath::Lerp(0.7f, 1.f, SpeedShare), FMath::Lerp(0.3f, 0.6f, SpeedShare));
+	UAedirSfxSubsystem::Play(this, Sound, Hit.ImpactPoint, FMath::Lerp(0.7f, 1.f, SpeedShare), SoundTake >= 0.f ? SoundTake : FMath::Lerp(0.3f, 0.6f, SpeedShare));
 	const FVector Away = Hit.ImpactNormal.GetSafeNormal();
 	const float Back = FMath::Clamp(Speed * BounceShare, 0.f, BounceMax);
 	FBodyInstance* Struck = BodyMesh ? BodyMesh->GetBodyInstance(Bone) : nullptr;
@@ -4795,7 +5046,7 @@ void UAedirBalanceComponent::UpdateMotors(float DeltaTime, bool bForce)
 	}
 	else if (bIsRagdoll)
 	{
-		Common = FMath::Max(AedirLivingFallMotorShare, (bHoisting ? 1.f : DownAwakeMotorShare) * FMath::Lerp(TiredStrengthShare, 1.f, StaminaFraction) * (1.f - 0.6f * GetDazeFactor()));
+		Common = FMath::Max(FMath::Lerp(RagdollMotorShare, AedirLivingFallMotorShare, GetWakeStrength()), (bHoisting ? 1.f : DownAwakeMotorShare) * FMath::Lerp(TiredStrengthShare, 1.f, StaminaFraction) * (1.f - 0.6f * GetDazeFactor()) * GetWakeStrength());
 	}
 
 	float Strength[5];

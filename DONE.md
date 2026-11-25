@@ -766,3 +766,12 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Dev: NpcSurrender takes a group, NpcGroup puts the nearest person in a group
 - Surrendering works lying awake and while getting up: face down the hands lie beside the head, getting up they rise as soon as the body no longer leans on them
 - Whoever has surrendered sinks to the hips' height of a crouch with the trunk up, and stands again when the hands come down
+- Coming round from senselessness the muscles, the arms' joints and the strength to get up come back over 2.5 to 4.5 s instead of at once
+- Getting up the last of the way the feet are held flat on the ground and stepped in under the hips, the hips lifted no higher than the legs reach; it hands over to stepping sooner, from where the feet stand
+- Surrendering while getting up, one hand is held up while the other still bears the body, and the hands are held by the chest as it is bent, lower the less upright
+- Steps never come down on somebody getting up: the trace looks past them and the foot is set off their parts
+- NPCs fight in runs: a few blows in, a draw back out of reach, a circle round the foe (away from a friend on the same foe), then in again; at once on a foe down, spent or open
+- Bodies are heavier to lift: less strength, worse held out or overhead, slower the heavier, and what the hands bear slows the holder as a load
+- A body carried or lifted is pushed out of the holder's trunk, head and legs instead of passing through them
+- G headbutts instead of shoving: a fist's harm, the punch-on-body-40 sound, the head hurt and the senses shaken against something fixed; NPCs headbutt at close quarters now and then
+- Kicks are heard on every body and loose thing they meet, also when they do no harm

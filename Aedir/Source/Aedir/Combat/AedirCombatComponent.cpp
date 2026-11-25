@@ -660,18 +660,6 @@ namespace
 	constexpr float AedirClashBalanceScale = 0.1f;
 	constexpr float AedirClashEnergyShare = 0.5f;
 
-	constexpr float AedirShoveStrikeSeconds = 0.12f;
-	constexpr float AedirShoveDuration = 0.35f;
-	constexpr float AedirShoveReachCm = 70.f;
-	constexpr float AedirShoveConeCos = 0.5f;
-	constexpr float AedirShoveRecoilBalance = 0.06f;
-	constexpr float AedirShoveStiffnessScale = 2.f;
-	constexpr float AedirShoveHeavyItemKg = 6.f;
-	constexpr float AedirShoveArmInjuryLimit = 0.6f;
-	constexpr float AedirShoveBaseJoules = 20.f;
-	constexpr float AedirShoveStrengthJoules = 1.8f;
-	constexpr float AedirShoveMinStaminaScale = 0.5f;
-
 	// A slow chamber (knee up to the belly), then a snapping extension.
 	constexpr float AedirKickDuration = 1.2f;
 	constexpr float AedirKickStrikeStart = 0.56f;
@@ -726,7 +714,7 @@ namespace
 	constexpr float AedirAIStoopCm = 200.f;
 	constexpr float AedirAIGrudgeSeconds = 25.f;
 	constexpr float AedirAIContactRange = 110.f;
-	constexpr float AedirAIShoveChance = 0.12f;
+	constexpr float AedirAIHeadbuttAtGripsChance = 0.12f;
 	constexpr float AedirAIKickChance = 0.08f;
 	// Hearing: the noise of a body standing still, how much each cm/s of speed adds, crouching, a fight, and how much of it
 	// gets through a wall.
@@ -839,7 +827,6 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 		SwingCooldownRemaining[Index] = FMath::Max(0.f, SwingCooldownRemaining[Index] - DeltaTime);
 	}
 
-	ShoveCooldownRemaining = FMath::Max(0.f, ShoveCooldownRemaining - DeltaTime);
 	KickCooldownRemaining = FMath::Max(0.f, KickCooldownRemaining - DeltaTime);
 
 	UpdateSwings(DeltaTime);
@@ -847,12 +834,12 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	if (bAuthority || IsAutonomousProxy())
 	{
 		UpdateTwoHandGrip();
-		UpdateShove(DeltaTime);
 	}
 
 	UpdateGrip(DeltaTime);
 
 	UpdateKick(DeltaTime);
+	UpdateHeadbutt(DeltaTime);
 
 	if (bAuthority && !Creature->IsPlayerControlled())
 	{
@@ -928,6 +915,7 @@ void UAedirCombatComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
 	DOREPLIFETIME(UAedirCombatComponent, RightArmNet);
 	DOREPLIFETIME(UAedirCombatComponent, bTwoHandGrip);
 	DOREPLIFETIME(UAedirCombatComponent, KickNet);
+	DOREPLIFETIME_CONDITION(UAedirCombatComponent, HeadbuttCount, COND_SkipOwner);
 	DOREPLIFETIME(UAedirCombatComponent, ArmorProtection);
 	DOREPLIFETIME(UAedirCombatComponent, LimbInjury);
 }
@@ -3184,7 +3172,6 @@ bool UAedirCombatComponent::CanStartSwing(EAedirHand Hand) const
 	return IsGuardActive(Hand)
 		&& !GetSwingState(Hand).bActive
 		&& SwingCooldownRemaining[HandIndex(Hand)] <= 0.f
-		&& !bShoving
 		&& !IsSecondaryGripHand(Hand);
 }
 
@@ -3197,7 +3184,7 @@ bool UAedirCombatComponent::IsArmActive(EAedirHand Hand) const
 
 bool UAedirCombatComponent::IsArmPosed(EAedirHand Hand) const
 {
-	return IsArmActive(Hand) || bShoving || (IsGripHeld() && IsSecondaryGripHand(Hand)) || (bTwoHandGrip && Hand == GetGripHand() && GetHeldItem(Hand));
+	return IsArmActive(Hand) || (IsGripHeld() && IsSecondaryGripHand(Hand)) || (bTwoHandGrip && Hand == GetGripHand() && GetHeldItem(Hand));
 }
 
 bool UAedirCombatComponent::IsSecondaryGripHand(EAedirHand Hand) const
@@ -3290,7 +3277,7 @@ void UAedirCombatComponent::CancelSwing(EAedirHand Hand)
 	State.bActive = false;
 	State.Elapsed = State.Duration;
 	SwingCooldownRemaining[HandIndex(Hand)] = SwingCooldown;
-	GetArm(Hand).bScriptedControl = bShoving;
+	GetArm(Hand).bScriptedControl = false;
 }
 
 void UAedirCombatComponent::UpdateSwings(float DeltaTime)
@@ -3308,8 +3295,7 @@ void UAedirCombatComponent::UpdateSwings(float DeltaTime)
 
 		if (!State.bActive)
 		{
-			// A running shove owns the scripted control of both arms.
-			Arm.bScriptedControl = bShoving;
+			Arm.bScriptedControl = false;
 			continue;
 		}
 
@@ -3560,8 +3546,7 @@ void UAedirCombatComponent::IntegrateArm(EAedirHand Hand, FAedirArmDynamics& Arm
 	const float DazeFactorStiffness = 1.f - AedirArmDazeStiffnessLoss * DazeFactor;
 	const float MassRatio = StiffnessMass / FMath::Max(Strength * AedirArmMassStrengthScale, 1.f);
 	const float GripScale = (bTwoHandGrip && !IsSecondaryGripHand(Hand)) ? GripPrimaryStiffnessScale : 1.f;
-	const float ShoveScale = bShoving ? AedirShoveStiffnessScale : 1.f;
-	const float Stiffness = ArmStiffnessBase * StrengthFactor * StaminaFactor * InjuryFactor * DazeFactorStiffness * GripScale * ShoveScale / (1.f + MassRatio);
+	const float Stiffness = ArmStiffnessBase * StrengthFactor * StaminaFactor * InjuryFactor * DazeFactorStiffness * GripScale / (1.f + MassRatio);
 	const float Damping = 2.f * FMath::Sqrt(Stiffness) * AedirArmDampingRatio;
 	const float MaxAcceleration = MaxArmAcceleration * StrengthFactor * StaminaFactor * InjuryFactor;
 	const float MaxRadius = AedirArmReachHardLimit * (SwingReach + GetEffectiveWeaponLength(Hand)) * Scale;
@@ -4899,6 +4884,8 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		bAIApproaching = false;
 		AIAttackTimer = 0.f;
 		bAIHadWeapon = false;
+		AITactic = EAedirAITactic::Press;
+		AIBlowsLeft = FMath::Max(AIFlurryBlowsMin, 1);
 		ReleaseAIGrab();
 		return;
 	}
@@ -5040,7 +5027,9 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 			UE_LOG(LogAedir, Log, TEXT("[NpcRest] %s has its breath back (%.0f%%), %.0f cm from the foe"), *Creature->GetName(), Breath * 100.f, Distance);
 		}
 	}
-	const float KeepAt = FightAt + (bAIResting ? AIRestBackOffCm * Scale : 0.f);
+	UpdateAITactic(DeltaTime, Distance, bArmed);
+	const bool bPressing = AITactic == EAedirAITactic::Press;
+	const float KeepAt = FightAt + (bAIResting ? AIRestBackOffCm * Scale : 0.f) + (bPressing ? 0.f : AITacticOffCm * Scale);
 	if (CVarAedirHitLog.GetValueOnGameThread() != 0 && GetWorld() && GetWorld()->GetTimeSeconds() >= NextAIKeepLogTime)
 	{
 		NextAIKeepLogTime = GetWorld()->GetTimeSeconds() + 0.5;
@@ -5052,7 +5041,7 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	const float Band = AIStandOffBandCm * Scale;
 	// Bare-handed and done waiting for the next blow, it steps right in to where the fist is thrown from instead of waiting
 	// to drift there.
-	const bool bReadyToThrow = bFistArms && !bArmed && !bAIResting && AIMousePhase == 0 && AIMouseTimer >= AIMouseWait;
+	const bool bReadyToThrow = bFistArms && !bArmed && !bAIResting && bPressing && AIMousePhase == 0 && AIMouseTimer >= AIMouseWait;
 	const float CloseInPast = bReadyToThrow ? (AIFistStrikeInCm + AedirAIFistStrikeSlackCm - 2.f) * Scale : KeepAt + Band;
 	if (Distance > CloseInPast)
 	{
@@ -5066,6 +5055,11 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		if (Distance < KeepAt - Band * 0.6f && !bAITargetDown && !bReadyToThrow && (AIMousePhase == 0 || bArmed))
 		{
 			Creature->AddMovementInput(Creature->GetActorForwardVector(), -AedirAIBackOffInput * FMath::Clamp((KeepAt - Distance) / Band + 0.4f, 0.f, 1.f));
+		}
+		// Waiting its moment it goes round the foe, not standing before it.
+		if (AITactic == EAedirAITactic::Circle && AIMousePhase == 0)
+		{
+			Creature->AddMovementInput(Creature->GetActorRightVector(), AICircleInput * AICircleSide);
 		}
 	}
 	// Resting it keeps its guard up and lays hold of no one; it strikes only a foe who has come within reach, and only once
@@ -5093,6 +5087,96 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	else
 	{
 		UpdateAIFistStrike(Distance, Reach, DeltaTime);
+	}
+}
+
+float UAedirCombatComponent::GetAIAggression() const
+{
+	const AAedirNpc* Npc = Cast<AAedirNpc>(Creature);
+	return Npc ? FMath::Clamp(Npc->Aggression, 0.f, 1.f) : 0.5f;
+}
+
+void UAedirCombatComponent::SetAITactic(EAedirAITactic Tactic, const TCHAR* Why)
+{
+	const float Aggression = GetAIAggression();
+	AITactic = Tactic;
+	AITacticTimer = 0.f;
+	if (Tactic == EAedirAITactic::Press)
+	{
+		AIBlowsLeft = FMath::Clamp(FMath::RoundToInt(FMath::Lerp(static_cast<float>(AIFlurryBlowsMin), static_cast<float>(AIFlurryBlowsMax), Aggression) + FMath::FRandRange(-0.6f, 0.6f)), FMath::Min(AIFlurryBlowsMin, AIFlurryBlowsMax), FMath::Max(AIFlurryBlowsMin, AIFlurryBlowsMax));
+	}
+	else if (Tactic == EAedirAITactic::Withdraw)
+	{
+		AITacticOffCm = FMath::FRandRange(AIWithdrawCmMin, AIWithdrawCmMax);
+	}
+	else
+	{
+		// Round the side away from a friend that fights the same foe, so the two come at it from both sides.
+		AICircleSide = FMath::RandBool() ? 1.f : -1.f;
+		const AAedirCreature* Foe = AITarget.Get();
+		for (TActorIterator<AAedirNpc> It(GetWorld()); It && Foe; ++It)
+		{
+			if (*It != Creature && It->Combat && It->Combat->GetAITarget() == Foe && FVector::Dist2D(It->GetActorLocation(), Foe->GetActorLocation()) < 400.f)
+			{
+				const FVector ToFoe = Foe->GetActorLocation() - Creature->GetActorLocation();
+				const FVector ToFriend = It->GetActorLocation() - Creature->GetActorLocation();
+				AICircleSide = FVector::CrossProduct(ToFoe, ToFriend).Z > 0.0 ? -1.f : 1.f;
+				break;
+			}
+		}
+		AITacticTimer = -FMath::Lerp(AICircleSecondsMax, AICircleSecondsMin, Aggression) * FMath::FRandRange(0.7f, 1.3f);
+	}
+	UE_LOG(LogAedir, Log, TEXT("[NpcTactic] %s %s (%s)%s"), *Creature->GetName(), Tactic == EAedirAITactic::Press ? *FString::Printf(TEXT("goes in for %d blows"), AIBlowsLeft)
+		: Tactic == EAedirAITactic::Withdraw ? *FString::Printf(TEXT("draws back %.0f cm"), AITacticOffCm) : *FString::Printf(TEXT("circles to its %s for %.1f s"), AICircleSide > 0.f ? TEXT("right") : TEXT("left"), -AITacticTimer), Why, TEXT(""));
+}
+
+void UAedirCombatComponent::NoteAIBlow()
+{
+	if (AITactic == EAedirAITactic::Press)
+	{
+		--AIBlowsLeft;
+	}
+}
+
+void UAedirCombatComponent::UpdateAITactic(float DeltaTime, float Distance, bool bArmed)
+{
+	AITacticTimer += DeltaTime;
+	const bool bArmFree = AIMousePhase == 0 && (AIStrikePhase == 0 || AIStrikePhase >= 3);
+	const AAedirCreature* Foe = AITarget.Get();
+	const bool bFoeSpent = Foe && Foe->Stats && Foe->Stats->GetStaminaFraction() < AIFoeSpentStamina;
+	const bool bOpening = !bArmed && AIFoeOpenSide != 0 && bAISeizeOpening;
+	switch (AITactic)
+	{
+	case EAedirAITactic::Press:
+		if (Creature->Balance && Creature->Balance->GetBalance() < AIWithdrawBelowBalance && bArmFree)
+		{
+			SetAITactic(EAedirAITactic::Withdraw, TEXT("driven off its balance"));
+		}
+		else if (AIBlowsLeft <= 0 && bArmFree && !bAITargetDown && !bFoeSpent)
+		{
+			SetAITactic(EAedirAITactic::Withdraw, TEXT("its blows thrown"));
+		}
+		break;
+	case EAedirAITactic::Withdraw:
+		if (bAITargetDown || bOpening)
+		{
+			SetAITactic(EAedirAITactic::Press, bAITargetDown ? TEXT("the foe is down") : TEXT("an opening"));
+		}
+		else if (AITacticTimer >= AIWithdrawSecondsMax || Distance >= (bArmed ? 0.f : AIFistStandOffCm) + AITacticOffCm * 0.8f)
+		{
+			SetAITactic(EAedirAITactic::Circle, TEXT("out of reach"));
+		}
+		break;
+	default:
+		if (bAITargetDown || bOpening || bFoeSpent)
+		{
+			SetAITactic(EAedirAITactic::Press, bAITargetDown ? TEXT("the foe is down") : bOpening ? TEXT("an opening") : TEXT("the foe is spent"));
+		}
+		else if (AITacticTimer >= 0.f)
+		{
+			SetAITactic(EAedirAITactic::Press, TEXT("its moment"));
+		}
+		break;
 	}
 }
 
@@ -5322,6 +5406,14 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		}
 		if (!bTired && ((Distance <= StrikeFrom && AIMouseTimer >= Wait) || bCounter))
 		{
+			// Close in, now and then the head instead of a fist.
+			if (!bArmed && !bAITargetDown && Distance <= AIHeadbuttInCm * static_cast<float>(Creature->GetActorScale3D().X) && FMath::FRand() < AIHeadbuttChance && StartHeadbutt())
+			{
+				AIMouseTimer = 0.f;
+				AIMouseWait = FMath::Clamp(AISwingWaitSeconds * FMath::FRandRange(0.8f, 1.2f), 0.1f, AedirAIMouseWaitMax);
+				NoteAIBlow();
+				break;
+			}
 			// Mostly at the head; now and then into the body. An open side is gone for at the head, and a spent foe more often.
 			const float HeadChance = bGoForOpening ? (AIFoeOpenSide == 2 ? 1.f : AIOpeningHeadChance) : bFoeSpent ? FMath::Max(AIHeadChance, AIFoeSpentHeadChance) : AIHeadChance;
 			AIMousePart = bAITargetDown ? 1 : (FMath::FRand() < HeadChance ? 0 : 1);
@@ -5418,6 +5510,7 @@ void UAedirCombatComponent::UpdateAIFistArms(UAedirFistArms* Fists, bool bArmed,
 		{
 			FVector2D Then;
 			UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s threw: the punch went out %.2f, the aim now %s"), *Creature->GetName(), Fists->TakePeakPunch(Then), *Fists->GetAim().ToString());
+			NoteAIBlow();
 			if (CVarAedirHitLog.GetValueOnGameThread() != 0)
 			{
 				// Where the fist came to against what it went for: how far off, and how much above it (negative below).
@@ -5503,12 +5596,12 @@ void UAedirCombatComponent::UpdateAIFistStrike(float Distance, float Reach, floa
 		const bool bTired = (Creature->Stats && Creature->Stats->GetStamina() < Creature->Stats->GetMaxStamina() * AedirAIRestStaminaShare) || (bAIResting && !CanAIStrikeWhileResting());
 		if (!bTired && Distance <= Reach + AedirAIContactRange * 0.25f && AIStrikeTimer >= AIAttackInterval)
 		{
-			// At grips a shove or a kick now and then.
+			// At grips a headbutt or a kick now and then.
 			if (Distance <= AedirAIContactRange)
 			{
-				if (FMath::FRand() < AedirAIShoveChance)
+				if (FMath::FRand() < AedirAIHeadbuttAtGripsChance)
 				{
-					StartShove();
+					StartHeadbutt();
 				}
 				else if (FMath::FRand() < AedirAIKickChance)
 				{
@@ -5544,6 +5637,7 @@ void UAedirCombatComponent::UpdateAIFistStrike(float Distance, float Reach, floa
 		Arm.PunchBlend = 1.f;
 		if (AIStrikeTimer >= AedirAIFistThrowSeconds)
 		{
+			NoteAIBlow();
 			Arm.PunchBlend = 0.f;
 			AIStrikePhase = 3;
 			AIStrikeTimer = 0.f;
@@ -5659,6 +5753,7 @@ bool UAedirCombatComponent::UpdateAIWeaponStrike(EAedirHand Hand, float Distance
 	case 2:
 		if (AIStrikeTimer >= AedirAIStrikeSeconds)
 		{
+			NoteAIBlow();
 			Arm.AimOffsetDeg = FVector2D(0.f, 10.f);
 			Arm.PunchBlend = 0.f;
 			AIStrikePhase = 3;
@@ -5908,12 +6003,6 @@ FVector UAedirCombatComponent::GetGripPointWorld() const
 	return HeldItem->GetActorLocation() + HeldItem->GetActorForwardVector() * GetSecondaryGripLocalCm(HeldItem);
 }
 
-float UAedirCombatComponent::ComputeShoveEnergy(float Strength, float StaminaFraction)
-{
-	const float StaminaScale = FMath::Lerp(AedirShoveMinStaminaScale, 1.f, FMath::Clamp(StaminaFraction, 0.f, 1.f));
-	return (AedirShoveBaseJoules + FMath::Max(Strength, 0.f) * AedirShoveStrengthJoules) * StaminaScale;
-}
-
 FVector UAedirCombatComponent::EvaluateKickArc(const FVector& Start, const FVector& Hip, const FVector& Forward, float T01, float LiftCm, float WindUpBackCm, float WindUpBelowHipCm, float ExtendHeightCm)
 {
 	FVector Ahead = Forward.GetSafeNormal2D();
@@ -5988,28 +6077,6 @@ float UAedirCombatComponent::GetKickToePoint() const
 	return FMath::Min(Rise, Fall) * FMath::Clamp(KickPoseAlpha, 0.f, 1.f) * KickToePointShare;
 }
 
-bool UAedirCombatComponent::StartShove()
-{
-	if (!Creature)
-	{
-		return false;
-	}
-
-	if (IsAuthoritative())
-	{
-		return TryStartShove();
-	}
-
-	if (!Creature->IsLocallyControlled() || !CanStartShove())
-	{
-		return false;
-	}
-
-	BeginShove();
-	ServerStartShove();
-	return true;
-}
-
 bool UAedirCombatComponent::StartKick()
 {
 	if (!Creature)
@@ -6030,192 +6097,6 @@ bool UAedirCombatComponent::StartKick()
 	BeginKick();
 	ServerStartKick();
 	return true;
-}
-
-bool UAedirCombatComponent::CanStartShove() const
-{
-	if (!Creature || !Creature->Stats || bShoving || ShoveCooldownRemaining > 0.f)
-	{
-		return false;
-	}
-
-	// A shove needs both arms free: a running swing on either hand blocks it.
-	if (Creature->Stats->GetStamina() < ShoveStaminaCost || GetSwingState(EAedirHand::Left).bActive || GetSwingState(EAedirHand::Right).bActive)
-	{
-		return false;
-	}
-
-	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
-	{
-		const AAedirItemActor* HeldItem = GetHeldItem(Hand);
-		if ((HeldItem && HeldItem->Weight > AedirShoveHeavyItemKg) || GetLimbInjury(GetArmLimb(Hand)) > AedirShoveArmInjuryLimit)
-		{
-			return false;
-		}
-	}
-
-	return true;
-}
-
-bool UAedirCombatComponent::TryStartShove()
-{
-	if (!IsAuthoritative() || !CanStartShove() || !Creature->Stats->ConsumeStamina(ShoveStaminaCost))
-	{
-		return false;
-	}
-
-	BeginShove();
-	return true;
-}
-
-void UAedirCombatComponent::BeginShove()
-{
-	bShoving = true;
-	ShoveElapsed = 0.f;
-	bShoveStruck = false;
-	ShoveCooldownRemaining = ShoveCooldown;
-
-	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
-	{
-		FAedirArmDynamics& Arm = GetArm(Hand);
-		Arm.bScriptedControl = true;
-		Arm.ScriptedTargetWorld = GetShoveWorldTarget(Hand, 0.f);
-	}
-}
-
-void UAedirCombatComponent::EndShove()
-{
-	bShoving = false;
-	ShoveElapsed = 0.f;
-
-	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
-	{
-		if (!GetSwingState(Hand).bActive)
-		{
-			GetArm(Hand).bScriptedControl = false;
-		}
-	}
-}
-
-void UAedirCombatComponent::UpdateShove(float DeltaTime)
-{
-	if (!bShoving || !Creature)
-	{
-		return;
-	}
-
-	ShoveElapsed += DeltaTime;
-
-	if (!bShoveStruck && ShoveElapsed >= AedirShoveStrikeSeconds)
-	{
-		bShoveStruck = true;
-		if (IsAuthoritative())
-		{
-			ResolveShoveStrike();
-		}
-	}
-
-	if (ShoveElapsed >= AedirShoveDuration)
-	{
-		EndShove();
-		return;
-	}
-
-	for (const EAedirHand Hand : { EAedirHand::Left, EAedirHand::Right })
-	{
-		GetArm(Hand).ScriptedTargetWorld = GetShoveWorldTarget(Hand, ShoveElapsed);
-	}
-}
-
-FVector UAedirCombatComponent::GetShoveWorldTarget(EAedirHand Hand, float Elapsed) const
-{
-	if (!Creature)
-	{
-		return FVector::ZeroVector;
-	}
-
-	// Both hands thrust to the same point in front of the chest, then draw back to the guard.
-	const FVector Guard = GetSwingLocalTarget(Hand, EAedirSwingType::Jab, 0.f);
-	const FVector Thrust(AedirShoveReachCm, 0.f, AedirChestHeight);
-
-	float Alpha = 0.f;
-	if (Elapsed < AedirShoveStrikeSeconds)
-	{
-		Alpha = CombatSmoothStep01(Elapsed / AedirShoveStrikeSeconds);
-	}
-	else
-	{
-		Alpha = 1.f - CombatSmoothStep01((Elapsed - AedirShoveStrikeSeconds) / (AedirShoveDuration - AedirShoveStrikeSeconds));
-	}
-
-	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
-	return Creature->GetActorTransform().TransformPositionNoScale(FMath::Lerp(Guard, Thrust, Alpha) * Scale);
-}
-
-void UAedirCombatComponent::ResolveShoveStrike()
-{
-	UWorld* World = GetWorld();
-	if (!World || !Creature)
-	{
-		return;
-	}
-
-	const FVector OwnerLocation = Creature->GetActorLocation();
-	const FVector Forward = Creature->GetActorForwardVector().GetSafeNormal2D();
-
-	FCollisionObjectQueryParams ObjectParams;
-	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
-
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirCombatShove), false);
-	Params.AddIgnoredActor(Creature);
-
-	TArray<FOverlapResult> Overlaps;
-	World->OverlapMultiByObjectType(Overlaps, OwnerLocation, FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(ShoveRange), Params);
-
-	AAedirCreature* Victim = nullptr;
-	for (const FOverlapResult& Overlap : Overlaps)
-	{
-		AAedirCreature* Candidate = Cast<AAedirCreature>(Overlap.GetActor());
-		if (!Candidate || Candidate == Creature || (Candidate->Stats && Candidate->Stats->IsDead()))
-		{
-			continue;
-		}
-
-		const FVector ToCandidate = Candidate->GetActorLocation() - OwnerLocation;
-		if (ToCandidate.Size() > ShoveRange || FVector::DotProduct(Forward, ToCandidate.GetSafeNormal2D()) <= AedirShoveConeCos)
-		{
-			continue;
-		}
-
-		Victim = Candidate;
-		break;
-	}
-
-	if (!Victim)
-	{
-		return;
-	}
-
-	const float Strength = Creature->Stats ? Creature->Stats->Strength : AedirDefaultStat;
-	const float StaminaFraction = Creature->Stats ? Creature->Stats->GetStaminaFraction() : 1.f;
-
-	if (Victim->Balance)
-	{
-		FAedirImpactInfo Impact;
-		Impact.Zone = EAedirBodyZone::Torso;
-		Impact.EnergyJoules = ComputeShoveEnergy(Strength, StaminaFraction);
-		Impact.Direction = Forward;
-		Impact.Location = Victim->GetActorLocation();
-		Victim->Balance->ApplyHitReaction(Impact);
-	}
-
-	// The shove pushes back on the attacker. A shove does not wound.
-	if (Creature->Balance)
-	{
-		Creature->Balance->ApplyBalanceImpact(-Forward, AedirShoveRecoilBalance);
-	}
-
-	OnShove.Broadcast(Victim);
 }
 
 bool UAedirCombatComponent::CanStartKick() const
@@ -6434,6 +6315,12 @@ void UAedirCombatComponent::ResolveKickSweep(const FVector& From, const FVector&
 		{
 			const float Push = FMath::Min(KickBlowMassKg * GetStrengthBlowScale() * FootSpeed * AedirImpactPropImpulseScale, Hit.GetComponent()->GetMass() * AedirPropMaxSpeedChange);
 			Hit.GetComponent()->AddImpulseAtLocation(FootMotion.GetSafeNormal() * Push, Hit.ImpactPoint);
+			if (FootSpeed >= KickSoundMinSpeed)
+			{
+				const float SpeedShare = FMath::Clamp((FootSpeed - PunchSoundSpeedMin) / FMath::Max(PunchSoundSpeedMax - PunchSoundSpeedMin, 1.f), 0.f, 1.f);
+				UAedirSfxSubsystem::Play(this, EAedirSfx::PunchForearm, Hit.ImpactPoint, FMath::Lerp(PunchSoundLoudMin, PunchSoundLoudMax, SpeedShare), KickSoundTake);
+			}
+			UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicks %s along at %.0f cm/s"), *Creature->GetName(), *GetNameSafe(Hit.GetActor()), FootSpeed);
 			bKickStruck = true;
 			return;
 		}
@@ -6501,12 +6388,27 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 {
 	// A kick lands as a punch does: by how fast the foot comes into the body where it meets it, with the weight of a blow
 	// (KickBlowMassKg, grown with strength), harming only where it lands and pushing the body no harder than a fist would.
-	const FName Bone = Hit.BoneName;
-	const EAedirBodyZone Zone = ClassifyBodyZone(Bone);
 	const FVector FootVelocity = FootMotion.GetSafeNormal() * FootSpeed;
 	const float RelativeSpeed = FMath::Min(FMath::Max(0.f, static_cast<float>(FVector::DotProduct(FootVelocity - Victim->GetVelocity(), -Hit.ImpactNormal))), AedirKickMaxFootSpeed);
-	const float MassEff = KickBlowMassKg * GetStrengthBlowScale();
+	// Heard by how fast the foot went, even met glancing.
+	const float Heard = FMath::Max(RelativeSpeed, static_cast<float>((FootVelocity - Victim->GetVelocity()).Size()) * 0.6f);
+	ApplyBodyPartBlow(Victim, Hit, FootMotion, RelativeSpeed, Heard, KickBlowMassKg, KickPushShare, EAedirSfx::PunchForearm, KickSoundTake, TEXT("Kick"));
+	OnKick.Broadcast(Victim);
+}
+
+void UAedirCombatComponent::ApplyBodyPartBlow(AAedirCreature* Victim, const FHitResult& Hit, const FVector& Motion, float RelativeSpeed, float SoundSpeed, float MassKg, float PushShare, EAedirSfx Sound, float SoundTake, const TCHAR* Label)
+{
+	const FName Bone = Hit.BoneName;
+	const EAedirBodyZone Zone = ClassifyBodyZone(Bone);
+	const FVector& FootMotion = Motion;
+	const float MassEff = MassKg * GetStrengthBlowScale();
 	const float Energy = ComputeImpactEnergy(MassEff, RelativeSpeed);
+	// Whatever it does, a blow that comes in fast enough is heard.
+	if (SoundSpeed >= KickSoundMinSpeed)
+	{
+		const float SpeedShare = FMath::Clamp((SoundSpeed - PunchSoundSpeedMin) / FMath::Max(PunchSoundSpeedMax - PunchSoundSpeedMin, 1.f), 0.f, 1.f);
+		UAedirSfxSubsystem::Play(this, Sound, Hit.ImpactPoint, FMath::Lerp(PunchSoundLoudMin, PunchSoundLoudMax, SpeedShare), SoundTake);
+	}
 	if (Creature->IsFriendOf(Victim))
 	{
 		PushFriend(Victim, Bone, Zone, Hit.ImpactPoint, FootMotion, Energy, MassEff, RelativeSpeed);
@@ -6514,7 +6416,7 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 	}
 	if (RelativeSpeed < FMath::Min(MinImpactSpeed, AedirFistMinImpactSpeed))
 	{
-		UE_LOG(LogAedir, Log, TEXT("[Kick] %s's foot touched %s on %s at %.0f cm/s: too slow to count"), *Creature->GetName(), *Victim->GetName(), *Bone.ToString(), RelativeSpeed);
+		UE_LOG(LogAedir, Log, TEXT("[%s] %s touched %s on %s at %.0f cm/s: too slow to count"), Label, *Creature->GetName(), *Victim->GetName(), *Bone.ToString(), RelativeSpeed);
 		return;
 	}
 	const float ArmorFactor = 1.f - (Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f);
@@ -6538,13 +6440,6 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 		Kicker->ShakeViewFromStrike(KickDamage);
 	}
 
-	// A kick that harms sounds as a fist on a forearm does, the slow take.
-	if (KickDamage > 0.f)
-	{
-		const float SpeedShare = FMath::Clamp((RelativeSpeed - PunchSoundSpeedMin) / FMath::Max(PunchSoundSpeedMax - PunchSoundSpeedMin, 1.f), 0.f, 1.f);
-		UAedirSfxSubsystem::Play(this, EAedirSfx::PunchForearm, Hit.ImpactPoint, FMath::Lerp(PunchSoundLoudMin, PunchSoundLoudMax, SpeedShare), KickSoundTake);
-	}
-
 	EAedirLimb Limb = EAedirLimb::LeftArm;
 	if (Victim->Combat && GetBoneLimb(Bone, Limb))
 	{
@@ -6556,7 +6451,7 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 		FAedirImpactInfo Impact;
 		Impact.Bone = Bone;
 		Impact.Zone = Zone;
-		const float Knock = CombatKnockbackScale(nullptr, true) * FistPushShare * KickPushShare;
+		const float Knock = CombatKnockbackScale(nullptr, true) * FistPushShare * PushShare;
 		Impact.EnergyJoules = Energy * AedirImpactBodyEnergyShare * Knock;
 		Impact.Direction = FootMotion.GetSafeNormal();
 		Impact.Location = Hit.ImpactPoint;
@@ -6573,10 +6468,8 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 	{
 		VictimNpc->OnAttackedBy(Creature);
 	}
-	UE_LOG(LogAedir, Log, TEXT("[Kick] %s kicked %s on %s, %.0f cm/s, %.1f kg, %.0f J, %.1f damage, balance %.2f, down %d"), *Creature->GetName(), *Victim->GetName(), *Bone.ToString(), RelativeSpeed, MassEff, Energy, KickDamage,
+	UE_LOG(LogAedir, Log, TEXT("[%s] %s struck %s on %s, %.0f cm/s, %.1f kg, %.0f J, %.1f damage, balance %.2f, down %d"), Label, *Creature->GetName(), *Victim->GetName(), *Bone.ToString(), RelativeSpeed, MassEff, Energy, KickDamage,
 		Victim->Balance ? Victim->Balance->GetBalance() : 1.f, Victim->Balance && Victim->Balance->IsRagdoll() ? 1 : 0);
-
-	OnKick.Broadcast(Victim);
 }
 
 FVector UAedirCombatComponent::GetFootBoneWorld(bool bLeftLeg) const
@@ -6604,11 +6497,6 @@ FVector UAedirCombatComponent::GetPelvisWorld() const
 
 	const USkeletalMeshComponent* Mesh = Creature->GetMesh();
 	return Mesh ? Mesh->GetBoneLocation(AedirKickPelvisBone) : Creature->GetActorLocation();
-}
-
-void UAedirCombatComponent::ServerStartShove_Implementation()
-{
-	TryStartShove();
 }
 
 void UAedirCombatComponent::ServerStartKick_Implementation()

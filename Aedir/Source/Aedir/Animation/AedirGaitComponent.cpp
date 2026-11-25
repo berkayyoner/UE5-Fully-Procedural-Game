@@ -463,7 +463,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		const FVector HomeXY = ActorLocation + ActorRight2D * (Side * HipHalfWidthCm * StanceWidthScale * StrafeWidthScale * ActorScale) + ActorForward2D * (StanceForwardCm + StrafeStaggerCm);
 		HomeLocation[Foot] = HomeXY;
 		// The body keeps moving while the pose catches up, so the landing leads it by a moment to stay centred under the hip.
-		const FVector LandingXY = HomeXY + (bMoving ? MoveDirection * (LandingOffsetCm + Speed2D * AedirLandingLeadSeconds) : FVector::ZeroVector);
+		const FVector LandingXY = KeepOffRisers(HomeXY + (bMoving ? MoveDirection * (LandingOffsetCm + Speed2D * AedirLandingLeadSeconds) : FVector::ZeroVector), HomeXY, ActorScale);
 
 		SampleGround(LandingXY, BottomZ, LandingLocation[Foot], LandingNormal[Foot]);
 
@@ -482,6 +482,18 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			PlantedContact[Foot] = LandingLocation[Foot];
 			PlantedNormal[Foot] = LandingNormal[Foot];
 			bSwinging[Foot] = false;
+			// Just up off the ground it stands where its feet are, and steps on from there.
+			if (bWasDown && BodyMesh->GetBoneIndex(Foot == 0 ? LeftFootBoneName : RightFootBoneName) != INDEX_NONE)
+			{
+				const FVector Ankle = BodyMesh->GetBoneLocation(Foot == 0 ? LeftFootBoneName : RightFootBoneName);
+				FVector Under;
+				FVector UnderNormal;
+				if (FVector::Dist2D(Ankle, LandingLocation[Foot]) < FootLeashMinCm * ActorScale && SampleGround(Ankle, BottomZ, Under, UnderNormal))
+				{
+					PlantedContact[Foot] = Under;
+					PlantedNormal[Foot] = UnderNormal;
+				}
+			}
 		}
 		bFeetInitialized = true;
 	}
@@ -919,6 +931,12 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineLeanPitch += KickSpineLeanDegrees * KickAlpha;
 	SmoothedPunchLean = FMath::FInterpTo(SmoothedPunchLean, Combat ? Combat->GetPunchLeanDegrees() : 0.f, DeltaTime, AedirPunchLeanInterpSpeed);
 	GaitState.SpineLeanPitch -= SmoothedPunchLean;
+	// A headbutt draws the trunk back and throws it forward with the head, the hips going into it.
+	if (const float Butt = Combat ? Combat->GetHeadbuttShare() : 0.f; Butt != 0.f)
+	{
+		GaitState.SpineLeanPitch -= Butt * (Butt > 0.f ? Combat->HeadbuttLeanDegrees : Combat->HeadbuttBackDegrees);
+		GaitState.HipForwardOffset += FMath::Max(Butt, 0.f) * Combat->HeadbuttHipForwardCm * ActorScale;
+	}
 	// The spine gives with a vertical blow: it bends into one that goes down and arches under one raised overhead.
 	SmoothedSwingBend = FMath::FInterpTo(SmoothedSwingBend, Combat ? Combat->GetSwingBendDegrees() : 0.f, DeltaTime, AedirSwingTwistInterpSpeed);
 	GaitState.SpineLeanPitch -= SmoothedSwingBend;
@@ -1392,6 +1410,68 @@ namespace
 	constexpr int32 AedirGroundTraceTries = 4;
 }
 
+FVector UAedirGaitComponent::KeepOffRisers(const FVector& Landing, const FVector& Home, float ActorScale) const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return Landing;
+	}
+	FVector Kept = Landing;
+	static const FName Parts[] = { TEXT("pelvis"), TEXT("spine_03"), TEXT("spine_05"), TEXT("head"), TEXT("calf_l"), TEXT("calf_r"), TEXT("foot_l"), TEXT("foot_r"), TEXT("hand_l"), TEXT("hand_r"), TEXT("lowerarm_l"), TEXT("lowerarm_r") };
+	for (TActorIterator<AAedirCreature> It(World); It; ++It)
+	{
+		const AAedirCreature* Other = *It;
+		const USkeletalMeshComponent* Body = Other && Other != CreatureOwner ? Other->GetMesh() : nullptr;
+		if (!Body || !Other->Balance || !(Other->Balance->IsHoisting() || Other->Balance->IsGettingUp()) || FVector::DistSquared2D(Body->GetBoneLocation(TEXT("pelvis")), Landing) > FMath::Square(250.0))
+		{
+			continue;
+		}
+		// Out of every part of them it would come down on, to the side the body comes from.
+		for (const FName& Part : Parts)
+		{
+			if (Body->GetBoneIndex(Part) == INDEX_NONE)
+			{
+				continue;
+			}
+			const FVector At = Body->GetBoneLocation(Part);
+			const double Near = FVector::Dist2D(At, Kept);
+			const double Room = RiserRoomCm * ActorScale;
+			if (Near >= Room || At.Z > Home.Z)
+			{
+				continue;
+			}
+			const FVector Back = (Home - At).GetSafeNormal2D();
+			const FVector Off = Near > 1.0 ? (Kept - At).GetSafeNormal2D() : Back;
+			const FVector Way = (Off + Back).GetSafeNormal2D();
+			Kept = FVector(At.X, At.Y, Kept.Z) + (Way.IsNearlyZero() ? Off : Way) * Room;
+			Kept.Z = Landing.Z;
+			static const IConsoleVariable* RiserLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+			UE_CLOG(RiserLog && RiserLog->GetInt() != 0 && GFrameCounter % 20 == 0, LogAedir, Log, TEXT("[Steps] %s keeps its step %.0f cm off %s's %s, getting up"), *CreatureOwner->GetName(), Near, *Other->GetName(), *Part.ToString());
+		}
+	}
+	// Still among its parts, pushed off one onto the next: the foot stays under the hip rather than come down on them.
+	if (Kept != Landing)
+	{
+		for (TActorIterator<AAedirCreature> It(World); It; ++It)
+		{
+			const USkeletalMeshComponent* Body = *It != CreatureOwner ? It->GetMesh() : nullptr;
+			if (!Body || !It->Balance || !(It->Balance->IsHoisting() || It->Balance->IsGettingUp()))
+			{
+				continue;
+			}
+			for (const FName& Part : Parts)
+			{
+				if (Body->GetBoneIndex(Part) != INDEX_NONE && FVector::Dist2D(Body->GetBoneLocation(Part), Kept) < RiserRoomCm * ActorScale * 0.8f)
+				{
+					return FVector(Home.X, Home.Y, Landing.Z);
+				}
+			}
+		}
+	}
+	return Kept;
+}
+
 bool UAedirGaitComponent::SampleGround(const FVector& WorldXY, float BottomZ, FVector& OutLocation, FVector& OutNormal) const
 {
 	const UWorld* World = GetWorld();
@@ -1400,15 +1480,16 @@ bool UAedirGaitComponent::SampleGround(const FVector& WorldXY, float BottomZ, FV
 
 	FHitResult Hit;
 	FCollisionQueryParams Params(FName(TEXT("AedirGaitGround")), false, GetOwner());
-	// A foot never steps onto someone still on their feet: the trace looks on past them. One lying down, out cold or dead is
-	// ground like any other.
+	// A foot never steps onto someone still on their feet or on the way up to them: the trace looks on past them. One lying
+	// down, out cold or dead is ground like any other.
 	for (int32 Try = 0; World && Try < AedirGroundTraceTries && World->LineTraceSingleByChannel(Hit, Start, End, ECC_Visibility, Params); ++Try)
 	{
 		// Someone, or something someone holds or wears.
 		AActor* HitActor = Hit.GetActor();
 		const AAedirCreature* Standing = Cast<AAedirCreature>(HitActor ? HitActor->GetAttachParentActor() ? HitActor->GetAttachParentActor() : HitActor : nullptr);
 		const bool bLyingDown = Standing && ((Standing->Balance && Standing->Balance->IsRagdoll()) || (Standing->Stats && (Standing->Stats->IsDead() || Standing->Stats->IsKnockedOut())));
-		if (Standing && !bLyingDown)
+		const bool bRising = Standing && Standing->Balance && (Standing->Balance->IsHoisting() || Standing->Balance->IsGettingUp()) && !(Standing->Stats && (Standing->Stats->IsDead() || Standing->Stats->IsKnockedOut()));
+		if (Standing && (!bLyingDown || bRising))
 		{
 			++LegLogLookedPast;
 			Params.AddIgnoredActor(HitActor);
@@ -2764,7 +2845,13 @@ void UAedirGaitComponent::UpdateGesture(float DeltaTime, const FTransform& Chest
 	};
 	const float Scale = static_cast<float>(ChestNow.GetScale3D().X);
 	// Standing the hands are before the body as it faces, whatever way the chest bends; lying they go with the chest.
-	const FQuat Facing = bLying ? ChestNow.GetRotation() : FRotator(0.f, CreatureOwner->GetActorRotation().Yaw, 0.f).Quaternion();
+	FAedirGetUpStage RiseStage;
+	float RiseProgress = 0.f;
+	const bool bRisingNow = BalanceComponent && (BalanceComponent->GetHoistStage(RiseStage, RiseProgress) || BalanceComponent->IsSettling());
+	GestureRising = FMath::FInterpConstantTo(GestureRising, bRisingNow ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(bRisingNow ? 0.3f : Gesture->SurrenderRisenSeconds, 0.05f));
+	// On the way up and just up they go with the chest, bent over as it is, and are held the lower the less upright it is.
+	const FQuat Yawed = FRotator(0.f, CreatureOwner->GetActorRotation().Yaw, 0.f).Quaternion();
+	const FQuat Facing = bLying ? ChestNow.GetRotation() : FQuat::Slerp(Yawed, ChestNow.GetRotation(), FMath::SmoothStep(0.f, 1.f, GestureRising)).GetNormalized();
 	const FVector Ahead = Facing.GetAxisX();
 	const FVector Right = Facing.GetAxisY();
 	const FVector Up = Facing.GetAxisZ();
@@ -2780,7 +2867,9 @@ void UAedirGaitComponent::UpdateGesture(float DeltaTime, const FTransform& Chest
 		const FVector Middle = (Shoulders[0] + Shoulders[1]) * 0.5;
 		// With the chest down the hands lie beside the head, not under it.
 		const float ChestDown = bLying ? FMath::SmoothStep(0.2f, 0.7f, static_cast<float>(-Ahead.Z)) : 0.f;
-		const float AheadCm = FMath::Lerp(static_cast<float>(Gesture->SurrenderHandCm.X), Gesture->SurrenderFaceDownAheadCm, ChestDown);
+		const float Upright = FMath::SmoothStep(Gesture->SurrenderRisingUprightMin, Gesture->SurrenderRisingUprightMax, static_cast<float>(ChestNow.GetUnitAxis(EAxis::Z).Z));
+		const FVector HandCm = FMath::Lerp(Gesture->SurrenderHandCm, FMath::Lerp(Gesture->SurrenderRisingHandCm, Gesture->SurrenderHandCm, Upright), FMath::SmoothStep(0.f, 1.f, GestureRising));
+		const float AheadCm = FMath::Lerp(static_cast<float>(HandCm.X), Gesture->SurrenderFaceDownAheadCm, ChestDown * (1.f - GestureRising));
 		for (int32 Slot = 0; Slot < 2; ++Slot)
 		{
 			if (!Usable(Slot))
@@ -2790,7 +2879,7 @@ void UAedirGaitComponent::UpdateGesture(float DeltaTime, const FTransform& Chest
 			const float Out = Slot == 0 ? -1.f : 1.f;
 			bGestureHand[Slot] = true;
 			GestureWanted[Slot] = FMath::SmoothStep(0.f, 1.f, Share);
-			GestureGoal[Slot] = Middle + (Ahead * AheadCm + Right * (Out * Gesture->SurrenderHandCm.Y) + Up * Gesture->SurrenderHandCm.Z) * Scale;
+			GestureGoal[Slot] = Middle + (Ahead * AheadCm + Right * (Out * HandCm.Y) + Up * HandCm.Z) * Scale;
 			GesturePalm[Slot] = Ahead;
 			GestureFingers[Slot] = (Up + Right * (Out * 0.12f) + Ahead * 0.1f).GetSafeNormal();
 			GestureElbow[Slot] = FVector(Gesture->SurrenderElbow.X, Out * Gesture->SurrenderElbow.Y, Gesture->SurrenderElbow.Z).GetSafeNormal();
@@ -2849,8 +2938,11 @@ void UAedirGaitComponent::UpdateGesture(float DeltaTime, const FTransform& Chest
 	IConsoleVariable* Watch = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.ClutchWatch"));
 	if (Share > 0.f && Watch && Watch->GetInt() >= 1 && GFrameCounter % 20 == 0)
 	{
-		UE_LOG(LogAedir, Log, TEXT("[Gesture] %s holds up its hands, share %.2f: alphas %.2f %.2f, wanted %.2f %.2f, hauled up %d, lying %d, usable %d %d, getting up %d, knocked out %d"), *CreatureOwner->GetName(), Share, ClutchAlpha[0], ClutchAlpha[1], GestureWanted[0], GestureWanted[1], bHauled ? 1 : 0, bLying ? 1 : 0, Usable(0) ? 1 : 0, Usable(1) ? 1 : 0,
-			BalanceComponent && BalanceComponent->IsGettingUp() ? 1 : 0, CreatureOwner->Stats && CreatureOwner->Stats->IsKnockedOut() ? 1 : 0);
+		const FVector Middle = (Shoulders[0] + Shoulders[1]) * 0.5;
+		const FVector ChestUp = ChestNow.GetUnitAxis(EAxis::Z);
+		const auto Above = [&](const TCHAR* Bone) { return FVector::DotProduct(Body->GetBoneLocation(FName(Bone)) - Middle, ChestUp); };
+		UE_LOG(LogAedir, Log, TEXT("[Gesture] %s holds up its hands, share %.2f: alphas %.2f %.2f, wanted %.2f %.2f, hauled up %d, lying %d, usable %d %d, getting up %d, settling %d, rising %.2f; the hands %.0f and %.0f cm over the shoulders along the chest, the head %.0f, the chest up %.2f"), *CreatureOwner->GetName(), Share, ClutchAlpha[0], ClutchAlpha[1], GestureWanted[0], GestureWanted[1], bHauled ? 1 : 0, bLying ? 1 : 0, Usable(0) ? 1 : 0, Usable(1) ? 1 : 0,
+			BalanceComponent && BalanceComponent->IsGettingUp() ? 1 : 0, BalanceComponent && BalanceComponent->IsSettling() ? 1 : 0, GestureRising, Above(TEXT("hand_l")), Above(TEXT("hand_r")), Above(TEXT("head")), ChestUp.Z);
 	}
 	if (PointSlot != INDEX_NONE && Watch && Watch->GetInt() >= 1 && GFrameCounter % 20 == 0)
 	{

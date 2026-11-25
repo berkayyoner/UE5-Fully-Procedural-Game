@@ -540,6 +540,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float HipHalfWidthCm = 8.5f;
 
+	// A step comes down no nearer than this to any part of somebody getting up (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait", meta=(ClampMin="0"))
+	float RiserRoomCm = 24.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait")
 	float AnkleHeightCm = 8.f;
 
@@ -1311,6 +1315,8 @@ private:
 	FVector KickStanceLagWay = FVector::ZeroVector;
 	bool SampleGround(const FVector& WorldXY, float BottomZ, FVector& OutLocation, FVector& OutNormal) const;
 	void ResetForRagdoll();
+	// Where a foot would come down, out of whoever is getting up there: to the side the body comes from.
+	FVector KeepOffRisers(const FVector& Landing, const FVector& Home, float ActorScale) const;
 	// Getting up off the ground: the hips, trunk, hands and feet go through the moves for the way the body lay, and hand over
 	// to the standing pose at the end.
 	void PoseGetUp(const FTransform& ActorTransform, float BottomZ, float ActorScale);
@@ -1579,6 +1585,7 @@ private:
 	FVector2D DownLook = FVector2D::ZeroVector;
 	// Down last frame; and just up, how far below standing the hips still are and how fast they rise out of it.
 	bool bWasDown = false;
+	float GestureRising = 0.f;
 	float StandUpDrop = 0.f;
 	float StandUpDropRate = 0.f;
 };

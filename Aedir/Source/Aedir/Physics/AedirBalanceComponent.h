@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Audio/AedirSfxSubsystem.h"
 #include "PhysicsEngine/ConstraintInstance.h"
 #include "Combat/AedirCombatTypes.h"
 #include "Components/ActorComponent.h"
@@ -240,6 +241,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
 	float DownAwakeArmShare = 0.35f;
 
+	// Come round after lying senseless, the muscles, the arms' joints and the look come back to what an awake body has over
+	// this long: the first for a body with all its breath and health, the second for one with none. It gets up only once this
+	// share of it is back.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0.1", Units="s"))
+	float WakeSecondsMin = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0.1", Units="s"))
+	float WakeSecondsMax = 4.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", ClampMax="1"))
+	float WakeGetUpShare = 0.9f;
+
 	// Lying awake, an arm meeting the ground is hurt only when stopped faster than this (a punch or a guard thrown from
 	// the ground is not), as an arm thrown on it by a fall would be.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", Units="cm/s"))
@@ -249,6 +262,10 @@ public:
 	// them, the trunk stays folded over the hips and it falls back.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
 	float HoistSurrenderHandsBelow = 0.5f;
+
+	// Until then one of them is held up all the same, and the other alone bears the body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance")
+	bool bHoistSurrenderOneHand = true;
 
 	// And the trunk is held up to its step this much the quicker.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="1"))
@@ -315,6 +332,9 @@ public:
 	float KickWorldBounceMaxSpeed = 350.f;
 
 	float KnockFoot(FName Bone, float Speed, const FHitResult& Hit);
+
+	// The head driven into something fixed, heard as that take of a fist on the body.
+	float KnockHead(float Speed, const FHitResult& Hit, float SoundTake);
 
 	// A body already lying on the ground takes this share of the push of a blow or a kick a standing one would: it has
 	// the ground under it and nothing to be thrown off, so it is shoved, not sent flying.
@@ -900,7 +920,60 @@ public:
 	// Hauled up onto its feet, the body is handed back to its capsule; the hold of its hips and feet on the capsule and the
 	// ground, and the muscles' strength, come in over HoistSettleSeconds, so it is taken into the standing pose softly.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistSettleSeconds = 1.8f;
+	float HoistSettleSeconds = 1.2f;
+
+	// From this share of it on it can walk again, and its feet are held where they stand.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float HoistSettleMoveShare = 0.5f;
+
+	// Coming up the last of the way the body finds its feet: from HoistFeetFromSteps before the end of the steps on (coming in
+	// over HoistFeetEaseSteps) each foot is held flat to the ground where it stands, by a spring of HoistFootSpringPerSecondSq
+	// and turned flat at HoistFootHz, and the hips are lifted no higher than the legs reach from them (HoistLegReachShare of
+	// their length). A foot further than HoistFootTriggerCm from under its hip is stepped there in HoistFootStepSeconds,
+	// HoistFootStepCm over the ground, one at a time, set down HoistFootAheadCm before the hips.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="3"))
+	float HoistFeetFromSteps = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0.05", ClampMax="1"))
+	float HoistFeetEaseSteps = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float HoistFootSpringPerSecondSq = 260.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float HoistFootHz = 4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0.5", ClampMax="1"))
+	float HoistLegReachShare = 0.98f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="1"))
+	float HoistFootTriggerCm = 24.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0.05", Units="s"))
+	float HoistFootStepSeconds = 0.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float HoistFootStepCm = 9.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	float HoistFootAheadCm = 3.f;
+
+	// With both feet found (no further than HoistFeetFoundCm from where they stand) it counts as up sooner: from
+	// HoistDoneFromSteps before the end of the steps on, this high, this upright and after this long.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float HoistFeetFoundCm = 9.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="2"))
+	float HoistDoneFromSteps = 0.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float HoistDoneFeetHeightShare = 0.72f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
+	float HoistDoneFeetUpright = 0.82f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", Units="s"))
+	float HoistDoneFeetHoldSeconds = 0.08f;
 
 	// In the last step and still not up after HoistDoneEasySeconds, the body counts as up from HoistDoneEasyHeightShare of
 	// the standing height and HoistDoneEasyUpright; still not after HoistGiveUpSeconds, it gives up and lies down again to
@@ -992,6 +1065,10 @@ public:
 	// The leg put forward getting up: 0 the left, 1 the right.
 	int32 GetHoistLeadSide() const { return HoistLeadSide; }
 	bool IsHoisting() const { return bHoisting; }
+	// Just hauled up onto its feet, being taken into the standing pose.
+	bool IsSettling() const { return HoistSettleLeft > 0.f; }
+	// How far an awake body has come round from lying senseless, 0 to 1.
+	float GetWakeShare() const { return WakeShare; }
 	// The step of getting up the body is at (between two, mixed), and how far along the steps it is (0 lying, 1 the first
 	// step, and on); false unless being hauled up.
 	bool GetHoistStage(FAedirGetUpStage& OutStage, float& OutProgress) const;
@@ -1338,7 +1415,29 @@ private:
 	bool bStandingForPlant = true;
 
 	// Hands the body control what the body is down: dead, senseless or awake, and how much muscle it keeps.
-	void UpdateDownMuscles();
+	void UpdateDownMuscles(float DeltaTime);
+	float GetWakeStrength() const { return FMath::Square(FMath::Clamp(WakeShare, 0.f, 1.f)); }
+	float WakeShare = 1.f;
+	float JointsWake = 1.f;
+	// Coming up the last of the way: where each foot stands, and the step it takes there.
+	// Holds and steps the feet on the last of the way up; whether both are found.
+	bool UpdateHoistFeet(float Share, const FVector& Hips, const FVector& Right, double GroundZ, float Size, float Strength, float DeltaTime);
+	bool bHoistFeetSet = false;
+	bool bHoistFootStepping[2] = { false, false };
+	FVector HoistFootSpot[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector HoistFootFrom[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float HoistFootElapsed[2] = { 0.f, 0.f };
+	FQuat HoistFootRest[2] = { FQuat::Identity, FQuat::Identity };
+	float HoistAnkleCm = 9.f;
+	// A foot whose toes are this near the ground stands on them.
+	static constexpr float HoistToesDownCm = 3.f;
+	float HoistBallCm = 3.f;
+	// For aedir.GetUpWatch: how long and how high both feet were off the ground coming up the last of the way and after.
+	void WatchRisingFeet(float DeltaTime);
+	float FeetWatchLeft = 0.f;
+	float FeetWatchSeconds[2] = { 0.f, 0.f };
+	float FeetWatchAir[2] = { 0.f, 0.f };
+	float FeetWatchMost[2] = { 0.f, 0.f };
 
 	void DecayLeanDirection(float Amount);
 	void UpdateFallState();
@@ -1442,7 +1541,7 @@ private:
 	float BodyThroughLeft = 0.f;
 	void SetBodyThrough(bool bThrough);
 	// The sound, the spring back and the harm of a part driven into something fixed, and the part behind it.
-	float KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit);
+	float KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit, EAedirSfx Sound = EAedirSfx::PunchForearm, float SoundTake = -1.f);
 	void WatchKnock(float DeltaTime);
 	FName KnockWatchBone;
 	FVector KnockWatchFrom = FVector::ZeroVector;
