@@ -192,6 +192,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
 	float BodyLiftLeastCm = 105.f;
 
+	// And this far before the chest (cm), as far as the arm reaches.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftAheadCm = 60.f;
+
 	// Let go of a body that does not stand, the holder's own body stays passable to it this long (seconds).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
 	float BodyThroughSeconds = 1.f;

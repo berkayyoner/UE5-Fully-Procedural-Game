@@ -669,7 +669,14 @@ FVector UAedirInteractionComponent::UpdateBodyCarryPlace(EAedirHand Hand, const 
 			Grab.Where = FMath::VInterpConstantTo(Grab.Where, Hang, DeltaTime, BodyCarrySpeedCm);
 		}
 	}
-	Place = Frame.TransformPositionNoScale(Grab.Where);
+	// A whole body is held out at the arm's length, not in against the holder's own.
+	FVector Where = Grab.Where;
+	if (Grab.bLifting && Cast<AAedirCreature>(Grab.Target.IsValid() ? Grab.Target->GetOwner() : nullptr))
+	{
+		const FVector Chest = Frame.InverseTransformPositionNoScale((Own->GetBoneLocation(TEXT("upperarm_l")) + Own->GetBoneLocation(TEXT("upperarm_r"))) * 0.5);
+		Where.X = FMath::Max(Where.X, Chest.X + BodyLiftAheadCm * Scale);
+	}
+	Place = Frame.TransformPositionNoScale(Where);
 
 	// No further from the shoulder than the arm reaches.
 	const FVector Shoulder = Own->GetBoneLocation(bLeft ? TEXT("upperarm_l") : TEXT("upperarm_r"));
