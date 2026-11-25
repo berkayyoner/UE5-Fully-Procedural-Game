@@ -764,3 +764,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Dev: KeyPress presses a key through the player's input, NpcAggression, NpcSurrender, ShotCam npc, BloodTest shows the place and way asked for
 - NPCs leave be whoever has given up, player or NPC, and take up the fight again only once the hands come down
 - Dev: NpcSurrender takes a group, NpcGroup puts the nearest person in a group
+- Surrendering works lying awake and while getting up: face down the hands lie beside the head, getting up they rise as soon as the body no longer leans on them
+- Whoever has surrendered sinks to the hips' height of a crouch with the trunk up, and stands again when the hands come down

@@ -15,6 +15,7 @@
 #include "Components/CapsuleComponent.h"
 #include "EngineUtils.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Creature/AedirGestureComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Wounds/AedirWoundComponent.h"
@@ -3420,7 +3421,7 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 			Keys = HoistSelfLean.GetClampedToMaxSize(1.0) * HoistSelfBalanceShare;
 		}
 		Balancing = Keys * (HoistKeyBalanceAccel * HoistDrive * Lift);
-		const float ChestK = HoistChestSpringPerSecondSq * Strength * FMath::Lerp(HoistUnsteadyHoldShare, 1.f, Steady);
+		const float ChestK = HoistChestSpringPerSecondSq * Strength * (HoistFreeHand == AedirBothHands ? FMath::Square(HoistSurrenderTrunkScale) : 1.f) * FMath::Lerp(HoistUnsteadyHoldShare, 1.f, Steady);
 		const FVector ChestAccel = ((ChestWanted - ChestAt) * ChestK - (Chest->GetUnrealWorldVelocity() - HipsSpeed) * (2.f * FMath::Sqrt(ChestK))) * Pull + FVector(0.f, 0.f, Gravity * HoistChestCarryShare * Pull) + Tip + Balancing;
 		ChestForce = ChestAccel.GetClampedToMaxSize(Gravity * HoistWeightShare + HoistMaxExtraAccel + HoistKeyBalanceAccel) * UpperMass;
 		Chest->AddForce(ChestForce, true, false);
@@ -3442,7 +3443,8 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 	}
 
 	// The trunk is turned the way of the step about the hips, the chest more than the belly.
-	const float W = UE_TWO_PI * HoistUprightHz * FMath::Sqrt(Strength);
+	// Arms held up in surrender weigh on it, with nothing under the hands: it is turned the harder.
+	const float W = UE_TWO_PI * HoistUprightHz * FMath::Sqrt(Strength) * (HoistFreeHand == AedirBothHands ? HoistSurrenderTrunkScale : 1.f);
 	const auto Align = [&](const FName& BodyName, const FName& From, const FName& To, float Share)
 	{
 		FBodyInstance* Part = BodyMesh->GetBodyInstance(BodyName);
@@ -3496,18 +3498,42 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 		{
 			HoistFreeHand = -1;
 		}
-		UE_CLOG(Was != HoistFreeHand, LogAedir, Log, TEXT("[GetUp] %s getting up keeps %s off the ground."), *GetNameSafe(GetOwner()), HoistFreeHand == 0 ? TEXT("its left hand") : HoistFreeHand == 1 ? TEXT("its right hand") : TEXT("neither hand"));
+		// Giving up, both are held up as soon as the step lets go of them.
+		if (Self && Self->Gesture && Self->Gesture->IsSurrendering() && Stage.Hands <= HoistSurrenderHandsBelow)
+		{
+			HoistFreeHand = AedirBothHands;
+		}
+		UE_CLOG(Was != HoistFreeHand, LogAedir, Log, TEXT("[GetUp] %s getting up keeps %s off the ground."), *GetNameSafe(GetOwner()), HoistFreeHand == AedirBothHands ? TEXT("both hands") : HoistFreeHand == 0 ? TEXT("its left hand") : HoistFreeHand == 1 ? TEXT("its right hand") : TEXT("neither hand"));
 		if (HoistHand >= 0 && HoistHand == HoistFreeHand)
 		{
 			HoistHand = 1 - HoistFreeHand;
 		}
 	}
+	// Held up, the arms bear on the shoulders: their weight is carried through the trunk to the hips, not left to fold it over.
+	if (HoistFreeHand == AedirBothHands)
+	{
+		float Borne = 0.f;
+		for (const TCHAR* Part : { TEXT("upperarm"), TEXT("lowerarm"), TEXT("hand") })
+		{
+			for (const TCHAR* Suffix : { TEXT("_l"), TEXT("_r") })
+			{
+				FBodyInstance* Piece = BodyMesh->GetBodyInstance(FName(FString(Part) + Suffix));
+				if (Piece && Piece->IsInstanceSimulatingPhysics())
+				{
+					const float Lifted = Gravity * Piece->GetBodyMass() * HoistSurrenderArmBearShare;
+					Piece->AddForce(FVector(0.f, 0.f, Lifted), true, false);
+					Borne += Lifted;
+				}
+			}
+		}
+		Pelvis->AddForce(FVector(0.f, 0.f, -Borne), true, false);
+	}
 	float HandOff = 0.f;
 	float PalmDown = 0.f;
-	const float OneHandShare = HoistFreeHand >= 0 ? 2.f : 1.f;
+	const float OneHandShare = HoistFreeHand >= 0 && HoistFreeHand != AedirBothHands ? 2.f : 1.f;
 	for (int32 Side = 0; HoistHand >= 0 && Side < 2; ++Side)
 	{
-		if (Side == HoistFreeHand)
+		if (Side == HoistFreeHand || HoistFreeHand == AedirBothHands)
 		{
 			continue;
 		}
@@ -3645,11 +3671,13 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 
 	// Into the last step, up far enough, upright and steady for a moment: on its feet, standing and stepping take it over.
 	HoistLastStepFor = HoistProgress >= Last - 0.5f ? HoistLastStepFor + DeltaTime : 0.f;
-	const bool bEasy = HoistLastStepFor >= HoistDoneEasySeconds;
+	// Giving up it stands only to sink again: it need not have come all the way upright.
+	const bool bGivingUp = HoistFreeHand == AedirBothHands;
+	const bool bEasy = bGivingUp || HoistLastStepFor >= HoistDoneEasySeconds;
 	// High enough on its legs but its trunk still swaying over them, it stands on it all the same before long: the muscles
 	// of standing bring the trunk up, where the pull at the hips alone keeps it swaying.
 	const float Late = FMath::Clamp((HoistLastStepFor - HoistDoneEasySeconds) / FMath::Max(HoistDoneLateSeconds - HoistDoneEasySeconds, 0.05f), 0.f, 1.f);
-	const float UprightAsked = bEasy ? FMath::Lerp(HoistDoneEasyUpright, HoistDoneLateUpright, Late) : HoistDoneUpright;
+	const float UprightAsked = FMath::Min(bEasy ? FMath::Lerp(HoistDoneEasyUpright, HoistDoneLateUpright, Late) : HoistDoneUpright, bGivingUp ? HoistSurrenderUpright : 1.f);
 	const float SpeedAsked = HoistDoneSpeedCm * FMath::Lerp(1.f, 1.6f, Late);
 	const bool bUp = HoistProgress >= Last - 0.5f && Height >= Stand * (bEasy ? HoistDoneEasyHeightShare : HoistDoneHeightShare) && ChestUp >= UprightAsked && HipsSpeed.Size() < SpeedAsked;
 	if (!bUp && HoistLastStepFor >= HoistGiveUpSeconds)

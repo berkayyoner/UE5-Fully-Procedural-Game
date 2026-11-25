@@ -910,7 +910,9 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.SpineLeanPitch = -MaxRunForwardLeanDegrees * SpeedAlpha * static_cast<float>(LocalDirection.X) - RunRock + BalanceLean.Pitch + LookPitch * SpinePitchShare + TrunkInertia.X;
 	GaitState.SpineLeanPitch -= ReachLean * (1.f - AedirReachHipHingeShare);
 	// Crouching bends the spine forward too, the body does not just sink on its legs.
-	GaitState.SpineLeanPitch -= CrouchSpineLeanDegrees * CrouchAlpha;
+	// Giving up it sinks with the trunk up, not bent over.
+	const float CrouchLean = CreatureOwner->Gesture ? FMath::Lerp(1.f, CreatureOwner->Gesture->SurrenderCrouchLeanShare, FMath::SmoothStep(0.f, 1.f, CreatureOwner->Gesture->GetSurrenderShare())) : 1.f;
+	GaitState.SpineLeanPitch -= CrouchSpineLeanDegrees * CrouchAlpha * CrouchLean;
 	GaitState.SpineLeanPitch -= StanceSpineLeanDegrees * StanceAlpha * (1.f - CrouchAlpha);
 	GaitState.SpineLeanPitch -= ProtectiveSpineLeanDegrees * ProtectiveAlpha;
 	// Backward positive: the torso leans back to bring the kicking leg up.
@@ -927,7 +929,7 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	// The spine carries the chest from the hips' turn round to its own.
 	GaitState.SpineTwistYaw += ChestStrideYaw - PelvisYaw;
 
-	const float CrouchLift = CrouchHeadLiftDegrees * CrouchAlpha;
+	const float CrouchLift = CrouchHeadLiftDegrees * CrouchAlpha * CrouchLean;
 	const FRotator HeadTarget(
 		LookPitch * HeadPitchShare + TrunkInertia.X * AedirInertiaHeadShare + CrouchLift * (1.f - CrouchHeadLiftNeckShare),
 		FMath::Clamp(LookYaw * HeadYawScale, -HeadYawLimitDegrees, HeadYawLimitDegrees),
@@ -2776,7 +2778,10 @@ void UAedirGaitComponent::UpdateGesture(float DeltaTime, const FTransform& Chest
 	{
 		Sad = Share;
 		const FVector Middle = (Shoulders[0] + Shoulders[1]) * 0.5;
-		for (int32 Slot = 0; Slot < 2 && !bHauled; ++Slot)
+		// With the chest down the hands lie beside the head, not under it.
+		const float ChestDown = bLying ? FMath::SmoothStep(0.2f, 0.7f, static_cast<float>(-Ahead.Z)) : 0.f;
+		const float AheadCm = FMath::Lerp(static_cast<float>(Gesture->SurrenderHandCm.X), Gesture->SurrenderFaceDownAheadCm, ChestDown);
+		for (int32 Slot = 0; Slot < 2; ++Slot)
 		{
 			if (!Usable(Slot))
 			{
@@ -2785,7 +2790,7 @@ void UAedirGaitComponent::UpdateGesture(float DeltaTime, const FTransform& Chest
 			const float Out = Slot == 0 ? -1.f : 1.f;
 			bGestureHand[Slot] = true;
 			GestureWanted[Slot] = FMath::SmoothStep(0.f, 1.f, Share);
-			GestureGoal[Slot] = Middle + (Ahead * Gesture->SurrenderHandCm.X + Right * (Out * Gesture->SurrenderHandCm.Y) + Up * Gesture->SurrenderHandCm.Z) * Scale;
+			GestureGoal[Slot] = Middle + (Ahead * AheadCm + Right * (Out * Gesture->SurrenderHandCm.Y) + Up * Gesture->SurrenderHandCm.Z) * Scale;
 			GesturePalm[Slot] = Ahead;
 			GestureFingers[Slot] = (Up + Right * (Out * 0.12f) + Ahead * 0.1f).GetSafeNormal();
 			GestureElbow[Slot] = FVector(Gesture->SurrenderElbow.X, Out * Gesture->SurrenderElbow.Y, Gesture->SurrenderElbow.Z).GetSafeNormal();

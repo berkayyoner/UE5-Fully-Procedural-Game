@@ -1003,7 +1003,7 @@ void AAedirPlayerCharacter::HandleRunReleased()
 
 void AAedirPlayerCharacter::HandleCrouchPressed()
 {
-	if (bNoclip)
+	if (bNoclip || HasHandsUp())
 	{
 		return;
 	}
@@ -1012,12 +1012,15 @@ void AAedirPlayerCharacter::HandleCrouchPressed()
 
 void AAedirPlayerCharacter::HandleCrouchReleased()
 {
-	SetWantsToCrouch(false);
+	if (!HasHandsUp())
+	{
+		SetWantsToCrouch(false);
+	}
 }
 
 void AAedirPlayerCharacter::HandleJumpPressed()
 {
-	if (bNoclip)
+	if (bNoclip || HasHandsUp())
 	{
 		return;
 	}

@@ -115,6 +115,9 @@ struct FAedirBoneMotor
 	float MaxAngularForce = 0.f;
 };
 
+// Where a hand is told by its side (0 the left, 1 the right): both of them.
+inline constexpr int32 AedirBothHands = 2;
+
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
 class AEDIR_API UAedirBalanceComponent : public UActorComponent
 {
@@ -241,6 +244,22 @@ public:
 	// the ground is not), as an arm thrown on it by a fall would be.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", Units="cm/s"))
 	float DownArmHarmlessSpeed = 1600.f;
+
+	// Giving up while getting up, the hands leave the ground once the body leans on them no more than this: before, without
+	// them, the trunk stays folded over the hips and it falls back.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
+	float HoistSurrenderHandsBelow = 0.5f;
+
+	// And the trunk is held up to its step this much the quicker.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="1"))
+	float HoistSurrenderTrunkScale = 1.8f;
+
+	// The share of the arms' weight the trunk bears for them then, and how upright it has to be to stand.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
+	float HoistSurrenderArmBearShare = 1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
+	float HoistSurrenderUpright = 0.55f;
 
 	// How far an awake body's elbows give while it is down, sideways and along their bend either way of its middle (degrees).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="5", ClampMax="150"))
@@ -963,7 +982,7 @@ public:
 	float GetBodyKilos() const;
 
 	// Getting up, this hand (0 left, 1 right) is needed on the ground and not the body's own to fight with.
-	bool IsHandOnGround(int32 Side) const { return bHoisting ? HoistFreeHand != Side : IsGettingUp(); }
+	bool IsHandOnGround(int32 Side) const { return bHoisting ? HoistFreeHand != Side && HoistFreeHand != AedirBothHands : IsGettingUp(); }
 
 	// Walked or run into by someone while getting up.
 	void BumpedGettingUp(const class AAedirCreature* By, const FVector& Point, FName Part = NAME_None);

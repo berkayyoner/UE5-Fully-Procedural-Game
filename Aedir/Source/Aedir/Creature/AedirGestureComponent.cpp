@@ -8,6 +8,7 @@
 #include "Engine/World.h"
 #include "Fists/AedirFistArms.h"
 #include "GameFramework/PlayerController.h"
+#include "InputCoreTypes.h"
 #include "Items/AedirInteractionComponent.h"
 #include "Net/UnrealNetwork.h"
 #include "Npc/AedirNpc.h"
@@ -157,6 +158,42 @@ void UAedirGestureComponent::UpdateNpc(float DeltaTime)
 	}
 }
 
+void UAedirGestureComponent::UpdateCrouch(float DeltaTime)
+{
+	AAedirCreature* Creature = GetCreature();
+	if (!Creature || !(Creature->HasAuthority() || Creature->IsLocallyControlled()))
+	{
+		return;
+	}
+	const UAedirBalanceComponent* Balance = Creature->Balance;
+	if (Balance && (Balance->IsRagdoll() || Balance->IsGettingUp()))
+	{
+		SteadySeconds = 0.f;
+	}
+	else if (!Balance || Balance->GetBalance() >= SurrenderCrouchLeastBalance)
+	{
+		SteadySeconds += DeltaTime;
+	}
+	// On its feet it goes down to a crouch, and stays there for as long as it gives up.
+	if (bSurrender && SteadySeconds >= SurrenderCrouchSteadySeconds)
+	{
+		bSunk = true;
+		if (!Creature->bIsCrouched && Creature->CanCrouch())
+		{
+			Creature->SetWantsToCrouch(true);
+		}
+	}
+	else if (!bSurrender && bSunk)
+	{
+		bSunk = false;
+		const APlayerController* Controller = Cast<APlayerController>(Creature->GetController());
+		if (!Controller || !Controller->IsInputKeyDown(EKeys::LeftControl))
+		{
+			Creature->SetWantsToCrouch(false);
+		}
+	}
+}
+
 void UAedirGestureComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -176,6 +213,7 @@ void UAedirGestureComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 		return;
 	}
+	UpdateCrouch(DeltaTime);
 	const float Before = SurrenderShare;
 	SurrenderShare = FMath::FInterpConstantTo(SurrenderShare, bSurrender ? 1.f : 0.f, DeltaTime, 1.f / FMath::Max(bSurrender ? SurrenderSeconds : SurrenderLowerSeconds, 0.05f));
 	if (bSurrender && SurrenderShare >= SurrenderDropShare)

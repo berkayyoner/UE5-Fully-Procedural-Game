@@ -35,6 +35,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender")
 	FVector SurrenderElbow = FVector(-0.1f, 0.6f, -0.8f);
 
+	// Lying on the face, the wrists are this far ahead of the chest instead (cm): beside the head.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender")
+	float SurrenderFaceDownAheadCm = 2.f;
+
+	// It sinks to a crouch, bent over this share of a crouch's own lean.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender", meta=(ClampMin="0", ClampMax="1"))
+	float SurrenderCrouchLeanShare = 0.3f;
+
+	// Up from the ground, it stands steadily for so long before it sinks.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender", meta=(ClampMin="0", Units="s"))
+	float SurrenderCrouchSteadySeconds = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender", meta=(ClampMin="0", ClampMax="1"))
+	float SurrenderCrouchLeastBalance = 0.6f;
+
 	// Conscious on the ground and unable to stand for so long under threat, a person gives up: the first for one not aggressive
 	// at all, the second for one as aggressive as SurrenderNeverAggression (0-100), who no longer gives up.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", Units="s"))
@@ -120,6 +135,7 @@ private:
 	AAedirCreature* GetCreature() const;
 	void LetGoOfEverything() const;
 	void UpdateNpc(float DeltaTime);
+	void UpdateCrouch(float DeltaTime);
 
 	UPROPERTY(Replicated)
 	bool bPointing = false;
@@ -129,6 +145,8 @@ private:
 
 	float SurrenderShare = 0.f;
 	bool bGaveUp = false;
+	bool bSunk = false;
+	float SteadySeconds = 1.f;
 	float DownSeconds = 0.f;
 	double LastThreat = -1.0e6;
 };
