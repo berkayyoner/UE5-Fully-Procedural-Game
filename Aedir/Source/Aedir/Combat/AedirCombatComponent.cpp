@@ -4870,6 +4870,11 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		UpdateAITarget(World->GetTimeSeconds());
 	}
 
+	if (AITarget && IsValid(AITarget) && AITarget->Gesture && AITarget->Gesture->HasGivenUp())
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Gesture] %s leaves %s be: it has given up"), *Creature->GetName(), *AITarget->GetName());
+		AITarget = nullptr;
+	}
 	if (AITarget && (!IsValid(AITarget) || (AITarget->Stats && AITarget->Stats->IsDead())))
 	{
 		AITarget = nullptr;
@@ -5718,7 +5723,8 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 	for (const FOverlapResult& Overlap : Overlaps)
 	{
 		AAedirCreature* Candidate = Cast<AAedirCreature>(Overlap.GetActor());
-		if (!Candidate || (Candidate->Stats && Candidate->Stats->IsDead()))
+		// Nobody goes on at one who has given up.
+		if (!Candidate || (Candidate->Stats && Candidate->Stats->IsDead()) || (Candidate->Gesture && Candidate->Gesture->HasGivenUp()))
 		{
 			continue;
 		}

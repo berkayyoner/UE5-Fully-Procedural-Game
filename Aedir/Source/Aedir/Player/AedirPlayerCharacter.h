@@ -359,7 +359,10 @@ public:
 	void Knockdown(const FString& Args);
 
 	UFUNCTION(Exec)
-	void NpcSurrender();
+	void NpcSurrender(const FString& Args = TEXT(""));
+
+	UFUNCTION(Exec)
+	void NpcGroup(const FString& Args);
 
 	UFUNCTION(Exec)
 	void NpcAggression(const FString& Args);

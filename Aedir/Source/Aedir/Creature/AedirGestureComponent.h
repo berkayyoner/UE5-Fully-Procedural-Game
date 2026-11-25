@@ -95,6 +95,8 @@ public:
 	void SetSurrendering(bool bOn);
 	bool IsSurrendering() const { return bSurrender; }
 	bool HasSurrendered() const { return bSurrender && SurrenderShare >= 1.f; }
+	// It has given up and not taken it back, whether its hands are up just now or not (out cold, or getting up by them).
+	bool HasGivenUp() const { return bSurrender && bGaveUp; }
 	// The hands are up or on their way: they do nothing else.
 	bool AreHandsUp() const { return bSurrender || SurrenderShare > 0.f; }
 	float GetSurrenderShare() const { return SurrenderShare; }
@@ -126,6 +128,7 @@ private:
 	bool bSurrender = false;
 
 	float SurrenderShare = 0.f;
+	bool bGaveUp = false;
 	float DownSeconds = 0.f;
 	double LastThreat = -1.0e6;
 };

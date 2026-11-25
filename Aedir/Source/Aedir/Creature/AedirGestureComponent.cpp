@@ -172,6 +172,7 @@ void UAedirGestureComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		if (Creature->IsPlayerControlled())
 		{
 			bSurrender = false;
+			bGaveUp = false;
 		}
 		return;
 	}
@@ -185,6 +186,7 @@ void UAedirGestureComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 			LetGoOfEverything();
 		}
 	}
+	bGaveUp = bSurrender && (bGaveUp || SurrenderShare >= 1.f);
 	if (Before < 1.f && SurrenderShare >= 1.f)
 	{
 		UE_LOG(LogAedir, Log, TEXT("[Gesture] %s has surrendered"), *GetNameSafe(GetOwner()));

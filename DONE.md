@@ -762,3 +762,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - NPCs that lie awake and cannot stand give up after 10 to 30 s by their aggression, sooner with little blood, never from an aggression of 90 on, and no longer fight
 - Bodies held are lifted, lowered, taken to the sides, swung and flung with the mouse, hanging by the part held; at the end of its way the mouse turns the holder round with them
 - Dev: KeyPress presses a key through the player's input, NpcAggression, NpcSurrender, ShotCam npc, BloodTest shows the place and way asked for
+- NPCs leave be whoever has given up, player or NPC, and take up the fight again only once the hands come down
+- Dev: NpcSurrender takes a group, NpcGroup puts the nearest person in a group

@@ -570,13 +570,32 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 	}
 	else if (Command == TEXT("NpcSurrender"))
 	{
-		// Everybody gives up at once.
+		// NpcSurrender [group]: everybody, or everybody of that group, gives up at once.
+		const TArray<FString> Tokens = DevToolsTokens(Args);
 		for (TActorIterator<AAedirNpc> It(Player->GetWorld()); It; ++It)
 		{
-			if (It->Gesture && It->Stats && !It->Stats->IsDead())
+			if ((!Tokens.IsValidIndex(0) || It->GroupId == FName(*Tokens[0])) && It->Gesture && It->Stats && !It->Stats->IsDead())
 			{
 				It->Gesture->SetSurrendering(true);
 			}
+		}
+	}
+	else if (Command == TEXT("NpcGroup"))
+	{
+		// NpcGroup <group>: the living person nearest the player joins it.
+		const TArray<FString> Tokens = DevToolsTokens(Args);
+		AAedirNpc* Nearest = nullptr;
+		for (TActorIterator<AAedirNpc> It(Player->GetWorld()); It; ++It)
+		{
+			if (It->Stats && !It->Stats->IsDead() && (!Nearest || FVector::DistSquared(It->GetActorLocation(), Player->GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), Player->GetActorLocation())))
+			{
+				Nearest = *It;
+			}
+		}
+		if (Nearest && Tokens.IsValidIndex(0))
+		{
+			Nearest->SetGroupId(FName(*Tokens[0]));
+			DevToolsReport(FString::Printf(TEXT("%s is one of the %s now"), *Nearest->GetName(), *Tokens[0]));
 		}
 	}
 	else if (Command == TEXT("NpcAggression"))

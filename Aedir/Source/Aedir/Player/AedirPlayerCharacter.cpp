@@ -2146,9 +2146,14 @@ void AAedirPlayerCharacter::Knockdown(const FString& Args)
 	RunDevCommand(TEXT("Knockdown"), Args, true);
 }
 
-void AAedirPlayerCharacter::NpcSurrender()
+void AAedirPlayerCharacter::NpcSurrender(const FString& Args)
 {
-	RunDevCommand(TEXT("NpcSurrender"), FString(), true);
+	RunDevCommand(TEXT("NpcSurrender"), Args, true);
+}
+
+void AAedirPlayerCharacter::NpcGroup(const FString& Args)
+{
+	RunDevCommand(TEXT("NpcGroup"), Args, true);
 }
 
 void AAedirPlayerCharacter::NpcAggression(const FString& Args)
