@@ -242,6 +242,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Down", meta=(ClampMin="0", Units="cm/s"))
 	float DownArmHarmlessSpeed = 1600.f;
 
+	// How far an awake body's elbows give while it is down, sideways and along their bend either way of its middle (degrees).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="5", ClampMax="150"))
+	float DownElbowSideDegrees = 30.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="30", ClampMax="150"))
+	float DownElbowBendDegrees = 85.f;
+
 	// A fist (or a hand) driven into something fixed, a wall, a tree, a rock, standing: it sounds as a fist on a forearm
 	// from this speed on, the slow take up to the middle of these two and the hard one past it (cm/s); it is hurt past the
 	// harmless speed, the wound this share of the blow's energy and this much damage for each cm/s past it; and it springs

@@ -753,3 +753,12 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Bare-handed NPCs do not go on beating one who lies senseless
 - Blood is saved, shown in the menu and set at the console (blood) and with SetStat
 - Dev: BloodWatch logs health and blood, FistBlows lands fists on a bone, UseKind eats or drinks a thing
+- An arm taking its hand to a hurt place is turned about its length so the elbow bends its own way, and one jammed under a body lying down lets go instead of folding backwards
+- Lying awake the elbows are hinges, no longer folding sideways under the body's weight
+- The burst of blood at a blow is drops thrown off the skin where it opened, no longer a flat sheet across the blow's way; sprays leave the body outward, not in through it
+- Bruises are a little less see-through (BruiseOpacityScale)
+- B points a finger where the camera looks, with the hand on that side, until pressed again
+- Holding H raises both hands in surrender in a second, letting go of what they hold halfway, the face turned sad; pressing H again lowers them
+- NPCs that lie awake and cannot stand give up after 10 to 30 s by their aggression, sooner with little blood, never from an aggression of 90 on, and no longer fight
+- Bodies held are lifted, lowered, taken to the sides, swung and flung with the mouse, hanging by the part held; at the end of its way the mouse turns the holder round with them
+- Dev: KeyPress presses a key through the player's input, NpcAggression, NpcSurrender, ShotCam npc, BloodTest shows the place and way asked for

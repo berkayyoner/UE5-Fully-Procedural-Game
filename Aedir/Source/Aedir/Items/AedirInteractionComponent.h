@@ -65,6 +65,10 @@ struct FAedirBodyGrab
 	bool bLifting = false;
 	float LiftSeconds = 0.f;
 	float NextLog = 0.f;
+	// Where this hand is from the middle of the hands that lift, about the way they are taken (ahead, right, up).
+	FVector LiftOffset = FVector::ZeroVector;
+	// How fast the place it is carried to goes (cm/s).
+	FVector WhereVelocity = FVector::ZeroVector;
 };
 
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
@@ -188,13 +192,78 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0", ClampMax="1"))
 	float BodyDragBearShare = 0.4f;
 
-	// Lifting, a hand would have what it holds at least this far over the feet (cm, a body of the usual size).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
-	float BodyLiftLeastCm = 105.f;
+	// Lifting, the mouse takes what is held up, down and to the sides, about the shoulders, at the arms' length: so many mouse
+	// units from the middle to the furthest across and up or down, and this far round to each side, up and down (degrees).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="1"))
+	float LiftMouseAcross = 150.f;
 
-	// And this far before the chest (cm), as far as the arm reaches.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
-	float BodyLiftAheadCm = 60.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="1"))
+	float LiftMouseUpDown = 130.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0", ClampMax="150"))
+	float LiftSideDegrees = 80.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0", ClampMax="89"))
+	float LiftUpDegrees = 65.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0", ClampMax="89"))
+	float LiftDownDegrees = 72.f;
+
+	// At the end of its way across, the mouse turns the holder round on, with what is held (degrees of view for each unit).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0"))
+	float LiftEdgeTurnShare = 0.6f;
+
+	// How far up the mouse's way it starts at the least (-1 the lowest, 1 the highest), and how fast what is held is taken to
+	// where the mouse has it (cm/s).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="-1", ClampMax="1"))
+	float LiftStartLeast = -0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0"))
+	float LiftSpeedCm = 560.f;
+
+	// Swung, the arms and the back put this much more into it than they could hold up at rest.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="1"))
+	float LiftSwingForceShare = 1.7f;
+
+	// Lifting, the weight is drawn by a stiffer spring (1/s2), as if never further behind than this (cm), and goes along with
+	// this share of the speed of the place it is taken to: what lets it be swung and flung.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0"))
+	float LiftPullPerSecondSq = 130.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0"))
+	float LiftPullFullCm = 45.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0", ClampMax="1"))
+	float LiftFollowShare = 0.85f;
+
+	// The share of that pull that reaches the trunk all at once; the rest goes through the part held, and the limbs hang.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0", ClampMax="1"))
+	float LiftSpreadShare = 0.3f;
+
+	// Where the shoulders are, standing: this share of the capsule's height up and this far ahead (cm). What is held is at most
+	// this far past the wrists (cm); all the way down the arms reach this much further, the body bending, no lower than the last (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0", ClampMax="1"))
+	float LiftShoulderShare = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift")
+	float LiftShoulderAheadCm = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0"))
+	float LiftBeyondMostCm = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0"))
+	float LiftLowBendCm = 70.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0"))
+	float LiftLowestCm = 12.f;
+
+	// The two hands are kept no further than this each from the middle between them (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies|Lift", meta=(ClampMin="0"))
+	float BodyLiftHandsApartCm = 25.f;
+
+	// The mouse moved while a hand lifts (mouse axis units, up positive).
+	void AddLiftMouse(const FVector2D& Delta);
+	bool IsLiftingBody() const { return BodyGrabs[0].bLifting || BodyGrabs[1].bLifting; }
 
 	// Let go of a body that does not stand, the holder's own body stays passable to it this long (seconds).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
@@ -414,6 +483,9 @@ private:
 	bool IsStandingHeld(const FAedirBodyGrab& Grab) const;
 	// Pulls a body that does not stand, or a piece of one, the way the hand would have it; gives back how hard (N).
 	float PullBody(const FAedirBodyGrab& Grab, const FVector& Point, const FVector& Lag, float MostN) const;
+	// Where the mouse has what the hands lift: across (right positive) and up, each -1 to 1.
+	FVector2D LiftAim = FVector2D::ZeroVector;
+
 	FAedirBodyGrab BodyGrabs[2];
 
 	void BeginReach(EAedirHand Hand, AAedirItemActor* Item);

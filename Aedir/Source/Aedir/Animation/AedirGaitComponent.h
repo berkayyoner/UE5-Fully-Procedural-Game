@@ -228,6 +228,10 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float FistAlphaRight = 0.f;
 
+	// How far each hand points with its first finger, and how sad the face is.
+	float PointAlpha[2] = { 0.f, 0.f };
+	float FaceSad = 0.f;
+
 	// The rebuilt fists (UAedirFistArms): how far each arm is in their guard, and where they put its fist and its elbow.
 	float FistArmAlpha[2] = { 0.f, 0.f };
 	FVector FistArmHandWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
@@ -831,6 +835,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchSkinCm = 2.f;
 
+	// Lying, an arm whose elbow is off its bend by more than this (degrees) for this long (s) lets go of the place for so long (s).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0"))
+	float ClutchJamDegrees = 45.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0"))
+	float ClutchJamLetGoSeconds = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0"))
+	float ClutchJamRestSeconds = 3.f;
+
 	// How fully a hand held to a hurt place is turned to lie flat on it, the palm onto the skin.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
 	float ClutchHandLieShare = 1.f;
@@ -1305,6 +1319,26 @@ private:
 	FVector GetUpStartHand[2];
 	void AdvancePhase(float DeltaTime, bool bMoving, bool bTurning, float Speed2D, float StrideLength);
 	FRotator ComputeFootTilt(const FVector& GroundNormal, const FVector& ActorUp, const FRotator& CurrentTilt, float DeltaTime) const;
+	double NextElbowLog = 0.0;
+	// The hands a gesture asks for: pointing, or held up in surrender.
+	void UpdateGesture(float DeltaTime, const FTransform& ChestNow, bool bLying, const UAedirInteractionComponent* Interaction);
+	void ApplyGestureToState();
+	bool bGestureHand[2] = { false, false };
+	// Kept while the arm comes down from it.
+	float GestureHold[2] = { 0.f, 0.f };
+	float GestureSad = 0.f;
+	bool bGestureFollows[2] = { false, false };
+	float GestureWanted[2] = { 0.f, 0.f };
+	FVector GestureGoal[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector GesturePalm[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector GestureFingers[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector GestureElbow[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float GestureElbowShare[2] = { 0.f, 0.f };
+	float GesturePoint[2] = { 0.f, 0.f };
+	int32 PointSlot = INDEX_NONE;
+	bool IsElbowOffHinge(int32 Slot) const;
+	float ClutchJamSeconds[2] = { 0.f, 0.f };
+	float ClutchJamRest[2] = { 0.f, 0.f };
 	void WatchGetUpJumps(float DeltaTime);
 	TArray<FVector> JumpLast;
 	TArray<FVector> JumpStep;

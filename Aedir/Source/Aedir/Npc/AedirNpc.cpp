@@ -4,6 +4,7 @@
 
 #include "Aedir.h"
 #include "Combat/AedirCombatComponent.h"
+#include "Creature/AedirGestureComponent.h"
 #include "Creature/AedirStatsComponent.h"
 #include "Creature/AedirGroupSubsystem.h"
 #include "Engine/World.h"
@@ -171,6 +172,20 @@ void AAedirNpc::Tick(float DeltaSeconds)
 		return;
 	}
 	UpdateNeeds(DeltaSeconds);
+	// Given up, it stands there with its hands up.
+	if (Gesture && Gesture->AreHandsUp())
+	{
+		if (FetchItem)
+		{
+			GiveUpFetch();
+		}
+		if (ChatPartner.IsValid())
+		{
+			EndChat();
+		}
+		MoveLocal(FVector2D::ZeroVector);
+		return;
+	}
 	UpdateChatter(DeltaSeconds);
 	if (TalkPartner.IsValid())
 	{
@@ -1102,6 +1117,10 @@ void AAedirNpc::OnAttackedBy(AAedirCreature* Attacker)
 	if (!HasAuthority() || !Attacker)
 	{
 		return;
+	}
+	if (Gesture)
+	{
+		Gesture->Threaten();
 	}
 	if (ChatPartner.IsValid())
 	{

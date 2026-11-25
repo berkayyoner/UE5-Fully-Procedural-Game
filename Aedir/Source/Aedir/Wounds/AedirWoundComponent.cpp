@@ -456,7 +456,14 @@ void UAedirWoundComponent::OpenWound(FName ResolvedBone, const FVector& WorldLoc
 	}
 
 	OnWounded.Broadcast(Type, ResolvedBone, Severity);
-	MulticastWoundSpray(WorldLocation, Direction, Severity, Type);
+	// It comes out of the skin where it opened, never in through the body after the blow: off the surface, and along it the
+	// way the blow drew over it.
+	FVector At = WorldLocation;
+	const FVector Outward = FindWoundOutward(ResolvedBone, WorldNormal, Direction, At);
+	const FVector Along = FVector::VectorPlaneProject(Direction, Outward);
+	const FVector Spray = (Outward * WoundSprayOutShare + Along * (1.f - WoundSprayOutShare)).GetSafeNormal();
+	UE_LOG(LogAedir, Log, TEXT("[Wound] spray of %s at %s: %.1f cm from where the blow was found, outward %s, the blow going %s"), *ResolvedBone.ToString(), *At.ToCompactString(), FVector::Dist(At, WorldLocation), *Outward.ToCompactString(), *Direction.ToCompactString());
+	MulticastWoundSpray(At, Spray, Severity, Type, Outward);
 }
 
 int32 UAedirWoundComponent::GetWoundCount() const
@@ -1237,7 +1244,7 @@ void UAedirWoundComponent::UpdateSkinBlood()
 			}
 			// Washed off, the blood round it is gone, as much as was washed.
 			const float Left = bBruise ? 1.f : 1.f - static_cast<float>(Wound.Washed255) / 255.f;
-			How = FLinearColor(FMath::Max(Severity, 0.2f) * Left, Look, bBruise ? -1.f : RunCm, static_cast<float>(Wound.Id % 17));
+			How = FLinearColor(FMath::Max(Severity, 0.2f) * (bBruise ? BruiseOpacityScale : Left), Look, bBruise ? -1.f : RunCm, static_cast<float>(Wound.Id % 17));
 		}
 		Texels[Slot] = Where;
 		Texels[WoundSkinBloodSlots + Slot] = How;
@@ -1317,7 +1324,39 @@ void UAedirWoundComponent::OnRep_Wounds()
 	}
 }
 
-void UAedirWoundComponent::MulticastWoundSpray_Implementation(FVector Location, FVector Direction, float Severity, EAedirWoundType Type)
+FVector UAedirWoundComponent::FindWoundOutward(FName Bone, const FVector& Normal, const FVector& BlowWay, FVector& At) const
+{
+	USkeletalMeshComponent* Mesh = GetBodyMesh();
+	FVector Outward = Normal.GetSafeNormal();
+	FBodyInstance* Body = Mesh ? Mesh->GetBodyInstance(Bone) : nullptr;
+	if (Body && Body->IsValidBodyInstance())
+	{
+		// Where the blow was found may lie off the body (the thickness of a blade, a shape swept ahead): the skin nearest it.
+		float DistanceSquared = 0.f;
+		FVector Nearest;
+		if (Body->GetSquaredDistanceToBody(At, DistanceSquared, Nearest) && DistanceSquared > KINDA_SMALL_NUMBER)
+		{
+			At = Nearest;
+		}
+		// Off the part's own middle, across its length.
+		const FTransform Reference = Mesh->GetBoneTransform(Bone);
+		const FVector Own = (At - Body->GetCOMPosition()).GetSafeNormal();
+		const FVector Across = FVector::VectorPlaneProject(Own, Reference.GetUnitAxis(EAxis::X)).GetSafeNormal();
+		const FVector Off = Across.IsNearlyZero() ? Own : Across;
+		// A normal that points into the body (a sweep begun inside it) is not the skin's.
+		if (Outward.IsNearlyZero() || FVector::DotProduct(Outward, Off) < WoundOutwardLeastDot)
+		{
+			Outward = Off;
+		}
+	}
+	if (Outward.IsNearlyZero())
+	{
+		Outward = -BlowWay.GetSafeNormal();
+	}
+	return Outward.IsNearlyZero() ? FVector::UpVector : Outward;
+}
+
+void UAedirWoundComponent::MulticastWoundSpray_Implementation(FVector Location, FVector Direction, float Severity, EAedirWoundType Type, FVector Outward)
 {
 	if (IsDedicatedServer())
 	{
@@ -1327,6 +1366,6 @@ void UAedirWoundComponent::MulticastWoundSpray_Implementation(FVector Location, 
 	UWorld* World = GetWorld();
 	if (UAedirBloodSubsystem* Blood = World ? World->GetSubsystem<UAedirBloodSubsystem>() : nullptr)
 	{
-		Blood->SpawnSpray(Location, Direction, Severity, Type);
+		Blood->SpawnSpray(Location, Direction, Severity, Type, Outward);
 	}
 }

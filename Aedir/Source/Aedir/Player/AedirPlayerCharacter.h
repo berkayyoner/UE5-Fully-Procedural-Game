@@ -358,6 +358,12 @@ public:
 	UFUNCTION(Exec)
 	void Knockdown(const FString& Args);
 
+	UFUNCTION(Exec)
+	void NpcSurrender();
+
+	UFUNCTION(Exec)
+	void NpcAggression(const FString& Args);
+
 	// HeadBlow <share>: a blow to the head taking that share of the full health. DieNow: the player dies at once. LookInfo:
 	// how the view is graded and how dark and grey it is now.
 	UFUNCTION(Exec)
@@ -609,6 +615,10 @@ public:
 
 	UFUNCTION(Exec)
 	void TapTake(int32 RightHand);
+
+	// Presses (1) or lets go (0) any key, by its name, through the player's own input.
+	UFUNCTION(Exec)
+	void KeyPress(const FString& Key, int32 Down);
 
 	// Presses (1) or lets go (0) a mouse button for the fists as the player would: left button 1, right button 0.
 	UFUNCTION(Exec)
@@ -1027,6 +1037,10 @@ private:
 	float FreeCameraSpeedCm = 300.f;
 	void UpdatePhotoCamera();
 
+	bool HasHandsUp() const;
+	void HandlePointPressed();
+	void HandleSurrenderPressed();
+	void HandleSurrenderReleased();
 	void HandleMenuTogglePressed();
 	void HandleJournalPressed();
 	void HandleMapPressed();

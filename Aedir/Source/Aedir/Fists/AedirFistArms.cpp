@@ -101,6 +101,11 @@ void UAedirFistArms::AddMouse(const FVector2D& Delta)
 	if (IsSteering())
 	{
 		PendingMouse += Delta;
+		// What the hands lift goes with it.
+		if (const AAedirCreature* Own = Cast<AAedirCreature>(GetOwner()); Own && Own->Interaction)
+		{
+			Own->Interaction->AddLiftMouse(Delta);
+		}
 	}
 }
 

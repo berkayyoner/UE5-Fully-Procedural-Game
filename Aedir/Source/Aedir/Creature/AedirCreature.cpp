@@ -1,4 +1,5 @@
 #include "AedirCreature.h"
+#include "Creature/AedirGestureComponent.h"
 #include "Player/AedirPlayerCharacter.h"
 #include "HAL/IConsoleManager.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -95,6 +96,7 @@ AAedirCreature::AAedirCreature(const FObjectInitializer& ObjectInitializer)
 	Combat = CreateDefaultSubobject<UAedirCombatComponent>(TEXT("Combat"));
 	Footsteps = CreateDefaultSubobject<UAedirFootstepComponent>(TEXT("Footsteps"));
 	Wounds = CreateDefaultSubobject<UAedirWoundComponent>(TEXT("Wounds"));
+	Gesture = CreateDefaultSubobject<UAedirGestureComponent>(TEXT("Gesture"));
 
 	// Everyone is a plain bald man in underwear made with MetaHuman, so tests read more clearly than with the mannequin; the
 	// mannequin stays for a build without him.

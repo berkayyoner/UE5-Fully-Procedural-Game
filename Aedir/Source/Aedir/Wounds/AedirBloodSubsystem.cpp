@@ -1,9 +1,5 @@
 #include "Wounds/AedirBloodSubsystem.h"
 
-#include "NiagaraComponent.h"
-#include "TimerManager.h"
-#include "NiagaraFunctionLibrary.h"
-#include "NiagaraSystem.h"
 
 #include "Aedir.h"
 #include "Components/DecalComponent.h"
@@ -15,17 +11,15 @@
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
 #include "Math/RotationMatrix.h"
+#include "ProceduralMeshComponent.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UObject/SoftObjectPath.h"
 
 namespace
 {
-	const TCHAR* const BloodBurstLight = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Once.NS_Blood_Splat_Directional_01_Floor_Once");
-	const TCHAR* const BloodBurstHeavy = TEXT("/Game/Vefects/VFX_Free_Blood/VFX/Particles/Once/NS_Blood_Splat_Directional_01_Floor_Bunch_Once.NS_Blood_Splat_Directional_01_Floor_Bunch_Once");
-	constexpr float BloodBurstHeavyAbove = 0.85f;
-	// Drops of blood are a few millimetres across: the burst is drawn small and each flying drop is under a centimetre.
-	constexpr float BloodBurstMinScale = 0.04f;
-	constexpr float BloodBurstMaxScale = 0.112f;
+	// Drops of blood are a few millimetres across: each flying drop is under a centimetre.
+	// A drop of the burst is drawn this much longer along its way for each cm/s it goes at.
+	constexpr float AedirBurstStretchPerCmPerSecond = 0.012f;
 	constexpr float BloodDropScale = 0.0055f;
 	constexpr float BloodDropLifeSpan = 4.f;
 	constexpr float BloodDropStartOutCm = 6.f;
@@ -163,6 +157,91 @@ void AAedirBloodDrop::OnDropHit(UPrimitiveComponent* HitComponent, AActor* Other
 	Destroy();
 }
 
+AAedirBloodBurst::AAedirBloodBurst()
+{
+	PrimaryActorTick.bCanEverTick = true;
+	Mesh = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("Mesh"));
+	RootComponent = Mesh;
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	Mesh->SetCastShadow(false);
+}
+
+void AAedirBloodBurst::Throw(TArray<FAedirBurstDrop>&& Thrown, UMaterialInterface* Material)
+{
+	Drops = MoveTemp(Thrown);
+	Build(true);
+	if (Material)
+	{
+		Mesh->SetMaterial(0, Material);
+	}
+}
+
+void AAedirBloodBurst::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	const FVector Gravity(0.f, 0.f, GetWorld() ? GetWorld()->GetGravityZ() : -980.f);
+	bool bAny = false;
+	for (FAedirBurstDrop& Drop : Drops)
+	{
+		Drop.Age += DeltaSeconds;
+		Drop.Velocity += Gravity * DeltaSeconds;
+		Drop.At += Drop.Velocity * DeltaSeconds;
+		bAny |= Drop.Age < Drop.Life;
+	}
+	if (!bAny)
+	{
+		Destroy();
+		return;
+	}
+	Build(false);
+}
+
+void AAedirBloodBurst::Build(bool bFirst)
+{
+	// Each drop a small eight-sided stone, drawn out the way it goes, shrinking away as its time runs out.
+	TArray<FVector> Vertices;
+	TArray<FVector> Normals;
+	TArray<int32> Triangles;
+	Vertices.Reserve(Drops.Num() * 6);
+	Normals.Reserve(Drops.Num() * 6);
+	for (const FAedirBurstDrop& Drop : Drops)
+	{
+		const int32 First = Vertices.Num();
+		const float Left = FMath::Clamp(1.f - Drop.Age / FMath::Max(Drop.Life, KINDA_SMALL_NUMBER), 0.f, 1.f);
+		const float Radius = Drop.Radius * FMath::Sqrt(Left);
+		const FMatrix Frame = FRotationMatrix::MakeFromX(Drop.Velocity.IsNearlyZero() ? FVector::UpVector : Drop.Velocity);
+		const float Stretch = 1.f + static_cast<float>(Drop.Velocity.Size()) * AedirBurstStretchPerCmPerSecond;
+		const FVector X = Frame.GetUnitAxis(EAxis::X);
+		const FVector Y = Frame.GetUnitAxis(EAxis::Y);
+		const FVector Z = Frame.GetUnitAxis(EAxis::Z);
+		for (const FVector& Way : { X, -X, Y, -Y, Z, -Z })
+		{
+			const bool bAlong = Vertices.Num() - First < 2;
+			Vertices.Add(Drop.At + Way * (Radius * (bAlong ? Stretch : 1.f)));
+			Normals.Add(Way);
+		}
+		if (bFirst)
+		{
+			static const int32 Faces[24] = { 0, 4, 2, 0, 3, 4, 0, 5, 3, 0, 2, 5, 1, 2, 4, 1, 4, 3, 1, 3, 5, 1, 5, 2 };
+			for (const int32 Corner : Faces)
+			{
+				Triangles.Add(First + Corner);
+			}
+		}
+	}
+	const TArray<FVector2D> NoUvs;
+	const TArray<FLinearColor> NoColors;
+	const TArray<FProcMeshTangent> NoTangents;
+	if (bFirst)
+	{
+		Mesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, NoUvs, NoColors, NoTangents, false);
+	}
+	else
+	{
+		Mesh->UpdateMeshSection_LinearColor(0, Vertices, Normals, NoUvs, NoColors, NoTangents);
+	}
+}
+
 bool UAedirBloodSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 	const UWorld* World = Cast<UWorld>(Outer);
@@ -201,39 +280,8 @@ void UAedirBloodSubsystem::SpawnDrop(const FVector& Location, const FVector& Vel
 	Drops.Add(Drop);
 }
 
-void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Direction, float Severity, EAedirWoundType Type)
+void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Direction, float Severity, EAedirWoundType Type, const FVector& Outward)
 {
-	// The burst of the wound itself, drawn from the effect pack. The drops below fall on and mark the ground.
-	const TCHAR* const BurstPath = Type == EAedirWoundType::Bruise ? nullptr : (Severity > BloodBurstHeavyAbove ? BloodBurstHeavy : BloodBurstLight);
-	if (UNiagaraSystem* Burst = BurstPath ? LoadObject<UNiagaraSystem>(nullptr, BurstPath, nullptr, LOAD_NoWarn | LOAD_Quiet) : nullptr)
-	{
-		const float BurstScale = FMath::Lerp(BloodBurstMinScale, BloodBurstMaxScale, FMath::Clamp(Severity, 0.f, 1.f));
-		UNiagaraComponent* BurstNow = UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Burst, Location, Direction.Rotation(), FVector(BurstScale));
-		UWorld* BurstWorld = GetWorld();
-		if (BurstNow && BurstWorld)
-		{
-			// A moment as it is, then it ages fast and goes.
-			const TWeakObjectPtr<UNiagaraComponent> Weak(BurstNow);
-			const float FadeSpeed = BurstFadeSpeed;
-			FTimerHandle FadeHandle;
-			BurstWorld->GetTimerManager().SetTimer(FadeHandle, FTimerDelegate::CreateLambda([Weak, FadeSpeed]()
-			{
-				if (UNiagaraComponent* Fading = Weak.Get())
-				{
-					Fading->SetCustomTimeDilation(FMath::Max(FadeSpeed, 1.f));
-				}
-			}), FMath::Max(BurstFullSeconds, 0.01f), false);
-			FTimerHandle GoneHandle;
-			BurstWorld->GetTimerManager().SetTimer(GoneHandle, FTimerDelegate::CreateLambda([Weak]()
-			{
-				if (UNiagaraComponent* Gone = Weak.Get())
-				{
-					Gone->DestroyComponent();
-				}
-			}), FMath::Max(BurstMaxSeconds, BurstFullSeconds + 0.05f), false);
-		}
-	}
-
 	if (Type == EAedirWoundType::Bruise || !BloodCanSpawn(GetWorld()))
 	{
 		return;
@@ -243,6 +291,24 @@ void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Di
 	if (SprayDirection.IsNearlyZero())
 	{
 		SprayDirection = FVector::UpVector;
+	}
+
+	// The burst of the moment, on the skin where it opened and off it.
+	FActorSpawnParameters BurstParameters;
+	BurstParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+	if (AAedirBloodBurst* Burst = GetWorld()->SpawnActor<AAedirBloodBurst>(AAedirBloodBurst::StaticClass(), Location, FRotator::ZeroRotator, BurstParameters))
+	{
+		const FVector Off = Outward.GetSafeNormal();
+		const float Share = FMath::Clamp(Severity, 0.f, 1.f);
+		TArray<FAedirBurstDrop> Thrown;
+		Thrown.SetNum(FMath::Max(FMath::RoundToInt(FMath::Lerp(static_cast<float>(BurstDropsMin), static_cast<float>(BurstDropsMax), Share)), 0));
+		for (FAedirBurstDrop& Drop : Thrown)
+		{
+			Drop.Velocity = Random.VRandCone(Off.IsNearlyZero() ? SprayDirection : Off, FMath::DegreesToRadians(BurstConeDegrees)) * Random.FRandRange(BurstSpeedMin, FMath::Max(BurstSpeedMin, BurstSpeedMax) * FMath::Lerp(BloodSeverityMinSpeedScale, 1.f, Share));
+			Drop.Radius = Random.FRandRange(FMath::Min(BurstDropMinCm, BurstDropMaxCm), BurstDropMaxCm);
+			Drop.Life = Random.FRandRange(FMath::Min(BurstMinSeconds, BurstMaxSeconds), BurstMaxSeconds);
+		}
+		Burst->Throw(MoveTemp(Thrown), GetDropMaterial());
 	}
 
 	const bool bCut = Type == EAedirWoundType::Cut;

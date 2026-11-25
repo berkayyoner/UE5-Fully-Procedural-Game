@@ -3943,6 +3943,14 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll, bool bArmsOnly)
 				Swing1 = FMath::Max(Swing1, AedirLivingForearmSwingDegrees);
 				Swing2 = FMath::Max(Swing2, AedirLivingForearmSwingDegrees);
 				Twist = FMath::Max(Twist, AedirLivingForearmTwistDegrees);
+				// Lying, with no weapon's pose to fill, an elbow is a hinge: pressed by the ground and the body's own weight it
+				// folded sideways and back on itself.
+				if (bRagdoll)
+				{
+					Swing1 = FMath::Min(Swing1, DownElbowSideDegrees);
+					Swing2 = FMath::Min(Swing2, DownElbowSideDegrees);
+					Twist = FMath::Min(Twist, DownElbowBendDegrees);
+				}
 			}
 		}
 		static IConsoleVariable* FreeWrist = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.DevFreeJoint"), TEXT(""), TEXT("Dev: joints whose name holds this are left free."));

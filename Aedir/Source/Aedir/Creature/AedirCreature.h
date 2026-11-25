@@ -9,6 +9,7 @@ class UAedirBalanceComponent;
 class UAedirCombatComponent;
 class UAedirFootstepComponent;
 class UAedirGaitComponent;
+class UAedirGestureComponent;
 class UAedirInteractionComponent;
 class UAedirStatsComponent;
 class UAedirWoundComponent;
@@ -44,6 +45,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
 	TObjectPtr<UAedirWoundComponent> Wounds;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Creature")
+	TObjectPtr<UAedirGestureComponent> Gesture;
 
 	// The face of the MetaHuman body, following the body's bones.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Aedir|Body")

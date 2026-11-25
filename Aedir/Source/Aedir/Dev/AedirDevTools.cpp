@@ -5,10 +5,12 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "AnimationRuntime.h"
+#include "DrawDebugHelpers.h"
 #include "Engine/SkeletalMesh.h"
 #include "Npc/AedirNpc.h"
 #include "Combat/AedirCombatTypes.h"
 #include "Combat/AedirCombatComponent.h"
+#include "Creature/AedirGestureComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirCreatureTypes.h"
 #include "Engine/World.h"
@@ -566,6 +568,26 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 		}
 		DevToolsReport(FString::Printf(TEXT("Hit on %s: %.0f J from %.0f deg, balance %.2f"), *Bone.ToString(), Joules, FromYaw, Player->Balance ? Player->Balance->GetBalance() : 1.f));
 	}
+	else if (Command == TEXT("NpcSurrender"))
+	{
+		// Everybody gives up at once.
+		for (TActorIterator<AAedirNpc> It(Player->GetWorld()); It; ++It)
+		{
+			if (It->Gesture && It->Stats && !It->Stats->IsDead())
+			{
+				It->Gesture->SetSurrendering(true);
+			}
+		}
+	}
+	else if (Command == TEXT("NpcAggression"))
+	{
+		// NpcAggression <0-100>: of everybody.
+		const TArray<FString> Tokens = DevToolsTokens(Args);
+		for (TActorIterator<AAedirNpc> It(Player->GetWorld()); Tokens.IsValidIndex(0) && It; ++It)
+		{
+			It->Aggression = FMath::Clamp(FCString::Atof(*Tokens[0]) * 0.01f, 0.f, 1.f);
+		}
+	}
 	else if (Command == TEXT("Knockdown"))
 	{
 		Knockdown(Player, Args);
@@ -1025,7 +1047,7 @@ void UAedirDevTools::BloodTest(AAedirPlayerCharacter* Player, const FString& Arg
 		return;
 	}
 
-	// BloodTest [speed share]: a share given is kept for the sprays after it too, to try how far the drops go.
+	// BloodTest [speed share] [severity]: a share given is kept for the sprays after it too, to try how far the drops go.
 	const TArray<FString> Tokens = DevToolsTokens(Args);
 	if (Tokens.IsValidIndex(0))
 	{
@@ -1033,7 +1055,11 @@ void UAedirDevTools::BloodTest(AAedirPlayerCharacter* Player, const FString& Arg
 	}
 	const FVector Forward = Player->GetActorForwardVector();
 	const FVector Location = Player->GetActorLocation() + Forward * 60.f + FVector(0.f, 0.f, 40.f);
-	Blood->SpawnSpray(Location, Forward, 0.9f, EAedirWoundType::Cut);
+	const float Severity = Tokens.IsValidIndex(1) ? FMath::Clamp(FCString::Atof(*Tokens[1]), 0.f, 1.f) : 0.9f;
+	Blood->SpawnSpray(Location, Forward, Severity, EAedirWoundType::Cut, Forward);
+	// Where it was asked for, and which way, to see the spray against.
+	DrawDebugSphere(World, Location, 1.5f, 8, FColor::Green, false, 6.f);
+	DrawDebugLine(World, Location, Location + Forward * 30.f, FColor::Cyan, false, 6.f, 0, 0.5f);
 	DevToolsReport(FString::Printf(TEXT("Blood spray spawned in front of the player at %s, at %.2f of the full speed"), *Location.ToCompactString(), Blood->SpraySpeedShare));
 }
 
@@ -1327,7 +1353,22 @@ void UAedirDevTools::ShotCam(AAedirPlayerCharacter* Player, const FString& Args)
 	// ShotCam piece [yaw] [dist] [height]: a camera standing in the world looking at the piece cut off last, from that bearing.
 	// ShotCam bone <bone> [yaw] [dist] [height]: the same, looking at a bone of the player's body where it lies.
 	const bool bPiece = Tokens.IsValidIndex(0) && DevToolsIsToken(Tokens[0], TEXT("piece"));
-	const bool bBone = Tokens.IsValidIndex(1) && DevToolsIsToken(Tokens[0], TEXT("bone"));
+	// ShotCam npc <bone> [yaw] [dist] [height]: the same of the nearest other body.
+	const bool bNpc = Tokens.IsValidIndex(1) && DevToolsIsToken(Tokens[0], TEXT("npc"));
+	const bool bBone = bNpc || (Tokens.IsValidIndex(1) && DevToolsIsToken(Tokens[0], TEXT("bone")));
+	const AAedirCreature* Shown = Player;
+	if (bNpc)
+	{
+		const AAedirCreature* Nearest = nullptr;
+		for (TActorIterator<AAedirCreature> It(Player->GetWorld()); It; ++It)
+		{
+			if (*It != Player && (!Nearest || FVector::DistSquared(It->GetActorLocation(), Player->GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), Player->GetActorLocation())))
+			{
+				Nearest = *It;
+			}
+		}
+		Shown = Nearest ? Nearest : Player;
+	}
 	if (bPiece || bBone)
 	{
 		AActor* Piece = nullptr;
@@ -1344,12 +1385,12 @@ void UAedirDevTools::ShotCam(AAedirPlayerCharacter* Player, const FString& Args)
 			return;
 		}
 		const int32 First = bBone ? 2 : 1;
-		const FVector At = bBone ? Player->GetMesh()->GetBoneLocation(FName(*Tokens[1])) : Piece->GetComponentsBoundingBox().GetCenter();
+		const FVector At = bBone ? Shown->GetMesh()->GetBoneLocation(FName(*Tokens[1])) : Piece->GetComponentsBoundingBox().GetCenter();
 		// A yaw starting with "r" is from the way the body's hips face (0 before them, 90 on their right).
 		float PieceYaw = Tokens.IsValidIndex(First) ? FCString::Atof(Tokens[First].StartsWith(TEXT("r")) ? *Tokens[First].Mid(1) : *Tokens[First]) : 0.f;
 		if (bBone && Tokens.IsValidIndex(First) && Tokens[First].StartsWith(TEXT("r")))
 		{
-			const FVector Facing = FVector::CrossProduct(Player->GetMesh()->GetBoneLocation(TEXT("thigh_r")) - Player->GetMesh()->GetBoneLocation(TEXT("thigh_l")), FVector::UpVector).GetSafeNormal2D();
+			const FVector Facing = FVector::CrossProduct(Shown->GetMesh()->GetBoneLocation(TEXT("thigh_r")) - Shown->GetMesh()->GetBoneLocation(TEXT("thigh_l")), FVector::UpVector).GetSafeNormal2D();
 			PieceYaw += FMath::RadiansToDegrees(FMath::Atan2(Facing.Y, Facing.X));
 		}
 		const float PieceDistance = Tokens.IsValidIndex(First + 1) ? FCString::Atof(*Tokens[First + 1]) : 60.f;

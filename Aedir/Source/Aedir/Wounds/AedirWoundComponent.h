@@ -65,6 +65,18 @@ public:
 	UPROPERTY(ReplicatedUsing=OnRep_Wounds, VisibleAnywhere, Category="Aedir|Wounds")
 	TArray<FAedirWound> ActiveWounds;
 
+	// How opaque a bruise is against the material's own measure: more, and less skin shows through it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0"))
+	float BruiseOpacityScale = 1.5f;
+
+	// How far the blood of a blow goes off the skin rather than along it, the way the blow drew over it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="0", ClampMax="1"))
+	float WoundSprayOutShare = 0.6f;
+
+	// A blow's normal that lies less along the way off the body part than this is not believed.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="-1", ClampMax="1"))
+	float WoundOutwardLeastDot = 0.2f;
+
 	// Blood on the skin is fresh, bright and wet when shed and darkens and dulls as it dries over this many game hours (a game
 	// hour is three real minutes); while the wound still bleeds it stays at most BloodBleedingDryShare dried.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds")
@@ -308,7 +320,10 @@ private:
 	void UpdateArterialBleeding(float DeltaTime);
 
 	UFUNCTION(NetMulticast, Unreliable)
-	void MulticastWoundSpray(FVector Location, FVector Direction, float Severity, EAedirWoundType Type);
+	void MulticastWoundSpray(FVector Location, FVector Direction, float Severity, EAedirWoundType Type, FVector Outward);
+
+	// Which way is off the skin at a wound; At is brought onto the body.
+	FVector FindWoundOutward(FName Bone, const FVector& Normal, const FVector& BlowWay, FVector& At) const;
 
 	UPROPERTY(Transient)
 	TArray<FAedirWoundVisual> Visuals;

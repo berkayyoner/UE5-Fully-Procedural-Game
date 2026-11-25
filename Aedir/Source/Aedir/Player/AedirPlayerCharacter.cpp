@@ -36,6 +36,7 @@
 #include "Combat/AedirDustPuff.h"
 #include "Fists/AedirFistArms.h"
 #include "Animation/AedirGaitComponent.h"
+#include "Creature/AedirGestureComponent.h"
 #include "Creature/AedirStatsComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -693,7 +694,42 @@ void AAedirPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInp
 	PlayerInputComponent->BindKey(EKeys::Tilde, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
 	PlayerInputComponent->BindKey(EKeys::Quote, IE_Pressed, this, &AAedirPlayerCharacter::ToggleConsole);
 	PlayerInputComponent->BindKey(EKeys::C, IE_Pressed, this, &AAedirPlayerCharacter::HandleDynamicKickPressed);
+	PlayerInputComponent->BindKey(EKeys::B, IE_Pressed, this, &AAedirPlayerCharacter::HandlePointPressed);
+	PlayerInputComponent->BindKey(EKeys::H, IE_Pressed, this, &AAedirPlayerCharacter::HandleSurrenderPressed);
+	PlayerInputComponent->BindKey(EKeys::H, IE_Released, this, &AAedirPlayerCharacter::HandleSurrenderReleased);
 	PlayerInputComponent->BindKey(EKeys::CapsLock, IE_Pressed, this, &AAedirPlayerCharacter::HandleLockOnTogglePressed);
+}
+
+bool AAedirPlayerCharacter::HasHandsUp() const
+{
+	return Gesture && Gesture->AreHandsUp();
+}
+
+void AAedirPlayerCharacter::HandlePointPressed()
+{
+	if (Gesture && !IsMenuOpen() && !IsCharacterCreationOpen())
+	{
+		Gesture->SetPointing(!Gesture->IsPointing());
+	}
+}
+
+void AAedirPlayerCharacter::HandleSurrenderPressed()
+{
+	if (!Gesture || IsMenuOpen() || IsCharacterCreationOpen() || (Stats && (Stats->IsDead() || Stats->IsDying() || Stats->IsKnockedOut())))
+	{
+		return;
+	}
+	// Held, the hands go up; pressed again once they are up, they come down.
+	Gesture->SetSurrendering(!Gesture->HasSurrendered());
+}
+
+void AAedirPlayerCharacter::HandleSurrenderReleased()
+{
+	// Let go before the hands are up, they go down again.
+	if (Gesture && Gesture->IsSurrendering() && !Gesture->HasSurrendered())
+	{
+		Gesture->SetSurrendering(false);
+	}
 }
 
 void AAedirPlayerCharacter::HandleLockOnTogglePressed()
@@ -995,6 +1031,10 @@ void AAedirPlayerCharacter::HandleJumpReleased()
 
 void AAedirPlayerCharacter::HandleLeftGuardPressed()
 {
+	if (HasHandsUp())
+	{
+		return;
+	}
 	// With a weapon held in both hands the right button means two things: clicked, the hand slides up onto the blade or
 	// back; held down, the left hand lets go and is raised on its own. Anything else raises the left guard at once.
 	bRightButtonDown = true;
@@ -1089,6 +1129,10 @@ bool AAedirPlayerCharacter::UsesFistArms(EAedirHand Hand) const
 
 void AAedirPlayerCharacter::HandleRightGuardPressed()
 {
+	if (HasHandsUp())
+	{
+		return;
+	}
 	if (UsesFistArms(EAedirHand::Right))
 	{
 		FistArms->SetHeld(EAedirHand::Right, true, static_cast<float>(FRotator::NormalizeAxis(GetControlRotation().Pitch)));
@@ -1260,6 +1304,10 @@ void AAedirPlayerCharacter::UpdateSwingInput(float DeltaSeconds)
 
 void AAedirPlayerCharacter::HandleLeftHandPressed()
 {
+	if (HasHandsUp())
+	{
+		return;
+	}
 	// Q and E take the free camera down and up while it is out.
 	if (bPhotoCamera)
 	{
@@ -1275,6 +1323,10 @@ void AAedirPlayerCharacter::HandleLeftHandReleased()
 
 void AAedirPlayerCharacter::HandleRightHandPressed()
 {
+	if (HasHandsUp())
+	{
+		return;
+	}
 	// Q and E take the free camera down and up while it is out.
 	if (bPhotoCamera)
 	{
@@ -1495,6 +1547,10 @@ void AAedirPlayerCharacter::ServerNpcAction_Implementation(AAedirNpc* Npc, EAedi
 
 void AAedirPlayerCharacter::HandleShovePressed()
 {
+	if (HasHandsUp())
+	{
+		return;
+	}
 	if (!Combat || IsMenuOpen() || IsCharacterCreationOpen())
 	{
 		return;
@@ -1505,6 +1561,10 @@ void AAedirPlayerCharacter::HandleShovePressed()
 
 void AAedirPlayerCharacter::HandleThrustPressed()
 {
+	if (HasHandsUp())
+	{
+		return;
+	}
 	if (Combat)
 	{
 		bThrustWasOn = bThrustLatched;
@@ -1560,6 +1620,10 @@ void AAedirPlayerCharacter::TurnWeapon()
 
 void AAedirPlayerCharacter::HandleDynamicKickPressed()
 {
+	if (HasHandsUp())
+	{
+		return;
+	}
 	if (!Combat || IsMenuOpen() || IsCharacterCreationOpen())
 	{
 		return;
@@ -1571,6 +1635,10 @@ void AAedirPlayerCharacter::HandleDynamicKickPressed()
 
 void AAedirPlayerCharacter::HandleChangeHandsPressed()
 {
+	if (HasHandsUp())
+	{
+		return;
+	}
 	if (!Combat || IsMenuOpen() || IsCharacterCreationOpen())
 	{
 		return;
@@ -2076,6 +2144,16 @@ void AAedirPlayerCharacter::Push(float Strength)
 void AAedirPlayerCharacter::Knockdown(const FString& Args)
 {
 	RunDevCommand(TEXT("Knockdown"), Args, true);
+}
+
+void AAedirPlayerCharacter::NpcSurrender()
+{
+	RunDevCommand(TEXT("NpcSurrender"), FString(), true);
+}
+
+void AAedirPlayerCharacter::NpcAggression(const FString& Args)
+{
+	RunDevCommand(TEXT("NpcAggression"), Args, true);
 }
 
 void AAedirPlayerCharacter::HeadBlow(const FString& Args)
@@ -2780,6 +2858,14 @@ void AAedirPlayerCharacter::HoldKeys(float Forward, float Right, float Seconds)
 	DevHeldKeys = FVector2D(Forward, Right);
 	DevHeldKeysLeft = Seconds;
 	UE_LOG(LogAedir, Display, TEXT("[Dev] Holding the keys forward %.1f right %.1f for %.1f s, camera yaw %.0f"), Forward, Right, Seconds, GetControlRotation().Yaw);
+}
+
+void AAedirPlayerCharacter::KeyPress(const FString& Key, int32 Down)
+{
+	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		PlayerController->InputKey(FInputKeyEventArgs::CreateSimulated(FKey(*Key), Down != 0 ? IE_Pressed : IE_Released, Down != 0 ? 1.f : 0.f));
+	}
 }
 
 void AAedirPlayerCharacter::FistButton(int32 LeftButton, int32 Down)

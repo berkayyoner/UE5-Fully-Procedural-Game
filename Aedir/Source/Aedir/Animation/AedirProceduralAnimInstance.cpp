@@ -111,6 +111,7 @@ namespace
 	// The upper spine, spine_03 to spine_05 in the default rig, carries the chest breath and the counter roll.
 	constexpr int32 AedirUpperSpineCount = 3;
 	// Curl in degrees at a full fist, per finger (thumb first) and joint from the base.
+	constexpr int32 AedirPointingFinger = 1;
 	constexpr float AedirFistCurlDegrees[AedirFingerCount][AedirFingerJointCount] = {
 		{ 35.f, 45.f, 30.f },
 		{ 70.f, 90.f, 60.f },
@@ -306,6 +307,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 		FVector::ZeroVector, GaitData.FistArmBladeAim[0], GaitData.FistArmBladeWristUp[0], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[0]),
 		MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeAimWay[0]));
 	ApplyGripOnBlade(CSPose, RefCSPose, Bones);
+	AlignElbow(CSPose, Bones, 0, GaitData.ClutchHandAlpha[0] * 1.5f);
+	AlignElbow(CSPose, Bones, 1, GaitData.ClutchHandAlpha[1] * 1.5f);
 	ApplyClutchHand(CSPose, RefCSPose, Bones, 0);
 	ApplyClutchHand(CSPose, RefCSPose, Bones, 1);
 
@@ -321,8 +324,10 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 		}
 	}
 	// Fingers are children of the final hand pose, so they are curled after the arm IK.
-	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
-	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
+	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft, GaitData.PointAlpha[0]);
+	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight, GaitData.PointAlpha[1]);
+	ApplyPointingFinger(CSPose, Bones, 0);
+	ApplyPointingFinger(CSPose, Bones, 1);
 
 	const FVector ForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
 	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, BoneNameSet.LeftBall, GaitData.LeftFootWorld, GaitData.LeftGroundZ, GaitData.LeftFootRot, ForwardMesh, GaitData.LeftFootLift, GaitData.KickLeftLeg ? GaitData.KickToePoint : 0.f, GaitData.KickLeftLeg ? GaitData.KickKneeShare : 0.f);
@@ -499,20 +504,23 @@ void FAedirProceduralAnimProxy::ApplyFace(FPoseContext& Output, FCSPose<FCompact
 	};
 	const float Pain = GaitData.FacePain;
 	const float Effort = GaitData.FaceEffort;
-	const float Fight = GaitData.FaceFight * (1.f - 0.5f * FMath::Max(Pain, Effort));
+	const float Sad = GaitData.FaceSad * (1.f - 0.5f * Pain);
+	const float Fight = GaitData.FaceFight * (1.f - 0.5f * FMath::Max(Pain, Effort)) * (1.f - GaitData.FaceSad);
 	const float Slack = GaitData.FaceSlack;
 	Both(TEXT("browDown"), 0.8f * Pain + 0.65f * Effort + 0.7f * Fight);
-	Both(TEXT("browRaiseIn"), 0.9f * Pain);
-	Both(TEXT("browLateral"), 0.5f * Pain + 0.5f * Fight + 0.3f * Effort);
-	Both(TEXT("eyeSquintInner"), 0.9f * Pain + 0.7f * Effort + 0.5f * Fight);
+	Both(TEXT("browRaiseIn"), 0.9f * Pain + 0.95f * Sad);
+	Both(TEXT("browLateral"), 0.5f * Pain + 0.5f * Fight + 0.3f * Effort + 0.45f * Sad);
+	Both(TEXT("eyeSquintInner"), 0.9f * Pain + 0.7f * Effort + 0.5f * Fight + 0.25f * Sad);
 	Both(TEXT("eyeCheekRaise"), 0.8f * Pain + 0.5f * Effort);
 	Both(TEXT("noseWrinkle"), 0.7f * Pain + 0.45f * Effort);
 	Both(TEXT("mouthUpperLipRaise"), 0.6f * Pain + 0.3f * Effort);
 	Both(TEXT("mouthStretch"), 0.7f * Pain + 0.55f * Effort);
-	Both(TEXT("mouthCornerDepress"), 0.45f * Pain + 0.25f * Fight);
+	Both(TEXT("mouthCornerDepress"), 0.45f * Pain + 0.25f * Fight + 0.9f * Sad);
+	Both(TEXT("jawChinRaiseD"), 0.55f * Sad);
+	Both(TEXT("jawChinRaiseU"), 0.3f * Sad);
 	Both(TEXT("mouthLipsPress"), 0.5f * Effort * (1.f - Pain) + 0.45f * Fight);
 	Both(TEXT("jawClench"), 0.7f * Effort + 0.4f * Fight);
-	Both(TEXT("eyeBlink"), FMath::Max3(GaitData.FaceBlink, 0.3f * Pain, 0.75f * Slack));
+	Both(TEXT("eyeBlink"), FMath::Max3(GaitData.FaceBlink, FMath::Max(0.3f * Pain, 0.22f * Sad), 0.75f * Slack));
 	Set(FName(TEXT("CTRL_expressions_jawOpen")), 0.25f * Pain + 0.28f * Slack);
 
 	// The eyes, turned in the head towards the place, as far as they go; past that they look straight on.
@@ -547,6 +555,85 @@ void FAedirProceduralAnimProxy::ApplyFace(FPoseContext& Output, FCSPose<FCompact
 	Both(TEXT("eyeLookRight"), -SideTurn);
 	Both(TEXT("eyeLookUp"), RiseTurn);
 	Both(TEXT("eyeLookDown"), -RiseTurn);
+}
+
+void FAedirProceduralAnimProxy::ApplyPointingFinger(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot) const
+{
+	const float Alpha = FMath::Clamp(GaitData.PointAlpha[Slot], 0.f, 1.f);
+	const FVector Way = MeshToWorld.InverseTransformVectorNoScale(GaitData.ClutchFingersWorld[Slot]).GetSafeNormal();
+	if (Alpha <= 0.01f || Way.IsNearlyZero())
+	{
+		return;
+	}
+	// The first finger straight out along the way pointed, each joint as far as a joint goes.
+	const TCHAR* Side = Slot == 0 ? TEXT("_l") : TEXT("_r");
+	const TCHAR* const Joints[] = { TEXT("index_01"), TEXT("index_02"), TEXT("index_03") };
+	FCompactPoseBoneIndex Chain[3] = { FCompactPoseBoneIndex(INDEX_NONE), FCompactPoseBoneIndex(INDEX_NONE), FCompactPoseBoneIndex(INDEX_NONE) };
+	FTransform Placed[3];
+	for (int32 Joint = 0; Joint < 3; ++Joint)
+	{
+		Chain[Joint] = ResolveCompactBone(Bones, FName(FString(Joints[Joint]) + Side));
+		if (!Chain[Joint].IsValid())
+		{
+			return;
+		}
+		Placed[Joint] = CSPose.GetComponentSpaceTransform(Chain[Joint]);
+	}
+	// Each carried on the one before it: they stand where they were put otherwise.
+	const FTransform InBefore[2] = { Placed[1].GetRelativeTransform(Placed[0]), Placed[2].GetRelativeTransform(Placed[1]) };
+	for (int32 Joint = 0; Joint < 3; ++Joint)
+	{
+		if (Joint > 0)
+		{
+			Placed[Joint] = InBefore[Joint - 1] * Placed[Joint - 1];
+		}
+		// The last joint has nothing after it and lies straight on from the one before.
+		const FVector Now = Placed[Joint].GetRotation().RotateVector(InBefore[FMath::Min(Joint, 1)].GetLocation()).GetSafeNormal();
+		if (!Now.IsNearlyZero())
+		{
+			FVector Axis;
+			double Angle = 0.0;
+			FQuat::FindBetweenNormals(Now, Way).ToAxisAndAngle(Axis, Angle);
+			Placed[Joint].SetRotation((FQuat(Axis, FMath::Min(Angle, UE_DOUBLE_PI * 0.25) * Alpha) * Placed[Joint].GetRotation()).GetNormalized());
+		}
+		CSPose.SetComponentSpaceTransform(Chain[Joint], Placed[Joint]);
+	}
+}
+
+void FAedirProceduralAnimProxy::AlignElbow(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, int32 Slot, float Weight) const
+{
+	// An elbow bends one way only: the upper arm is turned about its length until the forearm bends that way from it, and the
+	// forearm and the hand with it. Solved for where the hand goes alone, the arm bent sideways off its own elbow.
+	const FCompactPoseBoneIndex Humerus = ResolveCompactBone(Bones, Slot == 0 ? BoneNameSet.LeftHumerus : BoneNameSet.RightHumerus);
+	const FCompactPoseBoneIndex Radius = ResolveCompactBone(Bones, Slot == 0 ? BoneNameSet.LeftRadius : BoneNameSet.RightRadius);
+	const FCompactPoseBoneIndex Hand = ResolveCompactBone(Bones, Slot == 0 ? BoneNameSet.LeftHand : BoneNameSet.RightHand);
+	if (Weight <= AedirReachAlphaThreshold || !Humerus.IsValid() || !Radius.IsValid() || !Hand.IsValid())
+	{
+		return;
+	}
+	FTransform Upper = CSPose.GetComponentSpaceTransform(Humerus);
+	FTransform Lower = CSPose.GetComponentSpaceTransform(Radius);
+	FTransform Palm = CSPose.GetComponentSpaceTransform(Hand);
+	const FVector Along = (Lower.GetLocation() - Upper.GetLocation()).GetSafeNormal();
+	const FVector Fore = (Palm.GetLocation() - Lower.GetLocation()).GetSafeNormal();
+	const FVector Bend = FVector::VectorPlaneProject(Fore, Along);
+	const FVector Own = FVector::VectorPlaneProject(Upper.GetRotation().GetAxisY() * (Slot == 0 ? 1.0 : -1.0), Along).GetSafeNormal();
+	// Hardly bent, there is no side to it.
+	const float Bent = FMath::SmoothStep(0.15f, 0.45f, static_cast<float>(Bend.Size()));
+	if (Along.IsNearlyZero() || Fore.IsNearlyZero() || Own.IsNearlyZero() || Bent <= 0.f)
+	{
+		return;
+	}
+	const FVector Wanted = Bend.GetSafeNormal();
+	const double Angle = FMath::Atan2(FVector::DotProduct(FVector::CrossProduct(Own, Wanted), Along), FVector::DotProduct(Own, Wanted));
+	const double Limited = FMath::Clamp(Angle, -UE_DOUBLE_HALF_PI, UE_DOUBLE_HALF_PI) * FMath::Clamp(Weight, 0.f, 1.f) * Bent;
+	Upper.SetRotation((FQuat(Along, Limited) * Upper.GetRotation()).GetNormalized());
+	const FQuat Roll(Fore, Limited);
+	Lower.SetRotation((Roll * Lower.GetRotation()).GetNormalized());
+	Palm.SetRotation((Roll * Palm.GetRotation()).GetNormalized());
+	CSPose.SetComponentSpaceTransform(Humerus, Upper);
+	CSPose.SetComponentSpaceTransform(Radius, Lower);
+	CSPose.SetComponentSpaceTransform(Hand, Palm);
 }
 
 void FAedirProceduralAnimProxy::ApplyClutchHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, int32 Slot) const
@@ -820,7 +907,7 @@ void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, con
 	CSPose.SetComponentSpaceTransform(Hand, SolvedHand);
 }
 
-void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const TArray<FName>& FingerBoneNames, float FistAlpha, float CurlSign) const
+void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const TArray<FName>& FingerBoneNames, float FistAlpha, float CurlSign, float PointAlpha) const
 {
 	const float Alpha = FMath::Clamp(FistAlpha, 0.f, 1.f);
 	if (Alpha <= AedirFistAlphaThreshold || FingerBoneNames.IsEmpty() || FistCurlAxis.IsNearlyZero())
@@ -840,7 +927,7 @@ void FAedirProceduralAnimProxy::ApplyFingers(FCSPose<FCompactPose>& CSPose, cons
 
 		const int32 Finger = FMath::Min(BoneIndex / AedirFingerJointCount, AedirFingerCount - 1);
 		const int32 Joint = BoneIndex % AedirFingerJointCount;
-		const FQuat LocalCurl(CurlAxis, FMath::DegreesToRadians(AedirFistCurlDegrees[Finger][Joint] * Alpha * CurlSign));
+		const FQuat LocalCurl(CurlAxis, FMath::DegreesToRadians(AedirFistCurlDegrees[Finger][Joint] * Alpha * CurlSign * (Finger == AedirPointingFinger ? 1.f - FMath::Clamp(PointAlpha, 0.f, 1.f) : 1.f)));
 
 		// Post-multiplying applies the curl in the bone's own frame on top of its component space rotation.
 		FTransform BoneTransform = CSPose.GetComponentSpaceTransform(Bone);
@@ -1757,6 +1844,8 @@ void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, FCS
 		GaitData.FistArmArmed[0], GaitData.FistArmBladeAhead[0], GaitData.FistArmItemInHand[0], GaitData.FistArmBladeBendDegrees,
 		FVector::ZeroVector, GaitData.FistArmBladeAim[0], GaitData.FistArmBladeWristUp[0], MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeLean[0]),
 		MeshToWorld.InverseTransformVectorNoScale(GaitData.FistArmBladeAimWay[0]));
+	AlignElbow(CSPose, Bones, 0, GaitData.ClutchHandAlpha[0] * 1.5f);
+	AlignElbow(CSPose, Bones, 1, GaitData.ClutchHandAlpha[1] * 1.5f);
 	ApplyClutchHand(CSPose, RefCSPose, Bones, 0);
 	ApplyClutchHand(CSPose, RefCSPose, Bones, 1);
 	ApplyForearmTwist(CSPose, RefCSPose, Bones, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, TEXT("_l"));
@@ -1768,10 +1857,15 @@ void FAedirProceduralAnimProxy::ApplyLimpPose(FCSPose<FCompactPose>& CSPose, FCS
 		if (HandBone.IsValid())
 		{
 			PoseHandOnChest[Slot] = CSPose.GetComponentSpaceTransform(Chest).InverseTransformPosition(CSPose.GetComponentSpaceTransform(HandBone).GetLocation());
+			PoseArmWorld[Slot][0] = CSPose.GetComponentSpaceTransform(ResolveCompactBone(Bones, Slot == 0 ? BoneNameSet.LeftHumerus : BoneNameSet.RightHumerus)) * MeshToWorld;
+			PoseArmWorld[Slot][1] = CSPose.GetComponentSpaceTransform(ResolveCompactBone(Bones, Slot == 0 ? BoneNameSet.LeftRadius : BoneNameSet.RightRadius)) * MeshToWorld;
+			PoseArmWorld[Slot][2] = CSPose.GetComponentSpaceTransform(HandBone) * MeshToWorld;
 		}
 	}
-	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft);
-	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
+	ApplyFingers(CSPose, Bones, LeftFingerBoneNames, GaitData.FistAlphaLeft, FistCurlSignLeft, GaitData.PointAlpha[0]);
+	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight, GaitData.PointAlpha[1]);
+	ApplyPointingFinger(CSPose, Bones, 0);
+	ApplyPointingFinger(CSPose, Bones, 1);
 }
 
 UAedirGaitComponent* UAedirProceduralAnimInstance::GetGaitComponent() const

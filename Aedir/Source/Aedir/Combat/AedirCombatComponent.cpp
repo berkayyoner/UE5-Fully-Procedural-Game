@@ -10,6 +10,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Creature/AedirGestureComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirGroupSubsystem.h"
 #include "Creature/AedirStatsComponent.h"
@@ -4852,7 +4853,8 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	}
 
 	static const IConsoleVariable* Still = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.NpcStill"));
-	if (Still && Still->GetInt() != 0)
+	// Nor does one that has given up fight.
+	if ((Still && Still->GetInt() != 0) || (Creature->Gesture && Creature->Gesture->AreHandsUp()))
 	{
 		AITarget = nullptr;
 		ReleaseAIFistArms();
