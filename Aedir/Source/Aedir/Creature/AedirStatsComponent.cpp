@@ -83,6 +83,17 @@ void UAedirStatsComponent::LoseConsciousness(float Amount)
 	}
 }
 
+void UAedirStatsComponent::GoSenseless(const TCHAR* Why)
+{
+	Consciousness = 0.f;
+	ConsciousnessQuietSeconds = 0.f;
+	if (!bKnockedOut)
+	{
+		bKnockedOut = true;
+		UE_LOG(LogAedir, Log, TEXT("[Senses] %s drops senseless (%s): health %.0f, blood %.0f."), *GetNameSafe(GetOwner()), Why, Health, Blood);
+	}
+}
+
 void UAedirStatsComponent::TakeHeadBlow(float Damage)
 {
 	if (!IsAuthoritative() || bIsDead || bIsDying || MaxHealth <= 0.f)
@@ -128,6 +139,13 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	// The senses come back a while after the last blow or the hand leaves the throat, quicker while still standing; one
 	// knocked out comes round once enough of them are back.
 	ConsciousnessQuietSeconds += DeltaTime;
+	HealthQuietSeconds += DeltaTime;
+	// Next to no health left, whatever took it, the body is out until enough of it is back.
+	const bool bHasWits = Health >= MaxHealth * HealthWakeShare;
+	if (Health < MaxHealth * KnockHealthFloor && !bInvulnerable)
+	{
+		GoSenseless(TEXT("no health"));
+	}
 	// Knocked out by a blow to the head, nothing comes back until its time is up; then the body wakes.
 	if (KnockoutSecondsLeft > 0.f)
 	{
@@ -136,7 +154,7 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		if (KnockoutSecondsLeft <= 0.f)
 		{
 			Consciousness = StatsConsciousnessWakeAt;
-			bKnockedOut = false;
+			bKnockedOut = !bHasWits;
 			ConsciousnessQuietSeconds = StatsConsciousnessQuietSeconds;
 			UE_LOG(LogAedir, Log, TEXT("[Senses] %s comes round from the knock to the head."), *GetNameSafe(GetOwner()));
 		}
@@ -144,7 +162,7 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	else if (Consciousness < 100.f && ConsciousnessQuietSeconds >= StatsConsciousnessQuietSeconds)
 	{
 		Consciousness = FMath::Min(Consciousness + DeltaTime * (bKnockedOut ? StatsConsciousnessOutRegen : StatsConsciousnessRegen), 100.f);
-		if (bKnockedOut && Consciousness >= StatsConsciousnessWakeAt)
+		if (bKnockedOut && bHasWits && Consciousness >= StatsConsciousnessWakeAt)
 		{
 			bKnockedOut = false;
 			UE_LOG(LogAedir, Log, TEXT("[Senses] %s comes round."), *GetNameSafe(GetOwner()));
@@ -158,8 +176,9 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 	Thirst = FMath::Max(Thirst - DeltaTime * Effort * 100.f / StatsThirstSeconds, 0.f);
 	if (Hunger <= 0.f || Thirst <= 0.f)
 	{
-		ApplyDamage(StatsStarveDamagePerSecond * DeltaTime);
-		if (bIsDead)
+		// What the body does without it takes from its own blood, not at its wits.
+		LoseBlood(StatsStarveDamagePerSecond * DeltaTime);
+		if (bIsDead || bIsDying)
 		{
 			return;
 		}
@@ -182,7 +201,16 @@ void UAedirStatsComponent::TickComponent(float DeltaTime, ELevelTick TickType, F
 		}
 	}
 
-	const float NewHealth = FMath::Min(MaxHealth, Health + HealthRegenPerSecond * (1.f - GetNeedShare()) * DeltaTime);
+	// Blood comes back very slowly by itself, sooner out of food and drink, and no further than the wounds leave room for.
+	const float Made = FMath::Min(BloodMaking, BloodMakingPerSecond * DeltaTime);
+	BloodMaking -= Made;
+	const float NewBlood = FMath::Max(FMath::Min(Blood + BloodRegenPerSecond * (1.f - GetNeedShare()) * DeltaTime + Made, BloodCapacity), FMath::Min(Blood, BloodCapacity));
+	bChanged |= NewBlood != Blood;
+	Blood = NewBlood;
+
+	// Health comes back quickly, as far as the blood allows.
+	const float Regen = HealthQuietSeconds >= HealthRegenDelay ? HealthRegenPerSecond * (1.f - GetNeedShare()) * DeltaTime : 0.f;
+	const float NewHealth = FMath::Min(GetHealthCap(), Health + Regen);
 	bChanged |= NewHealth != Health;
 	Health = NewHealth;
 
@@ -200,6 +228,89 @@ void UAedirStatsComponent::AddFood(float FoodAmount, float DrinkAmount)
 {
 	Hunger = FMath::Clamp(Hunger + FoodAmount, 0.f, 100.f);
 	Thirst = FMath::Clamp(Thirst + DrinkAmount, 0.f, 100.f);
+	AddBloodMaking(FMath::Max(FoodAmount, 0.f) * BloodPerFood + FMath::Max(DrinkAmount, 0.f) * BloodPerDrink);
+}
+
+void UAedirStatsComponent::AddBloodMaking(float Amount)
+{
+	if (Amount > 0.f)
+	{
+		BloodMaking = FMath::Min(BloodMaking + Amount, FMath::Max(BloodMakingMax, BloodMaking));
+	}
+}
+
+void UAedirStatsComponent::LoseBlood(float Amount)
+{
+	if (!IsAuthoritative() || bIsDead || bInvulnerable || Amount <= 0.f)
+	{
+		return;
+	}
+	// A body already failing slips away faster with every drop.
+	if (bIsDying)
+	{
+		DyingSeconds -= Amount * StatsDyingSecondsPerDamage;
+		if (DyingSeconds <= 0.f)
+		{
+			Die();
+		}
+		return;
+	}
+	Blood = FMath::Max(Blood - Amount, 0.f);
+	Health = FMath::Min(Health, GetHealthCap());
+	if (Blood <= 0.f)
+	{
+		Health = 0.f;
+		bIsDying = true;
+		DyingSeconds = FMath::FRandRange(StatsDyingMinSeconds, StatsDyingMaxSeconds);
+		UE_LOG(LogAedir, Log, TEXT("[Blood] %s has no blood left and is dying."), *GetNameSafe(GetOwner()));
+	}
+	OnStatChanged.Broadcast();
+}
+
+void UAedirStatsComponent::AddBlood(float Amount)
+{
+	if (!IsAuthoritative() || bIsDead || Amount <= 0.f)
+	{
+		return;
+	}
+	Blood = FMath::Max(Blood, FMath::Min(Blood + Amount, BloodCapacity));
+	bIsDying = bIsDying && Blood <= 0.f;
+	OnStatChanged.Broadcast();
+}
+
+void UAedirStatsComponent::SetBlood(float NewBlood)
+{
+	if (IsAuthoritative() && !bIsDead)
+	{
+		const float Wanted = FMath::Clamp(NewBlood, 0.f, BloodCapacity);
+		if (Wanted > Blood)
+		{
+			AddBlood(Wanted - Blood);
+		}
+		else
+		{
+			LoseBlood(Blood - Wanted);
+		}
+	}
+}
+
+void UAedirStatsComponent::SetBloodCapacity(float NewCapacity)
+{
+	if (!IsAuthoritative() || bIsDead)
+	{
+		return;
+	}
+	const float Capacity = bInvulnerable ? 100.f : FMath::Clamp(NewCapacity, 0.f, 100.f);
+	if (!FMath::IsNearlyEqual(Capacity, BloodCapacity, 0.01f))
+	{
+		BloodCapacity = Capacity;
+		if (Blood > BloodCapacity)
+		{
+			Blood = BloodCapacity;
+			Health = FMath::Min(Health, GetHealthCap());
+		}
+		OnStatChanged.Broadcast();
+	}
 }
 
 void UAedirStatsComponent::SetNeeds(float NewHunger, float NewThirst)
@@ -236,6 +347,8 @@ void UAedirStatsComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>&
 
 	DOREPLIFETIME(UAedirStatsComponent, Health);
 	DOREPLIFETIME(UAedirStatsComponent, MaxHealth);
+	DOREPLIFETIME(UAedirStatsComponent, Blood);
+	DOREPLIFETIME(UAedirStatsComponent, BloodCapacity);
 	DOREPLIFETIME(UAedirStatsComponent, Mana);
 	DOREPLIFETIME(UAedirStatsComponent, MaxMana);
 	DOREPLIFETIME(UAedirStatsComponent, Stamina);
@@ -313,32 +426,39 @@ bool UAedirStatsComponent::ConsumeMana(float Amount)
 	return true;
 }
 
-float UAedirStatsComponent::ApplyDamage(float Amount)
+float UAedirStatsComponent::ApplyDamage(float Amount, EAedirHarm Harm)
 {
 	if (!IsAuthoritative() || bIsDead || bInvulnerable || Amount <= 0.f)
 	{
 		return 0.f;
 	}
 
-	// A body already failing slips away faster with every further wound.
+	// A body already failing slips away faster with every further wound; fists do not hurry it.
 	if (bIsDying)
 	{
-		DyingSeconds -= Amount * StatsDyingSecondsPerDamage;
-		if (DyingSeconds <= 0.f)
+		if (Harm != EAedirHarm::Knock)
 		{
-			Die();
+			LoseBlood(Amount);
 		}
 		return 0.f;
 	}
 
-	const float AppliedDamage = FMath::Min(Amount, Health);
+	HealthQuietSeconds = 0.f;
+	const float Floor = Harm == EAedirHarm::Knock ? MaxHealth * KnockHealthFloor : 0.f;
+	const float AppliedDamage = FMath::Min(Amount, FMath::Max(Health - Floor, 0.f));
 	Health -= AppliedDamage;
-
-	if (Health <= 0.f)
+	if (Harm == EAedirHarm::Knock)
 	{
-		Health = 0.f;
-		bIsDying = true;
-		DyingSeconds = FMath::FRandRange(StatsDyingMinSeconds, StatsDyingMaxSeconds);
+		// A fist has nothing more to take than the senses.
+		if (AppliedDamage < Amount)
+		{
+			GoSenseless(TEXT("beaten"));
+		}
+	}
+	else
+	{
+		// What the health cannot bear goes at the blood, and a blow hurts inside as well.
+		LoseBlood(Amount - AppliedDamage + (Harm == EAedirHarm::Blow ? AppliedDamage * BlowBloodShare : 0.f));
 	}
 
 	OnStatChanged.Broadcast();
@@ -365,8 +485,7 @@ void UAedirStatsComponent::Heal(float Amount)
 		return;
 	}
 
-	Health = FMath::Min(MaxHealth, Health + Amount);
-	bIsDying = bIsDying && Health <= 0.f;
+	Health = FMath::Min(GetHealthCap(), Health + Amount);
 	OnStatChanged.Broadcast();
 }
 
@@ -377,9 +496,14 @@ void UAedirStatsComponent::RestoreAll()
 		return;
 	}
 
+	Blood = 100.f;
+	BloodCapacity = 100.f;
 	Health = MaxHealth;
 	Mana = MaxMana;
 	Stamina = GetMaxStamina();
+	Consciousness = 100.f;
+	KnockoutSecondsLeft = 0.f;
+	bKnockedOut = false;
 	bIsDead = false;
 	bIsDying = false;
 
@@ -483,6 +607,8 @@ void UAedirStatsComponent::ApplyRace(const FAedirRaceDef& Race)
 
 	MaxHealth = Race.MaxHealth;
 	Health = MaxHealth;
+	Blood = 100.f;
+	BloodCapacity = 100.f;
 	MaxMana = Race.MaxMana;
 	Mana = MaxMana;
 	MaxStamina = FMath::Min(Race.MaxStamina, MaxStaminaCap);
@@ -611,7 +737,7 @@ bool UAedirStatsComponent::IsDead() const
 	return bIsDead;
 }
 
-void UAedirStatsComponent::ApplySavedState(float InHealth, float InMaxHealth, float InMana, float InMaxMana, float InStamina, float InMaxStamina, float InStrength, float InAthletism, const TArray<float>& InSkills)
+void UAedirStatsComponent::ApplySavedState(float InHealth, float InMaxHealth, float InMana, float InMaxMana, float InStamina, float InMaxStamina, float InStrength, float InAthletism, const TArray<float>& InSkills, float InBlood)
 {
 	if (!IsAuthoritative())
 	{
@@ -620,7 +746,9 @@ void UAedirStatsComponent::ApplySavedState(float InHealth, float InMaxHealth, fl
 
 	MaxHealth = FMath::Max(0.f, InMaxHealth);
 	Health = FMath::Clamp(InHealth, 0.f, MaxHealth);
-	bIsDead = Health <= 0.f;
+	Blood = FMath::Clamp(InBlood, 0.f, 100.f);
+	bIsDead = Health <= 0.f || Blood <= 0.f;
+	Health = FMath::Min(Health, GetHealthCap());
 
 	MaxMana = FMath::Max(0.f, InMaxMana);
 	Mana = FMath::Clamp(InMana, 0.f, MaxMana);

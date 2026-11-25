@@ -3245,6 +3245,80 @@ void AAedirPlayerCharacter::FaceNearest()
 	}
 }
 
+void AAedirPlayerCharacter::FistBlows(const FString& Bone, float Speed, int32 Count, float Interval)
+{
+	AAedirCreature* Nearest = nullptr;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && It->GetMesh() && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())))
+		{
+			Nearest = *It;
+		}
+	}
+	if (!Nearest || !Combat)
+	{
+		return;
+	}
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	TSharedRef<int32> Done = MakeShared<int32>(0);
+	const TWeakObjectPtr<AAedirCreature> Victim = Nearest;
+	GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(this, [this, Handle, Done, Victim, Bone, Speed, Count]()
+	{
+		static const TCHAR* Round[] = { TEXT("spine_04"), TEXT("upperarm_l"), TEXT("thigh_r"), TEXT("spine_02"), TEXT("upperarm_r"), TEXT("thigh_l"), TEXT("lowerarm_l"), TEXT("calf_r"), TEXT("lowerarm_r"), TEXT("pelvis") };
+		if (Victim.IsValid())
+		{
+			Combat->DevFistBlow(Victim.Get(), FName(Bone == TEXT("any") ? Round[*Done % UE_ARRAY_COUNT(Round)] : *Bone), Speed);
+		}
+		if (++*Done >= Count || !Victim.IsValid())
+		{
+			GetWorldTimerManager().ClearTimer(*Handle);
+		}
+	}), FMath::Max(Interval, 0.05f), true);
+}
+
+void AAedirPlayerCharacter::UseKind(const FString& ItemId)
+{
+	if (AAedirCatalogItem* Item = HasAuthority() ? AAedirCatalogItem::SpawnCatalogItem(GetWorld(), FName(*ItemId), GetActorTransform()) : nullptr)
+	{
+		Item->Use(this);
+		if (IsValid(Item) && !Item->IsActorBeingDestroyed())
+		{
+			Item->Destroy();
+		}
+	}
+}
+
+void AAedirPlayerCharacter::BloodWatch(float Interval, float Seconds)
+{
+	TSharedRef<FTimerHandle> Handle = MakeShared<FTimerHandle>();
+	TSharedRef<float> Left = MakeShared<float>(Seconds);
+	GetWorldTimerManager().SetTimer(*Handle, FTimerDelegate::CreateWeakLambda(this, [this, Handle, Left, Interval]()
+	{
+		const AAedirCreature* Nearest = nullptr;
+		for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+		{
+			if (*It != this && It->GetMesh() && (!Nearest || FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FVector::DistSquared(Nearest->GetActorLocation(), GetActorLocation())))
+			{
+				Nearest = *It;
+			}
+		}
+		for (const AAedirCreature* Body : { static_cast<const AAedirCreature*>(this), Nearest })
+		{
+			const UAedirStatsComponent* Seen = Body ? Body->Stats.Get() : nullptr;
+			if (Seen)
+			{
+				UE_LOG(LogAedir, Display, TEXT("[BloodWatch] %s health %.1f of %.0f, blood %.1f of %.1f (making %.1f), bleeding %.2f, senses %.0f, out %d, dying %d, dead %d, wounds %d"), *Body->GetName(), Seen->GetHealth(), Seen->GetMaxHealth(), Seen->GetBlood(), Seen->BloodCapacity, Seen->GetBloodMaking(),
+					Body->Wounds ? Body->Wounds->GetTotalBleedRate() : 0.f, Seen->Consciousness, Seen->IsKnockedOut() ? 1 : 0, Seen->IsDying() ? 1 : 0, Seen->IsDead() ? 1 : 0, Body->Wounds ? Body->Wounds->GetWoundCount() : 0);
+			}
+		}
+		*Left -= Interval;
+		if (*Left <= 0.f)
+		{
+			GetWorldTimerManager().ClearTimer(*Handle);
+		}
+	}), FMath::Max(Interval, 0.05f), true);
+}
+
 void AAedirPlayerCharacter::LookPart(const FString& Bone, float StepToCm)
 {
 	const AAedirCreature* Nearest = nullptr;

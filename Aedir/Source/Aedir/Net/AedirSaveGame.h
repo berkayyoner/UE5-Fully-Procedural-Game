@@ -26,6 +26,9 @@ struct AEDIR_API FAedirCreatureSave
 	float MaxHealth = 100.f;
 
 	UPROPERTY()
+	float Blood = 100.f;
+
+	UPROPERTY()
 	float Mana = 100.f;
 
 	UPROPERTY()

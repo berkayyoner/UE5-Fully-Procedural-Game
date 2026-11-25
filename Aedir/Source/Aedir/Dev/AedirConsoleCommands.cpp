@@ -302,12 +302,12 @@ namespace
 		const FString What = Words.IsValidIndex(1) ? Words[1].ToLower() : FString();
 		if (Stats)
 		{
-			const float Value = What == TEXT("health") ? Stats->GetHealth() : What == TEXT("stamina") ? Stats->GetStamina() : What == TEXT("magicka") ? Stats->GetMana() : What == TEXT("strength") ? Stats->Strength : What == TEXT("athletics") ? Stats->Athletism : What == TEXT("hunger") ? Stats->GetHunger() : What == TEXT("thirst") ? Stats->GetThirst() : -1.f;
-			ConsoleReport(Value >= 0.f ? FString::Printf(TEXT("%s = %.1f"), *What, Value) : FString(TEXT("Usage: player.getav health|stamina|magicka|strength|athletics|hunger|thirst")));
+			const float Value = What == TEXT("health") ? Stats->GetHealth() : What == TEXT("stamina") ? Stats->GetStamina() : What == TEXT("magicka") ? Stats->GetMana() : What == TEXT("strength") ? Stats->Strength : What == TEXT("athletics") ? Stats->Athletism : What == TEXT("hunger") ? Stats->GetHunger() : What == TEXT("thirst") ? Stats->GetThirst() : What == TEXT("blood") ? Stats->GetBlood() : -1.f;
+			ConsoleReport(Value >= 0.f ? FString::Printf(TEXT("%s = %.1f"), *What, Value) : FString(TEXT("Usage: player.getav health|blood|stamina|magicka|strength|athletics|hunger|thirst")));
 		}
 	}
 
-	const TCHAR* const ConsoleStatUsage = TEXT("Stats: health, stamina, magicka, strength, athletics, hunger, thirst, or a skill: onehanded, twohanded, ranged, destruction, regeneration, illusion, metamorphosis, summon, heavyarmor, lightarmor, smelting, alchemy, enchanting.");
+	const TCHAR* const ConsoleStatUsage = TEXT("Stats: health, blood, stamina, magicka, strength, athletics, hunger, thirst, or a skill: onehanded, twohanded, ranged, destruction, regeneration, illusion, metamorphosis, summon, heavyarmor, lightarmor, smelting, alchemy, enchanting.");
 
 	// The skill a short console name stands for, or Count when it names none.
 	EAedirSkill ConsoleSkillOf(const FString& What)
@@ -334,7 +334,7 @@ namespace
 	{
 		const EAedirSkill Skill = ConsoleSkillOf(What);
 		return What == TEXT("health") ? Stats->GetHealth() : What == TEXT("stamina") ? Stats->GetStamina() : What == TEXT("magicka") || What == TEXT("mana") ? Stats->GetMana()
-			: What == TEXT("strength") ? Stats->Strength : What == TEXT("athletics") ? Stats->Athletism : What == TEXT("hunger") ? Stats->GetHunger() : What == TEXT("thirst") ? Stats->GetThirst()
+			: What == TEXT("strength") ? Stats->Strength : What == TEXT("athletics") ? Stats->Athletism : What == TEXT("hunger") ? Stats->GetHunger() : What == TEXT("thirst") ? Stats->GetThirst() : What == TEXT("blood") ? Stats->GetBlood()
 			: Skill != EAedirSkill::Count ? Stats->GetSkill(Skill) : -1.f;
 	}
 
@@ -363,6 +363,10 @@ namespace
 			{
 				Stats->ApplyDamage(Before - Wanted);
 			}
+		}
+		else if (What == TEXT("blood"))
+		{
+			Stats->SetBlood(Wanted);
 		}
 		else if (What == TEXT("stamina"))
 		{
@@ -506,7 +510,7 @@ namespace
 		return Commands;
 	}
 
-	const TCHAR* const ConsoleStatNames[] = { TEXT("health"), TEXT("stamina"), TEXT("magicka"), TEXT("strength"), TEXT("athletics"), TEXT("hunger"), TEXT("thirst"), TEXT("onehanded"), TEXT("twohanded"), TEXT("ranged"), TEXT("destruction"), TEXT("regeneration"), TEXT("illusion"), TEXT("metamorphosis"), TEXT("summon"), TEXT("heavyarmor"), TEXT("lightarmor"), TEXT("smelting"), TEXT("alchemy"), TEXT("enchanting") };
+	const TCHAR* const ConsoleStatNames[] = { TEXT("health"), TEXT("blood"), TEXT("stamina"), TEXT("magicka"), TEXT("strength"), TEXT("athletics"), TEXT("hunger"), TEXT("thirst"), TEXT("onehanded"), TEXT("twohanded"), TEXT("ranged"), TEXT("destruction"), TEXT("regeneration"), TEXT("illusion"), TEXT("metamorphosis"), TEXT("summon"), TEXT("heavyarmor"), TEXT("lightarmor"), TEXT("smelting"), TEXT("alchemy"), TEXT("enchanting") };
 }
 
 TArray<FString> AedirConsoleCommands::GetHelp()

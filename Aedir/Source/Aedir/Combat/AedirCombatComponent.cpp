@@ -4481,6 +4481,20 @@ void UAedirCombatComponent::ProcessImpactSweep(EAedirHand Hand, FAedirArmDynamic
 	}
 }
 
+void UAedirCombatComponent::DevFistBlow(AAedirCreature* Victim, FName Bone, float SpeedCmPerSec)
+{
+	if (!Victim || !Victim->GetMesh() || !IsAuthoritative() || GetHeldItem(EAedirHand::Right))
+	{
+		return;
+	}
+	const FVector Out = Victim->GetActorForwardVector();
+	FHitResult Hit;
+	Hit.BoneName = Bone;
+	Hit.ImpactPoint = Victim->GetMesh()->GetBoneLocation(Bone) + Out * 10.f;
+	Hit.ImpactNormal = Out;
+	ApplyCreatureImpact(EAedirHand::Right, GetArm(EAedirHand::Right), Victim, Hit, -Out * SpeedCmPerSec, SpeedCmPerSec, GetArmTotalMass(EAedirHand::Right), 0.f);
+}
+
 void UAedirCombatComponent::PushFriend(AAedirCreature* Victim, FName Bone, EAedirBodyZone Zone, const FVector& Location, const FVector& Motion, float Energy, float MassKg, float Speed) const
 {
 	if (Victim->Balance)
@@ -4594,7 +4608,7 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 	// No one blow takes more than a share of a body's health, the head a larger one.
 	const float MaxShare = Zone == EAedirBodyZone::Head ? HeadBlowMaxHealthShare : BlowMaxHealthShare;
 	const float Damage = DamageShare * (!Victim->Stats ? RawDamage : FMath::Min(RawDamage, Victim->Stats->GetMaxHealth() * MaxShare));
-	const float AppliedDamage = Victim->ReceiveCreatureDamage(Damage);
+	const float AppliedDamage = Victim->ReceiveCreatureDamage(Damage, HeldItem ? EAedirHarm::Blow : EAedirHarm::Knock);
 	// A heavy enough blow to the head knocks out a body that lives through it.
 	if (Zone == EAedirBodyZone::Head && Victim->Stats)
 	{
@@ -4879,6 +4893,15 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		AIAttackTimer = 0.f;
 		bAIHadWeapon = false;
 		ReleaseAIGrab();
+		return;
+	}
+	// With bare hands nobody goes on beating one who lies senseless.
+	if (AITarget->Stats && (AITarget->Stats->IsKnockedOut() || AITarget->Stats->IsDying()) && !GetHeldItem(EAedirHand::Left) && !GetHeldItem(EAedirHand::Right))
+	{
+		ReleaseAIFistArms();
+		ReleaseAIGrab();
+		SetGuardInternal(EAedirHand::Left, false);
+		SetGuardInternal(EAedirHand::Right, false);
 		return;
 	}
 	// Getting up nobody strikes; walking after its fall it does not turn to the foe or go after it until it stands again.
@@ -6303,6 +6326,24 @@ void UAedirCombatComponent::UpdateKick(float DeltaTime)
 	{
 		return;
 	}
+	if (CVarAedirHitLog.GetValueOnGameThread() != 0 && Creature->GetMesh())
+	{
+		// For the hit log: to which side of the leg the knee is (below 0 it bends the wrong way), and how far the thigh and the
+		// shin turned since the last frame.
+		const USkeletalMeshComponent* Mesh = Creature->GetMesh();
+		const FName Names[3] = { KickNet.bLeftLeg ? FName(TEXT("thigh_l")) : FName(TEXT("thigh_r")), KickNet.bLeftLeg ? FName(TEXT("calf_l")) : FName(TEXT("calf_r")), KickNet.bLeftLeg ? FName(TEXT("foot_l")) : FName(TEXT("foot_r")) };
+		const FVector Hip = Mesh->GetBoneLocation(Names[0]);
+		const FVector Knee = Mesh->GetBoneLocation(Names[1]);
+		const FVector Ankle = Mesh->GetBoneLocation(Names[2]);
+		const FVector Along = (Ankle - Hip).GetSafeNormal();
+		const FVector Side = FVector::CrossProduct(Along, FVector::CrossProduct(FVector::UpVector, FVector(KickNet.Direction))).GetSafeNormal();
+		const FQuat Thigh = Mesh->GetBoneQuaternion(Names[0]);
+		const FQuat Shin = Mesh->GetBoneQuaternion(Names[1]);
+		UE_LOG(LogAedir, Log, TEXT("[KickLeg] %.2f s: knee %.1f cm to the front of the leg, leg %.0f deg up, thigh turned %.0f, shin %.0f deg"), KickNet.Elapsed, FVector::DotProduct(Knee - Hip, Side), FMath::RadiansToDegrees(FMath::Asin(Along.Z)),
+			FMath::RadiansToDegrees(Thigh.AngularDistance(KickLogThigh)), FMath::RadiansToDegrees(Shin.AngularDistance(KickLogShin)));
+		KickLogThigh = Thigh;
+		KickLogShin = Shin;
+	}
 
 	KickNet.Elapsed = DevKickHoldShare >= 0.f ? DevKickHoldShare * AedirKickDuration : FMath::Min(KickNet.Elapsed + DeltaTime, AedirKickDuration);
 
@@ -6479,7 +6520,7 @@ void UAedirCombatComponent::ApplyKickImpact(AAedirCreature* Victim, const FHitRe
 	const float RawDamage = Energy * ImpactDamageScale * ComputeDamageTypeFactor(EAedirDamageType::Blunt, 0.f) * GetZoneDamageMultiplier(Zone) * ArmorFactor * Harm * FistShare + FistDamage * Harm * FistShare;
 	const float MaxShare = Zone == EAedirBodyZone::Head ? HeadBlowMaxHealthShare : BlowMaxHealthShare;
 	const float Damage = !Victim->Stats ? RawDamage : FMath::Min(RawDamage, Victim->Stats->GetMaxHealth() * MaxShare);
-	const float KickDamage = Victim->ReceiveCreatureDamage(Damage);
+	const float KickDamage = Victim->ReceiveCreatureDamage(Damage, EAedirHarm::Knock);
 	if (Zone == EAedirBodyZone::Head && Victim->Stats)
 	{
 		Victim->Stats->TakeHeadBlow(KickDamage);

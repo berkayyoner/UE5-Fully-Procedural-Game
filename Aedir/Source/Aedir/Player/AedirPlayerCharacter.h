@@ -590,6 +590,19 @@ public:
 	FVector2D DevHeldKeys = FVector2D::ZeroVector;
 	float DevHeldKeysLeft = 0.f;
 
+	// Fists of this speed (cm/s) landed on this bone of the nearest other body, so many, so far apart (seconds). A bone "any"
+	// goes round the body.
+	UFUNCTION(Exec)
+	void FistBlows(const FString& Bone, float Speed, int32 Count, float Interval);
+
+	// Eats, drinks or takes one use of a thing of this kind, made for it.
+	UFUNCTION(Exec)
+	void UseKind(const FString& ItemId);
+
+	// Logs the health, the blood and the senses of the player and of the nearest other body every this often, for this long.
+	UFUNCTION(Exec)
+	void BloodWatch(float Interval, float Seconds);
+
 	// Turns the view to this part of the nearest other body, the body with it; and taps the take key of a hand (0 Q, 1 E).
 	UFUNCTION(Exec)
 	void LookPart(const FString& Bone, float StepToCm = 0.f);

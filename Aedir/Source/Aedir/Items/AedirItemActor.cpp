@@ -223,7 +223,7 @@ void AAedirItemActor::Use_Implementation(AAedirCreature* User)
 
 	if (ItemClass == EAedirItemClass::Poison)
 	{
-		User->Stats->ApplyDamage(PoisonDamage);
+		User->Stats->ApplyDamage(PoisonDamage, EAedirHarm::Life);
 	}
 
 	OnUsed(User);

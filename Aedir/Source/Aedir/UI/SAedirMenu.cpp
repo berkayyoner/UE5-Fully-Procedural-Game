@@ -1422,9 +1422,9 @@ FText SAedirMenu::GetStatusText() const
 		return FText::GetEmpty();
 	}
 
-	return FText::FromString(FString::Printf(TEXT("LEVEL %d     HEALTH %d/%d     MAGICKA %d/%d     STAMINA %d/%d     STRENGTH %.0f     ATHLETISM %.0f     CARRY WEIGHT %s/%.0f"),
+	return FText::FromString(FString::Printf(TEXT("LEVEL %d     HEALTH %d/%d     BLOOD %d%%     MAGICKA %d/%d     STAMINA %d/%d     STRENGTH %.0f     ATHLETISM %.0f     CARRY WEIGHT %s/%.0f"),
 		UAedirJournalSubsystem::GetCharacterLevel(Stats),
-		FMath::RoundToInt(Stats->GetHealth()), FMath::RoundToInt(Stats->GetMaxHealth()),
+		FMath::RoundToInt(Stats->GetHealth()), FMath::RoundToInt(Stats->GetMaxHealth()), FMath::RoundToInt(Stats->GetBloodFraction() * 100.f),
 		FMath::RoundToInt(Stats->GetMana()), FMath::RoundToInt(Stats->GetMaxMana()),
 		FMath::RoundToInt(Stats->GetStamina()), FMath::RoundToInt(Stats->GetMaxStamina()),
 		Stats->Strength, Stats->Athletism,

@@ -30,6 +30,16 @@ enum class EAedirSkill : uint8
 	Count UMETA(Hidden)
 };
 
+// What a hurt does to a body. Knock: a fist, a kick, a bump; it takes the senses and never the life. Blow: a weapon, a long
+// fall; it hurts inside as well. Life: poison, hunger, lightning, a hand at the throat; it goes at the life.
+UENUM(BlueprintType)
+enum class EAedirHarm : uint8
+{
+	Knock,
+	Blow,
+	Life
+};
+
 USTRUCT(BlueprintType)
 struct FAedirGroupRelationEntry
 {

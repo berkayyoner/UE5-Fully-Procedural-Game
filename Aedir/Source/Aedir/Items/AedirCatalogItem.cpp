@@ -45,7 +45,7 @@ namespace
 	EAedirCatalogShape CatalogItemRootShape(FName Id)
 	{
 		const FString IdText = Id.ToString();
-		if (IdText == TEXT("Bracers") || IdText == TEXT("IronGreaves") || IdText == TEXT("SmallPotionPoison"))
+		if (IdText == TEXT("Bracers") || IdText == TEXT("IronGreaves") || IdText == TEXT("SmallPotionPoison") || IdText == TEXT("SmallPotionBlood"))
 		{
 			return EAedirCatalogShape::Cylinder;
 		}
@@ -115,6 +115,8 @@ void AAedirCatalogItem::Use_Implementation(AAedirCreature* User)
 		}
 
 		User->Stats->AddFood(Def->FoodValue, Def->DrinkValue);
+		User->Stats->AddBlood(Def->BloodValue);
+		User->Stats->AddBloodMaking(Def->BloodMakingValue);
 		OnUsed(User);
 		if (++UsesSpent >= Def->Uses)
 		{
@@ -593,7 +595,7 @@ void AAedirCatalogItem::BuildDetails(FName Id)
 	{
 		AddDetail(EAedirCatalogShape::Cube, FVector(12.f, 0.f, 4.f), FVector(2.f, 20.f, 8.f), FRotator::ZeroRotator, CatalogItemSteel);
 	}
-	else if (IdText == TEXT("SmallPotionPoison"))
+	else if (IdText == TEXT("SmallPotionPoison") || IdText == TEXT("SmallPotionBlood"))
 	{
 		AddDetail(EAedirCatalogShape::Cube, FVector(0.f, 0.f, 7.5f), FVector(3.f, 3.f, 2.4f), FRotator::ZeroRotator, CatalogItemWood);
 	}

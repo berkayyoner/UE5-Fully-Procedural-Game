@@ -931,7 +931,7 @@ void AAedirWeatherManager::ApplyLightningDamage(const FVector& StrikeLocation) c
 
 	for (AAedirCreature* Creature : Victims)
 	{
-		Creature->ReceiveCreatureDamage(Settings->LightningDamage);
+		Creature->ReceiveCreatureDamage(Settings->LightningDamage, EAedirHarm::Life);
 
 		if (Creature->Balance)
 		{

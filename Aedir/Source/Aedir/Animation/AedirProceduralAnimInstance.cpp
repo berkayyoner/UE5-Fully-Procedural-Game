@@ -325,8 +325,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	ApplyFingers(CSPose, Bones, RightFingerBoneNames, GaitData.FistAlphaRight, FistCurlSignRight);
 
 	const FVector ForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
-	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, BoneNameSet.LeftBall, GaitData.LeftFootWorld, GaitData.LeftGroundZ, GaitData.LeftFootRot, ForwardMesh, GaitData.LeftFootLift, GaitData.KickLeftLeg ? GaitData.KickToePoint : 0.f);
-	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.RightFemur, BoneNameSet.RightTibia, BoneNameSet.RightFoot, BoneNameSet.RightBall, GaitData.RightFootWorld, GaitData.RightGroundZ, GaitData.RightFootRot, ForwardMesh, GaitData.RightFootLift, GaitData.KickLeftLeg ? 0.f : GaitData.KickToePoint);
+	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.LeftFemur, BoneNameSet.LeftTibia, BoneNameSet.LeftFoot, BoneNameSet.LeftBall, GaitData.LeftFootWorld, GaitData.LeftGroundZ, GaitData.LeftFootRot, ForwardMesh, GaitData.LeftFootLift, GaitData.KickLeftLeg ? GaitData.KickToePoint : 0.f, GaitData.KickLeftLeg ? GaitData.KickKneeShare : 0.f);
+	ApplyLeg(CSPose, RefCSPose, Bones, BoneNameSet.RightFemur, BoneNameSet.RightTibia, BoneNameSet.RightFoot, BoneNameSet.RightBall, GaitData.RightFootWorld, GaitData.RightGroundZ, GaitData.RightFootRot, ForwardMesh, GaitData.RightFootLift, GaitData.KickLeftLeg ? 0.f : GaitData.KickToePoint, GaitData.KickLeftLeg ? 0.f : GaitData.KickKneeShare);
 
 	// Where the pose has each arm, for the body to put an arm back on it that got caught off it.
 	for (int32 Slot = 0; Slot < 2; ++Slot)
@@ -1561,7 +1561,7 @@ void FAedirProceduralAnimProxy::ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCS
 	CSPose.SetComponentSpaceTransform(Hand, HandTransform);
 }
 
-void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FName& BallName, const FVector& FootWorld, float GroundZ, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift, float KickToePoint) const
+void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FName& BallName, const FVector& FootWorld, float GroundZ, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift, float KickToePoint, float KickKnee) const
 {
 	const FCompactPoseBoneIndex Femur = ResolveCompactBone(Bones, FemurName);
 	const FCompactPoseBoneIndex Tibia = ResolveCompactBone(Bones, TibiaName);
@@ -1612,7 +1612,20 @@ void FAedirProceduralAnimProxy::ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<
 	const FVector ForwardJointTarget = (RootPosition + Effector) * 0.5 + ForwardMesh * AedirKneePoleDistance + DownMeshDirection * AedirKneePoleDropDistance;
 	// Sat on the ground with the feet drawn in, the hip and the foot are level and the knees point up.
 	const FVector UpJointTarget = (RootPosition + Effector) * 0.5 + UpMeshDirection * AedirKneePoleDistance + ForwardMesh * AedirKneePoleDropDistance;
-	const FVector JointTarget = FMath::Lerp(ForwardJointTarget, UpJointTarget, FMath::Clamp(GaitData.KneeUpShare, 0.f, 1.f));
+	FVector JointTarget = FMath::Lerp(ForwardJointTarget, UpJointTarget, FMath::Clamp(GaitData.KneeUpShare, 0.f, 1.f));
+	// Kicking, the knee stays to the front of the leg as the leg goes up, over it once it is level: a place fixed before the
+	// body is under a leg raised past it, and the knee went through to the wrong side.
+	if (KickKnee > 0.f)
+	{
+		const FVector KickMesh = MeshToWorld.InverseTransformVectorNoScale(GaitData.KickDirectionWorld).GetSafeNormal();
+		const FVector Front = FVector::CrossProduct((Effector - RootPosition).GetSafeNormal(), FVector::CrossProduct(UpMeshDirection, KickMesh)).GetSafeNormal();
+		if (!Front.IsNearlyZero())
+		{
+			const FVector Middle = (RootPosition + Effector) * 0.5;
+			const FVector Kept = JointTarget - Middle;
+			JointTarget = Middle + FMath::Lerp(Kept.GetSafeNormal(), Front, FMath::Clamp(KickKnee, 0.f, 1.f)) * AedirKneePoleDistance;
+		}
+	}
 
 	FVector SolvedJointPosition;
 	FVector SolvedEndPosition;

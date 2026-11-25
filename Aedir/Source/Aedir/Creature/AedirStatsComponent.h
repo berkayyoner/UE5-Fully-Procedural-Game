@@ -28,11 +28,69 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Aedir|Stats")
 	FAedirStrengthChanged OnStrengthChanged;
 
+	// How much of its wits and its strength the body has about it: blows take it, it comes back soon. With next to none left
+	// the body drops senseless. It kills nobody: that is the blood's doing, and there is never more health than there is blood.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Stats, Category="Aedir|Stats")
 	float Health = 100.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Stats, Category="Aedir|Stats")
 	float MaxHealth = 100.f;
+
+	// The blood in the body, out of 100. Wounds that bleed let it out and wounds not yet closed leave the body room for less
+	// of it; with none left the body dies.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Stats, Category="Aedir|Stats|Blood")
+	float Blood = 100.f;
+
+	// How much blood the body can hold as wounded as it is.
+	UPROPERTY(BlueprintReadOnly, ReplicatedUsing=OnRep_Stats, Category="Aedir|Stats|Blood")
+	float BloodCapacity = 100.f;
+
+	// Blood comes back by itself at this much a second, slower hungry or thirsty; what has been eaten and drunk is made into
+	// blood at BloodMakingPerSecond, this much of it for each point of food and of drink, at most BloodMakingMax waiting.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats|Blood", meta=(ClampMin="0"))
+	float BloodRegenPerSecond = 0.012f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats|Blood", meta=(ClampMin="0"))
+	float BloodMakingPerSecond = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats|Blood", meta=(ClampMin="0"))
+	float BloodPerFood = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats|Blood", meta=(ClampMin="0"))
+	float BloodPerDrink = 0.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats|Blood", meta=(ClampMin="0"))
+	float BloodMakingMax = 60.f;
+
+	// A blow (not a fist's) also lets this share of what it takes off the health out of the blood, inside the body.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats|Blood", meta=(ClampMin="0", ClampMax="1"))
+	float BlowBloodShare = 0.2f;
+
+	// Fists, kicks and bumps take the health no lower than this share of all of it, and at that the body drops senseless; it
+	// comes round once it has HealthWakeShare of its health again.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats", meta=(ClampMin="0", ClampMax="1"))
+	float KnockHealthFloor = 0.1f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats", meta=(ClampMin="0", ClampMax="1"))
+	float HealthWakeShare = 0.25f;
+
+	// Health comes back once nothing has hurt the body for this long (seconds).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Stats", meta=(ClampMin="0"))
+	float HealthRegenDelay = 3.f;
+
+	// Lets this much blood out of the body; none left, it dies.
+	void LoseBlood(float Amount);
+	void AddBlood(float Amount);
+	// Blood the body goes on making out of what it has eaten and drunk.
+	void AddBloodMaking(float Amount);
+	void SetBloodCapacity(float NewCapacity);
+	float GetBlood() const { return Blood; }
+	float GetBloodFraction() const { return FMath::Clamp(Blood / 100.f, 0.f, 1.f); }
+	float GetBloodCapacityFraction() const { return FMath::Clamp(BloodCapacity / 100.f, 0.f, 1.f); }
+	float GetBloodMaking() const { return BloodMaking; }
+	// The most health the blood left allows.
+	float GetHealthCap() const { return MaxHealth * GetBloodFraction(); }
+	void SetBlood(float NewBlood);
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_Stats, Category="Aedir|Stats")
 	float Mana = 100.f;
@@ -88,12 +146,12 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, ReplicatedUsing=OnRep_IsDead, Category="Aedir|Stats")
 	bool bIsDead = false;
 
-	// Out of health but not yet dead: down, unable to rise, slipping away over some seconds unless healed.
+	// Out of blood but not yet dead: down, unable to rise, slipping away over some seconds unless blood is got into it.
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
 	bool bIsDying = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
-	float HealthRegenPerSecond = 0.5f;
+	float HealthRegenPerSecond = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Replicated, Category="Aedir|Stats")
 	float ManaRegenPerSecond = 1.f;
@@ -152,7 +210,7 @@ public:
 	bool ConsumeMana(float Amount);
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Stats")
-	float ApplyDamage(float Amount);
+	float ApplyDamage(float Amount, EAedirHarm Harm = EAedirHarm::Blow);
 
 	// How full and how watered the body is, 100 to 0. Empty, it weakens and starts to take harm. Server only for changes.
 	void AddFood(float FoodAmount, float DrinkAmount);
@@ -257,16 +315,20 @@ public:
 	bool IsDead() const;
 	bool IsDying() const { return bIsDying; }
 
-	// Death at once, as when the head is off. Everything else that empties the health leaves a creature dying first.
+	// Death at once, as when the head is off. Everything else that empties the blood leaves a creature dying first.
 	void Die();
 
 	// Server only. Restores persisted values, clamping them to the valid ranges, and rebroadcasts the change delegates.
-	void ApplySavedState(float InHealth, float InMaxHealth, float InMana, float InMaxMana, float InStamina, float InMaxStamina, float InStrength, float InAthletism, const TArray<float>& InSkills);
+	void ApplySavedState(float InHealth, float InMaxHealth, float InMana, float InMaxMana, float InStamina, float InMaxStamina, float InStrength, float InAthletism, const TArray<float>& InSkills, float InBlood = 100.f);
 
 private:
 	// Seconds since the senses were last knocked or choked.
 	float ConsciousnessQuietSeconds = 100.f;
 	float KnockoutSecondsLeft = 0.f;
+	float HealthQuietSeconds = 100.f;
+	float BloodMaking = 0.f;
+	// Drops senseless for want of health.
+	void GoSenseless(const TCHAR* Why);
 
 	bool IsAuthoritative() const;
 

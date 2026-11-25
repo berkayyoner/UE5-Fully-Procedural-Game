@@ -52,6 +52,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
 	FLinearColor HealthBarColor = FLinearColor(0.34f, 0.012f, 0.01f, 1.f);
 
+	// The blood behind the health in the same bar, half seen through.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
+	FLinearColor BloodBarColor = FLinearColor(0.8f, 0.07f, 0.06f, 0.45f);
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|HUD")
 	FLinearColor ManaBarColor = FLinearColor(0.025f, 0.1f, 0.42f, 1.f);
 

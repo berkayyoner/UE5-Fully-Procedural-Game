@@ -600,7 +600,7 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 			// Held on past senselessness, the choking kills.
 			if (bWasOut)
 			{
-				Choked->ReceiveCreatureDamage(BodyGrabChokeKillPerSecond * Grip * DeltaTime);
+				Choked->ReceiveCreatureDamage(BodyGrabChokeKillPerSecond * Grip * DeltaTime, EAedirHarm::Life);
 			}
 		}
 

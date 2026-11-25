@@ -325,14 +325,14 @@ bool AAedirCreature::IsFriendOf(const AAedirCreature* Other) const
 	return Other && Other != this && (Other->GroupId == GroupId || GetRelationTo(Other) == EAedirRelation::Ally);
 }
 
-float AAedirCreature::ReceiveCreatureDamage(float Amount)
+float AAedirCreature::ReceiveCreatureDamage(float Amount, EAedirHarm Harm)
 {
 	if (!HasAuthority() || !Stats)
 	{
 		return 0.f;
 	}
 
-	const float Applied = Stats->ApplyDamage(Amount);
+	const float Applied = Stats->ApplyDamage(Amount, Harm);
 	// The one who plays it feels a blow that hurt it.
 	if (AAedirPlayerCharacter* Player = Cast<AAedirPlayerCharacter>(this))
 	{

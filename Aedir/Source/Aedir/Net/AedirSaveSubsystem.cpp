@@ -67,7 +67,9 @@ namespace
 
 		if (const UAedirStatsComponent* Stats = Creature->Stats.Get())
 		{
-			Result.Health = Stats->GetHealth();
+			// Senseless is not dead: a body with no health left that lives is kept with a little.
+			Result.Health = Stats->IsDead() ? 0.f : FMath::Max(Stats->GetHealth(), 1.f);
+			Result.Blood = Stats->IsDead() ? 0.f : FMath::Max(Stats->GetBlood(), 1.f);
 			Result.MaxHealth = Stats->GetMaxHealth();
 			Result.Mana = Stats->GetMana();
 			Result.MaxMana = Stats->GetMaxMana();
@@ -544,7 +546,8 @@ bool UAedirSaveSubsystem::LoadWorld(const FString& Slot)
 				CreatureSave.MaxStamina,
 				CreatureSave.Strength,
 				CreatureSave.Athletism,
-				CreatureSave.Skills);
+				CreatureSave.Skills,
+				CreatureSave.Blood);
 		}
 
 		UAedirInteractionComponent* Interaction = Creature->Interaction.Get();
@@ -742,7 +745,7 @@ void UAedirSaveSubsystem::ApplyCharacter(AAedirCreature* Creature, const FAedirC
 		Creature->SetRace(Character.RaceId);
 	}
 	UAedirStatsComponent* Stats = Creature->Stats.Get();
-	Stats->ApplySavedState(Character.Health, Character.MaxHealth, Character.Mana, Character.MaxMana, Character.Stamina, Character.MaxStamina, Character.Strength, Character.Athletism, Character.Skills);
+	Stats->ApplySavedState(Character.Health, Character.MaxHealth, Character.Mana, Character.MaxMana, Character.Stamina, Character.MaxStamina, Character.Strength, Character.Athletism, Character.Skills, Character.Blood);
 	Stats->SetNeeds(Character.Hunger, Character.Thirst);
 
 	const FTransform SpawnTransform = Creature->GetActorTransform();

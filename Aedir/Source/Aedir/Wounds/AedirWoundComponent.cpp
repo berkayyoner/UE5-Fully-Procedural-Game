@@ -446,6 +446,15 @@ void UAedirWoundComponent::OpenWound(FName ResolvedBone, const FVector& WorldLoc
 		Direction = WorldNormal.GetSafeNormal();
 	}
 
+	// It lets some out at once.
+	if (Type != EAedirWoundType::Bruise)
+	{
+		if (UAedirStatsComponent* Stats = GetOwner() ? GetOwner()->FindComponentByClass<UAedirStatsComponent>() : nullptr)
+		{
+			Stats->LoseBlood(FMath::Clamp(Severity, 0.f, 1.f) * WoundBloodAtOnce);
+		}
+	}
+
 	OnWounded.Broadcast(Type, ResolvedBone, Severity);
 	MulticastWoundSpray(WorldLocation, Direction, Severity, Type);
 }
@@ -595,7 +604,7 @@ void UAedirWoundComponent::UpdateArterialBleeding(float DeltaTime)
 	const bool bDead = Stats && Stats->IsDead();
 	if (Stats && !bDead && SeverBleedPerSecond > 0.f && IsAuthoritative())
 	{
-		Stats->ApplyDamage(SeverBleedPerSecond * DeltaTime);
+		Stats->LoseBlood(SeverBleedPerSecond * DeltaTime);
 	}
 
 	const ACharacter* Character = Cast<ACharacter>(Owner);
@@ -743,6 +752,24 @@ float UAedirWoundComponent::ComputeTotalBleedRate(double Now) const
 	}
 
 	return Total;
+}
+
+float UAedirWoundComponent::ComputeBloodRoomLost(double Now) const
+{
+	float Lost = 0.f;
+	for (const FAedirWound& Wound : ActiveWounds)
+	{
+		if (Wound.Type == EAedirWoundType::Bruise)
+		{
+			continue;
+		}
+		// All of it while it bleeds, less and less as it closes.
+		const float Age = static_cast<float>(FMath::Max(0.0, Now - Wound.StartServerTime));
+		const float Open = ComputeBleedRate(Wound.Type, Wound.GetSeverity(), Age) > 0.f ? 1.f : 1.f - ComputeAge01(Wound.Type, Wound.GetSeverity(), Age);
+		Lost += (Wound.Type == EAedirWoundType::Puncture ? PunctureBloodRoom : CutBloodRoom) * Wound.GetSeverity() * Open;
+	}
+	Lost += SeveredBones.Num() * SeverBloodRoom;
+	return FMath::Min(Lost, BloodRoomLostMax);
 }
 
 uint8 UAedirWoundComponent::AllocateWoundId()
@@ -898,18 +925,15 @@ void UAedirWoundComponent::UpdateBleeding(float DeltaTime)
 		}
 	}
 
-	const float BleedRate = ComputeTotalBleedRate(Now);
 	const AActor* Owner = GetOwner();
-	if (BleedRate <= 0.f || !Owner)
+	UAedirStatsComponent* Stats = Owner ? Owner->FindComponentByClass<UAedirStatsComponent>() : nullptr;
+	if (!Stats || Stats->IsDead())
 	{
 		return;
 	}
-
-	UAedirStatsComponent* Stats = Owner->FindComponentByClass<UAedirStatsComponent>();
-	if (Stats && !Stats->IsDead())
-	{
-		Stats->ApplyDamage(BleedRate * DeltaTime);
-	}
+	// Wounds not yet closed leave the body room for less blood, and those that bleed let it out.
+	Stats->SetBloodCapacity(100.f - ComputeBloodRoomLost(Now));
+	Stats->LoseBlood(ComputeTotalBleedRate(Now) * DeltaTime);
 }
 
 void UAedirWoundComponent::EnsureWoundVisuals()

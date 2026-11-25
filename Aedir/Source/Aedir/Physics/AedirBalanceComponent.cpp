@@ -4171,7 +4171,7 @@ void UAedirBalanceComponent::RunIntoWall(const FVector& OwnerVelocity, const FHi
 
 	if (StatsComponent)
 	{
-		StatsComponent->ApplyDamage(Excess * AedirWallImpactDamagePerSpeed * (1.f - Athletism / AedirAthletismDamageScale));
+		StatsComponent->ApplyDamage(Excess * AedirWallImpactDamagePerSpeed * (1.f - Athletism / AedirAthletismDamageScale), EAedirHarm::Knock);
 	}
 }
 
@@ -4303,7 +4303,8 @@ void UAedirBalanceComponent::HurtPartOnImpact(FName Bone, const FVector& NormalI
 	}
 	if (UAedirStatsComponent* StatsComponent = FindStats())
 	{
-		StatsComponent->ApplyDamage((Speed - Harmless) * ImpactDamagePerSpeed);
+		// Knocked over, a body only knocks itself; come down from a height, it breaks.
+		StatsComponent->ApplyDamage((Speed - Harmless) * ImpactDamagePerSpeed, Speed >= ImpactBreakSpeed ? EAedirHarm::Blow : EAedirHarm::Knock);
 	}
 	UAedirSfxSubsystem::Play(this, EAedirSfx::BodyImpact, Hit.ImpactPoint, FMath::Clamp((Speed - Harmless) / ImpactHarmlessSpeed, 0.2f, 1.f));
 	UE_LOG(LogAedir, Log, TEXT("[Impact] %s %s hits %s at %.0f cm/s, %.0f J, %.1f damage"), *GetNameSafe(GetOwner()), *Bone.ToString(), *GetNameSafe(Hit.GetActor()), Speed, Joules, (Speed - Harmless) * ImpactDamagePerSpeed);
@@ -4343,17 +4344,21 @@ float UAedirBalanceComponent::KnockPart(FName Bone, FName BehindBone, float Spee
 	float Damage = 0.f;
 	if (Speed > FistWorldHarmlessSpeed)
 	{
-		const float Mass = Struck ? FMath::Max(Struck->GetBodyMass(), 0.3f) : 0.5f;
-		const float Joules = 0.5f * Mass * FMath::Square(Speed / 100.f) * FistWorldWoundShare;
+		// The weight behind the blow comes to a stop in the hand or the foot, all of it on something that does not give. It is marked on the knuckles or the toes, at the
+		// side of them that struck: what it struck lies off the skin, and a mark there was drawn on nothing.
+		const float Joules = 0.5f * FistWorldWoundKg * FMath::Square(Speed / 100.f) * FistWorldWoundShare;
 		const AAedirCreature* Own = Cast<AAedirCreature>(GetOwner());
-		if (Own && Own->Wounds)
+		if (Own && Own->Wounds && BodyMesh)
 		{
-			Own->Wounds->AddWound(Bone, Hit.ImpactPoint, Away, EAedirDamageType::Blunt, Joules, 0.f, -Away, Speed);
+			const FString Name = Bone.ToString();
+			const FName Front(*Name.Replace(TEXT("hand"), TEXT("middle_01")).Replace(TEXT("foot"), TEXT("ball")));
+			const FVector At = BodyMesh->GetBoneIndex(Front) != INDEX_NONE ? BodyMesh->GetBoneLocation(Front) : BodyMesh->GetBoneLocation(Bone);
+			Own->Wounds->AddWound(Bone, At - Away * FistWorldMarkOutCm, -Away, EAedirDamageType::Blunt, Joules, 0.f, Away);
 		}
 		Damage = (Speed - FistWorldHarmlessSpeed) * FistWorldDamagePerSpeed;
 		if (UAedirStatsComponent* StatsComponent = FindStats())
 		{
-			StatsComponent->ApplyDamage(Damage);
+			StatsComponent->ApplyDamage(Damage, EAedirHarm::Knock);
 		}
 	}
 	KnockWatchBone = Bone;

@@ -258,6 +258,17 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0"))
 	float FistWorldWoundShare = 1.f;
 
+	// The weight behind it (kg), and how far out from the knuckles' or the toes' bone towards the thing it is marked (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0"))
+	float FistWorldWoundKg = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0"))
+	float FistWorldMarkOutCm = 1.5f;
+
+	// A part of the body that strikes the ground or something fixed faster than this breaks rather than knocks itself.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Impacts", meta=(ClampMin="0", Units="cm/s"))
+	float ImpactBreakSpeed = 900.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0"))
 	float FistWorldDamagePerSpeed = 0.012f;
 

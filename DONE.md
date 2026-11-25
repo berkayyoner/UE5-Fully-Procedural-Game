@@ -743,3 +743,13 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Somebody held is held by the whole arm: a hand with its button held lifts them, standing or lying, alive or dead, two hands easily and one only just, for breath
 - Bodies held are dragged with the hand let hang, do not get up while lifted, and are not pinned down by the body of the one who lifts them
 - Dev: LookPart and TapTake look at a part of the nearest body and tap the take key, aedir.SkateLog logs sliding feet, aedir.GetUpWatch parts that jump getting up
+- The knee of a kicking leg stays to the front of the leg however high it goes, instead of bending the wrong way as a high kick comes down
+- A fist or a foot driven into something fixed is marked: bruised after a blow or two, split and bleeding after more, on the knuckles or the toes
+- Blood apart from health: bleeding and wounds not yet closed take it, with none left a body dies; health is the wits and the strength, comes back quickly and is never more than the blood allows
+- Fists, kicks and bumps take the health no lower than a tenth and knock senseless instead of killing; beaten again and again in one place the skin splits, and the bleeding kills
+- Weapons and long falls hurt inside as well, and what the health cannot bear goes at the blood
+- Blood comes back very slowly by itself, sooner after food and drink, and by a blood potion
+- The blood is drawn half seen through behind the health in the same bar, the player's and the foe's, with a mark where the wounds leave room for no more
+- Bare-handed NPCs do not go on beating one who lies senseless
+- Blood is saved, shown in the menu and set at the console (blood) and with SetStat
+- Dev: BloodWatch logs health and blood, FistBlows lands fists on a bone, UseKind eats or drinks a thing

@@ -114,6 +114,14 @@ namespace
 		AddFood(TEXT("WaterJug"), TEXT("Jug of Water"), 2.2f, FLinearColor(0.3f, 0.26f, 0.18f), FVector(0.2, 0.2, 0.3), 0.f, 40.f, 3, TEXT("/Game/Megascans/3D_Assets/JuteJug/SM_JuteJug.SM_JuteJug"));
 		AddFood(TEXT("Carafe"), TEXT("Wooden Carafe"), 1.1f, FLinearColor(0.3f, 0.2f, 0.1f), FVector(0.12, 0.12, 0.26), 0.f, 30.f, 2, TEXT("/Game/Megascans/3D_Assets/OldWoodenCarafe/SM_OldWoodenCarafe.SM_OldWoodenCarafe"));
 
+		{
+			FAedirItemDef Potion = CatalogMakeMisc(TEXT("SmallPotionBlood"), TEXT("Small Blood Potion"), EAedirItemClass::Food, 0.3f, FLinearColor(0.35f, 0.015f, 0.02f), FVector(0.07, 0.07, 0.13));
+			Potion.DrinkValue = 5.f;
+			Potion.BloodValue = 15.f;
+			Potion.BloodMakingValue = 40.f;
+			Definitions.Add(Potion);
+		}
+
 		// Odds and ends of a yard: everything that can be picked up is an item, nothing small stands fixed in the world.
 		// Big things are carried in both arms and do not fit in a backpack; small ones are stowed like anything else.
 		const auto AddThing = [&Definitions](const TCHAR* Id, const TCHAR* Name, float WeightKg, const FVector& Scale, const TCHAR* Mesh, bool bBig)

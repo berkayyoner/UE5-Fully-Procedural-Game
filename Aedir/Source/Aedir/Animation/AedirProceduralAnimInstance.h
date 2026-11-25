@@ -83,7 +83,7 @@ private:
 	void ApplyForearmTwist(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix) const;
 	void ApplyObjectHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, bool bLeft, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
 	void ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
-	void ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FName& BallName, const FVector& FootWorld, float GroundZ, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift, float KickToePoint) const;
+	void ApplyLeg(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& FemurName, const FName& TibiaName, const FName& FootName, const FName& BallName, const FVector& FootWorld, float GroundZ, const FRotator& FootTiltWorld, const FVector& ForwardMesh, float FootLift, float KickToePoint, float KickKnee) const;
 
 	FAedirGaitState GaitData;
 	FAedirGaitBoneNames BoneNameSet;

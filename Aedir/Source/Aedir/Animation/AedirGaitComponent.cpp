@@ -1024,6 +1024,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	GaitState.LeftArmLedShare = FMath::FInterpConstantTo(GaitState.LeftArmLedShare, Combat ? Combat->GetArmLedShare(EAedirHand::Left) : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.RightArmLedShare = FMath::FInterpConstantTo(GaitState.RightArmLedShare, Combat ? Combat->GetArmLedShare(EAedirHand::Right) : 0.f, DeltaTime, 1.f / AedirWeaponAimFadeSeconds);
 	GaitState.KickLeftLeg = bKickLeftLeg;
+	GaitState.KickDirectionWorld = Combat ? Combat->GetKickDirection() : FVector::ForwardVector;
+	GaitState.KickKneeShare = bKicking ? FMath::Clamp(KickAlpha * 2.f, 0.f, 1.f) : 0.f;
 	GaitState.KickToePoint = Combat ? Combat->GetKickToePoint() : 0.f;
 	GaitState.ObjectAlpha = 0.f;
 	if (Combat)
@@ -1313,6 +1315,7 @@ void UAedirGaitComponent::PoseGetUp(const FTransform& ActorTransform, float Bott
 	GaitState.RightElbowHintAlpha *= 1.f - Weight;
 	GaitState.ObjectAlpha *= 1.f - Weight;
 	GaitState.KickToePoint *= 1.f - Weight;
+	GaitState.KickKneeShare *= 1.f - Weight;
 }
 
 void UAedirGaitComponent::BeginGetUpPose()

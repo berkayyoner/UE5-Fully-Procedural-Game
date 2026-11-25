@@ -587,7 +587,9 @@ void AAedirHUD::DrawBars(float DeltaSeconds, const UAedirStatsComponent* Stats)
 	{
 		FAedirHudBarState& State = BarStates[Index];
 		const float Fraction = Maxima[Index] > 0.f ? FMath::Clamp(Values[Index] / Maxima[Index], 0.f, 1.f) : 0.f;
-		const bool bFull = Fraction >= HudBarFullThreshold;
+		// The blood lies behind the health in the same bar: while any of it is gone, the bar stays.
+		const float BloodShare = Index == 0 ? Stats->GetBloodFraction() : 0.f;
+		const bool bFull = Fraction >= HudBarFullThreshold && (Index != 0 || BloodShare >= HudBarFullThreshold);
 
 		if (bFull)
 		{
@@ -633,6 +635,26 @@ void AAedirHUD::DrawBars(float DeltaSeconds, const UAedirStatsComponent* Stats)
 		const float FillHalfWidth = InnerHalfWidth * Fraction;
 		const float InnerTaper = Taper * (InnerHalfHeight / HalfHeight);
 
+		if (Index == 0)
+		{
+			// Half seen through, as far as there is blood; a thin mark where the wounds leave room for no more.
+			const float BloodHalfWidth = InnerHalfWidth * BloodShare;
+			if (BloodHalfWidth > 0.5f)
+			{
+				const FLinearColor BloodMiddle(BloodBarColor.R, BloodBarColor.G, BloodBarColor.B, BloodBarColor.A * A);
+				const FLinearColor BloodEdge(BloodBarColor.R * 0.5f, BloodBarColor.G * 0.5f, BloodBarColor.B * 0.5f, BloodBarColor.A * A);
+				AddTaperedBar(Mesh, Center, BloodHalfWidth, InnerHalfHeight, InnerTaper, BloodEdge, BloodMiddle, BloodEdge);
+			}
+			const float Room = Stats->GetBloodCapacityFraction();
+			if (Room < HudBarFullThreshold)
+			{
+				for (const float Side : { -1.f, 1.f })
+				{
+					const FVector2f Mark = Center + FVector2f(Side * InnerHalfWidth * Room, 0.f);
+					AddFadedLine(Mesh, Mark - FVector2f(0.f, InnerHalfHeight), Mark + FVector2f(0.f, InnerHalfHeight), FMath::Max(1.f, 1.5f * Scale), WithAlpha(Metal, 0.9f * A), 0.6f, 0.6f);
+				}
+			}
+		}
 		if (State.Trail > Fraction + 0.002f)
 		{
 			const FLinearColor Lag(Bright.R * 0.8f + 0.1f, Bright.G * 0.8f + 0.1f, Bright.B * 0.8f + 0.1f, 0.42f * A);
@@ -866,6 +888,13 @@ void AAedirHUD::DrawLookTarget(const AAedirCreature* Creature)
 			const float HalfHeight = FMath::Max(HudTargetBarHeight * 0.5f * Bar.HeightShare * Scale, 1.f);
 			const FVector2f Center(CenterX, Y + HalfHeight);
 			AddTaperedBar(Mesh, Center, HalfWidth, HalfHeight, HalfHeight * 2.f, FLinearColor(0.f, 0.f, 0.f, 0.5f), FLinearColor(0.f, 0.f, 0.f, 0.72f), FLinearColor(0.f, 0.f, 0.f, 0.5f));
+			// Its blood behind it, half seen through.
+			const float FoeBlood = NpcStats ? NpcStats->GetBloodFraction() : 0.f;
+			if (FoeBlood > 0.f)
+			{
+				const FLinearColor BloodEdge(BloodBarColor.R * 0.5f, BloodBarColor.G * 0.5f, BloodBarColor.B * 0.5f, BloodBarColor.A);
+				AddTaperedBar(Mesh, Center, HalfWidth * FoeBlood, FMath::Max(HalfHeight - 0.5f * Scale, 0.5f), HalfHeight * 2.f, BloodEdge, BloodBarColor, BloodEdge);
+			}
 			if (Bar.Fraction > 0.f)
 			{
 				const FLinearColor Dark = Bar.Color * 0.4f;

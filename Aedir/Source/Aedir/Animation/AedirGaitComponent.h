@@ -193,6 +193,10 @@ struct AEDIR_API FAedirGaitState
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	bool KickLeftLeg = false;
 
+	// Which way the kick goes, and how far the kicking leg's knee keeps to the front of the leg however high it is.
+	FVector KickDirectionWorld = FVector::ForwardVector;
+	float KickKneeShare = 0.f;
+
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Gait")
 	float LeftWeaponAimAlpha = 0.f;
 

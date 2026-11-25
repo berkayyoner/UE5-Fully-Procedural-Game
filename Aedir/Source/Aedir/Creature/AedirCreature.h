@@ -116,7 +116,7 @@ public:
 	bool IsFriendOf(const AAedirCreature* Other) const;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Creature")
-	float ReceiveCreatureDamage(float Amount);
+	float ReceiveCreatureDamage(float Amount, EAedirHarm Harm = EAedirHarm::Blow);
 
 	UFUNCTION(BlueprintPure, Category="Aedir|Creature")
 	float GetCarriedWeight() const;

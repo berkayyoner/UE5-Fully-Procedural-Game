@@ -883,7 +883,7 @@ void UAedirDevTools::Hurt(AAedirPlayerCharacter* Player, const FString& Args)
 	const TArray<FString> Tokens = DevToolsTokens(Args);
 	const float Amount = Tokens.IsEmpty() ? DevToolsHurtDefaultAmount : FCString::Atof(*Tokens[0]);
 	const float Applied = Player->Stats->ApplyDamage(Amount);
-	DevToolsReport(FString::Printf(TEXT("Applied %.1f damage, health %.1f"), Applied, Player->Stats->GetHealth()));
+	DevToolsReport(FString::Printf(TEXT("Applied %.1f damage, health %.1f, blood %.1f"), Applied, Player->Stats->GetHealth(), Player->Stats->GetBlood()));
 }
 
 void UAedirDevTools::God(AAedirPlayerCharacter* Player, const FString& Args)
@@ -1061,7 +1061,7 @@ void UAedirDevTools::Help(AAedirPlayerCharacter* Player, const FString& Args)
 	DevToolsReport(TEXT("  Wound <Bruise|Cut|Puncture> [bone=upperarm_l]"));
 	DevToolsReport(TEXT("  BloodTest: blood spray in front of the player"));
 	DevToolsReport(TEXT("  DebugBody: toggle centre of mass, support margin and hand drawing"));
-	DevToolsReport(TEXT("  SetStat <Strength|Athletism|Health|Stamina|Mana> <value>: change a stat to see how the body reacts"));
+	DevToolsReport(TEXT("  SetStat <Strength|Athletism|Health|Blood|Stamina|Mana> <value>: change a stat to see how the body reacts"));
 	DevToolsReport(TEXT("  Stats: print the player's stats"));
 	DevToolsReport(TEXT("  Push <strength 0-1>: shove the player's balance forward, 1 is a knockdown push"));
 	DevToolsReport(TEXT("  Knockdown [me|nearest|all|selected] [forward|back|left|right]: throw bodies off their feet, the clicked one or else the player by default"));
@@ -1077,7 +1077,7 @@ void UAedirDevTools::SetStat(AAedirPlayerCharacter* Player, const FString& Args)
 	UAedirStatsComponent* Stats = Player->Stats.Get();
 	if (Tokens.Num() < 2 || !Stats)
 	{
-		DevToolsReport(TEXT("Usage: SetStat <Strength|Athletism|Health|Stamina|Mana> <value>"));
+		DevToolsReport(TEXT("Usage: SetStat <Strength|Athletism|Health|Blood|Stamina|Mana> <value>"));
 		return;
 	}
 
@@ -1101,6 +1101,10 @@ void UAedirDevTools::SetStat(AAedirPlayerCharacter* Player, const FString& Args)
 		{
 			Stats->ApplyDamage(-Delta);
 		}
+	}
+	else if (DevToolsIsToken(Tokens[0], TEXT("Blood")))
+	{
+		Stats->SetBlood(Value);
 	}
 	else if (DevToolsIsToken(Tokens[0], TEXT("Stamina")))
 	{
@@ -1132,8 +1136,8 @@ void UAedirDevTools::PrintStats(AAedirPlayerCharacter* Player, const FString& Ar
 		return;
 	}
 
-	DevToolsReport(FString::Printf(TEXT("Strength %.0f  Athletism %.0f  Health %.0f/%.0f  Stamina %.0f/%.0f  Magicka %.0f/%.0f"),
-		Stats->Strength, Stats->Athletism, Stats->GetHealth(), Stats->GetMaxHealth(), Stats->GetStamina(), Stats->GetMaxStamina(), Stats->GetMana(), Stats->GetMaxMana()));
+	DevToolsReport(FString::Printf(TEXT("Strength %.0f  Athletism %.0f  Health %.0f/%.0f  Blood %.0f of %.0f  Stamina %.0f/%.0f  Magicka %.0f/%.0f"),
+		Stats->Strength, Stats->Athletism, Stats->GetHealth(), Stats->GetMaxHealth(), Stats->GetBlood(), Stats->BloodCapacity, Stats->GetStamina(), Stats->GetMaxStamina(), Stats->GetMana(), Stats->GetMaxMana()));
 }
 
 void UAedirDevTools::Push(AAedirPlayerCharacter* Player, const FString& Args)

@@ -890,6 +890,12 @@ public:
 	UFUNCTION(BlueprintPure, Category="Aedir|Combat|Kick")
 	bool GetKickPose(bool& bOutLeftLeg, FVector& OutFootTargetWorld, float& OutAlpha) const;
 
+	// For the dev tools: a bare fist of this speed lands on this bone of the body given, as one thrown would.
+	void DevFistBlow(AAedirCreature* Victim, FName Bone, float SpeedCmPerSec);
+
+	// Which way the kick goes, level.
+	FVector GetKickDirection() const { return FVector(KickNet.Direction); }
+
 	// How far the kicking foot is stretched and pointed along its shin, 0 to KickToePointShare.
 	float GetKickToePoint() const;
 
@@ -1227,6 +1233,8 @@ private:
 
 	FVector KickPrevFootWorld = FVector::ZeroVector;
 	// How fast and which way the body went over the ground as the kick began, on the ground; lost once, as the leg comes up.
+	FQuat KickLogThigh = FQuat::Identity;
+	FQuat KickLogShin = FQuat::Identity;
 	float KickLoggedLag = 0.f;
 
 	float AIRetargetTimer = 0.f;

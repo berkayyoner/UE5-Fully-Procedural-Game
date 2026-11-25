@@ -149,6 +149,23 @@ public:
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds|Blunt")
 	float BluntWearHalfLifeSeconds = 120.f;
 
+	// How much less blood (out of 100) a body has room for with a cut, a stab or a limb off, the worst of each, until it is
+	// closed; all of them together no more than BloodRoomLostMax. Opened or opened again, the worst lets this much out at once.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="0"))
+	float CutBloodRoom = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="0"))
+	float PunctureBloodRoom = 14.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="0"))
+	float SeverBloodRoom = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="0", ClampMax="100"))
+	float BloodRoomLostMax = 70.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="0"))
+	float WoundBloodAtOnce = 5.f;
+
 	// A parted limb's stump runs with blood all the time, this many drops a second, and goes on for this long after death,
 	// thinning out; the piece cut off runs from its cut end this many a second for this long.
 	UPROPERTY(EditAnywhere, Category="Aedir|Wounds")
@@ -245,6 +262,7 @@ private:
 	USkeletalMeshComponent* GetBodyMesh() const;
 	double GetWoundServerTime() const;
 	float ComputeTotalBleedRate(double Now) const;
+	float ComputeBloodRoomLost(double Now) const;
 	uint8 AllocateWoundId();
 
 	void UpdateBleeding(float DeltaTime);

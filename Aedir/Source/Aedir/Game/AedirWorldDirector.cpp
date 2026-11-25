@@ -337,6 +337,7 @@ void AedirWorldDirector::LayOutNatureMap(UWorld* World)
 		DirectorLayItem(World, TEXT("SmokedMeat"), OnTable(25.f, -10.f), Along.Yaw + 70.f);
 		DirectorLayItem(World, TEXT("WaterJug"), OnTable(55.f, 12.f), 0.f);
 		DirectorLayItem(World, TEXT("Carafe"), OnTable(-30.f, 18.f), 0.f);
+		DirectorLayItem(World, TEXT("SmallPotionBlood"), OnTable(14.f, 8.f), 0.f);
 	}
 	DirectorPlaceProp(World, TEXT("OldWoodenBench"), At(650.f, 420.f), Flat.Yaw + 10.f);
 	DirectorPlaceProp(World, TEXT("OldWoodenBench"), At(650.f, 180.f), Flat.Yaw + 190.f);

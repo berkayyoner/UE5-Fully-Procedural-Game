@@ -30,6 +30,9 @@ struct AEDIR_API FAedirItemDef
 	// Food and water a use gives, out of 100, and how many uses are in it.
 	float FoodValue = 0.f;
 	float DrinkValue = 0.f;
+	// Blood it gives at once, and blood the body makes out of it afterwards, out of 100.
+	float BloodValue = 0.f;
+	float BloodMakingValue = 0.f;
 	int32 Uses = 1;
 
 	UPROPERTY(BlueprintReadOnly, Category="Aedir|Catalog")
