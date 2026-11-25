@@ -1,6 +1,7 @@
 #include "Items/AedirInteractionComponent.h"
 
 #include "Aedir.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Fists/AedirFistArms.h"
@@ -12,6 +13,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Items/AedirItemActor.h"
 #include "PhysicsEngine/BodyInstance.h"
+#include "PhysicsEngine/BodySetup.h"
 #include "PhysicsEngine/PhysicsConstraintComponent.h"
 
 namespace
@@ -25,24 +27,22 @@ namespace
 	constexpr float BodyGrabWideForwardCm = 70.f;
 	constexpr float BodyGrabWideHeightCm = -40.f;
 	constexpr float BodyGrabWideRadiusCm = 140.f;
-	// The hand pulls the part to itself and the part pulls back with all its weight; a strong arm pulls harder.
-	constexpr float BodyGrabStiffnessBase = 40000.f;
-	constexpr float BodyGrabStiffnessPerStrength = 400.f;
-	constexpr float BodyGrabDampingShare = 0.08f;
-	constexpr float BodyGrabTearCm = 32.f;
-	constexpr float BodyGrabDragFromCm = 14.f;
-	constexpr float BodyGrabTearSeconds = 0.12f;
+	// The hand is kept on what it holds by no more than this: it is the arm as a whole that carries it (see the carry), and a
+	// hand that cannot come up with what it holds, held hard to it, held it down with all the arm's muscles.
+	constexpr float BodyGrabHandStiffness = 150.f;
+	constexpr float BodyGrabHandDamping = 25.f;
+	// Holding on: how far what is held must be behind before the holder is held back by it, and by how much all the way.
+	constexpr float BodyGrabDragFromCm = 8.f;
+	constexpr float BodyGrabDragFullCm = 30.f;
+	constexpr float BodyGrabGravityCm = 981.f;
 	// A living body pulled by the hand: how hard it is drawn after the hand, and how much of its balance that costs.
 	constexpr float BodyGrabLivePullPerCm = 22.f;
 	constexpr float BodyGrabLivePullMax = 420.f;
 	constexpr float BodyGrabLiveBalancePerSecond = 0.35f;
 	// How much of its going away from the hand a living body held loses, all of the hold's share.
 	constexpr float BodyGrabHoldBackShare = 0.9f;
-	constexpr float BodyGrabCloseCm = 22.f;
+	constexpr float BodyGrabCloseCm = 28.f;
 	constexpr float BodyGrabReachSeconds = 2.f;
-	// A grown man drags a body of his own weight over grass, about 400 N of friction, at a walk; a strong one easily.
-	constexpr float BodyGrabForceBaseN = 520.f;
-	constexpr float BodyGrabForcePerStrengthN = 14.f;
 	constexpr float BodyGrabAimRangeCm = 230.f;
 	constexpr float BodyGrabAimRadiusCm = 20.f;
 	// A throat within this reach is taken first; one hand on it takes this many points of the senses a second from an even
@@ -186,6 +186,11 @@ bool UAedirInteractionComponent::IsGrabbingBody(EAedirHand Hand) const
 {
 	const FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
 	return Grab.Joint.IsValid() || Grab.bReaching;
+}
+
+bool UAedirInteractionComponent::IsHoldingBody(EAedirHand Hand) const
+{
+	return BodyGrabs[static_cast<int32>(Hand)].Joint.IsValid();
 }
 
 bool UAedirInteractionComponent::TryGrabBody(EAedirHand Hand, const FVector* AimedPoint)
@@ -337,6 +342,41 @@ void UAedirInteractionComponent::CloseHandOnBody(EAedirHand Hand)
 	Joint->SetConstraintReferencePosition(EConstraintFrame::Frame2, Grab.LocalPoint);
 	Joint->SetLinearPositionTarget(FVector::ZeroVector);
 	Joint->SetLinearVelocityTarget(FVector::ZeroVector);
+	// In newtons, whatever the part weighs.
+	Joint->SetLinearDriveAccelerationMode(false);
+	Joint->SetLinearDriveParams(BodyGrabHandStiffness, BodyGrabHandDamping, 0.f);
+
+	// The arm as a whole carries it: a joint from the holder's own body to where the part was taken hold of, pulled to where
+	// the hand would have it.
+	UCapsuleComponent* Capsule = Creature->GetCapsuleComponent();
+	UPhysicsConstraintComponent* Carry = NewObject<UPhysicsConstraintComponent>(Creature);
+	Carry->SetupAttachment(Capsule);
+	Carry->SetDisableCollision(true);
+	Carry->SetLinearXLimit(LCM_Free, 0.f);
+	Carry->SetLinearYLimit(LCM_Free, 0.f);
+	Carry->SetLinearZLimit(LCM_Free, 0.f);
+	Carry->SetAngularSwing1Limit(ACM_Free, 0.f);
+	Carry->SetAngularSwing2Limit(ACM_Free, 0.f);
+	Carry->SetAngularTwistLimit(ACM_Free, 0.f);
+	Carry->SetLinearPositionDrive(true, true, true);
+	Carry->SetLinearVelocityDrive(true, true, true);
+	Carry->RegisterComponent();
+	Carry->SetConstrainedComponents(Capsule, NAME_None, Target, Grab.Bone);
+	Carry->ConstraintInstance.SetRefFrame(EConstraintFrame::Frame1, FTransform::Identity);
+	Carry->ConstraintInstance.SetRefFrame(EConstraintFrame::Frame2, FTransform(Grab.LocalPoint));
+	Carry->SetLinearDriveAccelerationMode(false);
+	Carry->SetLinearVelocityTarget(FVector::ZeroVector);
+	Grab.Carry = Carry;
+	Grab.Where = Creature->GetActorTransform().InverseTransformPositionNoScale(Point);
+	{
+		const bool bLeft = Hand == EAedirHand::Left;
+		const FVector Shoulder = Own->GetBoneLocation(bLeft ? TEXT("upperarm_l") : TEXT("upperarm_r"));
+		const FVector Elbow = Own->GetBoneLocation(bLeft ? TEXT("lowerarm_l") : TEXT("lowerarm_r"));
+		Grab.BeyondReachCm = FMath::Clamp(static_cast<float>(FVector::Dist(Shoulder, Point) - FVector::Dist(Shoulder, Elbow) - FVector::Dist(Elbow, Own->GetBoneLocation(HandBone))), 0.f, BodyGrabCloseCm);
+	}
+	Grab.LagCm = 0.f;
+	Grab.bLifting = false;
+	Grab.LiftSeconds = 0.f;
 	Grab.Joint = Joint;
 	Grab.bReaching = false;
 	Grab.TearSeconds = 0.f;
@@ -346,10 +386,13 @@ void UAedirInteractionComponent::CloseHandOnBody(EAedirHand Hand)
 void UAedirInteractionComponent::ReleaseBodyGrab(EAedirHand Hand)
 {
 	FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
-	if (UPhysicsConstraintComponent* Joint = Grab.Joint.Get())
+	for (UPhysicsConstraintComponent* Joint : { Grab.Joint.Get(), Grab.Carry.Get() })
 	{
-		Joint->BreakConstraint();
-		Joint->DestroyComponent();
+		if (Joint)
+		{
+			Joint->BreakConstraint();
+			Joint->DestroyComponent();
+		}
 	}
 	Grab = FAedirBodyGrab();
 }
@@ -403,25 +446,90 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 			}
 			else if (Grab.ReachSeconds >= BodyGrabReachSeconds)
 			{
+				UE_LOG(LogAedir, Log, TEXT("%s's hand does not get to %s, %.0f cm short"), *Creature->GetName(), *Grab.Bone.ToString(), Gap);
 				ReleaseBodyGrab(Hand);
 			}
 			continue;
 		}
 
+		if (Creature->Balance)
+		{
+			Creature->Balance->LetArmThrough(Index, 0.5f);
+			// What lies is taken up over the holder's own feet and held close before the chest.
+			if (!IsStandingHeld(Grab))
+			{
+				Creature->Balance->LetBodyThrough(BodyThroughSeconds);
+			}
+		}
 		// The arm pulls as hard as a body of that strength can, and no harder: a cut-off hand comes up with it, a dead man is
-		// dragged along the ground.
-		const float Stiffness = (BodyGrabStiffnessBase + Strength * BodyGrabStiffnessPerStrength) * FMath::Lerp(0.5f, 1.f, StaminaShare);
-		const float MaxForce = (BodyGrabForceBaseN + Strength * BodyGrabForcePerStrengthN) * FMath::Lerp(0.6f, 1.f, StaminaShare) * 100.f;
-		Grab.Joint->SetLinearDriveParams(Stiffness, Stiffness * BodyGrabDampingShare, MaxForce);
+		// dragged along the ground, and with the hand's button held it strains to lift whoever it holds.
+		const FVector Place = UpdateBodyCarryPlace(Hand, Point, DeltaTime);
+		const float Breath = FMath::Lerp(BodyForceTiredShare, 1.f, StaminaShare);
+		const float MostN = (Grab.bLifting ? BodyLiftForceN + Strength * BodyLiftForcePerStrengthN : BodyHoldForceN + Strength * BodyHoldForcePerStrengthN) * Breath;
+		const FVector Lag = Place - Point;
+		Grab.LagCm = static_cast<float>(Lag.Size());
+		Grab.WhereWorld = Place;
+		const float Stiffness = MostN * 100.f / FMath::Max(BodyHoldFullCm, 1.f);
+		Grab.PullN = MostN * FMath::Min(Grab.LagCm / FMath::Max(BodyHoldFullCm, 1.f), 1.f);
+		if (UPhysicsConstraintComponent* Carry = Grab.Carry.Get())
+		{
+			const FTransform Frame = Creature->GetCapsuleComponent()->GetComponentTransform();
+			// Somebody on their feet is held by it. A body lying, hanging or dead, and a piece of one, is carried by the arm's own
+			// pull, its whole weight at once: the joint alone, strong enough to bear that, would throw it about.
+			const bool bStands = IsStandingHeld(Grab);
+			const float Hold = bStands ? Stiffness : 0.f;
+			Carry->SetLinearPositionDrive(bStands, bStands, bStands);
+			Carry->SetLinearVelocityDrive(bStands, bStands, bStands);
+			Carry->SetLinearDriveParams(Hold, Hold * BodyHoldDampingShare, 0.f);
+			Carry->SetLinearPositionTarget(Frame.InverseTransformPositionNoScale(Point + Lag.GetClampedToMaxSize(BodyHoldFullCm)));
+			if (!bStands)
+			{
+				Grab.PullN = PullBody(Grab, Point, Lag, MostN);
+			}
+		}
+		if (Grab.bLifting && Creature->Stats && Grab.PullN > 0.f)
+		{
+			Creature->Stats->ConsumeStamina(FMath::Min(BodyLiftStaminaPerSecond * Grab.PullN / FMath::Max(MostN, 1.f) * DeltaTime, Creature->Stats->GetStamina()));
+		}
+		static const IConsoleVariable* CarryLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+		Grab.NextLog -= DeltaTime;
+		if (CarryLog && CarryLog->GetInt() != 0 && Grab.NextLog <= 0.f)
+		{
+			Grab.NextLog = 0.25f;
+			const USkeletalMeshComponent* HeldMesh = Cast<USkeletalMeshComponent>(Grab.Target.Get());
+			const FVector Feet = Creature->GetActorLocation() - FVector(0.f, 0.f, Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight());
+			double Lowest = UE_BIG_NUMBER;
+			FName LowestPart = NAME_None;
+			double Rising = 0.0;
+			double Kilos = 0.0;
+			for (const FBodyInstance* Body : HeldMesh ? HeldMesh->Bodies : TArray<FBodyInstance*>())
+			{
+				if (Body && Body->IsInstanceSimulatingPhysics())
+				{
+					Rising += Body->GetUnrealWorldVelocity().Z * Body->GetBodyMass();
+					Kilos += Body->GetBodyMass();
+					if (Body->GetBodyBounds().Min.Z < Lowest)
+					{
+						Lowest = Body->GetBodyBounds().Min.Z;
+						LowestPart = Body->BodySetup->BoneName;
+					}
+				}
+			}
+			UE_LOG(LogAedir, Log, TEXT("[Carry] %s's lowest part %s is %.0f cm up, its %.0f kg rise at %.0f cm/s"), *GetNameSafe(Grab.Target->GetOwner()), *LowestPart.ToString(), Lowest - Feet.Z, Kilos, Kilos > 0.0 ? Rising / Kilos : 0.0);
+			UE_LOG(LogAedir, Log, TEXT("[Carry] %s's %s hand has %s %s %.0f cm up, %.0f cm behind where it would (%.0f up), lifting %d, pulls %.0f of %.0f N, the hand %.0f cm off it, its hips %.0f cm up, head %.0f, feet %.0f and %.0f, breath %.0f%%"), *Creature->GetName(), Index == 0 ? TEXT("left") : TEXT("right"),
+				*GetNameSafe(Grab.Target->GetOwner()), *Grab.Bone.ToString(), Point.Z - Feet.Z, Grab.LagCm, Lag.Z, Grab.bLifting ? 1 : 0, Grab.PullN, MostN, Gap,
+				HeldMesh ? HeldMesh->GetBoneLocation(TEXT("pelvis")).Z - Feet.Z : 0.0, HeldMesh ? HeldMesh->GetBoneLocation(TEXT("head")).Z - Feet.Z : 0.0,
+				HeldMesh ? HeldMesh->GetBoneLocation(TEXT("foot_l")).Z - Feet.Z : 0.0, HeldMesh ? HeldMesh->GetBoneLocation(TEXT("foot_r")).Z - Feet.Z : 0.0, StaminaShare * 100.f);
+		}
 
 		// What is held holds back: walking away from it, the body only gets as far as the arm can drag it.
-		if (UCharacterMovementComponent* Movement = Creature->GetCharacterMovement(); Movement && Gap > BodyGrabDragFromCm)
+		if (UCharacterMovementComponent* Movement = Creature->GetCharacterMovement(); Movement && Grab.LagCm > BodyGrabDragFromCm)
 		{
-			const FVector Away = (HandWorld - Point).GetSafeNormal2D();
+			const FVector Away = Lag.GetSafeNormal2D();
 			const double Outward = FVector::DotProduct(Movement->Velocity, Away);
 			if (Outward > 0.0)
 			{
-				const float Hold = FMath::Clamp((Gap - BodyGrabDragFromCm) / (BodyGrabTearCm - BodyGrabDragFromCm), 0.f, 1.f);
+				const float Hold = FMath::Clamp((Grab.LagCm - BodyGrabDragFromCm) / (BodyGrabDragFullCm - BodyGrabDragFromCm), 0.f, 1.f);
 				Movement->Velocity -= Away * (Outward * Hold);
 			}
 		}
@@ -464,26 +572,26 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 				}
 			}
 		}
-		if (Held && Held != Creature && Held->Balance && !Held->Balance->IsRagdoll() && Gap > BodyGrabCloseCm * 0.5f)
+		if (Held && Held != Creature && Held->Balance && !Held->Balance->IsRagdoll() && Grab.LagCm > BodyGrabCloseCm * 0.5f)
 		{
-			const FVector Pull = (HandWorld - Point).GetSafeNormal2D();
+			const FVector Pull = Lag.GetSafeNormal2D();
 			const float HeldStrength = Held->Stats ? FMath::Max(Held->Stats->Strength, 1.f) : 10.f;
 			const float Share = FMath::Clamp(Strength / (Strength + HeldStrength), 0.2f, 0.8f) * FMath::Lerp(0.5f, 1.f, StaminaShare);
-			const float Accel = FMath::Min((Gap - BodyGrabCloseCm * 0.5f) * BodyGrabLivePullPerCm, BodyGrabLivePullMax) * Share;
+			const float Accel = FMath::Min((Grab.LagCm - BodyGrabCloseCm * 0.5f) * BodyGrabLivePullPerCm, BodyGrabLivePullMax) * Share;
 			if (UCharacterMovementComponent* HeldMovement = Held->GetCharacterMovement())
 			{
 				HeldMovement->AddImpulse(Pull * Accel * DeltaTime, true);
 			}
 			if (IsAuthoritative())
 			{
-				Held->Balance->ApplyBalanceImpact(Pull, BodyGrabLiveBalancePerSecond * Share * FMath::Clamp(Gap / BodyGrabTearCm, 0.f, 1.f) * DeltaTime);
+				Held->Balance->ApplyBalanceImpact(Pull, BodyGrabLiveBalancePerSecond * Share * FMath::Clamp(Grab.LagCm / BodyGrabDragFullCm, 0.f, 1.f) * DeltaTime);
 			}
 		}
 
 		// A hand closed on a living throat chokes it: the senses go the faster the stronger the hand against the neck, and
 		// with them the strength to fight it.
 		AAedirCreature* Choked = Cast<AAedirCreature>(Grab.Target.IsValid() ? Grab.Target->GetOwner() : nullptr);
-		if (Choked && Choked != Creature && Choked->Stats && !Choked->Stats->IsDead() && Grab.Bone.ToString().StartsWith(TEXT("neck")) && Gap < BodyGrabTearCm && IsAuthoritative())
+		if (Choked && Choked != Creature && Choked->Stats && !Choked->Stats->IsDead() && Grab.Bone.ToString().StartsWith(TEXT("neck")) && Gap < BodyGrabCloseCm * 1.5f && IsAuthoritative())
 		{
 			const float ChokedStrength = FMath::Max(Choked->Stats->Strength, 1.f);
 			const float Grip = FMath::Clamp(Strength / ChokedStrength, 0.4f, 2.f) * FMath::Lerp(0.5f, 1.f, StaminaShare);
@@ -496,12 +604,212 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 			}
 		}
 
-		// Whatever the hand cannot keep up with tears out of it: a load too heavy to carry is dropped once the hand is pulled off it.
-		Grab.TearSeconds = Gap > BodyGrabTearCm ? Grab.TearSeconds + DeltaTime : 0.f;
-		if (Grab.TearSeconds >= BodyGrabTearSeconds)
+		// Lifted, it does not get up meanwhile: there is nothing under it to get up from.
+		if (Grab.bLifting && Held && Held->Balance)
 		{
-			UE_LOG(LogAedir, Log, TEXT("%s lost hold of %s, %.0f cm away"), *Creature->GetName(), *GetNameSafe(Grab.Target.IsValid() ? Grab.Target->GetOwner() : nullptr), Gap);
+			Held->Balance->SetHeldUp(0.6f);
+		}
+
+		// Whatever goes further from the shoulder than the arm reaches tears out of the hand.
+		const bool bLeft = Hand == EAedirHand::Left;
+		const FVector Shoulder = Own->GetBoneLocation(bLeft ? TEXT("upperarm_l") : TEXT("upperarm_r"));
+		const FVector Elbow = Own->GetBoneLocation(bLeft ? TEXT("lowerarm_l") : TEXT("lowerarm_r"));
+		const float ArmCm = static_cast<float>(FVector::Dist(Shoulder, Elbow) + FVector::Dist(Elbow, HandWorld));
+		const float Beyond = static_cast<float>(FVector::Dist(Shoulder, Point)) - ArmCm;
+		Grab.TearSeconds = Beyond > BodyHoldTearCm ? Grab.TearSeconds + DeltaTime : 0.f;
+		if (Grab.TearSeconds >= BodyHoldTearSeconds)
+		{
+			UE_LOG(LogAedir, Log, TEXT("%s lost hold of %s, %.0f cm out of its arm's reach"), *Creature->GetName(), *GetNameSafe(Grab.Target.IsValid() ? Grab.Target->GetOwner() : nullptr), Beyond);
 			ReleaseBodyGrab(Hand);
+		}
+	}
+	UpdateBodyLiftOff();
+}
+
+FVector UAedirInteractionComponent::UpdateBodyCarryPlace(EAedirHand Hand, const FVector& Point, float DeltaTime)
+{
+	const AAedirCreature* Creature = GetCreature();
+	const USkeletalMeshComponent* Own = Creature->GetMesh();
+	FAedirBodyGrab& Grab = BodyGrabs[static_cast<int32>(Hand)];
+	const FTransform Frame = Creature->GetActorTransform();
+	const float Scale = static_cast<float>(Creature->GetActorScale3D().X);
+	const bool bLeft = Hand == EAedirHand::Left;
+
+	// The hand's button held, it lifts: what it holds goes where the fist would, the mouse taking it up, down and round.
+	const UAedirFistArms* Fists = Creature->IsPlayerControlled() ? Creature->FindComponentByClass<UAedirFistArms>() : nullptr;
+	FVector Place;
+	const bool bWasLifting = Grab.bLifting;
+	Grab.bLifting = Fists && Fists->IsHeld(Hand);
+	if (Grab.bLifting)
+	{
+		FVector Elbow;
+		float Alpha = 0.f;
+		Fists->GetArm(Hand, Place, Elbow, Alpha);
+		// Taken hold of looking down, the guard would be down by the knees: it lifts to the hip at the least, the mouse on up.
+		Place.Z = FMath::Max(Place.Z, Creature->GetActorLocation().Z - Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + BodyLiftLeastCm * Scale);
+		// The way there is gone at a pace, not all at once.
+		if (!bWasLifting)
+		{
+			Grab.Where = Frame.InverseTransformPositionNoScale(Point);
+		}
+		Grab.Where = FMath::VInterpConstantTo(Grab.Where, Frame.InverseTransformPositionNoScale(Place), DeltaTime, BodyCarrySpeedCm * 2.f);
+	}
+	else
+	{
+		if (bWasLifting)
+		{
+			Grab.Where = Frame.InverseTransformPositionNoScale(Point);
+		}
+		// Let hang, what lies on the ground is brought up to the hand at the side of the hip; somebody standing is held where
+		// they were taken hold of.
+		if (!IsStandingHeld(Grab))
+		{
+			const float FeetZ = -Creature->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
+			const FVector Hang(BodyCarryPlaceCm.X * Scale, BodyCarryPlaceCm.Y * Scale * (bLeft ? -1.f : 1.f), FeetZ + BodyCarryPlaceCm.Z * Scale);
+			Grab.Where = FMath::VInterpConstantTo(Grab.Where, Hang, DeltaTime, BodyCarrySpeedCm);
+		}
+	}
+	Place = Frame.TransformPositionNoScale(Grab.Where);
+
+	// No further from the shoulder than the arm reaches.
+	const FVector Shoulder = Own->GetBoneLocation(bLeft ? TEXT("upperarm_l") : TEXT("upperarm_r"));
+	const FVector Elbow = Own->GetBoneLocation(bLeft ? TEXT("lowerarm_l") : TEXT("lowerarm_r"));
+	const FVector Wrist = Own->GetBoneLocation(bLeft ? LeftHandBone : RightHandBone);
+	const double Reach = (FVector::Dist(Shoulder, Elbow) + FVector::Dist(Elbow, Wrist)) * 0.96 + Grab.BeyondReachCm;
+	return Shoulder + (Place - Shoulder).GetClampedToMaxSize(Reach);
+}
+
+bool UAedirInteractionComponent::IsStandingHeld(const FAedirBodyGrab& Grab) const
+{
+	const AAedirCreature* Held = Cast<AAedirCreature>(Grab.Target.IsValid() ? Grab.Target->GetOwner() : nullptr);
+	return Held && Held->Stats && !Held->Stats->IsDead() && Held->Balance && !Held->Balance->IsRagdoll();
+}
+
+float UAedirInteractionComponent::PullBody(const FAedirBodyGrab& Grab, const FVector& Point, const FVector& Lag, float MostN) const
+{
+	UPrimitiveComponent* Target = Grab.Target.Get();
+	const AAedirCreature* Creature = GetCreature();
+	const UWorld* World = GetWorld();
+	if (!Target || !Creature || !World)
+	{
+		return 0.f;
+	}
+	USkeletalMeshComponent* Skeletal = Cast<USkeletalMeshComponent>(Target);
+	// Both hands on the same body bear it between them.
+	int32 Hands = 0;
+	for (const FAedirBodyGrab& Any : BodyGrabs)
+	{
+		Hands += Any.Joint.IsValid() && Any.Target == Grab.Target ? 1 : 0;
+	}
+	float Kilos = 0.f;
+	FVector Momentum = FVector::ZeroVector;
+	if (Skeletal)
+	{
+		for (const FBodyInstance* Body : Skeletal->Bodies)
+		{
+			if (Body && Body->IsInstanceSimulatingPhysics())
+			{
+				Kilos += Body->GetBodyMass();
+				Momentum += Body->GetUnrealWorldVelocity() * Body->GetBodyMass();
+			}
+		}
+	}
+	else if (Target->IsSimulatingPhysics())
+	{
+		Kilos = Target->GetMass();
+		Momentum = Target->GetPhysicsLinearVelocity() * Kilos;
+	}
+	if (Kilos <= KINDA_SMALL_NUMBER)
+	{
+		return 0.f;
+	}
+	// Lying still it is asleep, and a push on a body asleep is dropped again and again.
+	if (Skeletal)
+	{
+		Skeletal->WakeAllRigidBodies();
+	}
+	// As a weight on a spring: its whole weight borne as far as it is below where the hand would have it, and drawn there at
+	// no more than a pace, the more slowly the nearer.
+	const FVector Wanted = Lag.GetClampedToMaxSize(BodyPullFullCm);
+	const FVector Going = Momentum / Kilos - Creature->GetVelocity();
+	const float Damping = 2.f * FMath::Sqrt(BodyPullPerSecondSq);
+	const bool bMan = Cast<AAedirCreature>(Target->GetOwner()) != nullptr;
+	const float Bear = FMath::Clamp(0.5f + static_cast<float>(Lag.Z) / FMath::Max(BodyPullBearCm, 1.f), 0.f, 1.f) * (bMan && !Grab.bLifting ? BodyDragBearShare : 1.f);
+	FVector Force = (Wanted * BodyPullPerSecondSq - Going * Damping + FVector(0.f, 0.f, BodyGrabGravityCm * Bear)) * (Kilos / FMath::Max(Hands, 1));
+	Force = Force.GetClampedToMaxSize(MostN * 100.f);
+	const float PullN = static_cast<float>(Force.Size()) * 0.01f;
+	if (!Skeletal)
+	{
+		Target->AddForceAtLocation(Force, Point);
+		return PullN;
+	}
+	// A light part is pulled no harder than it can bear without being flung: what is left goes to what it hangs on.
+	const FVector Way = Force.GetSafeNormal();
+	// A share of it reaches the whole body at once, each part by its weight: handed from joint to joint alone, part of the
+	// pull on a light hand or a thigh is lost on the way and the body stays on the ground under it.
+	const float Spread = FMath::Clamp(BodyPullSpreadShare, 0.f, 1.f);
+	for (FBodyInstance* Body : Skeletal->Bodies)
+	{
+		if (Body && Body->IsInstanceSimulatingPhysics())
+		{
+			Body->AddForce(Force * (Spread * Body->GetBodyMass() / Kilos), true, false);
+		}
+	}
+	float Left = static_cast<float>(Force.Size()) * (1.f - Spread);
+	const float Step = FMath::Clamp(World->GetDeltaSeconds(), 1.f / 240.f, 1.f / 20.f);
+	FName Bone = Grab.Bone;
+	while (Left > KINDA_SMALL_NUMBER && !Bone.IsNone())
+	{
+		FBodyInstance* Body = Skeletal->GetBodyInstance(Bone);
+		if (Body && Body->IsInstanceSimulatingPhysics())
+		{
+			const float Here = FMath::Min(Left, Body->GetBodyMass() * BodyPullPartSpeedCm / Step);
+			Body->AddForce(Way * Here, true, false);
+			Left -= Here;
+		}
+		Bone = Skeletal->GetParentBone(Bone);
+	}
+	return PullN;
+}
+
+void UAedirInteractionComponent::UpdateBodyLiftOff()
+{
+	// Somebody standing, pulled up at by hands that together pull with more than their weight, leaves the ground.
+	const UWorld* World = GetWorld();
+	AAedirCreature* Creature = GetCreature();
+	if (!World || !Creature)
+	{
+		return;
+	}
+	for (int32 Index = 0; Index < 2; ++Index)
+	{
+		FAedirBodyGrab& Grab = BodyGrabs[Index];
+		AAedirCreature* Held = Grab.Joint.IsValid() && Grab.Target.IsValid() ? Cast<AAedirCreature>(Grab.Target->GetOwner()) : nullptr;
+		FVector Point;
+		if (!Held || Held == Creature || !Held->Balance || Held->Balance->IsRagdoll() || !Grab.bLifting || !GetBodyGrabPoint(static_cast<EAedirHand>(Index), Point))
+		{
+			Grab.LiftSeconds = 0.f;
+			continue;
+		}
+		float UpN = 0.f;
+		for (int32 Other = 0; Other < 2; ++Other)
+		{
+			const FAedirBodyGrab& With = BodyGrabs[Other];
+			if (With.Joint.IsValid() && With.bLifting && With.Target == Grab.Target)
+			{
+				const float MostN = (BodyLiftForceN + (Creature->Stats ? Creature->Stats->Strength : 10.f) * BodyLiftForcePerStrengthN) * FMath::Lerp(BodyForceTiredShare, 1.f, Creature->Stats ? Creature->Stats->GetStaminaFraction() : 1.f);
+				UpN += MostN;
+			}
+		}
+		const float WeighsN = Held->Balance->GetBodyKilos() * BodyGrabGravityCm * 0.01f;
+		const bool bPullsUp = Grab.WhereWorld.Z - Point.Z > BodyLiftOffCm;
+		Grab.LiftSeconds = bPullsUp && UpN > WeighsN ? Grab.LiftSeconds + World->GetDeltaSeconds() : 0.f;
+		if (Grab.LiftSeconds >= BodyLiftOffSeconds)
+		{
+			UE_LOG(LogAedir, Log, TEXT("[Carry] %s lifts %s off the ground by the %s: %.0f N against its %.0f N"), *Creature->GetName(), *Held->GetName(), *Grab.Bone.ToString(), UpN, WeighsN);
+			Held->Balance->LiftOffFeet();
+			Held->Balance->SetHeldUp(0.3f);
+			Grab.LiftSeconds = 0.f;
 		}
 	}
 }

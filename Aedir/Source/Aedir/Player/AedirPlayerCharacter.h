@@ -590,6 +590,13 @@ public:
 	FVector2D DevHeldKeys = FVector2D::ZeroVector;
 	float DevHeldKeysLeft = 0.f;
 
+	// Turns the view to this part of the nearest other body, the body with it; and taps the take key of a hand (0 Q, 1 E).
+	UFUNCTION(Exec)
+	void LookPart(const FString& Bone, float StepToCm = 0.f);
+
+	UFUNCTION(Exec)
+	void TapTake(int32 RightHand);
+
 	// Presses (1) or lets go (0) a mouse button for the fists as the player would: left button 1, right button 0.
 	UFUNCTION(Exec)
 	void FistButton(int32 LeftButton, int32 Down);

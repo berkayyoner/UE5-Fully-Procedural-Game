@@ -53,6 +53,18 @@ struct FAedirBodyGrab
 	// Reaching for it, not yet holding it.
 	bool bReaching = false;
 	float ReachSeconds = 0.f;
+	// Holding it, the arm carries what it holds by this joint to the holder's own body, to Where (in the holder's frame, not
+	// scaled), as hard as the arm can; how far it is behind that, how hard it is pulled (N), and whether the hand lifts.
+	TWeakObjectPtr<class UPhysicsConstraintComponent> Carry;
+	FVector Where = FVector::ZeroVector;
+	FVector WhereWorld = FVector::ZeroVector;
+	// How far past the arm's own reach it was taken hold of (the middle of a trunk is further in than the hand gets).
+	float BeyondReachCm = 0.f;
+	float LagCm = 0.f;
+	float PullN = 0.f;
+	bool bLifting = false;
+	float LiftSeconds = 0.f;
+	float NextLog = 0.f;
 };
 
 UCLASS(ClassGroup=(Aedir), meta=(BlueprintSpawnableComponent))
@@ -120,6 +132,92 @@ public:
 	bool FindAimedBody(FVector& OutPoint) const;
 	void ReleaseBodyGrab(EAedirHand Hand);
 	bool IsGrabbingBody(EAedirHand Hand) const;
+	// Its hand closed on it, not only on its way there.
+	bool IsHoldingBody(EAedirHand Hand) const;
+
+	// What a hand can pull, hold and carry of somebody else's body (N): so much, and so much more for each point of the
+	// holder's strength, a share of it with no breath left. Lifting (the hand's mouse button held) it strains to the second
+	// pair and pays breath for it, the more the harder it pulls. A grown man weighs some 800 N: both hands of an ordinary
+	// man lift one, hard; one hand of a strong man does.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyHoldForceN = 520.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyHoldForcePerStrengthN = 14.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftForceN = 400.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftForcePerStrengthN = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0", ClampMax="1"))
+	float BodyForceTiredShare = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftStaminaPerSecond = 10.f;
+
+	// The arm pulls with all it has once what it holds is this far behind where it would have it (cm), and is damped by this
+	// share of that stiffness.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="1"))
+	float BodyHoldFullCm = 14.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyHoldDampingShare = 0.12f;
+
+	// A body that does not stand is drawn to the hand as a weight on a spring of this stiffness (1/s2), as if never further
+	// behind than this (cm); its whole weight is borne once it is half BodyPullBearCm below where the hand would have it. No
+	// single part of it is given more speed in a step than BodyPullPartSpeedCm (cm/s).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyPullPerSecondSq = 45.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyPullFullCm = 18.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="1"))
+	float BodyPullBearCm = 16.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyPullPartSpeedCm = 150.f;
+
+	// The share of the pull that reaches the whole body at once (the rest goes to the part held and what it hangs on).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0", ClampMax="1"))
+	float BodyPullSpreadShare = 0.5f;
+
+	// Not lifting, a hand bears no more than this share of the weight of what lies: it drags it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0", ClampMax="1"))
+	float BodyDragBearShare = 0.4f;
+
+	// Lifting, a hand would have what it holds at least this far over the feet (cm, a body of the usual size).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftLeastCm = 105.f;
+
+	// Let go of a body that does not stand, the holder's own body stays passable to it this long (seconds).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyThroughSeconds = 1.f;
+
+	// Let hang, a hand brings what it holds of a body lying down up to this far before it, out to its side and over the feet
+	// (cm, a body of the usual size), at this speed.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies")
+	FVector BodyCarryPlaceCm = FVector(40.f, 18.f, 78.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyCarrySpeedCm = 70.f;
+
+	// What is held is torn out of the hand once it is this much further from the shoulder than the arm is long, for this long.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyHoldTearCm = 35.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyHoldTearSeconds = 0.3f;
+
+	// Somebody standing is lifted off their feet once the hands that lift have pulled up at them past this (cm) for this
+	// long with more than their weight.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftOffCm = 6.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftOffSeconds = 0.35f;
 
 	// A hand holding a dead body takes off the armour worn where it holds it and keeps it in that hand. False when there is
 	// none there, or the body is not dead.
@@ -305,6 +403,13 @@ public:
 private:
 	void UpdateBodyGrabs(float DeltaTime);
 	void CloseHandOnBody(EAedirHand Hand);
+	// Where the hand would have what it holds, in the world, no further from its shoulder than the arm reaches.
+	FVector UpdateBodyCarryPlace(EAedirHand Hand, const FVector& Point, float DeltaTime);
+	void UpdateBodyLiftOff();
+	// Whether what the hand holds is somebody alive and on their feet.
+	bool IsStandingHeld(const FAedirBodyGrab& Grab) const;
+	// Pulls a body that does not stand, or a piece of one, the way the hand would have it; gives back how hard (N).
+	float PullBody(const FAedirBodyGrab& Grab, const FVector& Point, const FVector& Lag, float MostN) const;
 	FAedirBodyGrab BodyGrabs[2];
 
 	void BeginReach(EAedirHand Hand, AAedirItemActor* Item);

@@ -150,6 +150,13 @@ void UAedirGaitComponent::FillFistArms(const UAedirInteractionComponent* Interac
 	{
 		Fists->GetArm(EAedirHand::Left, GaitState.FistArmHandWorld[0], GaitState.FistArmElbowWorld[0], GaitState.FistArmAlpha[0]);
 		Fists->GetArm(EAedirHand::Right, GaitState.FistArmHandWorld[1], GaitState.FistArmElbowWorld[1], GaitState.FistArmAlpha[1]);
+		for (int32 Slot = 0; Slot < 2; ++Slot)
+		{
+			if (Interaction && Interaction->IsHoldingBody(Slot == 0 ? EAedirHand::Left : EAedirHand::Right))
+			{
+				GaitState.FistArmAlpha[Slot] = 0.f;
+			}
+		}
 		GaitState.FistArmTurn[0] = Fists->GetFistTurn(EAedirHand::Left);
 		GaitState.FistArmTurn[1] = Fists->GetFistTurn(EAedirHand::Right);
 		for (int32 Slot = 0; Slot < 2; ++Slot)
@@ -307,6 +314,7 @@ void UAedirGaitComponent::BeginPlay()
 void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+	WatchGetUpJumps(DeltaTime);
 
 	if (!CreatureOwner || !MovementComponent || !BodyMesh || DeltaTime <= 0.f)
 	{
@@ -689,6 +697,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 			}
 		}
 	}
+
+	WatchSkate(Speed2D, DeltaTime);
 
 	// The kicking leg follows the kick arc, blended in by the kick pose alpha.
 	if (bKicking)
@@ -1441,6 +1451,117 @@ void UAedirGaitComponent::CacheLegGeometry()
 		LegLengthCm[Foot] = static_cast<float>((CalfRef - ThighRef).Size() + (FootRef - CalfRef).Size());
 		AnkleRefHeightCm = static_cast<float>(FootRef.Z);
 	}
+}
+
+void UAedirGaitComponent::WatchGetUpJumps(float DeltaTime)
+{
+	// For aedir.GetUpWatch: from going down until a few seconds after standing up again, any part of the body that goes much
+	// further in one frame than it was going, and than anything moves.
+	static IConsoleVariable* Watch = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.GetUpWatch"), 0, TEXT("Log the parts of a body that jump while it lies, gets up and has just stood up."));
+	const ACharacter* Body = Cast<ACharacter>(GetOwner());
+	const USkeletalMeshComponent* Mesh = Body ? Body->GetMesh() : nullptr;
+	const UAedirBalanceComponent* Balance = Body ? Body->FindComponentByClass<UAedirBalanceComponent>() : nullptr;
+	if (!Watch || Watch->GetInt() == 0 || !Mesh || !Balance)
+	{
+		return;
+	}
+	static const FName Parts[] = { TEXT("pelvis"), TEXT("spine_05"), TEXT("head"), TEXT("hand_l"), TEXT("hand_r"), TEXT("foot_l"), TEXT("foot_r"), TEXT("calf_l"), TEXT("calf_r") };
+	constexpr int32 Count = UE_ARRAY_COUNT(Parts);
+	const double Now = GetWorld()->GetTimeSeconds();
+	const bool bDown = Balance->IsRagdoll() || Balance->IsGettingUp();
+	JumpWatchUntil = bDown ? Now + 4.0 : JumpWatchUntil;
+	JumpLast.SetNum(Count);
+	JumpStep.SetNum(Count);
+	FString Jumped;
+	for (int32 Part = 0; Part < Count; ++Part)
+	{
+		const FVector At = Mesh->GetBoneLocation(Parts[Part]);
+		const FVector Step = At - JumpLast[Part];
+		const float Beyond = static_cast<float>((Step - JumpStep[Part]).Size());
+		if (bJumpWatched && Beyond > 10.f && Step.Size() > 10.f && DeltaTime < 0.1f && Beyond / FMath::Max(DeltaTime, 1.f / 240.f) > 600.f)
+		{
+			Jumped += FString::Printf(TEXT(" %s %.0f cm (%.0f up)"), *Parts[Part].ToString(), Step.Size(), Step.Z);
+		}
+		JumpLast[Part] = At;
+		JumpStep[Part] = Step;
+	}
+	bJumpWatched = Now < JumpWatchUntil;
+	if (bJumpWatched && !Jumped.IsEmpty())
+	{
+		UE_LOG(LogAedir, Display, TEXT("[GetUpWatch] %s in %.3f s:%s | lying %d hoisting %d, the watch has %.2f s left, capsule %s, speed %.0f"), *GetNameSafe(Body), DeltaTime, *Jumped, Balance->IsRagdoll() ? 1 : 0, Balance->IsHoisting() ? 1 : 0, JumpWatchUntil - Now,
+			*Body->GetActorLocation().ToCompactString(), Body->GetVelocity().Size());
+	}
+}
+
+void UAedirGaitComponent::WatchSkate(float Speed2D, float DeltaTime)
+{
+	// For aedir.SkateLog: each time a foot was down while the body moved, how far the place the steps gave it was dragged and
+	// how far the ball of the foot really went over the ground meanwhile.
+	static IConsoleVariable* SkateLog = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.SkateLog"), 0, TEXT("Log how far each planted foot slides while the body moves (1 the player, 2 everybody)."));
+	const USkeletalMeshComponent* Mesh = CreatureOwner->GetMesh();
+	if (!SkateLog || SkateLog->GetInt() == 0 || !Mesh || (SkateLog->GetInt() == 1 && !CreatureOwner->IsPlayerControlled()))
+	{
+		return;
+	}
+	const FVector Way = CreatureOwner->GetVelocity().GetSafeNormal2D();
+	for (int32 Foot = 0; Foot < 2; ++Foot)
+	{
+		const FVector Ball = Mesh->GetBoneLocation(Foot == 0 ? TEXT("ball_l") : TEXT("ball_r"));
+		const FVector Ankle = Mesh->GetBoneLocation(Foot == 0 ? TEXT("foot_l") : TEXT("foot_r"));
+		if (bSwinging[Foot])
+		{
+			if (SkateSeconds[Foot] > 0.1f && SkateSpeed[Foot] > 0.f)
+			{
+				const FVector Local = CreatureOwner->GetActorTransform().InverseTransformVectorNoScale(SkateWay[Foot]).GetSafeNormal2D();
+				UE_LOG(LogAedir, Display, TEXT("[Skate] %s %s foot down %.2f s, going %.0f cm/s %.2f ahead %.2f right: its place dragged %.1f cm, the ball went %.1f cm (%.1f on the body's way), the ankle %.1f (%.1f), in all %.1f, the body turned %.0f deg, the foot %.0f deg, planted still %.2f s, %d changes"), *GetNameSafe(CreatureOwner), Foot == 0 ? TEXT("left") : TEXT("right"),
+					SkateSeconds[Foot], SkateSpeed[Foot] / SkateSeconds[Foot], Local.X, Local.Y, SkatePlace[Foot], SkateBall[Foot], SkateAlong[Foot],
+					SkateAnkle[Foot], SkateAnkleAlong[Foot], FVector::Dist2D(SkateLastAnkle[Foot], SkateFirstAnkle[Foot]), SkateTurn[Foot], SkateFootTurn[Foot], SkateHeld[Foot], SkateChanges[Foot]);
+			}
+			SkateSeconds[Foot] = 0.f;
+			SkateSpeed[Foot] = 0.f;
+			SkatePlace[Foot] = 0.f;
+			SkateBall[Foot] = 0.f;
+			SkateAlong[Foot] = 0.f;
+			SkateAnkle[Foot] = 0.f;
+			SkateAnkleAlong[Foot] = 0.f;
+			SkateTurn[Foot] = 0.f;
+			SkateFootTurn[Foot] = 0.f;
+			SkateHeld[Foot] = 0.f;
+			SkateChanges[Foot] = 0;
+			SkateWay[Foot] = FVector::ZeroVector;
+		}
+		else
+		{
+			if (SkateSeconds[Foot] > 0.f)
+			{
+				SkatePlace[Foot] += static_cast<float>(FVector::Dist2D(PlantedContact[Foot], SkateLastPlace[Foot]));
+				const FVector Went = Ball - SkateLastBall[Foot];
+				SkateBall[Foot] += static_cast<float>(Went.Size2D());
+				SkateAlong[Foot] += static_cast<float>(FVector::DotProduct(Went, Way));
+				SkateSpeed[Foot] += Speed2D * DeltaTime;
+				const FVector AnkleWent = Ankle - SkateLastAnkle[Foot];
+				SkateAnkle[Foot] += static_cast<float>(AnkleWent.Size2D());
+				SkateAnkleAlong[Foot] += static_cast<float>(FVector::DotProduct(AnkleWent, Way));
+				SkateTurn[Foot] += FMath::Abs(FMath::FindDeltaAngleDegrees(SkateLastYaw, static_cast<float>(CreatureOwner->GetActorRotation().Yaw)));
+				SkateFootTurn[Foot] += FMath::Abs(FMath::FindDeltaAngleDegrees(static_cast<float>((SkateLastBall[Foot] - SkateLastAnkle[Foot]).Rotation().Yaw), static_cast<float>((Ball - Ankle).Rotation().Yaw)));
+				const FBodyInstance* Body = Mesh->GetBodyInstance(Foot == 0 ? TEXT("foot_l") : TEXT("foot_r"));
+				const bool bHeldNow = Body && !Body->IsInstanceSimulatingPhysics();
+				SkateHeld[Foot] += bHeldNow ? DeltaTime : 0.f;
+				SkateChanges[Foot] += bHeldNow != bSkateHeld[Foot] ? 1 : 0;
+				bSkateHeld[Foot] = bHeldNow;
+				SkateWay[Foot] += Way * DeltaTime;
+			}
+			else
+			{
+				SkateFirstAnkle[Foot] = Ankle;
+			}
+			SkateSeconds[Foot] += DeltaTime;
+		}
+		SkateLastAnkle[Foot] = Ankle;
+		SkateLastPlace[Foot] = PlantedContact[Foot];
+		SkateLastBall[Foot] = Ball;
+	}
+	SkateLastYaw = static_cast<float>(CreatureOwner->GetActorRotation().Yaw);
 }
 
 void UAedirGaitComponent::LogStep(int32 Foot, const FVector& Landing, float Trigger) const

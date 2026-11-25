@@ -104,10 +104,12 @@ void UAedirFistArms::AddMouse(const FVector2D& Delta)
 	}
 }
 
-void UAedirFistArms::KnockBack(EAedirHand Hand)
+void UAedirFistArms::KnockBack(EAedirHand Hand, const FVector& Off)
 {
 	// The blow is over: the arm comes back in to its guard, off what it struck.
 	const int32 Slot = Index(Hand);
+	KnockOff[Slot] = Off.GetClampedToMaxSize(KnockOffMaxCm);
+	KnockOffLeft[Slot] = KnockOff[Slot].IsNearlyZero() ? 0.f : KnockOffSeconds;
 	if (PunchSlot == Slot || !(HeldNow(0) && HeldNow(1)))
 	{
 		Punch = 0.f;
@@ -470,6 +472,12 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			{
 				FistWorld[Slot] = Shoulder + FromShoulder.GetSafeNormal() * ArmLength;
 			}
+		}
+		// Thrown back off something fixed, all of it at once, and on again the more slowly the nearer.
+		if (KnockOffLeft[Slot] > 0.f)
+		{
+			KnockOffLeft[Slot] = FMath::Max(KnockOffLeft[Slot] - DeltaTime, 0.f);
+			FistWorld[Slot] += KnockOff[Slot] * FMath::SmoothStep(0.f, 1.f, KnockOffLeft[Slot] / FMath::Max(KnockOffSeconds, 0.02f));
 		}
 		ShownAlpha[Slot] = Alpha[Slot];
 		// In both hands and not raised, the blade is carried low before the hips, aslant across with its point out to the

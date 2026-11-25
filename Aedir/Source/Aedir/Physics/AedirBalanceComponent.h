@@ -262,13 +262,22 @@ public:
 	float FistWorldDamagePerSpeed = 0.012f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", ClampMax="1"))
-	float FistWorldBounceShare = 0.3f;
+	float FistWorldBounceShare = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", Units="cm/s"))
-	float FistWorldBounceMaxSpeed = 250.f;
+	float FistWorldBounceMaxSpeed = 420.f;
 
 	// Called as a fist meets something fixed, at the speed it came in with; gives back the harm done to the hand.
 	float KnockFist(FName Bone, float Speed, const FHitResult& Hit);
+
+	// The same for a foot kicked into something fixed, sprung back by its own share of the speed.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", ClampMax="1"))
+	float KickWorldBounceShare = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0", Units="cm/s"))
+	float KickWorldBounceMaxSpeed = 350.f;
+
+	float KnockFoot(FName Bone, float Speed, const FHitResult& Hit);
 
 	// A body already lying on the ground takes this share of the push of a blow or a kick a standing one would: it has
 	// the ground under it and nothing to be thrown off, so it is shoved, not sent flying.
@@ -278,10 +287,14 @@ public:
 	// A foot on the ground is held still by the pose only while the body stands: slower than the Min it is held,
 	// faster than the Max it is let go to its muscles, so a walking foot rolls off the ground instead of skating.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Feet", meta=(ClampMin="0", Units="cm/s"))
-	float PlantedFootSpeedMinCm = 15.f;
+	float PlantedFootSpeedMinCm = 2.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Feet", meta=(ClampMin="0", Units="cm/s"))
-	float PlantedFootSpeedMaxCm = 40.f;
+	float PlantedFootSpeedMaxCm = 6.f;
+
+	// And only once it has come within this of where the pose sets it (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Feet", meta=(ClampMin="0"))
+	float PlantedFootCatchCm = 4.f;
 
 	// Getting up, the mesh put back on the capsule further than this (or turned more than 20 degrees) starts the hair's
 	// simulation afresh.
@@ -864,6 +877,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
 	float HoistDoneEasyUpright = 0.85f;
 
+	// From HoistDoneEasySeconds to this long into the last step, as upright as this is enough in the end.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0"))
+	float HoistDoneLateSeconds = 2.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="-1", ClampMax="1"))
+	float HoistDoneLateUpright = 0.4f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistGiveUpSeconds = 5.f;
 
@@ -912,6 +932,17 @@ public:
 	// Getting up, the hand that is in use (its button held, or holding something) stays off the ground, free to fight or hold
 	// with: only one may; the other takes the weight alone. -1 for both on the ground.
 	int32 GetHoistFreeHand() const { return bHoisting ? HoistFreeHand : -1; }
+
+	// For this long an arm (0 left, 1 right) touches nothing: it holds somebody and would be thrown about by what it holds.
+	void LetArmThrough(int32 Side, float Seconds);
+	// The same for the whole body: what it carries close to it would be pinned by it.
+	void LetBodyThrough(float Seconds);
+	// Somebody has this body in their hands and lifts it: for this long it does not try to get up.
+	void SetHeldUp(float Seconds);
+	// Lifted off its feet by hands that carry its whole weight: it hangs from them, loose but awake.
+	void LiftOffFeet();
+	// The body's whole weight in kilos.
+	float GetBodyKilos() const;
 
 	// Getting up, this hand (0 left, 1 right) is needed on the ground and not the body's own to fight with.
 	bool IsHandOnGround(int32 Side) const { return bHoisting ? HoistFreeHand != Side : IsGettingUp(); }
@@ -1370,6 +1401,20 @@ private:
 	float HoistSeconds = 0.f;
 	float HoistHighest = 0.f;
 	float HoistSettleLeft = 0.f;
+	double HeldUpUntil = 0.0;
+	float BodyThroughLeft = 0.f;
+	void SetBodyThrough(bool bThrough);
+	// The sound, the spring back and the harm of a part driven into something fixed, and the part behind it.
+	float KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit);
+	void WatchKnock(float DeltaTime);
+	FName KnockWatchBone;
+	FVector KnockWatchFrom = FVector::ZeroVector;
+	FVector KnockWatchAway = FVector::ZeroVector;
+	float KnockWatchLeft = 0.f;
+	float KnockWatchMost = 0.f;
+	bool bFootPlanted[2] = { false, false };
+	// How far a body just hauled up has found its feet, 1 standing as usual.
+	float GetFoundFeetShare() const;
 	FVector HoistAnchor = FVector::ZeroVector;
 	// Dev:for a moment after going down, how high the hips rise and how fast the parts move ([Fall] in the log).
 	void WatchFall(float DeltaTime);

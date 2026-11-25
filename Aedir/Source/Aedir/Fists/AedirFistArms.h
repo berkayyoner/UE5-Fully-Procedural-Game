@@ -56,7 +56,17 @@ public:
 
 	// Knocked off something fixed, the arm's own way round the arc is turned back by this share of its speed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", ClampMax="1"))
-	float KnockBackAimShare = 0.3f;
+	float KnockBackAimShare = 0.5f;
+
+	// And the fist is thrown back off it by this much for each cm/s it came in at, at most so far, coming back over this long.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0"))
+	float KnockOffCmPerSpeed = 0.035f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0"))
+	float KnockOffMaxCm = 22.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0.02"))
+	float KnockOffSeconds = 0.3f;
 
 	// The guard: how far before the middle of the shoulders the fists are, how far apart, how high over the shoulders, and the
 	// angle between the two elbows.
@@ -485,7 +495,8 @@ public:
 	// it is still held; the other arm goes on. A longer one already going is kept.
 	// Out of the fight for exactly this long from now (0 back in it at once).
 	// A fist stopped by something it struck: the punch is over and the arm comes back in.
-	void KnockBack(EAedirHand Hand);
+	// Off something that does not give it is thrown back (the way and how far, cm) before it comes on to its guard again.
+	void KnockBack(EAedirHand Hand, const FVector& Off = FVector::ZeroVector);
 	void Flinch(EAedirHand Hand, float Seconds) { FlinchLeft[Index(Hand)] = FMath::Max(Seconds, 0.f); }
 	// Someone's hand holds this arm at that place, by that share of the struggle (0 to 1): the fist gets only so far from it
 	// and is thrown out the slower. It lasts as long as it is told again every moment.
@@ -582,6 +593,8 @@ private:
 	// How far each arm is the fists' to pose: up, or carried in both hands.
 	float ShownAlpha[2] = { 0.f, 0.f };
 	FVector FistWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector KnockOff[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	float KnockOffLeft[2] = { 0.f, 0.f };
 	FVector ElbowWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector2D Aim = FVector2D::ZeroVector;
 	// Where the mouse has put the arms to go, and how fast they are on their way there.

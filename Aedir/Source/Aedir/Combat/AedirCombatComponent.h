@@ -92,6 +92,10 @@ struct AEDIR_API FAedirKickNetState
 
 	UPROPERTY()
 	float LandedElapsed = 0.f;
+
+	// Landed on something fixed: off it the foot springs back faster.
+	UPROPERTY()
+	bool bOffFixed = false;
 };
 
 // Local simulation state of one arm. Not replicated; the server copy is published through FAedirArmNetState.
@@ -585,6 +589,27 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0.05"))
 	float KickRecoilSeconds = 0.4f;
 
+	// Kicked into something fixed (a wall, a tree, a rock) coming at least this fast, the toes this far ahead of the foot's
+	// bone, the foot is hurt and springs back in this long, and it costs this much balance. Level enough it is ground.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0", Units="cm/s"))
+	float KickFixedMinSpeed = 150.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0"))
+	float KickFixedReachCm = 14.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0.05"))
+	float KickFixedRecoilSeconds = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0", ClampMax="1"))
+	float KickFixedRecoilBalance = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0", ClampMax="1"))
+	float KickFixedGroundNormal = 0.6f;
+
+	// Which take of the fist-on-forearm sound a kick that harms makes, by the share of the full speed it belongs to.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick", meta=(ClampMin="0", ClampMax="1"))
+	float KickSoundTake = 0.3f;
+
 	// At the end of its swing the foot is this far above the level 90 cm below the hip, with the view level; looking up
 	// lifts it up to KickMaxLiftCm more.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Kick")
@@ -929,6 +954,8 @@ private:
 	bool TryStartKick();
 	void BeginKick();
 	void UpdateKick(float DeltaTime);
+	// The kicking foot against something fixed; true when it struck it.
+	bool KickFixedThing(const FVector& From, const FVector& To, float DeltaTime);
 	void ResolveKickSweep(const FVector& From, const FVector& To, float DeltaTime);
 	void ApplyKickImpact(AAedirCreature* Victim, const FHitResult& Hit, const FVector& FootMotion, float FootSpeed);
 	void UpdatePoseServo(EAedirHand Hand, FAedirArmDynamics& Arm, float DeltaTime);

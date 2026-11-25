@@ -731,3 +731,15 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Those nobody plays look about with eyes, head and waist without turning the body, at creatures, things and the land, about every 3 seconds, and at once at somebody going by
 - The face is cut with a severed head though it runs its own animation
 - Dev: FaceSolid lists the fixed things about and stands the player before one, aedir.NpcStill holds everyone still, aedir.ClutchWatch logs the worst a holding hand does
+- A kick that harms sounds as a fist on a forearm does, the slow take
+- Fists thrown at fixed things are thrown further back off them (a hard one 16 cm instead of 10)
+- A kick into a wall, a tree or a rock sounds, hurts the foot and the leg, costs balance and throws the foot back; the ground under it is no wall
+- Blood drops and the marks they leave on the ground a fifth smaller, the burst of a wound with them
+- A foot planted on the ground takes no push of its own, so the engine no longer complains of impulses on parts held by the pose
+- Feet of those who back away, creep or sidle slowly stay where they were set down instead of sliding along with the body
+- Standing up, the feet are brought to their place by the muscles instead of jumping there
+- Just hauled up, the body does not lose its balance to its own weight while its feet are only coming under it, and one swaying on its legs at the end stands instead of lying down again
+- The free camera no longer keeps the pushes of those getting up and throws them into the air when it ends
+- Somebody held is held by the whole arm: a hand with its button held lifts them, standing or lying, alive or dead, two hands easily and one only just, for breath
+- Bodies held are dragged with the hand let hang, do not get up while lifted, and are not pinned down by the body of the one who lifts them
+- Dev: LookPart and TapTake look at a part of the nearest body and tap the take key, aedir.SkateLog logs sliding feet, aedir.GetUpWatch parts that jump getting up

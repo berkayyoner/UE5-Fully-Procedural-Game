@@ -3245,6 +3245,37 @@ void AAedirPlayerCharacter::FaceNearest()
 	}
 }
 
+void AAedirPlayerCharacter::LookPart(const FString& Bone, float StepToCm)
+{
+	const AAedirCreature* Nearest = nullptr;
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (*It != this && It->GetMesh() && (!Nearest || FVector::DistSquared(It->GetMesh()->GetBoneLocation(TEXT("pelvis")), GetActorLocation()) < FVector::DistSquared(Nearest->GetMesh()->GetBoneLocation(TEXT("pelvis")), GetActorLocation())))
+		{
+			Nearest = *It;
+		}
+	}
+	if (Nearest && GetController())
+	{
+		const FVector At = Nearest->GetMesh()->GetBoneLocation(FName(*Bone));
+		if (StepToCm > 0.f)
+		{
+			const FVector Beside = At + (GetActorLocation() - At).GetSafeNormal2D() * StepToCm;
+			SetActorLocation(FVector(Beside.X, Beside.Y, GetActorLocation().Z), true);
+		}
+		const FRotator Look = (At - GetPawnViewLocation()).Rotation();
+		GetController()->SetControlRotation(Look);
+		SetActorRotation(FRotator(0.f, Look.Yaw, 0.f));
+		UE_LOG(LogAedir, Display, TEXT("[Dev] Looking at %s's %s, %.0f cm off, %.0f cm from the eyes"), *Nearest->GetName(), *Bone, FVector::Dist2D(At, GetActorLocation()), FVector::Dist(At, GetPawnViewLocation()));
+	}
+}
+
+void AAedirPlayerCharacter::TapTake(int32 RightHand)
+{
+	HandleHandPressed(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
+	HandleHandReleased(RightHand != 0 ? EAedirHand::Right : EAedirHand::Left);
+}
+
 void AAedirPlayerCharacter::TwoHandInfo(const FString& Label)
 {
 	const AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr;

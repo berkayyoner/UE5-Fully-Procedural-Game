@@ -587,6 +587,15 @@ void UAedirBodyControlComponent::SetHipsCarried(bool bCarried)
 	}
 }
 
+void UAedirBodyControlComponent::SetPassable(bool bPassable)
+{
+	if (Control && bPassable != bPassableNow)
+	{
+		bPassableNow = bPassable;
+		Control->SetBodyModifiersInSetCollisionType(TEXT("Body"), bPassable ? ECollisionEnabled::QueryOnly : ECollisionEnabled::QueryAndPhysics);
+	}
+}
+
 void UAedirBodyControlComponent::SetFeetPlanted(bool bLeft, bool bRight)
 {
 	if (!Control)

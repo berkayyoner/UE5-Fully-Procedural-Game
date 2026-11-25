@@ -74,6 +74,7 @@ namespace
 	constexpr float AedirWallImpactDamagePerSpeed = 0.01f;
 	// One shove from running into another body lasts this long.
 	constexpr double BumpRepeatSeconds = 0.6;
+	constexpr float AedirKnockWatchSeconds = 0.35f;
 	// Hips further than this from where they belong were not knocked there: the body was moved.
 	constexpr float HipsTeleportCm = 250.f;
 	// The same for a fully physical body, whose hips the pose sets exactly: no stride or blow carries them this far
@@ -439,6 +440,12 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	{
 		return;
 	}
+	// The free camera holds the physics still: a push given now would only be kept, with every other until it goes on, and all
+	// of them thrown into the body at once then.
+	if (GetWorld() && !GetWorld()->bShouldSimulatePhysics)
+	{
+		return;
+	}
 	if (IConsoleVariable* FreeJoint = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.DevFreeJoint")))
 	{
 		const FString JointSetting = FreeJoint->GetString() + (IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.WideArmJoints")) ? IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.WideArmJoints"))->GetString() : FString());
@@ -513,6 +520,7 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 		}
 	}
 	WatchPartImpacts();
+	WatchKnock(DeltaTime);
 	UpdateHoist(DeltaTime);
 	LookWhileDown();
 	UpdateKickLegContacts();
@@ -850,7 +858,18 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	const float GroundSpeed = Movement ? Movement->Velocity.Size2D() : 0.f;
 	bStandingForPlant = GroundSpeed < (bStandingForPlant ? PlantedFootSpeedMaxCm : PlantedFootSpeedMinCm);
 	const bool bPlantable = bOnGround && bStandingForPlant;
-	BodyControl->SetFeetPlanted(bPlantable && Pose.LeftFootLift < AedirPlantedFootLift, bPlantable && Pose.RightFootLift < AedirPlantedFootLift);
+	// A foot still on its way to where the pose has it is brought there by its muscles first: held at once it would jump.
+	const auto Plant = [&](int32 Side, float Lift)
+	{
+		const FName Bone = Side == 0 ? FootLeftBone : FootRightBone;
+		const FBodyInstance* Foot = BodyMesh->GetBodyInstance(Bone);
+		// Just come into the world it has no pose yet to be measured against.
+		const bool bThere = bFootPlanted[Side] || !Foot || SpawnAge < SpawnPosedSeconds + 0.5f || FVector::DistSquared(Foot->GetUnrealWorldTransform().GetLocation(), BodyControl->GetPoseLocation(Bone)) < FMath::Square(PlantedFootCatchCm);
+		bFootPlanted[Side] = bPlantable && Lift < AedirPlantedFootLift && bThere && HoistSettleLeft <= 0.f;
+		return bFootPlanted[Side];
+	};
+	const bool bPlantLeft = Plant(0, Pose.LeftFootLift);
+	BodyControl->SetFeetPlanted(bPlantLeft, Plant(1, Pose.RightFootLift));
 
 	// Hips pushed off where the legs would carry them tip the body over them and cost balance, the more the weaker it is.
 	const USkeletalMesh* Model = BodyMesh->GetSkeletalMeshAsset();
@@ -895,7 +914,7 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	{
 		UE_LOG(LogAedir, Verbose, TEXT("[Fall] %s hips drift %s cm, balance %.2f, at %s speed %.0f, hips Z %.1f over target."), *GetNameSafe(GetOwner()), *(Actor.InverseTransformVectorNoScale(Drift)).ToCompactString(), Balance,
 			*CharacterOwner->GetActorLocation().ToCompactString(), CharacterOwner->GetVelocity().Size(), Now.Z - Target.Z);
-		ApplyBalanceImpact(Drift.GetSafeNormal(), Beyond / PelvisDriftLossCm * DeltaTime * (1.5f - Upright));
+		ApplyBalanceImpact(Drift.GetSafeNormal(), Beyond / PelvisDriftLossCm * DeltaTime * (1.5f - Upright) * GetFoundFeetShare());
 	}
 }
 
@@ -1705,6 +1724,11 @@ void UAedirBalanceComponent::SampleCenterOfMass()
 	}
 }
 
+float UAedirBalanceComponent::GetFoundFeetShare() const
+{
+	return HoistSettleLeft > 0.f ? FMath::Square(1.f - FMath::Clamp(HoistSettleLeft / FMath::Max(HoistSettleSeconds, 0.05f), 0.f, 1.f)) : 1.f;
+}
+
 void UAedirBalanceComponent::AddFootSupportPoints(FName FootBone, FName BallBone, TArray<FVector2D>& OutPoints) const
 {
 	if (BodyMesh->GetBoneIndex(FootBone) == INDEX_NONE || BodyMesh->GetBoneIndex(BallBone) == INDEX_NONE)
@@ -1761,7 +1785,8 @@ void UAedirBalanceComponent::ApplyCenterOfMassLoss(float DeltaTime)
 	// Not walking, the weight gone off from where it settles over the feet takes the balance with it, before it is past them.
 	const float Drift = static_cast<float>(ComDriftLocal.Size());
 	const float DriftLoss = bComEdgeCounts ? FMath::Clamp((Drift - ComDriftLossFromCm) / FMath::Max(ComDriftLossFullCm - ComDriftLossFromCm, 1.f), 0.f, 1.f) * ComDriftLossPerSecond * DeltaTime : 0.f;
-	const float Loss = FMath::Max(ComputeComBalanceLoss(SupportMargin, DeltaTime), DriftLoss);
+	// Just hauled up, the feet are only coming under the weight: it is not a balance lost until they are.
+	const float Loss = FMath::Max(ComputeComBalanceLoss(SupportMargin, DeltaTime), DriftLoss) * GetFoundFeetShare();
 	if (Loss <= 0.f)
 	{
 		return;
@@ -2124,11 +2149,12 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 		}
 		else if (bHoistGetUp)
 		{
-			if (bHoisting && (bDead || bSenseless))
+			const bool bHeldUp = Now < HeldUpUntil;
+			if (bHoisting && (bDead || bSenseless || bHeldUp))
 			{
-				StopHoist(bDead ? TEXT("dead") : TEXT("senseless"));
+				StopHoist(bDead ? TEXT("dead") : bSenseless ? TEXT("senseless") : TEXT("lifted"));
 			}
-			else if (!bHoisting && bReadyToGetUp && (!bChooses || bTold))
+			else if (!bHoisting && !bHeldUp && bReadyToGetUp && (!bChooses || bTold))
 			{
 				StartHoist();
 			}
@@ -2153,6 +2179,36 @@ void UAedirBalanceComponent::EnterRagdoll(float MinimumSeconds)
 	RagdollStartTime = World ? World->GetTimeSeconds() : 0.0;
 	CurrentRagdollMinSeconds = MinimumSeconds;
 	SetRagdollPresentation(true);
+}
+
+void UAedirBalanceComponent::SetHeldUp(float Seconds)
+{
+	if (const UWorld* World = GetWorld())
+	{
+		HeldUpUntil = FMath::Max(HeldUpUntil, World->GetTimeSeconds() + Seconds);
+	}
+}
+
+void UAedirBalanceComponent::LiftOffFeet()
+{
+	if (IsAuthoritative() && !bIsRagdoll)
+	{
+		UE_LOG(LogAedir, Log, TEXT("[Fall] %s is lifted off its feet."), *GetNameSafe(GetOwner()));
+		EnterRagdoll(MinRagdollSeconds);
+	}
+}
+
+float UAedirBalanceComponent::GetBodyKilos() const
+{
+	float Kilos = 0.f;
+	if (BodyMesh)
+	{
+		for (const FBodyInstance* Body : BodyMesh->Bodies)
+		{
+			Kilos += Body ? Body->GetBodyMass() : 0.f;
+		}
+	}
+	return Kilos;
 }
 
 void UAedirBalanceComponent::MulticastTopple_Implementation(FVector TopVelocity)
@@ -2252,9 +2308,10 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 
 void UAedirBalanceComponent::LandPush(FName Bone, const FVector& Impulse, const FVector& Location)
 {
-	if (BodyMesh && BodyMesh->IsAnySimulatingPhysics())
+	// A part held by its pose, a foot planted on the ground, takes no push of its own.
+	if (FBodyInstance* Part = BodyMesh ? BodyMesh->GetBodyInstance(Bone) : nullptr; Part && Part->IsInstanceSimulatingPhysics())
 	{
-		BodyMesh->AddImpulseAtLocation(Impulse, Location, Bone);
+		Part->AddImpulseAtPosition(Impulse, Location);
 	}
 	// The trunk is bent the way the blow drove, and turned by one that struck off its middle, physics or not.
 	if (CharacterOwner && !bIsRagdoll)
@@ -2638,6 +2695,8 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 			BodyControl->SetRising(false);
 			BodyControl->SetLimp(true);
 			BodyControl->SetFeetPlanted(false, false);
+			bFootPlanted[0] = false;
+			bFootPlanted[1] = false;
 		}
 		// Down, nothing holds the hips up any more.
 		if (bHipJointActive && HipJoint)
@@ -3587,7 +3646,12 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 	// Into the last step, up far enough, upright and steady for a moment: on its feet, standing and stepping take it over.
 	HoistLastStepFor = HoistProgress >= Last - 0.5f ? HoistLastStepFor + DeltaTime : 0.f;
 	const bool bEasy = HoistLastStepFor >= HoistDoneEasySeconds;
-	const bool bUp = HoistProgress >= Last - 0.5f && Height >= Stand * (bEasy ? HoistDoneEasyHeightShare : HoistDoneHeightShare) && ChestUp >= (bEasy ? HoistDoneEasyUpright : HoistDoneUpright) && HipsSpeed.Size() < HoistDoneSpeedCm;
+	// High enough on its legs but its trunk still swaying over them, it stands on it all the same before long: the muscles
+	// of standing bring the trunk up, where the pull at the hips alone keeps it swaying.
+	const float Late = FMath::Clamp((HoistLastStepFor - HoistDoneEasySeconds) / FMath::Max(HoistDoneLateSeconds - HoistDoneEasySeconds, 0.05f), 0.f, 1.f);
+	const float UprightAsked = bEasy ? FMath::Lerp(HoistDoneEasyUpright, HoistDoneLateUpright, Late) : HoistDoneUpright;
+	const float SpeedAsked = HoistDoneSpeedCm * FMath::Lerp(1.f, 1.6f, Late);
+	const bool bUp = HoistProgress >= Last - 0.5f && Height >= Stand * (bEasy ? HoistDoneEasyHeightShare : HoistDoneHeightShare) && ChestUp >= UprightAsked && HipsSpeed.Size() < SpeedAsked;
 	if (!bUp && HoistLastStepFor >= HoistGiveUpSeconds)
 	{
 		UE_LOG(LogAedir, Log, TEXT("[GetUp] %s cannot come up the last of the way (hips %.0f of %.0f cm, chest up %.2f): it lies down to try again."), *GetNameSafe(GetOwner()), Height, Stand, ChestUp);
@@ -4248,13 +4312,25 @@ void UAedirBalanceComponent::HurtPartOnImpact(FName Bone, const FVector& NormalI
 float UAedirBalanceComponent::KnockFist(FName Bone, float Speed, const FHitResult& Hit)
 {
 	// A fist driven into something fixed: the knuckles' knock, the hand hurt by it and sprung back off it, the forearm with it.
+	const FName Forearm(*Bone.ToString().Replace(TEXT("hand"), TEXT("lowerarm")));
+	return KnockPart(Bone, Forearm, Speed, FistWorldBounceShare, FistWorldBounceMaxSpeed, Hit);
+}
+
+float UAedirBalanceComponent::KnockFoot(FName Bone, float Speed, const FHitResult& Hit)
+{
+	// A foot kicked into something fixed, the shin with it.
+	const FName Shin(*Bone.ToString().Replace(TEXT("foot"), TEXT("calf")));
+	return KnockPart(Bone, Shin, Speed, KickWorldBounceShare, KickWorldBounceMaxSpeed, Hit);
+}
+
+float UAedirBalanceComponent::KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit)
+{
 	const float SpeedShare = FMath::Clamp(FMath::GetRangePct(FistWorldSoundMinSpeed, FistWorldSoundMaxSpeed, Speed), 0.f, 1.f);
 	UAedirSfxSubsystem::Play(this, EAedirSfx::PunchForearm, Hit.ImpactPoint, FMath::Lerp(0.7f, 1.f, SpeedShare), FMath::Lerp(0.3f, 0.6f, SpeedShare));
 	const FVector Away = Hit.ImpactNormal.GetSafeNormal();
-	const float Back = FMath::Clamp(Speed * FistWorldBounceShare, 0.f, FistWorldBounceMaxSpeed);
-	const FName Forearm(*Bone.ToString().Replace(TEXT("hand"), TEXT("lowerarm")));
+	const float Back = FMath::Clamp(Speed * BounceShare, 0.f, BounceMax);
 	FBodyInstance* Struck = BodyMesh ? BodyMesh->GetBodyInstance(Bone) : nullptr;
-	FBodyInstance* Behind = BodyMesh ? BodyMesh->GetBodyInstance(Forearm) : nullptr;
+	FBodyInstance* Behind = BodyMesh ? BodyMesh->GetBodyInstance(BehindBone) : nullptr;
 	for (const TPair<FBodyInstance*, float>& Part : { TPair<FBodyInstance*, float>(Struck, 1.f), TPair<FBodyInstance*, float>(Behind, 0.6f) })
 	{
 		if (Part.Key && Part.Key->IsInstanceSimulatingPhysics())
@@ -4269,10 +4345,10 @@ float UAedirBalanceComponent::KnockFist(FName Bone, float Speed, const FHitResul
 	{
 		const float Mass = Struck ? FMath::Max(Struck->GetBodyMass(), 0.3f) : 0.5f;
 		const float Joules = 0.5f * Mass * FMath::Square(Speed / 100.f) * FistWorldWoundShare;
-		const AAedirCreature* Puncher = Cast<AAedirCreature>(GetOwner());
-		if (Puncher && Puncher->Wounds)
+		const AAedirCreature* Own = Cast<AAedirCreature>(GetOwner());
+		if (Own && Own->Wounds)
 		{
-			Puncher->Wounds->AddWound(Bone, Hit.ImpactPoint, Away, EAedirDamageType::Blunt, Joules, 0.f, -Away, Speed);
+			Own->Wounds->AddWound(Bone, Hit.ImpactPoint, Away, EAedirDamageType::Blunt, Joules, 0.f, -Away, Speed);
 		}
 		Damage = (Speed - FistWorldHarmlessSpeed) * FistWorldDamagePerSpeed;
 		if (UAedirStatsComponent* StatsComponent = FindStats())
@@ -4280,8 +4356,25 @@ float UAedirBalanceComponent::KnockFist(FName Bone, float Speed, const FHitResul
 			StatsComponent->ApplyDamage(Damage);
 		}
 	}
-	UE_LOG(LogAedir, Log, TEXT("[Impact] %s punches %s with the %s at %.0f cm/s: %.1f damage, sprung back at %.0f cm/s"), *GetNameSafe(GetOwner()), *GetNameSafe(Hit.GetActor()), *Bone.ToString(), Speed, Damage, Back);
+	KnockWatchBone = Bone;
+	KnockWatchFrom = BodyMesh ? BodyMesh->GetBoneLocation(Bone) : FVector::ZeroVector;
+	KnockWatchAway = Away;
+	KnockWatchLeft = AedirKnockWatchSeconds;
+	KnockWatchMost = 0.f;
+	UE_LOG(LogAedir, Log, TEXT("[Impact] %s strikes %s with the %s at %.0f cm/s: %.1f damage, sprung back at %.0f cm/s"), *GetNameSafe(GetOwner()), *GetNameSafe(Hit.GetActor()), *Bone.ToString(), Speed, Damage, Back);
 	return Damage;
+}
+
+void UAedirBalanceComponent::WatchKnock(float DeltaTime)
+{
+	// For the log: how far what was knocked really came back off the thing.
+	if (KnockWatchLeft <= 0.f || !BodyMesh)
+	{
+		return;
+	}
+	KnockWatchMost = FMath::Max(KnockWatchMost, static_cast<float>(FVector::DotProduct(BodyMesh->GetBoneLocation(KnockWatchBone) - KnockWatchFrom, KnockWatchAway)));
+	KnockWatchLeft -= DeltaTime;
+	UE_CLOG(KnockWatchLeft <= 0.f, LogAedir, Log, TEXT("[Impact] %s's %s came %.1f cm back off it"), *GetNameSafe(GetOwner()), *KnockWatchBone.ToString(), KnockWatchMost);
 }
 
 void UAedirBalanceComponent::WatchPartImpacts()
@@ -4353,6 +4446,9 @@ void UAedirBalanceComponent::HoldBodiesStill(bool bHold)
 	{
 		if (FBodyInstance* Body = BodyMesh->Bodies[Index]; Body && Body->IsInstanceSimulatingPhysics())
 		{
+			// Whatever pushed on it meanwhile is dropped.
+			Body->ClearForces(false);
+			Body->ClearTorques(false);
 			Body->SetLinearVelocity(HeldBodyMotion[Index].Key, false);
 			Body->SetAngularVelocityInRadians(HeldBodyMotion[Index].Value, false);
 		}
@@ -4559,8 +4655,43 @@ void UAedirBalanceComponent::SetArmFree(int32 Side, bool bFree)
 	}
 }
 
+void UAedirBalanceComponent::LetArmThrough(int32 Side, float Seconds)
+{
+	if (Side < 0 || Side > 1)
+	{
+		return;
+	}
+	if (ArmFreeLeft[Side] <= 0.f)
+	{
+		SetArmFree(Side, true);
+	}
+	ArmFreeLeft[Side] = FMath::Max(ArmFreeLeft[Side], Seconds);
+}
+
+void UAedirBalanceComponent::LetBodyThrough(float Seconds)
+{
+	SetBodyThrough(true);
+	BodyThroughLeft = FMath::Max(BodyThroughLeft, Seconds);
+}
+
+void UAedirBalanceComponent::SetBodyThrough(bool bThrough)
+{
+	if (BodyControl)
+	{
+		BodyControl->SetPassable(bThrough);
+	}
+}
+
 void UAedirBalanceComponent::UpdateArmFree(float DeltaTime)
 {
+	if (BodyThroughLeft > 0.f)
+	{
+		BodyThroughLeft -= DeltaTime;
+		if (BodyThroughLeft <= 0.f)
+		{
+			SetBodyThrough(false);
+		}
+	}
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
 		if (ArmFreeLeft[Side] > 0.f)

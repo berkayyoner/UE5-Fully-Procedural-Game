@@ -222,6 +222,9 @@ public:
 
 	// While getting up the hips are carried through the moves by the pose; otherwise the control holds them.
 	void SetHipsCarried(bool bCarried);
+	// Whether the whole body passes everything instead of touching it. Told here: the control sets the bodies' collision anew
+	// every frame, whatever else has set it.
+	void SetPassable(bool bPassable);
 
 	// A foot on the ground stays where the pose plants it; lifted, it swings free.
 	void SetFeetPlanted(bool bLeft, bool bRight);
@@ -299,6 +302,7 @@ private:
 	bool bReady = false;
 	bool bLimp = false;
 	float Hoist = 0.f;
+	bool bPassableNow = false;
 	float DownAwake = 0.f;
 	float DownAwakeArms = 0.f;
 	float HoldEase = 1.f;
