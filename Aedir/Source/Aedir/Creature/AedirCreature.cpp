@@ -162,6 +162,17 @@ void AAedirCreature::UseManBody()
 			Face->SetLeaderPoseComponent(GetMesh());
 		}
 	}
+	// The body's lesser detail steps keep a fraction of its bones (122 and 40 of 198), and what is worn over it, the braies
+	// and the clothes, hangs on the bones they let go: far off, or with less detail asked for, the clothes stood still while
+	// the body moved under them, and the face's lesser steps tore its skin out of place. The body and face keep every bone.
+	if (bFullBodyDetail)
+	{
+		GetMesh()->SetForcedLOD(1);
+		if (Face)
+		{
+			Face->SetForcedLOD(1);
+		}
+	}
 }
 
 void AAedirCreature::ApplyBodyMask()

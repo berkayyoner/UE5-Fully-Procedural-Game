@@ -456,13 +456,24 @@ void UAedirWoundComponent::OpenWound(FName ResolvedBone, const FVector& WorldLoc
 	}
 
 	OnWounded.Broadcast(Type, ResolvedBone, Severity);
-	// It comes out of the skin where it opened, never in through the body after the blow: off the surface, and along it the
-	// way the blow drew over it.
+	// It flies on the way the blow went, a little off the skin where it opened: a blow from the right throws it to the
+	// left. When that way goes into the body, it comes out of the skin on the far side of it.
 	FVector At = WorldLocation;
-	const FVector Outward = FindWoundOutward(ResolvedBone, WorldNormal, Direction, At);
-	const FVector Along = FVector::VectorPlaneProject(Direction, Outward);
-	const FVector Spray = (Outward * WoundSprayOutShare + Along * (1.f - WoundSprayOutShare)).GetSafeNormal();
-	UE_LOG(LogAedir, Log, TEXT("[Wound] spray of %s at %s: %.1f cm from where the blow was found, outward %s, the blow going %s"), *ResolvedBone.ToString(), *At.ToCompactString(), FVector::Dist(At, WorldLocation), *Outward.ToCompactString(), *Direction.ToCompactString());
+	FVector Outward = FindWoundOutward(ResolvedBone, WorldNormal, Direction, At);
+	const FVector Spray = (Direction * WoundSprayBlowShare + Outward * (1.f - WoundSprayBlowShare)).GetSafeNormal();
+	if (FVector::DotProduct(Spray, Outward) < 0.f)
+	{
+		// Back through the part that was struck alone, from beyond it: where the way leaves its skin.
+		const USkeletalMeshComponent* ThroughMesh = GetBodyMesh();
+		const FBodyInstance* Part = ThroughMesh ? ThroughMesh->GetBodyInstance(ResolvedBone) : nullptr;
+		FHitResult Through;
+		if (Part && Part->IsValidBodyInstance() && Part->LineTrace(Through, At + Spray * WoundSprayThroughCm, At, false))
+		{
+			At = Through.ImpactPoint;
+		}
+		Outward = Spray;
+	}
+	UE_LOG(LogAedir, Log, TEXT("[Wound] spray of %s at %s: %.1f cm from where the blow was found, towards %s, the blow going %s"), *ResolvedBone.ToString(), *At.ToCompactString(), FVector::Dist(At, WorldLocation), *Spray.ToCompactString(), *Direction.ToCompactString());
 	MulticastWoundSpray(At, Spray, Severity, Type, Outward);
 }
 

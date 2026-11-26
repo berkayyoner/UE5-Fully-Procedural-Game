@@ -104,11 +104,7 @@ void AAedirNpc::BeginPlay()
 		{
 			Looter = FMath::FRand() < LooterChance ? 1 : 0;
 		}
-		if (Combat)
-		{
-			Combat->AISwingWaitSeconds = FMath::Lerp(1.f, 0.1f, FMath::Clamp(Aggression, 0.f, 1.f));
-		}
-		UE_LOG(LogAedir, Log, TEXT("[Npc] %s aggression %.2f, waits %.2f s between swings"), *GetName(), Aggression, Combat ? Combat->AISwingWaitSeconds : 0.f);
+		SetAggression(Aggression);
 	}
 
 	// Placed in a level with a name: who they are and what they carry come from what was set on them there.
@@ -1112,6 +1108,16 @@ void AAedirNpc::PerformAction(AAedirPlayerCharacter* Player, EAedirNpcAction Act
 	}
 }
 
+void AAedirNpc::SetAggression(float Share)
+{
+	Aggression = FMath::Clamp(Share, 0.f, 1.f);
+	if (Combat)
+	{
+		Combat->AISwingWaitSeconds = FMath::Lerp(1.f, 0.1f, Aggression);
+	}
+	UE_LOG(LogAedir, Log, TEXT("[Npc] %s aggression %.2f, waits %.2f s between swings"), *GetName(), Aggression, Combat ? Combat->AISwingWaitSeconds : 0.f);
+}
+
 void AAedirNpc::OnAttackedBy(AAedirCreature* Attacker)
 {
 	if (!HasAuthority() || !Attacker)
@@ -1121,6 +1127,7 @@ void AAedirNpc::OnAttackedBy(AAedirCreature* Attacker)
 	if (Gesture)
 	{
 		Gesture->Threaten();
+		Gesture->StruckWhileGivenUp(Attacker);
 	}
 	if (ChatPartner.IsValid())
 	{

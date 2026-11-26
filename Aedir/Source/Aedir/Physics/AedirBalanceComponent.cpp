@@ -1400,6 +1400,16 @@ void UAedirBalanceComponent::ApplyHitReaction(const FAedirImpactInfo& Impact)
 	OnHitReaction.Broadcast(Impact.Zone, Impact.EnergyJoules, bStaggered, bKnockedDown);
 }
 
+float UAedirBalanceComponent::GetHoistHandReach(int32 Side) const
+{
+	if (!bHoisting || HoistHand < 0 || Side == HoistFreeHand || HoistFreeHand == AedirBothHands)
+	{
+		return 0.f;
+	}
+	const float Late = Side == HoistHand || HoistFreeHand >= 0 ? 0.f : HoistSecondHandLateSeconds;
+	return FMath::Clamp((HoistHeldSeconds * HoistPace - HoistHandDelaySeconds - Late) / FMath::Max(HoistHandReachSeconds, 0.01f), 0.f, 1.f);
+}
+
 float UAedirBalanceComponent::GetTiredShare() const
 {
 	const UAedirStatsComponent* StatsComponent = FindStats();
@@ -3821,8 +3831,8 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 		{
 			continue;
 		}
-		const float Late = Side == HoistHand || HoistFreeHand >= 0 ? 0.f : HoistSecondHandLateSeconds;
-		const float Share = FMath::Clamp((HoistHeldSeconds * HoistPace - HoistHandDelaySeconds - Late) / FMath::Max(HoistHandReachSeconds, 0.01f), 0.f, 1.f) * Stage.Hands * HoistDrive;
+		// Eased in and out, so a hand that lay on a wound leaves it gently and comes down onto the ground the same way.
+		const float Share = FMath::SmoothStep(0.f, 1.f, GetHoistHandReach(Side)) * Stage.Hands * HoistDrive;
 		const TCHAR* Suffix = Side == 0 ? TEXT("_l") : TEXT("_r");
 		FBodyInstance* HandBody = BodyMesh->GetBodyInstance(FName(FString(TEXT("hand")) + Suffix));
 		if (Share <= 0.f || !HandBody || !HandBody->IsInstanceSimulatingPhysics())

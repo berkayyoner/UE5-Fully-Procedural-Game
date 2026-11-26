@@ -902,10 +902,10 @@ public:
 	float HoistHeadLiftShare = 0.35f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistHandDelaySeconds = 0.3f;
+	float HoistHandDelaySeconds = 0.45f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistHandReachSeconds = 0.35f;
+	float HoistHandReachSeconds = 0.6f;
 
 	// The second hand goes down this long after the first; both palms are turned flat to the ground at HoistPalmHz.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
@@ -1105,6 +1105,10 @@ public:
 
 	// Getting up, this hand (0 left, 1 right) is needed on the ground and not the body's own to fight with.
 	bool IsHandOnGround(int32 Side) const { return bHoisting ? HoistFreeHand != Side && HoistFreeHand != AedirBothHands : IsGettingUp(); }
+	// Getting up, how far this hand is on its way down to the ground, 0 to 1; until it starts it may stay where it was (on
+	// a wound, say).
+	float GetHoistHandReach(int32 Side) const;
+	bool IsHandGoingDown(int32 Side) const { return bHoisting ? GetHoistHandReach(Side) > 0.f : IsGettingUp(); }
 
 	// Walked or run into by someone while getting up.
 	void BumpedGettingUp(const class AAedirCreature* By, const FVector& Point, FName Part = NAME_None);

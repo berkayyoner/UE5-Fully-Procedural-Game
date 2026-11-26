@@ -2242,7 +2242,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 	const auto Free = [&](int32 Slot)
 	{
 		const EAedirHand Hand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
-		return !(Interaction && Interaction->GetHeldItem(Hand)) && !(WoundComponent && WoundComponent->HasUselessHand(Slot == 0)) && !(BalanceComponent && BalanceComponent->IsHandOnGround(Slot));
+		return !(Interaction && Interaction->GetHeldItem(Hand)) && !(WoundComponent && WoundComponent->HasUselessHand(Slot == 0)) && !(BalanceComponent && BalanceComponent->IsHandGoingDown(Slot));
 	};
 	// The wrist a little off the skin and back towards the hand's own shoulder, so the palm and fingers lie over the place.
 	const auto WristAt = [&](int32 Slot, const FVector& PointWorld, const FVector& OutwardWorld)
@@ -2717,7 +2717,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 				const bool bHurtArm = HurtBone.EndsWith(HurtSide) && (HurtBone.StartsWith(TEXT("lowerarm")) || HurtBone.StartsWith(TEXT("upperarm")) || HurtBone.StartsWith(TEXT("hand")));
 				const bool bHurtHandBroken = HurtIndex == INDEX_NONE && HurtBreak == 1;
 				const bool bHurtComes = !(Interaction && Interaction->GetHeldItem(Hurt == 0 ? EAedirHand::Left : EAedirHand::Right)) && !WoundComponent->HasLostArm(Hurt == 0)
-					&& HurtBreak < 2 && !(BalanceComponent && BalanceComponent->IsHandOnGround(Hurt)) && !bHandBusy[Hurt];
+					&& HurtBreak < 2 && !(BalanceComponent && BalanceComponent->IsHandGoingDown(Hurt)) && !bHandBusy[Hurt];
 				if ((bHurtArm || bHurtHandBroken) && bHurtComes && HandFlinch[Hurt].Left <= 0.f)
 				{
 					const FVector Middle = (Body->GetBoneLocation(TEXT("upperarm_l")) + Body->GetBoneLocation(TEXT("upperarm_r"))) * 0.5;
@@ -2779,6 +2779,25 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		}
 		GestureHold[Slot] = bGestureHand[Slot] ? FMath::Max(ClutchAlpha[Slot], GestureHold[Slot] - DeltaTime * ClutchOutSpeed) : FMath::Max(GestureHold[Slot] - DeltaTime * ClutchOutSpeed, 0.f);
 	}
+	// The two hands never hold places across from each other at once, the left on the right side and the right on the left:
+	// the arms would cross and fight each other. The one holding on less, or later come, lets go.
+	if (Body && Wanted[0] > 0.f && Wanted[1] > 0.f && !bGestureHand[0] && !bGestureHand[1])
+	{
+		const FVector ShoulderL = Body->GetBoneLocation(TEXT("upperarm_l"));
+		const FVector ShoulderR = Body->GetBoneLocation(TEXT("upperarm_r"));
+		const FVector Across = (ShoulderR - ShoulderL).GetSafeNormal();
+		const FVector Middle = (ShoulderL + ShoulderR) * 0.5;
+		const float Margin = ClutchCrossMarginCm * static_cast<float>(ActorTransform.GetScale3D().X);
+		const float LeftOver = static_cast<float>(FVector::DotProduct(PlaceNow[0] - Middle, Across));
+		const float RightOver = static_cast<float>(-FVector::DotProduct(PlaceNow[1] - Middle, Across));
+		if (LeftOver > Margin && RightOver > Margin)
+		{
+			const int32 Drop = Wanted[0] != Wanted[1] ? (Wanted[0] < Wanted[1] ? 0 : 1) : (ClutchAlpha[0] < ClutchAlpha[1] ? 0 : 1);
+			Wanted[Drop] = 0.f;
+			UE_CLOG(GFrameCounter % 30 == 0, LogAedir, Log, TEXT("[Clutch] %s: the hands would cross (the left %.0f cm over to the right, the right %.0f cm over to the left); the %s lets go"),
+				*GetNameSafe(CreatureOwner), LeftOver, RightOver, Drop == 0 ? TEXT("left") : TEXT("right"));
+		}
+	}
 	for (int32 Slot = 0; Slot < 2; ++Slot)
 	{
 		// All of the hold goes with the chest: kept in the world, a hand letting go as the body walked on or turned was left
@@ -2830,7 +2849,9 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			ClutchAlpha[Slot] = FMath::FInterpConstantTo(ClutchAlpha[Slot], FMath::Max(Wanted[Slot], bGestureFollows[Slot] || !CreatureOwner->Gesture->IsSurrendering() ? 0.f : FMath::Min(ClutchAlpha[Slot], 1.f)), DeltaTime, ClutchOutSpeed * 2.f);
 		}
 		else
-		ClutchAlpha[Slot] = FMath::FInterpConstantTo(ClutchAlpha[Slot], Wanted[Slot], DeltaTime, Wanted[Slot] <= ClutchAlpha[Slot] ? ClutchOutSpeed : bFlinchHand[Slot] && !bLying ? ClutchInSpeed : ClutchWoundInSpeed);
+		ClutchAlpha[Slot] = FMath::FInterpConstantTo(ClutchAlpha[Slot], Wanted[Slot], DeltaTime, Wanted[Slot] <= ClutchAlpha[Slot] ? ClutchOutSpeed
+			: BalanceComponent && (BalanceComponent->IsSettling() || (BalanceComponent->IsGettingUp() && !BalanceComponent->IsHoisting())) ? ClutchRisingInSpeed
+			: bFlinchHand[Slot] && !bLying ? ClutchInSpeed : ClutchWoundInSpeed);
 		// Still over the rest while it lets go, so the arm does not snap back to the guard.
 		bClutchFlinch[Slot] = bFlinchHand[Slot] || (bClutchFlinch[Slot] && Wanted[Slot] <= 0.f && ClutchAlpha[Slot] > KINDA_SMALL_NUMBER);
 		// The hand lies flat on the place: the palm onto it, the fingers on along the way the arm comes, over the skin.

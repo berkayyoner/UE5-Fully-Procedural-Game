@@ -27,6 +27,11 @@ AAedirDustPuff::AAedirDustPuff()
 
 void AAedirDustPuff::Spawn(UWorld* World, const FVector& Point, const FVector& Normal, float Strength)
 {
+	Spawn(World, Point, Normal, Strength, GetDefault<AAedirDustPuff>()->Look);
+}
+
+void AAedirDustPuff::Spawn(UWorld* World, const FVector& Point, const FVector& Normal, float Strength, const FAedirDustLook& InLook)
+{
 	if (!World || World->GetNetMode() == NM_DedicatedServer)
 	{
 		return;
@@ -35,6 +40,7 @@ void AAedirDustPuff::Spawn(UWorld* World, const FVector& Point, const FVector& N
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 	if (AAedirDustPuff* Puff = World->SpawnActor<AAedirDustPuff>(AAedirDustPuff::StaticClass(), FTransform(Point), Params))
 	{
+		Puff->Look = InLook;
 		Puff->Begin(Normal.GetSafeNormal(), FMath::Clamp(Strength, 0.f, 1.f));
 	}
 }
@@ -50,17 +56,17 @@ void AAedirDustPuff::Begin(const FVector& Normal, float Strength)
 	}
 	Amount = FMath::Lerp(0.5f, 1.f, Strength);
 	Material = UMaterialInstanceDynamic::Create(Base, this);
-	Material->SetVectorParameterValue(TEXT("Color"), Color);
-	Material->SetScalarParameterValue(TEXT("Strength"), Opacity * Amount);
+	Material->SetVectorParameterValue(TEXT("Color"), Look.Color);
+	Material->SetScalarParameterValue(TEXT("Strength"), Look.Opacity * Amount);
 	Puffs->SetStaticMesh(Plane);
 	Puffs->SetMaterial(0, Material);
 	// Thrown back off the skin the way the blow came, spread wide, a little rising.
-	const int32 Count = FMath::Max(1, FMath::RoundToInt(Specks * Amount));
+	const int32 Count = FMath::Max(1, FMath::RoundToInt(Look.Specks * Amount));
 	TArray<FTransform> Start;
 	for (int32 Index = 0; Index < Count; ++Index)
 	{
 		const FVector Spread = FMath::VRandCone(Normal, FMath::DegreesToRadians(70.f));
-		Speeds.Add((Spread + FVector(0.f, 0.f, 0.25f)) * ThrowSpeed * Amount * FMath::FRandRange(0.4f, 1.f));
+		Speeds.Add((Spread + FVector(0.f, 0.f, 0.25f)) * Look.ThrowSpeed * Amount * FMath::FRandRange(0.4f, 1.f));
 		Places.Add(Normal * 3.f + FMath::VRand() * 2.f);
 		Sizes.Add(FMath::FRandRange(0.7f, 1.3f));
 		Start.Add(FTransform(FQuat::Identity, Places.Last(), FVector(0.f)));
@@ -72,7 +78,7 @@ void AAedirDustPuff::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	Age += DeltaSeconds;
-	const float Life = FMath::Max(LifeSeconds * FMath::Lerp(0.7f, 1.f, Amount), 0.05f);
+	const float Life = FMath::Max(Look.LifeSeconds * FMath::Lerp(0.7f, 1.f, Amount), 0.05f);
 	if (Age >= Life || !Material)
 	{
 		Destroy();
@@ -80,7 +86,7 @@ void AAedirDustPuff::Tick(float DeltaSeconds)
 	}
 	const float T = Age / Life;
 	// Thick at once, thinning to nothing.
-	Material->SetScalarParameterValue(TEXT("Strength"), Opacity * Amount * FMath::Square(1.f - T));
+	Material->SetScalarParameterValue(TEXT("Strength"), Look.Opacity * Amount * FMath::Square(1.f - T));
 	FVector Eye = GetActorLocation() + FVector(100.f, 0.f, 0.f);
 	if (const APlayerController* Viewer = GetWorld()->GetFirstPlayerController(); Viewer && Viewer->PlayerCameraManager)
 	{
@@ -88,11 +94,11 @@ void AAedirDustPuff::Tick(float DeltaSeconds)
 	}
 	const FVector Middle = GetActorLocation();
 	const FQuat Facing = FRotationMatrix::MakeFromZ((Eye - Middle).GetSafeNormal()).ToQuat();
-	const float Grow = FMath::Lerp(StartSizeCm, EndSizeCm * FMath::Lerp(0.6f, 1.f, Amount), 1.f - FMath::Square(1.f - T));
+	const float Grow = FMath::Lerp(Look.StartSizeCm, Look.EndSizeCm * FMath::Lerp(0.6f, 1.f, Amount), 1.f - FMath::Square(1.f - T));
 	TArray<FTransform> Now;
 	for (int32 Index = 0; Index < Places.Num(); ++Index)
 	{
-		Speeds[Index] *= FMath::Exp(-Drag * DeltaSeconds);
+		Speeds[Index] *= FMath::Exp(-Look.Drag * DeltaSeconds);
 		Places[Index] += Speeds[Index] * DeltaSeconds;
 		const float Size = Grow * Sizes[Index] / DustPuffPlaneCm;
 		Now.Add(FTransform(Facing, Places[Index], FVector(Size, Size, 1.f)));

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Combat/AedirDustPuff.h"
 #include "AedirFootstepComponent.generated.h"
 
 class AAedirCreature;
@@ -25,13 +26,29 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface", meta=(ClampMin=0))
 	float DefaultWetnessDryRatePerSecond = 0.03f;
 
-	// Dust or spray kicked up by a step: small at a walk, larger at a run, and the share of walking and running steps that
-	// throw any up (every one by default). A landing always does.
+	// Dust or spray kicked up by a step, low about the foot: the puff of a walking step and of a running one, between which
+	// the pace chooses, and the share of walking and running steps that throw any up (every one by default). A landing
+	// always does, StepDustLandingShare stronger. The colour is the ground's: dirt, grass, snow or water.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
-	float StepEffectWalkScale = 0.012f;
+	FAedirDustLook StepDustWalk = MakeStepDust(0.45f, 4, 1.5f, 5.f, 25.f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
-	float StepEffectRunScale = 0.02f;
+	FAedirDustLook StepDustRun = MakeStepDust(0.55f, 6, 2.f, 8.f, 45.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects", meta=(ClampMin="1"))
+	float StepDustLandingShare = 1.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
+	FLinearColor StepDustDirt = FLinearColor(0.32f, 0.29f, 0.24f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
+	FLinearColor StepDustGrass = FLinearColor(0.27f, 0.27f, 0.2f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
+	FLinearColor StepDustSnow = FLinearColor(0.86f, 0.88f, 0.92f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
+	FLinearColor StepDustWater = FLinearColor(0.62f, 0.66f, 0.7f);
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
 	float StepEffectWalkChance = 1.f;
@@ -86,6 +103,18 @@ private:
 	// A footstep cue of the sound library by surface family and gait, and a footstep effect by name. Null when there is none.
 	static class USoundBase* FindStepSound(const FString& Family, const TCHAR* Gait);
 	static class UNiagaraSystem* FindStepEffect(const TCHAR* Name);
+	static FAedirDustLook MakeStepDust(float LifeSeconds, int32 Specks, float StartSizeCm, float EndSizeCm, float ThrowSpeed)
+	{
+		FAedirDustLook Look;
+		Look.LifeSeconds = LifeSeconds;
+		Look.Specks = Specks;
+		Look.StartSizeCm = StartSizeCm;
+		Look.EndSizeCm = EndSizeCm;
+		Look.ThrowSpeed = ThrowSpeed;
+		Look.Drag = 7.f;
+		Look.Opacity = 0.22f;
+		return Look;
+	}
 
 	// How a step is heard: from where the foot is, fading with distance, so a far walker is barely heard and never inside the head.
 	UPROPERTY(Transient)

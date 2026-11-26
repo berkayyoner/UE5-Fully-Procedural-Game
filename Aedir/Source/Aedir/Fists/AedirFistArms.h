@@ -217,6 +217,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float RaiseSeconds = 0.15f;
 
+	// Getting up, finding its feet and RisingCalmSeconds after, a raised fist and its elbow go about the chest no faster than
+	// this: the frame of the body turns and the pose changes there at once, and the arm would be flung after it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="1", Units="cm/s"))
+	float RisingFistSpeedCm = 350.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists", meta=(ClampMin="0", Units="s"))
+	float RisingCalmSeconds = 0.6f;
+
 	// The mouse is eased in a little, over about this long (seconds): a jolt of the hand is spread over a few frames.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists")
 	float MouseSmoothSeconds = 0.03f;
@@ -590,6 +598,10 @@ private:
 	bool bArmUseless[2] = { false, false };
 	bool HeldNow(int32 Slot) const { return bHeld[Slot] && FlinchLeft[Slot] <= 0.f && !bOnGround[Slot] && !bArmUseless[Slot]; }
 	float Alpha[2] = { 0.f, 0.f };
+	float CalmLeft = 0.f;
+	FVector LastFistFromChest[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	FVector LastElbowFromChest[2] = { FVector::ZeroVector, FVector::ZeroVector };
+	bool bLastShown[2] = { false, false };
 	// How far each arm is the fists' to pose: up, or carried in both hands.
 	float ShownAlpha[2] = { 0.f, 0.f };
 	FVector FistWorld[2] = { FVector::ZeroVector, FVector::ZeroVector };

@@ -161,6 +161,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float CapsuleRadiusCm = 19.f;
 
+	// The body and the face are always drawn at their first detail step, with every bone, so what is worn over them follows
+	// them at any distance and any character detail setting.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
+	bool bFullBodyDetail = true;
+
 	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
 	void SetWantsToRun(bool bWantsToRun);
 

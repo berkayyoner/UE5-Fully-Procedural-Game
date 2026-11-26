@@ -360,18 +360,25 @@ void UAedirFootstepComponent::LeaveStepMarks(int32 FootIndex, const FVector& Poi
 		}
 	}
 
-	// The ground the foot came down on gives a little: dust and bits of dirt, a spray of snow or of water. Faster steps throw more.
-	const TCHAR* SystemName = bSnow ? TEXT("PSN_SnowLight_Surface") : bWet ? TEXT("PSN_WaterLight_Surface") : Surface == SurfaceType1 ? TEXT("PSN_Grass_Surface") : TEXT("PSN_Dirt_Surface");
-	if (UNiagaraSystem* System = FindStepEffect(SystemName))
+	// The ground the foot came down on gives a little, low about the foot: dust, a spray of snow or of water. Faster steps
+	// throw more; a landing most.
+	const float Pace = FMath::Clamp(Speed2D / AedirStepRunSpeed, 0.f, 1.f);
+	const float Chance = FMath::Lerp(StepEffectWalkChance, StepEffectRunChance, Pace);
+	if (bStepIsLanding || FMath::FRand() < Chance)
 	{
-		// Every step stirs a little, more the faster it is; a landing most.
-		const float Pace = FMath::Clamp(Speed2D / AedirStepRunSpeed, 0.f, 1.5f);
-		const float Scale = FMath::Lerp(StepEffectWalkScale, StepEffectRunScale, FMath::Square(FMath::Min(Pace, 1.f))) * (bStepIsLanding ? 1.6f : 1.f);
-		const float Chance = FMath::Lerp(StepEffectWalkChance, StepEffectRunChance, FMath::Clamp(Pace, 0.f, 1.f));
-		if (bStepIsLanding || FMath::FRand() < Chance)
-		{
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(World, System, Point, FRotationMatrix::MakeFromZ(Normal).Rotator(), FVector(Scale));
-		}
+		const float Blend = FMath::Square(Pace);
+		const float Landing = bStepIsLanding ? StepDustLandingShare : 1.f;
+		const float Scale = static_cast<float>(CreatureOwner ? CreatureOwner->GetActorScale3D().Z : 1.0);
+		FAedirDustLook Look;
+		Look.LifeSeconds = FMath::Lerp(StepDustWalk.LifeSeconds, StepDustRun.LifeSeconds, Blend);
+		Look.Specks = FMath::Max(1, FMath::RoundToInt(FMath::Lerp(static_cast<float>(StepDustWalk.Specks), static_cast<float>(StepDustRun.Specks), Blend) * Landing));
+		Look.StartSizeCm = FMath::Lerp(StepDustWalk.StartSizeCm, StepDustRun.StartSizeCm, Blend) * Scale;
+		Look.EndSizeCm = FMath::Lerp(StepDustWalk.EndSizeCm, StepDustRun.EndSizeCm, Blend) * Landing * Scale;
+		Look.ThrowSpeed = FMath::Lerp(StepDustWalk.ThrowSpeed, StepDustRun.ThrowSpeed, Blend) * Landing * Scale;
+		Look.Drag = FMath::Lerp(StepDustWalk.Drag, StepDustRun.Drag, Blend);
+		Look.Opacity = FMath::Lerp(StepDustWalk.Opacity, StepDustRun.Opacity, Blend);
+		Look.Color = bSnow ? StepDustSnow : bWet ? StepDustWater : Surface == SurfaceType1 ? StepDustGrass : StepDustDirt;
+		AAedirDustPuff::Spawn(World, Point, Normal, 1.f, Look);
 	}
 }
 

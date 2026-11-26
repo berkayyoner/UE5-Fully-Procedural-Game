@@ -69,9 +69,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds", meta=(ClampMin="0"))
 	float BruiseOpacityScale = 1.5f;
 
-	// How far the blood of a blow goes off the skin rather than along it, the way the blow drew over it.
+	// The spray goes this share the way the blow went and the rest off the skin; going into the body, it comes out of the
+	// far side, looked for this far through it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="0", ClampMax="1"))
-	float WoundSprayOutShare = 0.6f;
+	float WoundSprayBlowShare = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="1", Units="cm"))
+	float WoundSprayThroughCm = 60.f;
 
 	// A blow's normal that lies less along the way off the body part than this is not believed.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Wounds|Blood", meta=(ClampMin="-1", ClampMax="1"))

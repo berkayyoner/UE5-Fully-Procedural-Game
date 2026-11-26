@@ -99,6 +99,9 @@ public:
 
 	bool IsLooter() const { return Looter > 0; }
 
+	// Aggression 0 to 1, and how long it waits between swings that comes from it.
+	void SetAggression(float Share);
+
 	// The catalog id of the weapon they carry from the start, or none.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc")
 	FName StartWeapon;

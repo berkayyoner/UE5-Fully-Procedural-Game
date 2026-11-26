@@ -87,6 +87,59 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", Units="s"))
 	float SurrenderThreatSeconds = 60.f;
 
+	// Bleeding in a fight an NPC gives up, on its feet or not, once its blood is down to the first share for one not
+	// aggressive at all, the second for one as aggressive as SurrenderNeverAggression; more aggressive still it never does.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", ClampMax="1"))
+	float SurrenderBloodCalm = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", ClampMax="1"))
+	float SurrenderBloodFierce = 0.95f;
+
+	// Back in the fight after giving up, it bleeds this much more before its blood makes it give up again.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", ClampMax="1"))
+	float SurrenderBloodRearmDrop = 0.1f;
+
+	// Above this aggression (0-100), struck after it has given up it takes it back and fights on, and gives up no more.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", ClampMax="100"))
+	float SurrenderRefightAggression = 30.f;
+
+	// A blow landing this soon after the hands are all the way up was on its way before: it does not count.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", Units="s"))
+	float SurrenderStrikeGraceSeconds = 0.75f;
+
+	// Above this aggression (0-100), given up, it runs off once every foe on its feet is at least SurrenderFleeFarCm off with
+	// its back to it; unless it and the friends fighting about it are more than half the foes who have not given up, when
+	// it takes the chance and goes back into the fight.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", ClampMax="100"))
+	float SurrenderFleeAggression = 20.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", Units="cm"))
+	float SurrenderFleeFarCm = 800.f;
+
+	// A foe has its back turned when the way it faces and the way to this body make an angle wider than this.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", ClampMax="180", Units="deg"))
+	float SurrenderBackTurnedDegrees = 100.f;
+
+	// Running off, it stops and holds its hands up again when a foe on its feet comes this near, and is away once none is
+	// within SurrenderLookCm.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", Units="cm"))
+	float SurrenderFleeCaughtCm = 450.f;
+
+	// Above this aggression (0-100), given up, it watches its foes: when one goes down or gives up, and those still on their
+	// feet are no more than it and the friends fighting about it, it goes back into the fight.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", ClampMax="100"))
+	float SurrenderWatchAggression = 50.f;
+
+	// Foes this near are counted and watched, friends this near counted with it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", Units="cm"))
+	float SurrenderLookCm = 3000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", Units="cm"))
+	float SurrenderFriendCm = 1500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0.05", Units="s"))
+	float SurrenderLookSeconds = 0.5f;
+
 	// The pointing arm is held out this share of its length, and follows where it points this fast.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Point", meta=(ClampMin="0.5", ClampMax="1"))
 	float PointReachShare = 0.985f;
@@ -140,6 +193,17 @@ public:
 	// Seconds down it takes for this body to give up now; below 0 it never does.
 	float GetSurrenderSeconds() const;
 
+	// The blood share at which this NPC gives up in a fight; below 0 it never does.
+	float GetSurrenderBlood() const;
+
+	// Struck after giving up: an aggressive enough NPC takes it back and gives up no more.
+	void StruckWhileGivenUp(const AAedirCreature* Attacker);
+
+	// Given up, it runs off from its foes, its hands down; FleeFrom is where they are.
+	bool IsFleeing() const { return bSurrender && bFleeing; }
+	FVector GetFleeFrom() const { return FleeFrom; }
+	bool WillGiveUp() const { return !bNeverAgain; }
+
 private:
 	UFUNCTION(Server, Reliable)
 	void ServerSetPointing(bool bOn);
@@ -151,6 +215,10 @@ private:
 	void LetGoOfEverything() const;
 	void UpdateNpc(float DeltaTime);
 	void UpdateCrouch(float DeltaTime);
+	// Given up, it weighs running off or going back into the fight.
+	void UpdateGivenUp(float DeltaTime);
+	void TakeBack(const TCHAR* Why);
+	float GetAggression() const;
 
 	UPROPERTY(Replicated)
 	bool bPointing = false;
@@ -164,4 +232,11 @@ private:
 	float SteadySeconds = 1.f;
 	float DownSeconds = 0.f;
 	double LastThreat = -1.0e6;
+	bool bNeverAgain = false;
+	double GaveUpAt = 0.0;
+	bool bFleeing = false;
+	FVector FleeFrom = FVector::ZeroVector;
+	float RearmBlood = 2.f;
+	float LookTimer = 0.f;
+	TArray<TWeakObjectPtr<const AAedirCreature>> FoesStanding;
 };

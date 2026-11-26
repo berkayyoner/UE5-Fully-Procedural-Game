@@ -367,6 +367,10 @@ public:
 	UFUNCTION(Exec)
 	void NpcAggression(const FString& Args);
 
+	// NpcBlood <0-100> [group]: the blood of everybody, or of everybody of that group.
+	UFUNCTION(Exec)
+	void NpcBlood(const FString& Args);
+
 	// HeadBlow <share>: a blow to the head taking that share of the full health. DieNow: the player dies at once. LookInfo:
 	// how the view is graded and how dark and grey it is now.
 	UFUNCTION(Exec)
@@ -592,6 +596,16 @@ public:
 	// off where the bones alone would put it.
 	UFUNCTION(Exec)
 	void ClothInfo();
+
+	// Dev: every skinned part of the bodies near: its detail steps, the one drawn now and its leader's, the bones each step
+	// keeps, and how far each step's skin lies from the first step's as the body stands now.
+	UFUNCTION(Exec)
+	void LodInfo();
+
+	// Dev: for this many seconds, every quarter of a second, how fast each hand went at most about the chest (cm/s), and
+	// the state of the body then.
+	UFUNCTION(Exec)
+	void HandSpeedWatch(float Seconds);
 
 	// Washes the blood off the body and out of the clothes worn, as a wash at a lavoir will.
 	UFUNCTION(Exec)

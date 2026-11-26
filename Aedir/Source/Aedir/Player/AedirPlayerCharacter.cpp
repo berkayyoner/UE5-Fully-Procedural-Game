@@ -2164,6 +2164,11 @@ void AAedirPlayerCharacter::NpcAggression(const FString& Args)
 	RunDevCommand(TEXT("NpcAggression"), Args, true);
 }
 
+void AAedirPlayerCharacter::NpcBlood(const FString& Args)
+{
+	RunDevCommand(TEXT("NpcBlood"), Args, true);
+}
+
 void AAedirPlayerCharacter::HeadBlow(const FString& Args)
 {
 	RunDevCommand(TEXT("HeadBlow"), Args, true);
@@ -2852,6 +2857,136 @@ void AAedirPlayerCharacter::ClothInfo()
 			Mean /= FMath::Max(Points, 1);
 			UE_LOG(LogAedir, Display, TEXT("[Cloth] %s %s on %s: simulation %d, suspended %d, disabled %d, leader %s, visible %d, %d cloth points, their middle %s"), *It->GetName(), *Model->GetName(), *GetNameSafe(Part->GetOwner()),
 				Part->GetClothingSimulation() ? 1 : 0, Part->IsClothingSimulationSuspended() ? 1 : 0, Part->bDisableClothSimulation ? 1 : 0, *GetNameSafe(Part->LeaderPoseComponent.Get()), Part->IsVisible() ? 1 : 0, Points, *Mean.ToCompactString());
+		}
+	}
+}
+
+void AAedirPlayerCharacter::HandSpeedWatch(float Seconds)
+{
+	struct FHandWatch
+	{
+		FTimerHandle Timer;
+		FVector Last[2];
+		bool bStarted = false;
+		double Start = 0.0;
+		double WindowStart = 0.0;
+		float Peak[2] = { 0.f, 0.f };
+		uint64 LastFrame = 0;
+	};
+	TSharedRef<FHandWatch> Watch = MakeShared<FHandWatch>();
+	Watch->Start = GetWorld()->GetTimeSeconds();
+	Watch->WindowStart = Watch->Start;
+	FTimerManagerTimerParameters Params;
+	Params.bLoop = true;
+	Params.bMaxOncePerFrame = true;
+	const float Total = FMath::Clamp(Seconds, 0.2f, 60.f);
+	GetWorldTimerManager().SetTimer(Watch->Timer, FTimerDelegate::CreateWeakLambda(this, [this, Watch, Total]()
+	{
+		const USkeletalMeshComponent* Body = GetMesh();
+		const double Now = GetWorld()->GetTimeSeconds();
+		const float Delta = GetWorld()->GetDeltaSeconds();
+		if (!Body || Watch->LastFrame == GFrameCounter || Delta <= 0.f)
+		{
+			return;
+		}
+		Watch->LastFrame = GFrameCounter;
+		const FVector Chest = (Body->GetBoneLocation(TEXT("upperarm_l")) + Body->GetBoneLocation(TEXT("upperarm_r"))) * 0.5;
+		const FVector Hands[2] = { Body->GetBoneLocation(TEXT("hand_l")) - Chest, Body->GetBoneLocation(TEXT("hand_r")) - Chest };
+		for (int32 Slot = 0; Slot < 2; ++Slot)
+		{
+			if (Watch->bStarted)
+			{
+				Watch->Peak[Slot] = FMath::Max(Watch->Peak[Slot], static_cast<float>(FVector::Dist(Hands[Slot], Watch->Last[Slot])) / Delta);
+			}
+			Watch->Last[Slot] = Hands[Slot];
+		}
+		Watch->bStarted = true;
+		if (Now - Watch->WindowStart >= 0.25)
+		{
+			UE_LOG(LogAedir, Display, TEXT("[HandSpeed] t=%.2f fastest left %.0f right %.0f cm/s | lying %d hoisting %d getting up %d settling %d"), Now - Watch->Start, Watch->Peak[0], Watch->Peak[1],
+				Balance && Balance->IsRagdoll() ? 1 : 0, Balance && Balance->IsHoisting() ? 1 : 0, Balance && Balance->IsGettingUp() ? 1 : 0, Balance && Balance->IsSettling() ? 1 : 0);
+			Watch->WindowStart = Now;
+			Watch->Peak[0] = 0.f;
+			Watch->Peak[1] = 0.f;
+		}
+		if (Now - Watch->Start > Total)
+		{
+			GetWorldTimerManager().ClearTimer(Watch->Timer);
+		}
+	}), 0.001f, Params);
+}
+
+void AAedirPlayerCharacter::LodInfo()
+{
+	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
+	{
+		if (FVector::Dist(It->GetActorLocation(), GetActorLocation()) > 1500.f)
+		{
+			continue;
+		}
+		TArray<USkeletalMeshComponent*> Parts;
+		It->GetComponents<USkeletalMeshComponent>(Parts, true);
+		TArray<AActor*> Held;
+		It->GetAttachedActors(Held, true, true);
+		for (AActor* Thing : Held)
+		{
+			TArray<USkeletalMeshComponent*> More;
+			Thing->GetComponents<USkeletalMeshComponent>(More, true);
+			Parts.Append(More);
+		}
+		for (USkeletalMeshComponent* Part : Parts)
+		{
+			USkeletalMesh* Model = Part ? Part->GetSkeletalMeshAsset() : nullptr;
+			FSkeletalMeshRenderData* Render = Model ? Model->GetResourceForRendering() : nullptr;
+			if (!Render || Render->LODRenderData.IsEmpty() || !Part->IsVisible())
+			{
+				continue;
+			}
+			const USkinnedMeshComponent* Leader = Part->LeaderPoseComponent.Get();
+			UE_LOG(LogAedir, Display, TEXT("[LodInfo] %s %s on %s: %d steps, drawn %d (forced %d), leader %s drawn %d, sync to parent %d"), *It->GetName(), *Model->GetName(), *GetNameSafe(Part->GetOwner()),
+				Render->LODRenderData.Num(), Part->GetPredictedLODLevel(), Part->GetForcedLOD(), *GetNameSafe(Leader), Leader ? Leader->GetPredictedLODLevel() : -1, Part->bSyncAttachParentLOD ? 1 : 0);
+			TArray<FMatrix44f> RefToLocals;
+			Part->CacheRefToLocalMatrices(RefToLocals);
+			TArray<FVector3f> First;
+			for (int32 Lod = 0; Lod < Render->LODRenderData.Num(); ++Lod)
+			{
+				FSkeletalMeshLODRenderData& Data = Render->LODRenderData[Lod];
+				TArray<FVector3f> Points;
+				USkeletalMeshComponent::ComputeSkinnedPositions(Part, Points, RefToLocals, Data, Data.SkinWeightVertexBuffer);
+				FBox Box(ForceInit);
+				for (const FVector3f& Point : Points)
+				{
+					Box += Part->GetComponentTransform().TransformPosition(FVector(Point));
+				}
+				int32 Cloth = 0;
+				for (const FSkelMeshRenderSection& Section : Data.RenderSections)
+				{
+					Cloth += Section.HasClothingData() ? 1 : 0;
+				}
+				// The nearest of the first step's points to a sample of this step's: how far apart the two skins lie.
+				float Apart = 0.f;
+				int32 Samples = 0;
+				if (Lod == 0)
+				{
+					First = Points;
+				}
+				else
+				{
+					const int32 Stride = FMath::Max(Points.Num() / 200, 1);
+					for (int32 Index = 0; Index < Points.Num(); Index += Stride)
+					{
+						float Nearest = TNumericLimits<float>::Max();
+						for (int32 Other = 0; Other < First.Num(); Other += FMath::Max(First.Num() / 4000, 1))
+						{
+							Nearest = FMath::Min(Nearest, FVector3f::DistSquared(Points[Index], First[Other]));
+						}
+						Apart += FMath::Sqrt(Nearest);
+						++Samples;
+					}
+				}
+				UE_LOG(LogAedir, Display, TEXT("[LodInfo]   step %d: %d points, %d bones kept, %d cloth sections, middle %s size %s, %.1f cm from the first step's skin on average"),
+					Lod, Points.Num(), Data.RequiredBones.Num(), Cloth, *Box.GetCenter().ToCompactString(), *Box.GetSize().ToCompactString(), Samples > 0 ? Apart / Samples : 0.f);
+			}
 		}
 	}
 }

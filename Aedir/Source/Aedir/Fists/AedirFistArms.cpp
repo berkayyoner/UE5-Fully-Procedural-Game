@@ -142,6 +142,8 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		// does as well, the other bearing the body on the ground.
 		bOnGround[0] = OwnBalance && OwnBalance->IsHandOnGround(0);
 		bOnGround[1] = OwnBalance && OwnBalance->IsHandOnGround(1);
+		const bool bRising = OwnBalance && (OwnBalance->IsHoisting() || OwnBalance->IsGettingUp() || OwnBalance->IsSettling());
+		CalmLeft = bRising ? RisingCalmSeconds : FMath::Max(CalmLeft - DeltaTime, 0.f);
 		const AAedirCreature* OwnCreature = Cast<AAedirCreature>(GetOwner());
 		const UAedirWoundComponent* OwnWounds = OwnCreature ? OwnCreature->Wounds.Get() : nullptr;
 		bArmUseless[0] = OwnWounds && OwnWounds->HasUselessArm(true);
@@ -518,6 +520,19 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			FistWorld[Slot] += Moved;
 			ElbowWorld[Slot] += Moved * 0.5;
 		}
+		// Coming up off the ground the arm goes after where the guard is now, about the chest, at no more than a steady pace.
+		const bool bShown = ShownAlpha[Slot] > 0.f;
+		if (CalmLeft > 0.f && bShown && bLastShown[Slot])
+		{
+			const float Step = RisingFistSpeedCm * BodyScale * DeltaTime;
+			const FVector FistFrom = LastFistFromChest[Slot] + (FistWorld[Slot] - Chest - LastFistFromChest[Slot]).GetClampedToMaxSize(Step);
+			const FVector ElbowFrom = LastElbowFromChest[Slot] + (ElbowWorld[Slot] - Chest - LastElbowFromChest[Slot]).GetClampedToMaxSize(Step);
+			FistWorld[Slot] = Chest + FistFrom;
+			ElbowWorld[Slot] = Chest + ElbowFrom;
+		}
+		LastFistFromChest[Slot] = FistWorld[Slot] - Chest;
+		LastElbowFromChest[Slot] = ElbowWorld[Slot] - Chest;
+		bLastShown[Slot] = bShown;
 	}
 	const bool bBladeUp = (HeldNow(0) && bArmed[0]) || (HeldNow(1) && bArmed[1]);
 	WaistPitch = (UpDown > 0.f ? UpDown * WaistBackDegrees : UpDown * (bBladeUp ? BladeWaistForwardDegrees : WaistForwardDegrees)) * Raised;

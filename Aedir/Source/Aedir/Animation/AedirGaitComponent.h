@@ -770,6 +770,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchWoundInSpeed = 3.f;
 
+	// Just up off the ground, finding its feet, a hand goes back to a wound this slowly (shares a second): the pose of the
+	// arms changes at once there, and at the usual pace the hand was flung up to the place.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0.1"))
+	float ClutchRisingInSpeed = 1.2f;
+
 	// Holding, the hand goes from one place over to another, or after a place that moves, no faster than this over the body
 	// (cm/s), and turns no faster than this (degrees a second).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
@@ -843,6 +848,11 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchOutSpeed = 2.5f;
+
+	// Both hands holding places more than this far over the middle of the chest on the other's side would cross the arms:
+	// one of them lets go.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", Units="cm"))
+	float ClutchCrossMarginCm = 3.f;
 
 	// The wrist sits this far off the skin and this far back towards the hand's own side, so the palm lies on the place.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")

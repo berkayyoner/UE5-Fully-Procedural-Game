@@ -797,3 +797,14 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Bodies stand closer together: the capsule is narrower
 - Walking into somebody standing shoves them along, and one held by the hand is pulled after it
 - A one-handed blade held in both hands has the second hand right under the first, and NPCs take a one-handed blade in both hands when the other hand is free
+- NPCs give up in a fight once their blood falls to a share set by their aggression (50% at 0 up to 95% at 90), and never above 90
+- Struck after giving up, an NPC above 30 aggression takes it back and fights on, never giving up again
+- Given-up NPCs above 20 aggression run off once every foe on its feet is far off with its back turned, or take the chance and fight again when they and their friends are more than half the foes; once away they stop giving up
+- Given-up NPCs above 50 aggression watch their foes and fight again when one goes down or gives up and those still standing are no more than them and their friends
+- spawn npcenemy takes [amount] [strength] [aggression]; without an aggression it is random, and NpcBlood sets the blood of NPCs for testing
+- The blood of a blow sprays on the way the blow went, coming out of the far side of the struck part when that way goes into the body
+- Footstep dust is a small puff of its own, low about the foot and coloured by the ground, instead of particle systems that rose to the knee
+- A hand holding a wound while lying stays there until it starts down to the ground, and getting up the hands go down eased over a longer reach
+- Getting up and finding the feet, a raised fist and its elbow move about the chest at a steady pace instead of being flung
+- The two hands never hold places across from each other at once: the one holding on less lets go
+- Bodies and faces always draw at their full detail with every bone, so clothes follow them at any distance and character detail setting

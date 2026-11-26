@@ -141,7 +141,7 @@ namespace
 		const FName Base = Words.IsValidIndex(1) ? AedirEntities::FindBaseName(Words[1]) : NAME_None;
 		if (Base.IsNone() || Base == FName(TEXT("Player")))
 		{
-			ConsoleReport(TEXT("Usage: spawn <BaseID or name> [amount]. Type help for the list."));
+			ConsoleReport(TEXT("Usage: spawn <BaseID or name> [amount] [strength] [aggression 0-100]. Type help for the list."));
 			return;
 		}
 
@@ -175,6 +175,15 @@ namespace
 				const FString Given = Names[FMath::RandRange(0, UE_ARRAY_COUNT(Names) - 1)];
 				const FString Name = bEnemy ? Given + TEXT(" the Bandit") : bFollower ? Given + TEXT(" the Sellsword") : Given;
 				Npc->InitNpc(bEnemy ? EAedirNpcRole::Enemy : bFollower ? EAedirNpcRole::Follower : EAedirNpcRole::Neutral, FText::FromString(Name), FText::FromString(TEXT("Nobody you would have heard of.")));
+				// The strength and the aggression asked for; left out, it keeps the strength it has and an aggression of chance.
+				if (Words.IsValidIndex(3) && Words[3].IsNumeric() && Npc->Stats)
+				{
+					Npc->Stats->SetStrength(FCString::Atof(*Words[3]));
+				}
+				if (Words.IsValidIndex(4) && Words[4].IsNumeric())
+				{
+					Npc->SetAggression(FCString::Atof(*Words[4]) * 0.01f);
+				}
 				Spawned = Npc;
 			}
 			if (Spawned)
@@ -452,7 +461,7 @@ namespace
 		{ TEXT("player.getav"), TEXT("player.getav <stat>  shows a stat") },
 		{ TEXT("player.setav"), TEXT("player.setav <stat> <value>  sets strength, athletics, hunger or thirst") },
 		{ TEXT("player.showinventory"), TEXT("player.showinventory  lists what is carried") },
-		{ TEXT("spawn"), TEXT("spawn <base id or name> [amount]  puts things in front of you (placeatme)") },
+		{ TEXT("spawn"), TEXT("spawn <base id or name> [amount] [strength] [aggression 0-100]  puts things in front of you (placeatme); an NPC without an aggression gets one at random") },
 		{ TEXT("enable"), TEXT("enable [ref id]  shows the selected thing again") },
 		{ TEXT("disable"), TEXT("disable [ref id]  hides the selected thing") },
 		{ TEXT("delete"), TEXT("delete [ref id]  removes the selected thing (markfordelete)") },

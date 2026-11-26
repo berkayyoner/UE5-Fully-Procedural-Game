@@ -5906,8 +5906,18 @@ void UAedirCombatComponent::KeepAwayGivenUp(float DeltaTime)
 	{
 		return;
 	}
-	// Hands up, it keeps its distance: a foe on its feet coming too near, it backs away from, facing it.
 	const FVector Here = Creature->GetActorLocation();
+	// Running off it runs away from where its foes are, its back to them.
+	if (Creature->Gesture && Creature->Gesture->IsFleeing())
+	{
+		const FVector Away = (Here - Creature->Gesture->GetFleeFrom()).GetSafeNormal2D();
+		Creature->SetWantsToRun(true);
+		Creature->TurnBodyTo(static_cast<float>(Away.Rotation().Yaw), DeltaTime, AedirAITurnSpeed);
+		Creature->AddMovementInput(Away, 1.f);
+		AIKeepingAway = nullptr;
+		return;
+	}
+	// Hands up, it keeps its distance: a foe on its feet coming too near, it backs away from, facing it.
 	const AAedirCreature* Nearest = nullptr;
 	double NearestCm = AISurrenderKeepAwayCm * Creature->GetActorScale3D().X;
 	for (TActorIterator<AAedirCreature> It(World); It; ++It)

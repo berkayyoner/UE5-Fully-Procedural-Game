@@ -604,7 +604,20 @@ void UAedirDevTools::Execute(AAedirPlayerCharacter* Player, const FString& Comma
 		const TArray<FString> Tokens = DevToolsTokens(Args);
 		for (TActorIterator<AAedirNpc> It(Player->GetWorld()); Tokens.IsValidIndex(0) && It; ++It)
 		{
-			It->Aggression = FMath::Clamp(FCString::Atof(*Tokens[0]) * 0.01f, 0.f, 1.f);
+			It->SetAggression(FCString::Atof(*Tokens[0]) * 0.01f);
+		}
+	}
+	else if (Command == TEXT("NpcBlood"))
+	{
+		// NpcBlood <0-100> [group]: of everybody, or of everybody of that group.
+		const TArray<FString> Tokens = DevToolsTokens(Args);
+		for (TActorIterator<AAedirNpc> It(Player->GetWorld()); Tokens.IsValidIndex(0) && It; ++It)
+		{
+			if (It->Stats && (!Tokens.IsValidIndex(1) || It->GroupId == FName(*Tokens[1])))
+			{
+				It->Stats->SetBlood(FCString::Atof(*Tokens[0]));
+				DevToolsReport(FString::Printf(TEXT("%s has %.0f blood"), *It->GetName(), It->Stats->GetBloodFraction() * 100.f));
+			}
 		}
 	}
 	else if (Command == TEXT("Knockdown"))
