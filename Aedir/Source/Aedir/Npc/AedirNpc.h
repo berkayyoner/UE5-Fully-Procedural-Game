@@ -130,6 +130,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter")
 	float ChatterPauseSeconds = 0.6f;
 
+	// A friend in sight is told how it looks: tired out at this share of its blood or less, badly hurt below the second or
+	// with a broken bone, all but bled white at the third or less. Looked for this often (s); the same friend is not told
+	// again for so long (s).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter", meta=(ClampMin="0", ClampMax="1"))
+	float ChatterWornBlood = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter", meta=(ClampMin="0", ClampMax="1"))
+	float ChatterHurtBlood = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter", meta=(ClampMin="0", ClampMax="1"))
+	float ChatterDyingBlood = 0.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter", meta=(ClampMin="0.2", Units="s"))
+	float ChatterHurtLookSeconds = 2.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Npc|Chatter", meta=(ClampMin="0", Units="s"))
+	float ChatterHurtRepeatSeconds = 90.f;
+
 	UPROPERTY(Replicated, BlueprintReadOnly, Category="Aedir|Npc")
 	EAedirNpcOrder Order = EAedirNpcOrder::Routine;
 
@@ -201,6 +219,9 @@ private:
 	float ChatWait = 0.f;
 	float LineSeconds = 0.f;
 	float RemarkTimer = FMath::FRandRange(5.f, 25.f);
+	TWeakObjectPtr<const AAedirCreature> LastHurtRemarked;
+	double LastHurtRemarkTime = -1000.0;
+	float HurtLookTimer = 0.f;
 	float TalkTimer = FMath::FRandRange(8.f, 40.f);
 	TWeakObjectPtr<AAedirCreature> TalkPartner;
 	float SpeakSeconds = 0.f;

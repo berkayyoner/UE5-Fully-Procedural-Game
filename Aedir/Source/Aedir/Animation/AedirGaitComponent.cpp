@@ -1090,8 +1090,8 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	// A broken arm's hand hangs open: it closes on nothing.
 	if (const UAedirWoundComponent* HandWounds = CreatureOwner->Wounds.Get())
 	{
-		GaitState.FistAlphaLeft = HandWounds->HasUselessArm(true) ? 0.f : GaitState.FistAlphaLeft;
-		GaitState.FistAlphaRight = HandWounds->HasUselessArm(false) ? 0.f : GaitState.FistAlphaRight;
+		GaitState.FistAlphaLeft = HandWounds->HasUselessHand(true) ? 0.f : GaitState.FistAlphaLeft;
+		GaitState.FistAlphaRight = HandWounds->HasUselessHand(false) ? 0.f : GaitState.FistAlphaRight;
 	}
 	ApplyGestureToState();
 	// Loose arms hang straight while standing; the elbows start to break with the walking and running speed.
@@ -2242,7 +2242,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 	const auto Free = [&](int32 Slot)
 	{
 		const EAedirHand Hand = Slot == 0 ? EAedirHand::Left : EAedirHand::Right;
-		return !(Interaction && Interaction->GetHeldItem(Hand)) && !(WoundComponent && WoundComponent->HasUselessArm(Slot == 0)) && !(BalanceComponent && BalanceComponent->IsHandOnGround(Slot));
+		return !(Interaction && Interaction->GetHeldItem(Hand)) && !(WoundComponent && WoundComponent->HasUselessHand(Slot == 0)) && !(BalanceComponent && BalanceComponent->IsHandOnGround(Slot));
 	};
 	// The wrist a little off the skin and back towards the hand's own shoulder, so the palm and fingers lie over the place.
 	const auto WristAt = [&](int32 Slot, const FVector& PointWorld, const FVector& OutwardWorld)
@@ -2589,7 +2589,9 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		// Out of the fight and not reaching for anything, the worst of what still hurts is held while it lasts: a stump, a
 		// broken limb, or a wound still bleeding.
 		const UAedirFistArms* Fists = CreatureOwner->FindComponentByClass<UAedirFistArms>();
-		const bool bBusy = (Combat && Combat->IsInFightStance()) || (Fists && Fists->IsSteering()) || (Interaction && Interaction->GetReachLeanDegrees() > 1.f);
+		const bool bBusy = (Combat && Combat->IsInFightStance()) || (Interaction && Interaction->GetReachLeanDegrees() > 1.f);
+		// A hand whose button is held is in use; the other one goes on holding what hurts.
+		const bool bHandBusy[2] = { Fists && Fists->IsButtonHeld(EAedirHand::Left), Fists && Fists->IsButtonHeld(EAedirHand::Right) };
 		if (WoundComponent && !bBusy)
 		{
 			float Worst = 0.f;
@@ -2602,7 +2604,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 			// A wound on the skin is held where the hand can lie on it (Bone); a stump or a break from in front.
 			const auto Consider = [&](float Score, int32 Hand, const FVector& At, const FVector& Out, int32 Id = INDEX_NONE, FName Bone = NAME_None)
 			{
-				if (Hand == INDEX_NONE || HandFlinch[Hand].Left > 0.f || Score <= Worst)
+				if (Hand == INDEX_NONE || HandFlinch[Hand].Left > 0.f || Score <= Worst || bHandBusy[Hand])
 				{
 					return;
 				}
@@ -2682,13 +2684,20 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 				{
 					Consider(1.2f, Own, Body->GetBoneLocation(WoundComponent->IsSevered(Thigh) ? Thigh : Calf), Ahead);
 				}
-				if (WoundComponent->IsLimbBroken(bLeft ? EAedirLimb::LeftArm : EAedirLimb::RightArm) && !WoundComponent->HasLostArm(bLeft))
+				// A broken bone is held where it broke: the middle of the upper arm, of the forearm, or the wrist; of the thigh, of the
+				// shin, or the ankle.
+				const int32 ArmBreak = WoundComponent->GetBreakLevel(bLeft ? EAedirLimb::LeftArm : EAedirLimb::RightArm);
+				if (ArmBreak > 0 && !WoundComponent->HasLostArm(bLeft))
 				{
-					Consider(1.f, Other, FMath::Lerp(Body->GetBoneLocation(bLeft ? TEXT("upperarm_l") : TEXT("upperarm_r")), Body->GetBoneLocation(bLeft ? TEXT("lowerarm_l") : TEXT("lowerarm_r")), 0.5f), Ahead);
+					const FName From = ArmBreak == 3 ? FName(bLeft ? TEXT("upperarm_l") : TEXT("upperarm_r")) : ArmBreak == 2 ? FName(bLeft ? TEXT("lowerarm_l") : TEXT("lowerarm_r")) : FName(bLeft ? TEXT("hand_l") : TEXT("hand_r"));
+					const FName To = ArmBreak == 3 ? FName(bLeft ? TEXT("lowerarm_l") : TEXT("lowerarm_r")) : ArmBreak == 2 ? FName(bLeft ? TEXT("hand_l") : TEXT("hand_r")) : FName(bLeft ? TEXT("middle_01_l") : TEXT("middle_01_r"));
+					Consider(1.f, Other, FMath::Lerp(Body->GetBoneLocation(From), Body->GetBoneLocation(To), ArmBreak == 1 ? 0.3f : 0.5f), Ahead);
 				}
-				if (WoundComponent->IsLimbBroken(bLeft ? EAedirLimb::LeftLeg : EAedirLimb::RightLeg))
+				const int32 LegBreak = WoundComponent->GetBreakLevel(bLeft ? EAedirLimb::LeftLeg : EAedirLimb::RightLeg);
+				if (LegBreak >= 2)
 				{
-					Consider(1.f, Own, FMath::Lerp(Body->GetBoneLocation(Thigh), Body->GetBoneLocation(Calf), 0.55f), Ahead);
+					Consider(1.f, Own, LegBreak == 3 ? FMath::Lerp(Body->GetBoneLocation(Thigh), Body->GetBoneLocation(Calf), 0.55f)
+						: FMath::Lerp(Body->GetBoneLocation(Calf), Body->GetBoneLocation(bLeft ? TEXT("foot_l") : TEXT("foot_r")), 0.4f), Ahead);
 				}
 			}
 			if (Slot != INDEX_NONE)
@@ -2697,14 +2706,23 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 				Goal[Slot] = Wrist;
 				PlaceNow[Slot] = Point;
 				OutNow[Slot] = Outward;
-				// A hurt forearm is brought in before the belly for the other hand to hold: hanging at its own side it is out of reach.
+				// A hurt arm is brought in before the belly to meet the other hand that holds it: a hurt forearm or hand all the way,
+				// one hurt at the upper arm part of the way. Hanging at its own side it is out of reach. An arm broken from the
+				// forearm in hangs and cannot come.
 				const int32 Hurt = 1 - Slot;
 				const int32 HurtIndex = WoundId == INDEX_NONE ? INDEX_NONE : WoundComponent->ActiveWounds.IndexOfByPredicate([&](const FAedirWound& Wound) { return Wound.Id == WoundId; });
-				if (HurtIndex != INDEX_NONE && WoundComponent->ActiveWounds[HurtIndex].Bone.ToString().StartsWith(TEXT("lowerarm")) && Free(Hurt) && HandFlinch[Hurt].Left <= 0.f)
+				const FString HurtBone = HurtIndex != INDEX_NONE ? WoundComponent->ActiveWounds[HurtIndex].Bone.ToString() : FString();
+				const FString HurtSide = Hurt == 0 ? TEXT("_l") : TEXT("_r");
+				const int32 HurtBreak = WoundComponent->GetBreakLevel(Hurt == 0 ? EAedirLimb::LeftArm : EAedirLimb::RightArm);
+				const bool bHurtArm = HurtBone.EndsWith(HurtSide) && (HurtBone.StartsWith(TEXT("lowerarm")) || HurtBone.StartsWith(TEXT("upperarm")) || HurtBone.StartsWith(TEXT("hand")));
+				const bool bHurtHandBroken = HurtIndex == INDEX_NONE && HurtBreak == 1;
+				const bool bHurtComes = !(Interaction && Interaction->GetHeldItem(Hurt == 0 ? EAedirHand::Left : EAedirHand::Right)) && !WoundComponent->HasLostArm(Hurt == 0)
+					&& HurtBreak < 2 && !(BalanceComponent && BalanceComponent->IsHandOnGround(Hurt)) && !bHandBusy[Hurt];
+				if ((bHurtArm || bHurtHandBroken) && bHurtComes && HandFlinch[Hurt].Left <= 0.f)
 				{
 					const FVector Middle = (Body->GetBoneLocation(TEXT("upperarm_l")) + Body->GetBoneLocation(TEXT("upperarm_r"))) * 0.5;
 					const FVector Cradle(ClutchCradle.X, Hurt == 0 ? -ClutchCradle.Y : ClutchCradle.Y, ClutchCradle.Z);
-					Wanted[Hurt] = ClutchWoundShare;
+					Wanted[Hurt] = ClutchWoundShare * (HurtBone.StartsWith(TEXT("upperarm")) ? ClutchCradleUpperShare : 1.f);
 					Goal[Hurt] = Middle + ActorTransform.TransformVectorNoScale(Cradle * ActorTransform.GetScale3D().X);
 					PlaceNow[Hurt] = Goal[Hurt] + ActorTransform.GetUnitAxis(EAxis::X) * -10.0;
 					OutNow[Hurt] = ActorTransform.GetUnitAxis(EAxis::X);
@@ -2832,6 +2850,7 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		GaitState.ClutchWristBendDegrees = ClutchWristBendDegrees;
 		GaitState.ClutchWristTwistDegrees = ClutchWristTwistDegrees;
 		GaitState.ClutchWristTwistSpeed = ClutchWristTwistSpeed;
+		GaitState.ElbowPoleTurnSpeed = ElbowPoleTurnSpeed;
 	}
 	WatchClutch(DeltaTime, ActorTransform);
 }

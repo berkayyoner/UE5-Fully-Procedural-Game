@@ -43,7 +43,10 @@ private:
 	void ApplyArm(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& ClavicleName, const FName& HumerusName, const FName& RadiusName, const FName& HandName, float ArmSwingDegrees, float ElbowDegrees, float ReachAlpha, float RestRollDegrees, float ClavicleRollDegrees) const;
 	// Breathing wave in [-1, 1], zero while dead.
 	float GetBreathWave() const;
-	void ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh, const FVector& ElbowHint = FVector::ZeroVector, float ElbowHintAlpha = 0.f) const;
+	void ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh, const FVector& ElbowHint = FVector::ZeroVector, float ElbowHintAlpha = 0.f, int32 PoleSlot = -1) const;
+	// The way each arm's elbow was led last (mesh space): holding a hurt place it turns from that no faster than
+	// GaitData.ElbowPoleTurnSpeed, so the elbow swings round instead of jumping to the other side of the arm.
+	mutable FVector ReachPole[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	void ApplyFingers(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const TArray<FName>& FingerBoneNames, float FistAlpha, float CurlSign, float PointAlpha) const;
 	// A hand held to a hurt place turned to lie flat on it.
 	// The face's look and the eyes' turn, as the curves the face's rig is worked by.

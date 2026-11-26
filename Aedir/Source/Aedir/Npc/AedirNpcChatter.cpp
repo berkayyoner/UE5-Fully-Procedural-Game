@@ -4,6 +4,7 @@
 
 #include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirStatsComponent.h"
+#include "Wounds/AedirWoundComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
@@ -44,6 +45,26 @@ namespace
 		TEXT("Back to work, then."),
 		TEXT("Mind how you go."),
 		TEXT("Till later."),
+	};
+
+	// Said to a friend who looks the worse for wear: tired out, badly hurt, or all but bled white.
+	const TCHAR* const ChatterWornRemarks[] =
+	{
+		TEXT("You look tired. I think you need some rest."),
+		TEXT("You're pale as a winter morning. Sit down a while."),
+		TEXT("Rest your legs, friend. You've earned it, by the look of you."),
+	};
+	const TCHAR* const ChatterHurtRemarks[] =
+	{
+		TEXT("You look terrible. Go and see a healer, quickly."),
+		TEXT("That's no scratch. Get yourself to a healer before it turns."),
+		TEXT("Sol's light, look at you. A healer, now, before you fall over."),
+	};
+	const TCHAR* const ChatterDyingRemarks[] =
+	{
+		TEXT("By the gods, how are you still walking? Find a healer, now!"),
+		TEXT("You're leaving a trail like a slaughtered pig! Find a healer, hurry!"),
+		TEXT("Cali's teeth, you're white as the moon! A healer, right away!"),
 	};
 
 	const TCHAR* const ChatterEnemyTaunts[] =
@@ -178,6 +199,44 @@ void AAedirNpc::UpdateChatter(float DeltaSeconds)
 		ChatWait = Speaker->LineSeconds + ChatterPauseSeconds;
 		++ChatLine;
 		return;
+	}
+
+	// A friend in sight who looks hurt is told so, looked for every few seconds.
+	HurtLookTimer -= DeltaSeconds;
+	// Busy about its own errands it still has a word for a friend who looks bad, only not in the middle of a fight or a talk.
+	if (HurtLookTimer <= 0.f && Role_Npc != EAedirNpcRole::Enemy && !TalkPartner.IsValid() && !ChatPartner.IsValid() && !(Combat && Combat->HasAITarget()) && LineSeconds <= 0.f)
+	{
+		HurtLookTimer = ChatterHurtLookSeconds;
+		// A friend in sight who looks hurt is told so before anything else, the worst off of them, and not again for a while.
+		const AAedirCreature* Hurt = nullptr;
+		int32 Worst = 0;
+		for (TActorIterator<AAedirCreature> It(World); It; ++It)
+		{
+			const AAedirCreature* Other = *It;
+			if (Other == this || !Other->Stats || Other->Stats->IsDead() || Other->Stats->IsDying() || IsEnemyOf(Other)
+				|| FVector::Dist(Other->GetActorLocation(), GetActorLocation()) > ChatterRemarkRangeCm
+				|| FVector::DotProduct((Other->GetActorLocation() - GetActorLocation()).GetSafeNormal2D(), GetActorForwardVector()) <= ChatterSeeDot
+				|| (Other == LastHurtRemarked.Get() && World->GetTimeSeconds() < LastHurtRemarkTime + ChatterHurtRepeatSeconds))
+			{
+				continue;
+			}
+			const float Blood = Other->Stats->GetBloodFraction();
+			const UAedirWoundComponent* Sores = Other->Wounds;
+			const bool bBroken = Sores && (Sores->IsLimbBroken(EAedirLimb::LeftArm) || Sores->IsLimbBroken(EAedirLimb::RightArm) || Sores->IsLimbBroken(EAedirLimb::LeftLeg) || Sores->IsLimbBroken(EAedirLimb::RightLeg));
+			const int32 How = Blood <= ChatterDyingBlood ? 3 : (Blood < ChatterHurtBlood || bBroken) ? 2 : Blood <= ChatterWornBlood ? 1 : 0;
+			if (How > Worst)
+			{
+				Worst = How;
+				Hurt = Other;
+			}
+		}
+		if (Hurt)
+		{
+			LastHurtRemarked = Hurt;
+			LastHurtRemarkTime = World->GetTimeSeconds();
+			SayLine(Worst == 3 ? ChatterPick(ChatterDyingRemarks) : Worst == 2 ? ChatterPick(ChatterHurtRemarks) : ChatterPick(ChatterWornRemarks));
+			return;
+		}
 	}
 
 	if (!IsFreeToChat())

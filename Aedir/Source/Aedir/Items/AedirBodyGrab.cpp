@@ -582,6 +582,17 @@ void UAedirInteractionComponent::UpdateBodyGrabs(float DeltaTime)
 				{
 					HeldMove->Velocity -= Off * (Leaving * Hold * BodyGrabHoldBackShare);
 				}
+				// Drawn after the hand: held further from where the hand would have it than the arm gives, the body is pulled
+				// along, as fast as the hand outmatches it, and its balance with it.
+				const FVector Toward = Lag.GetSafeNormal2D();
+				const float Want = FMath::Clamp((Grab.LagCm - BodyGrabDragFromCm) * BodyPullGain, 0.f, BodyPullSpeedCm) * Hold;
+				const double Coming = FVector::DotProduct(HeldMove->Velocity, Toward);
+				if (!Toward.IsNearlyZero() && Want > Coming && HeldMove->IsMovingOnGround())
+				{
+					const float DeltaTime = GetWorld() ? GetWorld()->GetDeltaSeconds() : 0.f;
+					HeldMove->Velocity += Toward * ((Want - Coming) * FMath::Clamp(DeltaTime * 10.f, 0.f, 1.f));
+					Held->Balance->ApplyBalanceImpact(Toward, BodyPullBalancePerSecond * DeltaTime * (Want / FMath::Max(BodyPullSpeedCm, 1.f)));
+				}
 				static const IConsoleVariable* HoldLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
 				if (HoldLog && HoldLog->GetInt() != 0 && GFrameCounter % 15 == 0)
 				{

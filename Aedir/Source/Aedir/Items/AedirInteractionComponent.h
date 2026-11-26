@@ -320,16 +320,28 @@ public:
 	float BodyLiftOffCm = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
-	float BodyLiftOffSeconds = 0.2f;
+	float BodyLiftOffSeconds = 2.5f;
 
 	// Pulled up past BodyLiftOffCm with more than their weight, somebody standing is raised whole, at up to this speed (cm/s)
-	// and ten times as fast as the hands are above where they hold; their balance goes only once their feet are this far
-	// off the ground (cm) for BodyLiftOffSeconds.
+	// and ten times as fast as the hands are above where they hold. Put down again on their feet they stand on; only held
+	// with their feet this far off the ground (cm) for BodyLiftOffSeconds do they go limp in the hands.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
 	float BodyLiftRiseSpeedCm = 70.f;
 
+	// Somebody standing held further from where the hand would have it than BodyGrabDragFromCm is pulled after the hand, this
+	// many cm/s for each cm further, up to this speed (cm/s), by as much as the hand outmatches them; their balance is pushed
+	// that way this much a second at the most.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
-	float BodyLiftOffFeetCm = 10.f;
+	float BodyPullGain = 8.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyPullSpeedCm = 220.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyPullBalancePerSecond = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftOffFeetCm = 25.f;
 
 	// A hand holding a dead body takes off the armour worn where it holds it and keeps it in that hand. False when there is
 	// none there, or the body is not dead.

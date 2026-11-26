@@ -124,8 +124,6 @@ public:
 	// Up towards surrender or down from it; only once the hands are all the way up has it surrendered.
 	void SetSurrendering(bool bOn);
 	bool IsSurrendering() const { return bSurrender; }
-	// Hands up and backing away from a foe: it stands up out of its crouch to go the quicker.
-	void SetKeepingAway(bool bOn) { bKeepingAway = bOn; }
 	bool HasSurrendered() const { return bSurrender && SurrenderShare >= 1.f; }
 	// It has given up and not taken it back, whether its hands are up just now or not (out cold, or getting up by them).
 	bool HasGivenUp() const { return bSurrender && bGaveUp; }
@@ -159,7 +157,6 @@ private:
 
 	UPROPERTY(Replicated)
 	bool bSurrender = false;
-	bool bKeepingAway = false;
 
 	float SurrenderShare = 0.f;
 	bool bGaveUp = false;

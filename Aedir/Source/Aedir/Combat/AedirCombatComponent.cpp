@@ -619,6 +619,8 @@ namespace
 	constexpr float AedirBreakArmJoules = 210.f;
 	constexpr float AedirBreakLegJoules = 290.f;
 	constexpr float AedirBreakEndShare = 0.5f;
+	// The neck breaks from this many joules getting through, and that is death.
+	constexpr float AedirBreakNeckJoules = 300.f;
 	constexpr float AedirDentShowJoules = 40.f;
 	constexpr float AedirHelmetOffFromJoules = 100.f;
 	constexpr float AedirHelmetOffSpreadJoules = 280.f;
@@ -4146,7 +4148,9 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 	// with the hand it swings on purpose, its button held; one it lies on or leans on to get up only tumbles about.
 	const bool bHolderDown = (Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying() || Creature->Stats->IsKnockedOut()))
 		|| (Creature->Balance && Creature->Balance->IsRagdoll() && !Creature->Balance->IsGettingUp() && !bFistUp)
-		|| (Creature->Balance && Creature->Balance->IsHoisting() && Creature->Balance->GetHoistFreeHand() != HandIndex(Hand));
+		|| (Creature->Balance && Creature->Balance->IsHoisting() && Creature->Balance->GetHoistFreeHand() != HandIndex(Hand))
+		// Just up from the ground, finding its feet, the arms going over to the standing pose are no blow either.
+		|| (Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsSettling()) && !Creature->Balance->IsHoisting() && !bFistUp);
 	if (bHolderDown)
 	{
 		return;
@@ -4623,11 +4627,24 @@ void UAedirCombatComponent::ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynami
 			const float Reach = BoneName.StartsWith(TEXT("hand")) || BoneName.StartsWith(TEXT("clavicle")) || BoneName.StartsWith(TEXT("foot")) ? AedirBreakEndShare : 1.f;
 			const float Through = Energy * Reach * (1.f - (Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f));
 			const float Sturdy = FMath::Clamp((Victim->Stats ? Victim->Stats->Strength : 10.f) / 10.f, 0.8f, 1.3f);
-			if (Through > (bLeg ? AedirBreakLegJoules : AedirBreakArmJoules) * Sturdy)
+			// Broken where it struck, and only from there out: a hand, a forearm, or the arm from the upper arm.
+			if (Through > (bLeg ? AedirBreakLegJoules : AedirBreakArmJoules) * Sturdy && Victim->Wounds->BreakLimb(Limb, FMath::Max(UAedirWoundComponent::GetBoneBreakLevel(Bone), 1)))
 			{
-				Victim->Wounds->BreakLimb(Limb);
 				UAedirSfxSubsystem::Play(this, EAedirSfx::Bone, Hit.ImpactPoint, 1.f);
 			}
+		}
+	}
+	// A blunt blow that gets through to the neck hard enough breaks it, and the body dies of it at once.
+	if (Bone.ToString().StartsWith(TEXT("neck")) && (!HeldItem || HeldItem->GetDamageType() == EAedirDamageType::Blunt) && IsAuthoritative() && Victim->Stats
+		&& !Victim->Stats->bInvulnerable && !Victim->Stats->IsDead())
+	{
+		const float Through = Energy * (1.f - (Victim->Interaction ? Victim->Interaction->GetArmorAt(Bone, Hit.ImpactPoint, EAedirDamageType::Blunt).Protection : 0.f));
+		const float Sturdy = FMath::Clamp(Victim->Stats->Strength / 10.f, 0.8f, 1.3f);
+		if (Through > AedirBreakNeckJoules * Sturdy)
+		{
+			UE_LOG(LogAedir, Log, TEXT("[Bone] %s's neck breaks under %.0f J."), *Victim->GetName(), Through);
+			UAedirSfxSubsystem::Play(this, EAedirSfx::Bone, Hit.ImpactPoint, 1.f);
+			Victim->Stats->Die();
 		}
 	}
 
@@ -4996,6 +5013,13 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 	{
 		SetGuardInternal(EAedirHand::Left, false);
 		SetGuardInternal(EAedirHand::Right, false);
+		// A one-handed blade with the other hand free is taken in both hands, as the player can.
+		const bool bOtherHandGood = !(Creature->Wounds && Creature->Wounds->HasUselessHand(true));
+		if (bArmed && bAITwoHandOneHanders && bOtherHandGood && !Fists->IsTwoHand() && Fists->CanTakeBothHands())
+		{
+			Fists->SetTwoHand(true);
+			UE_LOG(LogAedir, Log, TEXT("[NpcFists] %s takes %s in both hands"), *Creature->GetName(), *GetNameSafe(Weapon));
+		}
 	}
 	else
 	{
@@ -5880,10 +5904,6 @@ void UAedirCombatComponent::KeepAwayGivenUp(float DeltaTime)
 	UAedirGroupSubsystem* Groups = World ? World->GetSubsystem<UAedirGroupSubsystem>() : nullptr;
 	if (!Groups || (Creature->Balance && (Creature->Balance->IsRagdoll() || Creature->Balance->IsGettingUp() || Creature->Balance->IsSettling())))
 	{
-		if (Creature->Gesture)
-		{
-			Creature->Gesture->SetKeepingAway(false);
-		}
 		return;
 	}
 	// Hands up, it keeps its distance: a foe on its feet coming too near, it backs away from, facing it.
@@ -5905,10 +5925,6 @@ void UAedirCombatComponent::KeepAwayGivenUp(float DeltaTime)
 			Nearest = Other;
 			NearestCm = Cm;
 		}
-	}
-	if (Creature->Gesture)
-	{
-		Creature->Gesture->SetKeepingAway(Nearest != nullptr);
 	}
 	if (!Nearest)
 	{

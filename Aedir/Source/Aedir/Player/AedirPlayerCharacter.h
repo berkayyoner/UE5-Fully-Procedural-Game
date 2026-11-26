@@ -698,7 +698,10 @@ public:
 	// Breaks a limb's bone (0 left arm, 1 right arm, 2 left leg, 3 right leg), the player's own or, with Near 1, the nearest
 	// other body's.
 	UFUNCTION(Exec)
-	void BreakLimb(int32 Limb, int32 Near = 0);
+	void BreakLimb(int32 Limb, int32 Near = 0, int32 Level = 3);
+
+	// The free (photo) camera is flying instead of the body's own view.
+	bool IsPhotoCamera() const { return bPhotoCamera; }
 
 	// Logs how high above the ground the hands, elbows, head and knees of the nearest other body are, to see a fallen body
 	// lie slack or stay stiff.

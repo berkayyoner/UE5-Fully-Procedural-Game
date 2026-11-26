@@ -1,5 +1,6 @@
 #include "Physics/AedirBodyControlComponent.h"
 #include "Physics/AedirBalanceComponent.h"
+#include "Wounds/AedirWoundComponent.h"
 #include "Engine/SkinnedAsset.h"
 #include "ReferenceSkeleton.h"
 
@@ -133,6 +134,7 @@ void UAedirBodyControlComponent::Setup(USkeletalMeshComponent* InMesh, UCapsuleC
 		}
 		const EAedirBodyPart Part = BodyPartOf(Bone);
 		const FName Modifier = Control->CreateBodyModifier(Mesh, Bone, TEXT("Body"), Simulated);
+		ModifierBones.Add(Modifier, Bone);
 		if (Part == EAedirBodyPart::Leg)
 		{
 			LegModifiers.Add(Modifier);
@@ -479,6 +481,41 @@ void UAedirBodyControlComponent::HangBrokenArm(int32 Side)
 	}
 }
 
+void UAedirBodyControlComponent::HangBelowBreak(int32 Side)
+{
+	const USkinnedAsset* Asset = Mesh ? Mesh->GetSkinnedAsset() : nullptr;
+	if (!Control || !Asset)
+	{
+		return;
+	}
+	// Each joint from the break out held weakly as it is in the body as it was made, nearly straight, and dragged on by the
+	// arm above, which goes on as the pose has it.
+	const FReferenceSkeleton& Skeleton = Asset->GetRefSkeleton();
+	const auto Standing = [&Skeleton](FName Bone)
+	{
+		FTransform Pose = FTransform::Identity;
+		for (int32 Index = Skeleton.FindBoneIndex(Bone); Index != INDEX_NONE; Index = Skeleton.GetParentIndex(Index))
+		{
+			Pose = Pose * Skeleton.GetRefBonePose()[Index];
+		}
+		return Pose;
+	};
+	for (const FName& Name : BrokenControls[Side])
+	{
+		if (const TPair<FName, FName>* Joint = MuscleBones.Find(Name))
+		{
+			Control->SetControlUseSkeletalAnimation(Name, false);
+			Control->SetControlTargetOrientation(Name, (Standing(Joint->Key).GetRotation().Inverse() * Standing(Joint->Value).GetRotation()).Rotator(), 0.f, true, false);
+			Control->SetControlAngularData(Name, 1.f, ArmDampingRatio * BrokenArmDampingShare, BrokenArmDrag, 0.f, true);
+		}
+	}
+	for (const FName& Modifier : BrokenModifiers[Side])
+	{
+		Control->SetBodyModifierMovementType(Modifier, EPhysicsMovementType::Simulated);
+		Control->SetBodyModifierPhysicsBlendWeight(Modifier, 1.f);
+	}
+}
+
 void UAedirBodyControlComponent::SetArmBoost(bool bRight, bool bBoost)
 {
 	if (bArmBoost[bRight ? 1 : 0] != bBoost)
@@ -489,15 +526,55 @@ void UAedirBodyControlComponent::SetArmBoost(bool bRight, bool bBoost)
 	}
 }
 
-void UAedirBodyControlComponent::SetBrokenLimbs(bool bLeftArm, bool bRightArm, bool bLeftLeg, bool bRightLeg)
+void UAedirBodyControlComponent::SetBrokenLimbs(int32 LeftArm, int32 RightArm, int32 LeftLeg, int32 RightLeg)
 {
-	const bool Now[4] = { bLeftArm, bRightArm, bLeftLeg, bRightLeg };
-	if (FMemory::Memcmp(Now, bBroken, sizeof(Now)) != 0)
+	const int32 Now[4] = { LeftArm, RightArm, LeftLeg, RightLeg };
+	if (FMemory::Memcmp(Now, BreakLevel, sizeof(Now)) != 0)
 	{
-		FMemory::Memcpy(bBroken, Now, sizeof(Now));
+		FMemory::Memcpy(BreakLevel, Now, sizeof(Now));
+		// A whole arm hangs from the shoulder; a whole leg is weak from the hip.
+		for (int32 Limb = 0; Limb < 4; ++Limb)
+		{
+			bBroken[Limb] = BreakLevel[Limb] >= 3;
+		}
+		GatherBroken();
 		AppliedKey = -1.f;
 		ApplyMultipliers();
 		ApplyBrokenArms();
+	}
+}
+
+void UAedirBodyControlComponent::GatherBroken()
+{
+	// What lies from the break out: for a broken hand the wrist and the fingers, for a broken forearm the elbow down.
+	const auto Rank = [](FName Bone) { return UAedirWoundComponent::GetBoneBreakLevel(Bone); };
+	for (int32 Limb = 0; Limb < 4; ++Limb)
+	{
+		BrokenControls[Limb].Reset();
+		BrokenModifiers[Limb].Reset();
+		const bool bArm = Limb < 2;
+		const TCHAR* Side = Limb % 2 == 0 ? TEXT("_l") : TEXT("_r");
+		const auto Belongs = [&](FName Bone)
+		{
+			const FString Name = Bone.ToString();
+			const bool bArmBone = Name.StartsWith(TEXT("upperarm")) || Name.StartsWith(TEXT("lowerarm")) || Rank(Bone) == 1 && !Name.StartsWith(TEXT("foot")) && !Name.StartsWith(TEXT("ball"));
+			const bool bLegBone = Name.StartsWith(TEXT("thigh")) || Name.StartsWith(TEXT("calf")) || Name.StartsWith(TEXT("foot")) || Name.StartsWith(TEXT("ball"));
+			return Name.EndsWith(Side) && (bArm ? bArmBone : bLegBone) && Rank(Bone) > 0 && Rank(Bone) <= BreakLevel[Limb];
+		};
+		for (const TPair<FName, TPair<FName, FName>>& Muscle : MuscleBones)
+		{
+			if (Belongs(Muscle.Value.Value))
+			{
+				BrokenControls[Limb].Add(Muscle.Key);
+			}
+		}
+		for (const TPair<FName, FName>& Modifier : ModifierBones)
+		{
+			if (Belongs(Modifier.Value))
+			{
+				BrokenModifiers[Limb].Add(Modifier.Key);
+			}
+		}
 	}
 }
 
@@ -510,6 +587,24 @@ void UAedirBodyControlComponent::ApplyBrokenArms()
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
 		const bool bLoose = bBroken[Side];
+		// Broken further out than the shoulder: only what lies from the break out hangs at rest, slack and dragged along.
+		if (!bLoose && BreakLevel[Side] > 0 && !bDead)
+		{
+			if (bArmLoose[Side])
+			{
+				TArray<FName> Arm = Side == 0 ? LeftArmControls : RightArmControls;
+				Arm.Append(Side == 0 ? LeftHandControls : RightHandControls);
+				FollowAnimation(Arm);
+				for (const FName& Name : Arm)
+				{
+					Control->SetControlAngularData(Name, 1.f, ArmDampingRatio, 0.f, 0.f, true);
+				}
+			}
+			HangBelowBreak(Side);
+			// Marked loose, so it is put back whole once it mends.
+			bArmLoose[Side] = true;
+			continue;
+		}
 		if (!bLoose && !bArmLoose[Side])
 		{
 			continue;
@@ -733,8 +828,13 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float Trunk = Soft * (bLimp ? 1.f : TrunkMuscleShare);
 	Apply(SpineControls, SpineHz * Body * Trunk, 0.f);
 	Apply(HeadControls, HeadStrength * (bLimp ? FMath::Lerp(Limp, HoistHeadShare, Hauled) : FMath::Lerp(HoistHeadShare, Standing, HoldEase)) * Trunk, 0.f);
-	Apply(LeftLegControls, LegStrength * LegBody * (bBroken[2] && !bLimp ? BrokenShare : 1.f), 0.f);
-	Apply(RightLegControls, LegStrength * LegBody * (bBroken[3] && !bLimp ? BrokenShare : 1.f), 0.f);
+	Apply(LeftLegControls, LegStrength * LegBody, 0.f);
+	Apply(RightLegControls, LegStrength * LegBody, 0.f);
+	// A broken leg is weak only from the break down.
+	for (int32 Limb = 2; Limb < 4 && !bLimp; ++Limb)
+	{
+		Apply(BrokenControls[Limb], LegStrength * LegBody * BrokenShare, 0.f);
+	}
 	const float ArmHz = CVarAedirBodyArm.GetValueOnGameThread() >= 0.f ? CVarAedirBodyArm.GetValueOnGameThread() : ArmStrength;
 	// A broken arm hangs as a limp body's arm does, the muscle in it still there (LimpShare, its forearm and wrist slacker
 	// as a limp one's); a hurt one keeps at least some of its strength.
@@ -765,6 +865,11 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 		if (bLimp || bBroken[Side])
 		{
 			Apply(ForearmControls[Side], (Side == 0 ? LeftArmHz : RightArmHz) * Soft * Slack[Side], 0.f);
+		}
+		// Broken further out, what hangs from the break is as slack as a limp forearm; the rest of the arm keeps its strength.
+		else if (BreakLevel[Side] > 0)
+		{
+			Apply(BrokenControls[Side], ArmHz * LimpShare * LimpForearmShare * Soft, 0.f);
 		}
 	}
 	// Down, the hips are free; carried, the pose places them and the control rests.

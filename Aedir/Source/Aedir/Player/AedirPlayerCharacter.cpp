@@ -3109,7 +3109,7 @@ void AAedirPlayerCharacter::Wobble(float Seconds)
 	}), 0.001f, true);
 }
 
-void AAedirPlayerCharacter::BreakLimb(int32 Limb, int32 Near)
+void AAedirPlayerCharacter::BreakLimb(int32 Limb, int32 Near, int32 Level)
 {
 	AAedirCreature* Target = this;
 	if (Near != 0)
@@ -3123,7 +3123,7 @@ void AAedirPlayerCharacter::BreakLimb(int32 Limb, int32 Near)
 			}
 		}
 	}
-	const bool bBroken = Target && Target->Wounds && Limb >= 0 && Limb < 4 && Target->Wounds->BreakLimb(static_cast<EAedirLimb>(Limb));
+	const bool bBroken = Target && Target->Wounds && Limb >= 0 && Limb < 4 && Target->Wounds->BreakLimb(static_cast<EAedirLimb>(Limb), Level);
 	if (bBroken)
 	{
 		// Heard as a bone broken in a fight is.

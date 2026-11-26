@@ -238,13 +238,21 @@ public:
 	bool TrySever(FName HitBone, const FVector& PlanePoint, const FVector& PlaneNormal, const FVector& Push, float EnergyJoules, float ArmorProtection);
 	bool IsSevered(FName Bone) const { return SeveredBones.Contains(Bone); }
 
-	// Server only. A blow hard enough breaks the bones of a limb: a broken arm hangs limp and lets go of what it held, a
-	// broken leg will not carry the body. Says whether it was whole until now.
-	bool BreakLimb(EAedirLimb Limb);
-	bool IsLimbBroken(EAedirLimb Limb) const { return (BrokenLimbs & (1 << static_cast<int32>(Limb))) != 0; }
+	// Server only. A blow hard enough breaks a bone of a limb, and only what lies from there out goes limp: the hand or the
+	// foot (1), from the forearm or the shin (2), the whole limb from the upper arm or the thigh (3). A hand that hangs lets
+	// go of what it held; a leg broken above the ankle will not carry the body. A break further in counts over one further
+	// out. Says whether it broke further in than it was.
+	bool BreakLimb(EAedirLimb Limb, int32 Level = 3);
+	// How far in the limb is broken: 0 whole, 1 the hand or foot, 2 the forearm or shin, 3 the upper arm or thigh.
+	int32 GetBreakLevel(EAedirLimb Limb) const { return (BrokenLimbs >> (2 * static_cast<int32>(Limb))) & 3; }
+	bool IsLimbBroken(EAedirLimb Limb) const { return GetBreakLevel(Limb) > 0; }
+	// How far in a break on this bone of a limb reaches (1 to 3 as above), or 0 for a bone that is not of a limb.
+	static int32 GetBoneBreakLevel(FName Bone);
 
-	// Whether the arm on that side is of no use: gone, or broken.
-	bool HasUselessArm(bool bLeft) const { return HasLostArm(bLeft) || IsLimbBroken(bLeft ? EAedirLimb::LeftArm : EAedirLimb::RightArm); }
+	// Whether the arm on that side is of no use to raise, guard or strike with: gone, or broken from the forearm in.
+	bool HasUselessArm(bool bLeft) const { return HasLostArm(bLeft) || GetBreakLevel(bLeft ? EAedirLimb::LeftArm : EAedirLimb::RightArm) >= 2; }
+	// Whether the hand on that side can hold nothing: gone, or broken anywhere from the hand in.
+	bool HasUselessHand(bool bLeft) const { return HasLostArm(bLeft) || IsLimbBroken(bLeft ? EAedirLimb::LeftArm : EAedirLimb::RightArm); }
 
 	// Whether the arm on that side is gone, at the shoulder, the elbow or the wrist.
 	bool HasLostArm(bool bLeft) const
@@ -296,7 +304,7 @@ private:
 	UPROPERTY()
 	TSet<FName> SeveredBones;
 
-	// Which limbs have broken bones, one bit each in the order of EAedirLimb.
+	// How far in each limb is broken, two bits each in the order of EAedirLimb (see GetBreakLevel).
 	UPROPERTY(Replicated)
 	uint8 BrokenLimbs = 0;
 

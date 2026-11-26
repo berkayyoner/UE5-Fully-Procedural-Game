@@ -123,7 +123,11 @@ public:
 	// twice as far as blood does. Measured from the chest: half the speed lands them half as far (half of them within 130 cm
 	// instead of 239, nine in ten within 186 instead of 398).
 	UPROPERTY(EditAnywhere, Category="Aedir|Blood", meta=(ClampMin="0.05", ClampMax="1"))
-	float SpraySpeedShare = 0.5f;
+	float SpraySpeedShare = 0.35f;
+
+	// How far to the sides of their way the drops of a spray go (degrees).
+	UPROPERTY(EditAnywhere, Category="Aedir|Blood", meta=(ClampMin="0", ClampMax="60"))
+	float SprayConeDegrees = 11.f;
 
 	// The burst off the skin as a wound opens: how many drops, for the slightest and the worst, how fast they leave (cm/s),
 	// how far to the sides (degrees), how thick (cm) and how long they are seen (s).
@@ -137,10 +141,10 @@ public:
 	float BurstSpeedMin = 25.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Blood|Burst", meta=(ClampMin="0"))
-	float BurstSpeedMax = 170.f;
+	float BurstSpeedMax = 130.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Blood|Burst", meta=(ClampMin="0", ClampMax="90"))
-	float BurstConeDegrees = 50.f;
+	float BurstConeDegrees = 35.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Blood|Burst", meta=(ClampMin="0"))
 	float BurstDropMinCm = 0.12f;

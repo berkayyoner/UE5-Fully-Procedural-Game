@@ -782,3 +782,18 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - A hand held to the neck or the face leads its elbow down under it instead of out and up
 - NPCs keep fighting a foe lying awake on the ground instead of forgetting it once it drops out of the standing ones they look for
 - NPCs give up while getting up and finding their feet as well as lying, and one giving up face down rolls slowly onto its back first
+- A headbutt on something fixed leaves a smaller bruise
+- Arms going over to the standing pose while getting up and finding the feet no longer count as blows, and the haul up from the ground comes in over a second
+- A clutching arm's elbow turns round the arm only so fast, so it no longer jumps from side to side
+- Somebody lifted and put down on their feet stands on; only held up long off the ground do they go limp
+- A broken bone leaves limp only what lies beyond it: a broken hand hangs from an arm still in use, a broken forearm from a working shoulder, a broken upper arm takes the whole arm; a broken foot only limps; a broken neck kills
+- A body that falls through the ground is put back on top of it
+- Blood sprays off a wound in a narrower, shorter spray
+- Every step kicks up a much smaller puff of dust
+- A hand not in use goes on holding a wound while the other hand's button is held, and a hurt arm's hand comes in to meet the hand that holds it unless the arm is broken from the forearm in
+- NPCs tell a friend in sight who looks tired, badly hurt or bled nearly white to rest or find a healer
+- The free camera hides the HUD and the names over people and things
+- Surrendered NPCs back away from a foe in their crouch
+- Bodies stand closer together: the capsule is narrower
+- Walking into somebody standing shoves them along, and one held by the hand is pulled after it
+- A one-handed blade held in both hands has the second hand right under the first, and NPCs take a one-handed blade in both hands when the other hand is free

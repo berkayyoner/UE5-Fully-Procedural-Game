@@ -281,7 +281,9 @@ void AAedirHUD::DrawHUD()
 	const bool bMenuOpen = Menus && (Menus->IsMenuOpen() || Menus->IsCharacterCreationOpen());
 
 	UpdateSkillNotifications(DeltaSeconds, Stats);
-	if (bMenuOpen)
+	// The free camera shows the world alone: no bars, no compass, no names over people or things.
+	const AAedirPlayerCharacter* PhotoPlayer = Cast<AAedirPlayerCharacter>(Pawn);
+	if (bMenuOpen || (PhotoPlayer && PhotoPlayer->IsPhotoCamera()))
 	{
 		return;
 	}

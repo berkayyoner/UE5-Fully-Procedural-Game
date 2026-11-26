@@ -373,6 +373,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|AI", meta=(ClampMin="0", ClampMax="1"))
 	float AISurrenderBackInput = 1.f;
 
+	// An NPC with a one-handed blade and its other hand free takes the blade in both hands.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|AI")
+	bool bAITwoHandOneHanders = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float AITargetNearSlackCm = 200.f;
 

@@ -1034,7 +1034,7 @@ void UAedirInteractionComponent::BeginReach(EAedirHand Hand, AAedirItemActor* It
 	FAedirHandSlot& Other = GetSlot(GetOtherHand(Hand));
 	const bool bJoiningOtherHand = Item && Other.State == EAedirHandState::Holding && Other.Item.Get() == Item;
 	// A hand that is no longer there takes nothing.
-	const bool bHandGone = Creature && Creature->Wounds && Creature->Wounds->HasUselessArm(Hand == EAedirHand::Left);
+	const bool bHandGone = Creature && Creature->Wounds && Creature->Wounds->HasUselessHand(Hand == EAedirHand::Left);
 	if (!Creature || !Item || bHandGone || (!AAedirItemActor::IsPickable(Item) && !bJoiningOtherHand))
 	{
 		return;
@@ -1482,7 +1482,7 @@ bool UAedirInteractionComponent::UsesSurfaceGrip(const AAedirItemActor* Item) co
 bool UAedirInteractionComponent::IsHandUseless(EAedirHand Hand) const
 {
 	const AAedirCreature* Creature = GetCreature();
-	return Creature && Creature->Wounds && Creature->Wounds->HasUselessArm(Hand == EAedirHand::Left);
+	return Creature && Creature->Wounds && Creature->Wounds->HasUselessHand(Hand == EAedirHand::Left);
 }
 
 bool UAedirInteractionComponent::CanLift(const AAedirItemActor* Item) const

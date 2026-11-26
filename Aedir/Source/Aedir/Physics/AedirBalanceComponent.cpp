@@ -500,6 +500,8 @@ void UAedirBalanceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	if (IsAuthoritative())
 	{
 		UpdateServerState(DeltaTime);
+		UpdateUnderWorld(DeltaTime);
+		UpdateBodyPush(DeltaTime);
 	}
 
 	if (!PendingTopple.IsZero() && --PendingToppleFrames < 0)
@@ -802,7 +804,8 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	// A broken arm hangs limp.
 	const auto ArmShare = [Creature, Combat](EAedirLimb Limb)
 	{
-		if (Creature && Creature->Wounds && Creature->Wounds->IsLimbBroken(Limb))
+		// Broken from the upper arm the whole of it; further out the arm still lifts and swings, and only what hangs is limp.
+		if (Creature && Creature->Wounds && Creature->Wounds->GetBreakLevel(Limb) >= 3)
 		{
 			return AedirBrokenArmShare;
 		}
@@ -858,14 +861,14 @@ void UAedirBalanceComponent::UpdateBodyControl(float DeltaTime)
 	BodyControl->SetDead(Creature && Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying()));
 	const UAedirWoundComponent* Wounds = Creature ? Creature->Wounds.Get() : nullptr;
 	// A broken arm turns as far as a limp body's does: its joints go back to the limits of the physics asset.
-	const uint8 BrokenArmsNow = (Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftArm) ? 1 : 0) | (Wounds && Wounds->IsLimbBroken(EAedirLimb::RightArm) ? 2 : 0);
+	const uint8 BrokenArmsNow = static_cast<uint8>((Wounds ? Wounds->GetBreakLevel(EAedirLimb::LeftArm) : 0) | ((Wounds ? Wounds->GetBreakLevel(EAedirLimb::RightArm) : 0) << 2));
 	if (BrokenArmsNow != BrokenArmJoints)
 	{
 		BrokenArmJoints = BrokenArmsNow;
 		ApplyJointLimits(IsRagdoll());
 	}
-	BodyControl->SetBrokenLimbs(Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftArm), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightArm),
-		Wounds && Wounds->IsLimbBroken(EAedirLimb::LeftLeg), Wounds && Wounds->IsLimbBroken(EAedirLimb::RightLeg));
+	BodyControl->SetBrokenLimbs(Wounds ? Wounds->GetBreakLevel(EAedirLimb::LeftArm) : 0, Wounds ? Wounds->GetBreakLevel(EAedirLimb::RightArm) : 0,
+		Wounds ? Wounds->GetBreakLevel(EAedirLimb::LeftLeg) : 0, Wounds ? Wounds->GetBreakLevel(EAedirLimb::RightLeg) : 0);
 	const bool bGettingUp = IsGettingUp();
 	BodyControl->SetRising(bGettingUp);
 	UpdateDownMuscles(DeltaTime);
@@ -2278,6 +2281,106 @@ void UAedirBalanceComponent::LiftOffFeet()
 	{
 		UE_LOG(LogAedir, Log, TEXT("[Fall] %s is lifted off its feet."), *GetNameSafe(GetOwner()));
 		EnterRagdoll(MinRagdollSeconds);
+	}
+}
+
+void UAedirBalanceComponent::UpdateBodyPush(float DeltaTime)
+{
+	// Walking into somebody on their feet shoves them along: they are given part of the speed it comes into them with, the
+	// more the heavier it is against them, and their balance is pushed at the while.
+	UWorld* World = GetWorld();
+	const UCharacterMovementComponent* Movement = CharacterOwner ? CharacterOwner->GetCharacterMovement() : nullptr;
+	if (!World || !Movement || bIsRagdoll || IsGettingUp() || !Movement->IsMovingOnGround() || DeltaTime <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+	// Pressing into somebody the capsules stop it short: it goes as hard as it is trying to, not as fast as it gets.
+	const FVector Moving = FVector(Movement->Velocity.X, Movement->Velocity.Y, 0.0);
+	const FVector Trying = Movement->GetCurrentAcceleration().GetSafeNormal2D() * (Movement->GetMaxSpeed() * Movement->GetAnalogInputModifier());
+	const FVector Going = Trying.SizeSquared() > Moving.SizeSquared() ? Trying : Moving;
+	if (Going.Size() < BodyPushLeastSpeed)
+	{
+		return;
+	}
+	const UCapsuleComponent* Own = CharacterOwner->GetCapsuleComponent();
+	const float OwnKilos = FMath::Max(GetBodyKilos(), 1.f);
+	for (TActorIterator<ACharacter> It(World); It; ++It)
+	{
+		ACharacter* Other = *It;
+		UAedirBalanceComponent* Theirs = Other && Other != CharacterOwner ? Other->FindComponentByClass<UAedirBalanceComponent>() : nullptr;
+		UCharacterMovementComponent* TheirMoves = Other ? Other->GetCharacterMovement() : nullptr;
+		if (!Theirs || !TheirMoves || Theirs->IsRagdoll() || !Own || !Other->GetCapsuleComponent())
+		{
+			continue;
+		}
+		const FVector Off = (Other->GetActorLocation() - CharacterOwner->GetActorLocation()) * FVector(1.0, 1.0, 0.0);
+		const double Touch = Own->GetScaledCapsuleRadius() + Other->GetCapsuleComponent()->GetScaledCapsuleRadius() + BodyPushReachCm;
+		if (Off.Size() > Touch || Off.IsNearlyZero())
+		{
+			continue;
+		}
+		const FVector Way = Off.GetSafeNormal();
+		const double Into = FVector::DotProduct(Going, Way) - FVector::DotProduct(TheirMoves->Velocity, Way);
+		if (Into <= BodyPushLeastSpeed)
+		{
+			continue;
+		}
+		const float TheirKilos = FMath::Max(Theirs->GetBodyKilos(), 1.f);
+		const float Share = BodyPushShare * FMath::Clamp(2.f * OwnKilos / (OwnKilos + TheirKilos), 0.3f, 1.5f);
+		// Brought up to that speed each frame, against the braking of feet that are not walking.
+		const double Along = FVector::DotProduct(TheirMoves->Velocity, Way);
+		const double Wanted = FVector::DotProduct(Going, Way) * Share;
+		if (Wanted > Along)
+		{
+			TheirMoves->AddImpulse(Way * (Wanted - Along), true);
+		}
+		static const IConsoleVariable* PushLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+		UE_CLOG(PushLog && PushLog->GetInt() != 0 && GFrameCounter % 20 == 0, LogAedir, Log, TEXT("[Push] %s walks into %s at %.0f cm/s and shoves it along, it going %.0f cm/s that way"),
+			*GetNameSafe(CharacterOwner), *GetNameSafe(Other), Into, FVector::DotProduct(TheirMoves->Velocity, Way));
+		Theirs->ApplyBalanceImpact(Way, BodyPushBalancePerSecond * DeltaTime);
+	}
+}
+
+void UAedirBalanceComponent::UpdateUnderWorld(float DeltaTime)
+{
+	UnderWorldCheckIn -= DeltaTime;
+	UWorld* World = GetWorld();
+	if (UnderWorldCheckIn > 0.f || !World || !CharacterOwner || !BodyMesh)
+	{
+		return;
+	}
+	UnderWorldCheckIn = UnderWorldCheckSeconds;
+	// Gone through the ground: nothing under the body however far down it looks, and the ground above it. Lifted back on
+	// top where it went through, still and whole.
+	const FVector At = bIsRagdoll ? BodyMesh->GetBoneLocation(PelvisBoneName) : CharacterOwner->GetActorLocation();
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(AedirUnderWorld), false, CharacterOwner);
+	FHitResult Below;
+	if (World->LineTraceSingleByObjectType(Below, At, At - FVector(0.f, 0.f, UnderWorldLookCm), FCollisionObjectQueryParams(ECC_WorldStatic), Params))
+	{
+		return;
+	}
+	FHitResult Above;
+	if (!World->LineTraceSingleByObjectType(Above, At + FVector(0.f, 0.f, UnderWorldLookCm), At, FCollisionObjectQueryParams(ECC_WorldStatic), Params))
+	{
+		return;
+	}
+	const FVector Offset(0.f, 0.f, Above.ImpactPoint.Z + UnderWorldLiftCm - At.Z);
+	UE_LOG(LogAedir, Warning, TEXT("[Fall] %s went %.0f cm through the ground and is put back on it."), *GetNameSafe(GetOwner()), Offset.Z - UnderWorldLiftCm);
+	CharacterOwner->SetActorLocation(CharacterOwner->GetActorLocation() + Offset, false, nullptr, ETeleportType::TeleportPhysics);
+	if (UCharacterMovementComponent* Movement = CharacterOwner->GetCharacterMovement())
+	{
+		Movement->Velocity = FVector::ZeroVector;
+	}
+	for (FBodyInstance* Body : BodyMesh->Bodies)
+	{
+		if (Body && Body->IsInstanceSimulatingPhysics())
+		{
+			FTransform Placed = Body->GetUnrealWorldTransform();
+			Placed.AddToTranslation(Offset);
+			Body->SetBodyTransform(Placed, ETeleportType::TeleportPhysics);
+			Body->SetLinearVelocity(FVector::ZeroVector, false);
+			Body->SetAngularVelocityInRadians(FVector::ZeroVector, false);
+		}
 	}
 }
 
@@ -4231,10 +4334,12 @@ void UAedirBalanceComponent::ApplyJointLimits(bool bRagdoll, bool bArmsOnly)
 		float Swing1 = 0.f;
 		float Swing2 = 0.f;
 		float Twist = 0.f;
-		// The joints of a broken arm (from the shoulder down) keep the limp limits standing too.
+		// The joints of a broken arm from where it broke out keep the limp limits standing too.
 		const FString JointName = Joint->JointName.ToString();
+		const int32 JointBreak = UAedirWoundComponent::GetBoneBreakLevel(Joint->JointName);
+		const int32 SideBreak = JointName.EndsWith(TEXT("_l")) ? (BrokenArmJoints & 3) : JointName.EndsWith(TEXT("_r")) ? ((BrokenArmJoints >> 2) & 3) : 0;
 		const bool bBrokenArm = (JointName.StartsWith(TEXT("upperarm")) || JointName.StartsWith(TEXT("lowerarm")) || JointName.StartsWith(TEXT("hand")))
-			&& ((JointName.EndsWith(TEXT("_l")) && (BrokenArmJoints & 1)) || (JointName.EndsWith(TEXT("_r")) && (BrokenArmJoints & 2)));
+			&& JointBreak > 0 && JointBreak <= SideBreak;
 		const bool bArmJoint = JointName.StartsWith(TEXT("upperarm")) || JointName.StartsWith(TEXT("lowerarm")) || JointName.StartsWith(TEXT("hand")) || JointName.StartsWith(TEXT("clavicle"));
 		// Down but awake the arms are the body's own to use, with the room they have standing.
 		const bool bLimpJoint = (bRagdoll && !(bArmJoint && bDownArmsAwake)) || bBrokenArm;

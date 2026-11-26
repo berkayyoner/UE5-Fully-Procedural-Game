@@ -207,7 +207,8 @@ public:
 	// Dead, the body keeps only DeadShare of its muscles.
 	void SetDead(bool bInDead);
 	// Which limbs have a broken bone: left arm, right arm, left leg, right leg.
-	void SetBrokenLimbs(bool bLeftArm, bool bRightArm, bool bLeftLeg, bool bRightLeg);
+	// How far in each limb is broken (0 whole, 1 the hand or foot, 2 from the forearm or shin, 3 the whole limb).
+	void SetBrokenLimbs(int32 LeftArm, int32 RightArm, int32 LeftLeg, int32 RightLeg);
 
 	// An arm freed from where it was caught pulls back to its pose ArmFreeBoost times as hard for a moment.
 	void SetArmBoost(bool bRight, bool bBoost);
@@ -256,6 +257,8 @@ private:
 	void FollowAnimation(const TArray<FName>& Names);
 	// The shoulder muscle of a broken arm holds it hanging at the side.
 	void HangBrokenArm(int32 Side);
+	// Hangs only what lies from an arm's break out, the arm above still its own.
+	void HangBelowBreak(int32 Side);
 	// What is left of a dead body's muscles now, fading from the moment of death.
 	float GetDeadShareNow() const;
 
@@ -285,6 +288,12 @@ private:
 	bool bDead = false;
 	double DeadTime = 0.0;
 	bool bBroken[4] = { false, false, false, false };
+	int32 BreakLevel[4] = { 0, 0, 0, 0 };
+	// The muscles and the bodies of each limb from where it broke out (left arm, right arm, left leg, right leg).
+	TArray<FName> BrokenControls[4];
+	TArray<FName> BrokenModifiers[4];
+	TMap<FName, FName> ModifierBones;
+	void GatherBroken();
 	// For each muscle, the bone it pulls from and the one it pulls on; and each arm's shoulder muscle.
 	TMap<FName, TPair<FName, FName>> MuscleBones;
 	FName ShoulderControls[2];

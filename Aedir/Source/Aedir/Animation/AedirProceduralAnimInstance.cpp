@@ -269,8 +269,8 @@ bool FAedirProceduralAnimProxy::Evaluate(FPoseContext& Output)
 	const FVector RightOutwardMesh = ActorToMesh.RotateVector(FVector::RightVector);
 	const FVector DownMesh = ActorToMesh.RotateVector(-FVector::UpVector);
 	const FVector ArmForwardMesh = ActorToMesh.RotateVector(FVector::ForwardVector);
-	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh, GaitData.LeftElbowHint, GaitData.LeftElbowHintAlpha);
-	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh, GaitData.RightElbowHint, GaitData.RightElbowHintAlpha);
+	ApplyArmReach(CSPose, Bones, BoneNameSet.LeftHumerus, BoneNameSet.LeftRadius, BoneNameSet.LeftHand, GaitData.LeftReachTargetWorld, GaitData.LeftArmReachAlpha, LeftOutwardMesh, DownMesh, ArmForwardMesh, GaitData.LeftElbowHint, GaitData.LeftElbowHintAlpha, 0);
+	ApplyArmReach(CSPose, Bones, BoneNameSet.RightHumerus, BoneNameSet.RightRadius, BoneNameSet.RightHand, GaitData.RightReachTargetWorld, GaitData.RightArmReachAlpha, RightOutwardMesh, DownMesh, ArmForwardMesh, GaitData.RightElbowHint, GaitData.RightElbowHintAlpha, 1);
 
 	// A weapon in a fight is pointed by the arm: the elbow and shoulder turn the forearm and the blade keeps its angle in the hand.
 	const bool bDirect = CVarAedirDirectArm.GetValueOnAnyThread() != 0;
@@ -809,7 +809,7 @@ void FAedirProceduralAnimProxy::ApplyArm(FCSPose<FCompactPose>& CSPose, const FB
 	}
 }
 
-void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh, const FVector& ElbowHint, float ElbowHintAlpha) const
+void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, const FBoneContainer& Bones, const FName& HumerusName, const FName& RadiusName, const FName& HandName, const FVector& HandWorld, float ReachAlpha, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh, const FVector& ElbowHint, float ElbowHintAlpha, int32 PoleSlot) const
 {
 	if (ReachAlpha <= AedirReachAlphaThreshold)
 	{
@@ -876,6 +876,41 @@ void FAedirProceduralAnimProxy::ApplyArmReach(FCSPose<FCompactPose>& CSPose, con
 			Pole = (-UpOff * 0.8 + OutOff * 0.6).GetSafeNormal() * AedirElbowGuardMinPoleCm;
 		}
 		JointTarget = Mid + Pole.GetSafeNormal() * PoleSize;
+	}
+	// The way the elbow is led turns round the arm only so fast: near the line from shoulder to hand the way worked out
+	// above can swap sides from one frame to the next, and the elbow would jump over and back.
+	if (PoleSlot >= 0 && PoleSlot < 2)
+	{
+		const FVector Line = (Effector - RootPosition).GetSafeNormal();
+		const FVector Mid = (RootPosition + Effector) * 0.5;
+		const FVector Pole = FVector::VectorPlaneProject(JointTarget - Mid, Line);
+		const FVector Was = FVector::VectorPlaneProject(ReachPole[PoleSlot], Line).GetSafeNormal();
+		FVector Way = Pole.GetSafeNormal();
+		if (ReachAlpha <= KINDA_SMALL_NUMBER || Way.IsNearlyZero())
+		{
+			ReachPole[PoleSlot] = FVector::ZeroVector;
+		}
+		else
+		{
+			// Only an arm held to a hurt place is held back so; a swing's or a reach's elbow goes where it is led.
+			if (!Was.IsNearlyZero() && GaitData.ClutchHandAlpha[PoleSlot] > 0.01f)
+			{
+				const double Angle = FMath::Acos(FMath::Clamp(FVector::DotProduct(Was, Way), -1.0, 1.0));
+				const double Most = FMath::DegreesToRadians(static_cast<double>(GaitData.ElbowPoleTurnSpeed) * PoseDeltaSeconds);
+				if (Angle > Most && Angle > KINDA_SMALL_NUMBER)
+				{
+					// Round the near way; straight across, round the bottom.
+					FVector Axis = FVector::CrossProduct(Was, Way).GetSafeNormal();
+					if (Axis.IsNearlyZero())
+					{
+						Axis = FVector::DotProduct(FVector::CrossProduct(Was, DownMesh), Line) >= 0.0 ? Line : -Line;
+					}
+					Way = FQuat(Axis, Most).RotateVector(Was).GetSafeNormal();
+				}
+			}
+			ReachPole[PoleSlot] = Way;
+			JointTarget = Mid + Way * FMath::Max(Pole.Size(), static_cast<double>(AedirElbowGuardMinPoleCm));
+		}
 	}
 
 	// Part of the way there, the hand is put part of the way there and the arm solved through it, so it keeps its length: the

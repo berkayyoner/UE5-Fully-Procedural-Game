@@ -24,7 +24,6 @@ namespace
 	constexpr float BloodDropLifeSpan = 4.f;
 	constexpr float BloodDropStartOutCm = 6.f;
 	constexpr float BloodDropLinearDamping = 0.05f;
-	constexpr float BloodSprayConeHalfAngleDeg = 18.f;
 	constexpr float BloodCutSpeedMin = 280.f;
 	constexpr float BloodCutSpeedMax = 900.f;
 	constexpr float BloodPunctureSpeedMin = 60.f;
@@ -318,7 +317,7 @@ void UAedirBloodSubsystem::SpawnSpray(const FVector& Location, const FVector& Di
 	const float MinSpeed = bCut ? BloodCutSpeedMin : BloodPunctureSpeedMin;
 	const float MaxSpeed = bCut ? BloodCutSpeedMax : BloodPunctureSpeedMax;
 	const float SeverityScale = FMath::Lerp(BloodSeverityMinSpeedScale, 1.f, FMath::Clamp(Severity, 0.f, 1.f)) * SpraySpeedShare;
-	const float ConeHalfAngleRad = FMath::DegreesToRadians(BloodSprayConeHalfAngleDeg);
+	const float ConeHalfAngleRad = FMath::DegreesToRadians(SprayConeDegrees);
 
 	for (int32 Index = 0; Index < DropCount; ++Index)
 	{

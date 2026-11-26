@@ -286,6 +286,32 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Surrender", meta=(ClampMin="-1", ClampMax="1"))
 	float SurrenderRollBellyUp = 0.75f;
 
+	// A body is looked at this often (s) for having gone through the ground: no ground within this far below it (cm) and
+	// ground above it. It is put back this far over the ground (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fall", meta=(ClampMin="0.05", Units="s"))
+	float UnderWorldCheckSeconds = 0.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fall", meta=(ClampMin="100", Units="cm"))
+	float UnderWorldLookCm = 20000.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fall", meta=(ClampMin="0", Units="cm"))
+	float UnderWorldLiftCm = 40.f;
+
+	// Walking into somebody standing at more than BodyPushLeastSpeed (cm/s), within this of touching (cm), gives them this
+	// share of the speed it comes into them with (more for a heavier body, less for a lighter), and pushes at their balance
+	// this much a second.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Push", meta=(ClampMin="0"))
+	float BodyPushLeastSpeed = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Push", meta=(ClampMin="0", Units="cm"))
+	float BodyPushReachCm = 4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Push", meta=(ClampMin="0", ClampMax="1"))
+	float BodyPushShare = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Push", meta=(ClampMin="0"))
+	float BodyPushBalancePerSecond = 0.25f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Surrender", meta=(ClampMin="0", Units="s"))
 	float SurrenderRollMostSeconds = 5.f;
 
@@ -357,7 +383,7 @@ public:
 	float HeadKnockDamageShare = 1.4f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0"))
-	float HeadKnockWoundShare = 1.2f;
+	float HeadKnockWoundShare = 0.55f;
 
 	// A body already lying on the ground takes this share of the push of a blow or a kick a standing one would: it has
 	// the ground under it and nothing to be thrown off, so it is shoved, not sent flying.
@@ -859,7 +885,7 @@ public:
 	float HoistMaxExtraAccel = 300.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistRampSeconds = 0.35f;
+	float HoistRampSeconds = 1.f;
 
 	// With the keys held, first the neck takes up the head, harder over HoistHeadSeconds, turning the face to the way the
 	// camera looks (HoistHeadHz, lifted HoistHeadLiftShare of the way up). After HoistHandDelaySeconds the hand nearer the
@@ -1640,6 +1666,11 @@ private:
 	// Where the hips lay when getting up started.
 	FTransform GetUpStartPelvis = FTransform::Identity;
 	EAedirGetUpStyle ReadLyingStyle() const;
+	// Puts a body that went through the ground back on top of it.
+	void UpdateUnderWorld(float DeltaTime);
+	// Shoves along somebody standing that this body walks into.
+	void UpdateBodyPush(float DeltaTime);
+	float UnderWorldCheckIn = 0.f;
 	// The way the belly faces in the world.
 	FVector ReadBellyWay() const;
 	// Rolls a body giving up on the ground over onto its back; true while it still rolls.

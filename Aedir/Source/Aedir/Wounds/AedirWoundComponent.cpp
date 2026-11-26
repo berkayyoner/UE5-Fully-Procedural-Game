@@ -538,27 +538,51 @@ bool UAedirWoundComponent::TrySever(FName HitBone, const FVector& PlanePoint, co
 	return true;
 }
 
-bool UAedirWoundComponent::BreakLimb(EAedirLimb Limb)
+int32 UAedirWoundComponent::GetBoneBreakLevel(FName Bone)
+{
+	const FString Name = Bone.ToString();
+	if (Name.StartsWith(TEXT("upperarm")) || Name.StartsWith(TEXT("thigh")))
+	{
+		return 3;
+	}
+	if (Name.StartsWith(TEXT("lowerarm")) || Name.StartsWith(TEXT("calf")))
+	{
+		return 2;
+	}
+	if (Name.StartsWith(TEXT("hand")) || Name.StartsWith(TEXT("foot")) || Name.StartsWith(TEXT("ball")) || Name.StartsWith(TEXT("thumb")) || Name.StartsWith(TEXT("index"))
+		|| Name.StartsWith(TEXT("middle")) || Name.StartsWith(TEXT("ring")) || Name.StartsWith(TEXT("pinky")))
+	{
+		return 1;
+	}
+	return 0;
+}
+
+bool UAedirWoundComponent::BreakLimb(EAedirLimb Limb, int32 Level)
 {
 	AAedirCreature* Creature = Cast<AAedirCreature>(GetOwner());
-	if (!IsAuthoritative() || !Creature || IsLimbBroken(Limb))
+	Level = FMath::Clamp(Level, 1, 3);
+	if (!IsAuthoritative() || !Creature || GetBreakLevel(Limb) >= Level)
 	{
 		return false;
 	}
-	BrokenLimbs |= 1 << static_cast<int32>(Limb);
+	const int32 Was = GetBreakLevel(Limb);
+	const int32 Shift = 2 * static_cast<int32>(Limb);
+	BrokenLimbs = static_cast<uint8>((BrokenLimbs & ~(3 << Shift)) | (Level << Shift));
 	const bool bArm = Limb == EAedirLimb::LeftArm || Limb == EAedirLimb::RightArm;
-	if (bArm && Creature->Interaction)
+	if (bArm && Creature->Interaction && Was == 0)
 	{
-		// A broken arm cannot hold anything.
+		// A broken hand, or one that hangs from a broken arm, cannot hold anything.
 		Creature->Interaction->DropHeld(Limb == EAedirLimb::LeftArm ? EAedirHand::Left : EAedirHand::Right);
 	}
-	else if (!bArm && Creature->Balance)
+	else if (!bArm && Creature->Balance && Level >= 2 && Was < 2)
 	{
-		// A broken leg buckles under the body, which goes down, but it can still get up on it: only a leg cut off is gone.
+		// A leg broken above the ankle buckles under the body, which goes down, but it can still get up on it: only a leg
+		// cut off is gone. A broken foot only makes it limp.
 		Creature->Balance->BuckleLeg();
 	}
 	static const TCHAR* const Names[] = { TEXT("left arm"), TEXT("right arm"), TEXT("left leg"), TEXT("right leg") };
-	UE_LOG(LogAedir, Log, TEXT("[Bone] %s's %s breaks."), *Creature->GetName(), Names[static_cast<int32>(Limb)]);
+	static const TCHAR* const Where[] = { TEXT(""), TEXT("at the hand or foot"), TEXT("at the forearm or shin"), TEXT("at the upper arm or thigh") };
+	UE_LOG(LogAedir, Log, TEXT("[Bone] %s's %s breaks %s."), *Creature->GetName(), Names[static_cast<int32>(Limb)], Where[Level]);
 	return true;
 }
 

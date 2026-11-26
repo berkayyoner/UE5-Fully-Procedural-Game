@@ -28,16 +28,16 @@ public:
 	// Dust or spray kicked up by a step: small at a walk, larger at a run, and the share of walking and running steps that
 	// throw any up (every one by default). A landing always does.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
-	float StepEffectWalkScale = 0.045f;
+	float StepEffectWalkScale = 0.012f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
-	float StepEffectRunScale = 0.075f;
+	float StepEffectRunScale = 0.02f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
-	float StepEffectWalkChance = 0.3f;
+	float StepEffectWalkChance = 1.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Surface|Effects")
-	float StepEffectRunChance = 0.65f;
+	float StepEffectRunChance = 1.f;
 
 	// A footprint fades out slowly over this many days of the game's clock, and no more than this many are kept in the world
 	// (the oldest go first).

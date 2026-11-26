@@ -35,6 +35,7 @@ struct AEDIR_API FAedirGaitState
 	// And how far its wrist bends and turns on the forearm at most (degrees), and how fast it may turn (degrees a second).
 	float ClutchWristBendDegrees = 55.f;
 	float ClutchWristTwistDegrees = 75.f;
+	float ElbowPoleTurnSpeed = 360.f;
 	float ClutchWristTwistSpeed = 360.f;
 	// Lying, the same hold in the chest's own frame, for a pose worked out about a standing chest.
 	float ClutchDownAlpha[2] = { 0.f, 0.f };
@@ -807,6 +808,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	FVector ClutchCradle = FVector(24.f, -4.f, -26.f);
 
+	// A hand whose own upper arm is held by the other comes this share of the way there to meet it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
+	float ClutchCradleUpperShare = 0.6f;
+
 	// Lying, a place facing down by at least this much (1 straight down) is under the body, and not held.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0", ClampMax="1"))
 	float ClutchUnderShare = 0.45f;
@@ -831,6 +836,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchWristTwistSpeed = 360.f;
+
+	// A reaching or holding arm's elbow turns round the arm no faster than this (degrees/s).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="30"))
+	float ElbowPoleTurnSpeed = 300.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchOutSpeed = 2.5f;

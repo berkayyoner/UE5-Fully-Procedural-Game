@@ -159,7 +159,7 @@ public:
 	// How wide the capsule that carries the body about is (cm): as deep as a man's chest, so two fighters can stand within a
 	// fist's reach of each other's head.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
-	float CapsuleRadiusCm = 26.f;
+	float CapsuleRadiusCm = 19.f;
 
 	UFUNCTION(BlueprintCallable, Category="Aedir|Movement")
 	void SetWantsToRun(bool bWantsToRun);

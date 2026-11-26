@@ -178,13 +178,7 @@ void UAedirGestureComponent::UpdateCrouch(float DeltaTime)
 		SteadySeconds += DeltaTime;
 	}
 	// On its feet it goes down to a crouch, and stays there for as long as it gives up.
-	if (bSurrender && bKeepingAway && bSunk)
-	{
-		// Backing away from a foe it rises out of the crouch, and sinks again once it is left be.
-		bSunk = false;
-		Creature->SetWantsToCrouch(false);
-	}
-	else if (bSurrender && !bKeepingAway && SteadySeconds >= SurrenderCrouchSteadySeconds)
+	if (bSurrender && SteadySeconds >= SurrenderCrouchSteadySeconds)
 	{
 		bSunk = true;
 		if (!Creature->bIsCrouched && Creature->CanCrouch())
