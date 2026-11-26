@@ -1202,6 +1202,10 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 		PoseGetUp(ActorTransform, BottomZ, ActorScale);
 	}
 	GaitState.bProceduralActive = true;
+	UE_CLOG(JumpStandFrames > 0, LogAedir, Display, TEXT("[GetUpWatch] %s after the step %d: right reach %.2f at %s, clutch %.2f %.2f lay %.2f %.2f, flinch %d %d, hint %.2f %.2f, object %.2f grip %.2f fists %.2f %.2f"),
+		*GetNameSafe(CreatureOwner), 10 - JumpStandFrames, GaitState.RightArmReachAlpha, *ActorTransform.InverseTransformVectorNoScale(GaitState.RightReachTargetWorld - BodyMesh->GetBoneLocation(TEXT("spine_05"))).ToCompactString(),
+		ClutchAlpha[0], ClutchAlpha[1], GaitState.ClutchHandAlpha[0], GaitState.ClutchHandAlpha[1], bClutchFlinch[0] ? 1 : 0, bClutchFlinch[1] ? 1 : 0,
+		GaitState.LeftElbowHintAlpha, GaitState.RightElbowHintAlpha, GaitState.ObjectAlpha, GaitState.GripAlpha, GaitState.FistArmAlpha[0], GaitState.FistArmAlpha[1]);
 }
 
 namespace
@@ -1594,6 +1598,46 @@ void UAedirGaitComponent::WatchGetUpJumps(float DeltaTime)
 		JumpStep[Part] = Step;
 	}
 	bJumpWatched = Now < JumpWatchUntil;
+	// The first frames on the feet, every one: what the hands are given then.
+	JumpStandFrames = bJumpWasDown && !bDown ? 10 : FMath::Max(JumpStandFrames - 1, 0);
+	bJumpWasDown = bDown;
+	if (JumpStandFrames > 0 || (bJumpWatched && !Jumped.IsEmpty()))
+	{
+		const FVector Chest = Mesh->GetBoneLocation(TEXT("spine_05"));
+		const UAedirBodyControlComponent* Muscles = Body->FindComponentByClass<UAedirBodyControlComponent>();
+		const FBodyInstance* HandBody = Mesh->GetBodyInstance(TEXT("hand_r"));
+		const UAedirCombatComponent* Fight = Body->FindComponentByClass<UAedirCombatComponent>();
+		float GuardR = 0.f;
+		float SwingR = 0.f;
+		FVector SwingAt = FVector::ZeroVector;
+		float Protect = 0.f;
+		FVector ProtectAt = FVector::ZeroVector;
+		if (Fight)
+		{
+			Fight->GetGuardPose(EAedirHand::Right, GuardR);
+			Fight->GetSwingPose(EAedirHand::Right, SwingAt, SwingR);
+		}
+		Balance->GetProtectiveReflex(Protect, ProtectAt);
+		if (Muscles)
+		{
+			const auto Off = [&](const TCHAR* Bone) { return Muscles->GetPoseLocation(Bone) - Mesh->GetBoneLocation(Bone); };
+			UE_LOG(LogAedir, Display, TEXT("[GetUpWatch] %s frame %d: the pose is off the body by: chest %s, head %s, hand_l %s, hand_r %s; actor yaw %.1f, mesh yaw %.1f"), *GetNameSafe(Body), 10 - JumpStandFrames,
+				*Off(TEXT("spine_05")).ToCompactString(), *Off(TEXT("head")).ToCompactString(), *Off(TEXT("hand_l")).ToCompactString(), *Off(TEXT("hand_r")).ToCompactString(),
+				Body->GetActorRotation().Yaw, Mesh->GetComponentRotation().Yaw);
+		}
+		UE_LOG(LogAedir, Display, TEXT("[GetUpWatch] %s frame %d: arm swing %.2f %.2f, elbows %.2f, spread %.2f, hoist pose %.2f arm raise %.2f, lean %.1f"), *GetNameSafe(Body), 10 - JumpStandFrames,
+			GaitState.ArmSwingLeft, GaitState.ArmSwingRight, GaitState.ElbowBend, GaitState.ArmBalanceSpread, GaitState.HoistPoseShare, GaitState.HoistArmRaise, GaitState.SpineLeanPitch);
+		UE_LOG(LogAedir, Display, TEXT("[GetUpWatch] %s frame %d: right reach %.2f at %s; guard %.2f, swing %.2f at %s, protective %.2f"), *GetNameSafe(Body), 10 - JumpStandFrames,
+			GaitState.RightArmReachAlpha, *Body->GetActorTransform().InverseTransformVectorNoScale(GaitState.RightReachTargetWorld - Chest).ToCompactString(), GuardR, SwingR,
+			*Body->GetActorTransform().InverseTransformVectorNoScale(SwingAt - Chest).ToCompactString(), Protect);
+		UE_LOG(LogAedir, Display, TEXT("[GetUpWatch] %s frame %d: the pose has hand_r %s from its chest, the hand moves %s"), *GetNameSafe(Body), 10 - JumpStandFrames,
+			Muscles ? *Body->GetActorTransform().InverseTransformVectorNoScale(Muscles->GetPoseLocation(TEXT("hand_r")) - Muscles->GetPoseLocation(TEXT("spine_05"))).ToCompactString() : TEXT("-"),
+			HandBody ? *Body->GetActorTransform().InverseTransformVectorNoScale(HandBody->GetUnrealWorldVelocity()).ToCompactString() : TEXT("-"));
+		UE_LOG(LogAedir, Display, TEXT("[GetUpWatch] %s frame %d: hand_r %s from the chest; clutch %.2f %.2f, lay %.2f %.2f, down %.2f %.2f, elbow hint %.2f %.2f, fists %.2f %.2f, gesture %.2f %.2f, flinch %.2f %.2f, settling %d"),
+			*GetNameSafe(Body), 10 - JumpStandFrames, *Body->GetActorTransform().InverseTransformVectorNoScale(Mesh->GetBoneLocation(TEXT("hand_r")) - Chest).ToCompactString(),
+			ClutchAlpha[0], ClutchAlpha[1], GaitState.ClutchHandAlpha[0], GaitState.ClutchHandAlpha[1], GaitState.ClutchDownAlpha[0], GaitState.ClutchDownAlpha[1],
+			GaitState.LeftElbowHintAlpha, GaitState.RightElbowHintAlpha, GaitState.FistArmAlpha[0], GaitState.FistArmAlpha[1], GestureHold[0], GestureHold[1], HandFlinch[0].Left, HandFlinch[1].Left, Balance->IsSettling() ? 1 : 0);
+	}
 	if (bJumpWatched && !Jumped.IsEmpty())
 	{
 		UE_LOG(LogAedir, Display, TEXT("[GetUpWatch] %s in %.3f s:%s | lying %d hoisting %d, the watch has %.2f s left, capsule %s, speed %.0f"), *GetNameSafe(Body), DeltaTime, *Jumped, Balance->IsRagdoll() ? 1 : 0, Balance->IsHoisting() ? 1 : 0, JumpWatchUntil - Now,
@@ -2592,7 +2636,10 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		const bool bBusy = (Combat && Combat->IsInFightStance()) || (Interaction && Interaction->GetReachLeanDegrees() > 1.f);
 		// A hand whose button is held is in use; the other one goes on holding what hurts.
 		const bool bHandBusy[2] = { Fists && Fists->IsButtonHeld(EAedirHand::Left), Fists && Fists->IsButtonHeld(EAedirHand::Right) };
-		if (WoundComponent && !bBusy)
+		// Just up and still finding its feet the hands wait to go to a wound: an arm thrown up to the head then shook the
+		// whole chest, and the other arm, hanging loose, was flung out and back.
+		const bool bFindingFeet = bClutchWaitsForFeet && BalanceComponent && (BalanceComponent->IsSettling() || (BalanceComponent->IsGettingUp() && !BalanceComponent->IsHoisting()));
+		if (WoundComponent && !bBusy && !bFindingFeet)
 		{
 			float Worst = 0.f;
 			int32 Slot = INDEX_NONE;
@@ -2850,7 +2897,6 @@ void UAedirGaitComponent::UpdateClutch(float DeltaTime, const UAedirCombatCompon
 		}
 		else
 		ClutchAlpha[Slot] = FMath::FInterpConstantTo(ClutchAlpha[Slot], Wanted[Slot], DeltaTime, Wanted[Slot] <= ClutchAlpha[Slot] ? ClutchOutSpeed
-			: BalanceComponent && (BalanceComponent->IsSettling() || (BalanceComponent->IsGettingUp() && !BalanceComponent->IsHoisting())) ? ClutchRisingInSpeed
 			: bFlinchHand[Slot] && !bLying ? ClutchInSpeed : ClutchWoundInSpeed);
 		// Still over the rest while it lets go, so the arm does not snap back to the guard.
 		bClutchFlinch[Slot] = bFlinchHand[Slot] || (bClutchFlinch[Slot] && Wanted[Slot] <= 0.f && ClutchAlpha[Slot] > KINDA_SMALL_NUMBER);

@@ -204,6 +204,9 @@ public:
 	// from the strength the body hauled itself up with to all of theirs: just handed back to the capsule, it comes in from
 	// nothing.
 	void SetHoldEase(float Share);
+	// Hauled up and handed over to the standing pose, the arms keep the shape they have for this long before they go after
+	// the pose: its first moments put a hand where the body never had it, and the arm was flung there and back.
+	void HoldArmsThroughHandover(float Seconds);
 	// Dead, the body keeps only DeadShare of its muscles.
 	void SetDead(bool bInDead);
 	// Which limbs have a broken bone: left arm, right arm, left leg, right leg.
@@ -309,6 +312,9 @@ private:
 	TArray<FName> ArmModifiers[2];
 	bool bArmPosed[2] = { false, false };
 	bool bArmLoose[2] = { false, false };
+	bool bArmHeldForHandover[2] = { false, false };
+	double HandoverArmsUntil = 0.0;
+	void ReleaseHandoverArms(bool bForce);
 	bool bArmBoost[2] = { false, false };
 	bool bWholePosed = false;
 

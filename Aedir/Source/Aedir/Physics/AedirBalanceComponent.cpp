@@ -3106,6 +3106,7 @@ void UAedirBalanceComponent::ApplyRagdollPhysics(bool bRagdoll)
 			HoistSettleLeft = HoistSettleSeconds;
 			// The hips' and feet's hold comes in from nothing from this very step on, before the hips are tied to the capsule.
 			BodyControl->SetHoldEase(0.f);
+			BodyControl->HoldArmsThroughHandover(HandoverArmHoldSeconds);
 			BodyTeleportGrace = AedirBodyTeleportGraceSeconds * 2.f;
 		}
 		// The muscles come back and lift the body through the moves, the hips with them; a blow can still put it back down.

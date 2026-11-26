@@ -808,3 +808,5 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - Getting up and finding the feet, a raised fist and its elbow move about the chest at a steady pace instead of being flung
 - The two hands never hold places across from each other at once: the one holding on less lets go
 - Bodies and faces always draw at their full detail with every bone, so clothes follow them at any distance and character detail setting
+- Hauled up onto the feet, the arms keep their shape for a moment before going after the standing pose, whose first frames threw a hand up to the face and flung the arm out and back; the hands also stay the ground's until the body stands and wait to hold a wound until it has found its feet
+- Dev: aedir.GetUpWatch logs the first frames on the feet (where the pose and the body have the right hand, what drives it), HandSpeedWatch logs how fast the hands go, LodInfo lists the detail steps of every skinned part

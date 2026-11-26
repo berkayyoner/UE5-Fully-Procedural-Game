@@ -770,10 +770,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchWoundInSpeed = 3.f;
 
-	// Just up off the ground, finding its feet, a hand goes back to a wound this slowly (shares a second): the pose of the
-	// arms changes at once there, and at the usual pace the hand was flung up to the place.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="0.1"))
-	float ClutchRisingInSpeed = 1.2f;
+
+	// Just up off the ground, the hands go to a wound only once the body has found its feet.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	bool bClutchWaitsForFeet = true;
 
 	// Holding, the hand goes from one place over to another, or after a place that moves, no faster than this over the body
 	// (cm/s), and turns no faster than this (degrees a second).
@@ -1388,6 +1388,8 @@ private:
 	TArray<FVector> JumpStep;
 	double JumpWatchUntil = 0.0;
 	bool bJumpWatched = false;
+	bool bJumpWasDown = false;
+	int32 JumpStandFrames = 0;
 	void WatchSkate(float Speed2D, float DeltaTime);
 	float SkateSeconds[2] = { 0.f, 0.f };
 	float SkateSpeed[2] = { 0.f, 0.f };

@@ -971,6 +971,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistSettleSeconds = 1.2f;
 
+	// Handed over to the standing pose, the arms keep their shape this long before they go after it (see the body control).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", Units="s"))
+	float HandoverArmHoldSeconds = 0.15f;
+
 	// From this share of it on it can walk again, and its feet are held where they stand.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp", meta=(ClampMin="0", ClampMax="1"))
 	float HoistSettleMoveShare = 0.5f;
@@ -1108,7 +1112,12 @@ public:
 	// Getting up, how far this hand is on its way down to the ground, 0 to 1; until it starts it may stay where it was (on
 	// a wound, say).
 	float GetHoistHandReach(int32 Side) const;
-	bool IsHandGoingDown(int32 Side) const { return bHoisting ? GetHoistHandReach(Side) > 0.f : IsGettingUp(); }
+	// Hauled up and about to stand, the hands are still the ground's until the body is on its feet: one let go to a wound
+	// then was carried over half-way into the standing pose and flung out and back.
+	bool IsHandGoingDown(int32 Side) const
+	{
+		return bHoisting ? GetHoistHandReach(Side) > 0.f : (bHoistFinished && bIsRagdoll && Side != HoistFreeHand && HoistFreeHand != AedirBothHands) || IsGettingUp();
+	}
 
 	// Walked or run into by someone while getting up.
 	void BumpedGettingUp(const class AAedirCreature* By, const FVector& Point, FName Part = NAME_None);

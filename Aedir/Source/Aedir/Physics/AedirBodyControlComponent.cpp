@@ -300,6 +300,10 @@ void UAedirBodyControlComponent::SetAirborne(bool bInAirborne)
 
 void UAedirBodyControlComponent::SetLimp(bool bInLimp)
 {
+	if (bInLimp)
+	{
+		ReleaseHandoverArms(true);
+	}
 	if (bLimp != bInLimp)
 	{
 		bLimp = bInLimp;
@@ -328,8 +332,56 @@ void UAedirBodyControlComponent::SetHoist(float Share)
 	ApplyMultipliers();
 }
 
+void UAedirBodyControlComponent::HoldArmsThroughHandover(float Seconds)
+{
+	if (!Control || Seconds <= 0.f || bDead)
+	{
+		return;
+	}
+	HandoverArmsUntil = (GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0) + Seconds;
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		// A broken arm keeps the hang it has of its own.
+		if (bArmLoose[Side] || BreakLevel[Side] > 0)
+		{
+			continue;
+		}
+		TArray<FName> Arm = Side == 0 ? LeftArmControls : RightArmControls;
+		Arm.Append(Side == 0 ? LeftHandControls : RightHandControls);
+		HoldShapeNow(Arm);
+		bArmHeldForHandover[Side] = true;
+	}
+}
+
+void UAedirBodyControlComponent::ReleaseHandoverArms(bool bForce)
+{
+	if (!Control || !(bArmHeldForHandover[0] || bArmHeldForHandover[1]) || (!bForce && GetWorld() && GetWorld()->GetTimeSeconds() < HandoverArmsUntil))
+	{
+		return;
+	}
+	for (int32 Side = 0; Side < 2; ++Side)
+	{
+		if (!bArmHeldForHandover[Side])
+		{
+			continue;
+		}
+		bArmHeldForHandover[Side] = false;
+		TArray<FName> Arm = Side == 0 ? LeftArmControls : RightArmControls;
+		Arm.Append(Side == 0 ? LeftHandControls : RightHandControls);
+		FollowAnimation(Arm);
+		// Still coming in, they go after where the pose is and not how fast it moves, as all the others do then.
+		const float FollowSpeed = HoldEase >= 1.f ? 1.f : 0.f;
+		for (const FName& Name : Arm)
+		{
+			Control->SetControlUseSkeletalAnimation(Name, true, FollowSpeed, FollowSpeed);
+		}
+	}
+	ApplyBrokenArms();
+}
+
 void UAedirBodyControlComponent::SetHoldEase(float Share)
 {
+	ReleaseHandoverArms(false);
 	const float Clamped = FMath::Clamp(Share, 0.f, 1.f);
 	// Only as it changes enough to matter, and once more as it comes to its end.
 	if (FMath::Abs(Clamped - HoldEase) > 0.02f || (Clamped != HoldEase && (Clamped == 0.f || Clamped == 1.f)))
