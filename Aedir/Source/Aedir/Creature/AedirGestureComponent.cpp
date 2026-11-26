@@ -139,7 +139,9 @@ void UAedirGestureComponent::UpdateNpc(float DeltaTime)
 	{
 		Threaten();
 	}
-	if (!Npc->Balance || !Npc->Balance->IsRagdoll() || !Npc->Stats || Npc->Stats->IsDead() || Npc->Stats->IsDying())
+	// Down is lying, and getting up and finding its feet again after it: it may give up at any of those.
+	const bool bDown = Npc->Balance && (Npc->Balance->IsRagdoll() || Npc->Balance->IsGettingUp() || Npc->Balance->IsSettling());
+	if (!bDown || !Npc->Stats || Npc->Stats->IsDead() || Npc->Stats->IsDying())
 	{
 		DownSeconds = 0.f;
 		return;
@@ -153,7 +155,8 @@ void UAedirGestureComponent::UpdateNpc(float DeltaTime)
 	const float Needed = GetSurrenderSeconds();
 	if (Needed >= 0.f && DownSeconds >= Needed)
 	{
-		UE_LOG(LogAedir, Log, TEXT("[Gesture] %s gives up after %.1f s on the ground (aggression %.0f, blood %.2f)"), *Npc->GetName(), DownSeconds, Npc->Aggression * 100.f, Npc->Stats->GetBloodFraction());
+		UE_LOG(LogAedir, Log, TEXT("[Gesture] %s gives up after %.1f s down, %s (aggression %.0f, blood %.2f)"), *Npc->GetName(), DownSeconds,
+			Npc->Balance->IsHoisting() || Npc->Balance->IsGettingUp() ? TEXT("getting up") : Npc->Balance->IsSettling() ? TEXT("finding its feet") : TEXT("lying"), Npc->Aggression * 100.f, Npc->Stats->GetBloodFraction());
 		SetSurrendering(true);
 	}
 }
@@ -175,7 +178,13 @@ void UAedirGestureComponent::UpdateCrouch(float DeltaTime)
 		SteadySeconds += DeltaTime;
 	}
 	// On its feet it goes down to a crouch, and stays there for as long as it gives up.
-	if (bSurrender && SteadySeconds >= SurrenderCrouchSteadySeconds)
+	if (bSurrender && bKeepingAway && bSunk)
+	{
+		// Backing away from a foe it rises out of the crouch, and sinks again once it is left be.
+		bSunk = false;
+		Creature->SetWantsToCrouch(false);
+	}
+	else if (bSurrender && !bKeepingAway && SteadySeconds >= SurrenderCrouchSteadySeconds)
 	{
 		bSunk = true;
 		if (!Creature->bIsCrouched && Creature->CanCrouch())

@@ -986,6 +986,7 @@ void UAedirInteractionComponent::UpdateBodyLiftOff()
 		if (!Held || Held == Creature || !Held->Balance || Held->Balance->IsRagdoll() || !Grab.bLifting || !GetBodyGrabPoint(static_cast<EAedirHand>(Index), Point))
 		{
 			Grab.LiftSeconds = 0.f;
+			Grab.bRaising = false;
 			continue;
 		}
 		float UpN = 0.f;
@@ -998,15 +999,47 @@ void UAedirInteractionComponent::UpdateBodyLiftOff()
 				UpN += MostN;
 			}
 		}
-		const float WeighsN = Held->Balance->GetBodyKilos() * BodyGrabGravityCm * 0.01f;
-		const bool bPullsUp = Grab.WhereWorld.Z - Point.Z > BodyLiftOffCm;
-		Grab.LiftSeconds = bPullsUp && UpN > WeighsN ? Grab.LiftSeconds + World->GetDeltaSeconds() : 0.f;
+		const float Kilos = FMath::Max(Held->Balance->GetBodyKilos(), 1.f);
+		const float WeighsN = Kilos * BodyGrabGravityCm * 0.01f;
+		// The arm held is drawn up first; only once it goes no higher than the hands are the whole body raised by it.
+		const float Above = static_cast<float>(Grab.WhereWorld.Z - Point.Z);
+		const bool bPullsUp = Above > BodyLiftOffCm && UpN > WeighsN;
+		UCharacterMovementComponent* HeldMoves = Held->GetCharacterMovement();
+		const UCapsuleComponent* HeldCapsule = Held->GetCapsuleComponent();
+		if (!HeldMoves || !HeldCapsule)
+		{
+			continue;
+		}
+		const float FeetZ = static_cast<float>(HeldCapsule->GetComponentLocation().Z - HeldCapsule->GetScaledCapsuleHalfHeight());
+		if (!Grab.bRaising && HeldMoves->IsMovingOnGround())
+		{
+			Grab.LiftFromZ = FeetZ;
+		}
+		if (bPullsUp)
+		{
+			// Raised as fast as the hands are above it, no faster than the spare force would carry its weight.
+			const float Spare = (UpN - WeighsN) / Kilos * 100.f;
+			const float Rise = FMath::Min3((Above - BodyLiftOffCm) * 10.f, BodyLiftRiseSpeedCm, static_cast<float>(HeldMoves->Velocity.Z) + Spare * World->GetDeltaSeconds() + BodyGrabGravityCm * World->GetDeltaSeconds());
+			if (HeldMoves->IsMovingOnGround())
+			{
+				HeldMoves->SetMovementMode(MOVE_Falling);
+			}
+			HeldMoves->Velocity.Z = FMath::Max(HeldMoves->Velocity.Z, static_cast<double>(Rise));
+			Grab.bRaising = true;
+		}
+		else if (HeldMoves->IsMovingOnGround())
+		{
+			Grab.bRaising = false;
+		}
+		const bool bOffFeet = Grab.bRaising && FeetZ - Grab.LiftFromZ > BodyLiftOffFeetCm;
+		Grab.LiftSeconds = bOffFeet ? Grab.LiftSeconds + World->GetDeltaSeconds() : 0.f;
 		if (Grab.LiftSeconds >= BodyLiftOffSeconds)
 		{
-			UE_LOG(LogAedir, Log, TEXT("[Carry] %s lifts %s off the ground by the %s: %.0f N against its %.0f N"), *Creature->GetName(), *Held->GetName(), *Grab.Bone.ToString(), UpN, WeighsN);
+			UE_LOG(LogAedir, Log, TEXT("[Carry] %s lifts %s off the ground by the %s, feet %.0f cm up: %.0f N against its %.0f N"), *Creature->GetName(), *Held->GetName(), *Grab.Bone.ToString(), FeetZ - Grab.LiftFromZ, UpN, WeighsN);
 			Held->Balance->LiftOffFeet();
 			Held->Balance->SetHeldUp(0.3f);
 			Grab.LiftSeconds = 0.f;
+			Grab.bRaising = false;
 		}
 	}
 }

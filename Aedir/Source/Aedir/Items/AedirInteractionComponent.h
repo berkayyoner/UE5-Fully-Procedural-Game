@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include "CoreMinimal.h"
 #include "Combat/AedirCombatTypes.h"
@@ -66,6 +66,9 @@ struct FAedirBodyGrab
 	float BorneKilos = 0.f;
 	bool bLifting = false;
 	float LiftSeconds = 0.f;
+	// Where the feet of somebody standing that it lifts stood (the bottom of their capsule) before they were raised.
+	float LiftFromZ = 0.f;
+	bool bRaising = false;
 	float NextLog = 0.f;
 	// Where this hand is from the middle of the hands that lift, about the way they are taken (ahead, right, up).
 	FVector LiftOffset = FVector::ZeroVector;
@@ -317,7 +320,16 @@ public:
 	float BodyLiftOffCm = 6.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
-	float BodyLiftOffSeconds = 0.35f;
+	float BodyLiftOffSeconds = 0.2f;
+
+	// Pulled up past BodyLiftOffCm with more than their weight, somebody standing is raised whole, at up to this speed (cm/s)
+	// and ten times as fast as the hands are above where they hold; their balance goes only once their feet are this far
+	// off the ground (cm) for BodyLiftOffSeconds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftRiseSpeedCm = 70.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Interaction|Bodies", meta=(ClampMin="0"))
+	float BodyLiftOffFeetCm = 10.f;
 
 	// A hand holding a dead body takes off the armour worn where it holds it and keeps it in that hand. False when there is
 	// none there, or the body is not dead.

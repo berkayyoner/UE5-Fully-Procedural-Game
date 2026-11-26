@@ -882,6 +882,25 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
 	float ClutchElbowHintFullBelowCm = 6.f;
 
+	// Up at the neck or the face the elbow is led down instead, so it hangs under the hand rather than rising beside it or
+	// turning over: from a place this far below the shoulder (cm), fully from this much higher; for a place across the body
+	// (the other side of the neck) the elbow comes in before the chest.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	float ClutchElbowHighFromCm = 4.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="1"))
+	float ClutchElbowHighFullCm = 10.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	FVector ClutchElbowHighHint = FVector(0.45f, -0.35f, -1.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch")
+	FVector ClutchElbowAcrossHint = FVector(0.6f, 0.1f, -1.f);
+
+	// A place this far past the middle of the body to the other side counts fully as across it (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Clutch", meta=(ClampMin="1"))
+	float ClutchElbowAcrossCm = 8.f;
+
 	// The eyes go to the creature or thing nearest the way the body looks (the view, for the player) within this cone
 	// (degrees) and this distance (cm), searched for this often (seconds); with none there they look straight on.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Face")
@@ -1443,6 +1462,9 @@ private:
 	FVector ClutchPlaceIn[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector ClutchOutwardIn[2] = { FVector::ZeroVector, FVector::ZeroVector };
 	FVector ClutchUp = FVector::UpVector;
+	// Where a holding hand leads its elbow (the capsule's frame, mirrored for the right arm) and how strongly, by how far
+	// below the shoulder its place is and how far across the body.
+	float ReadClutchElbowHint(int32 Slot, float Below, FVector& OutHint) const;
 	// Dev: the worst each holding hand does (aedir.ClutchWatch).
 	void WatchClutch(float DeltaTime, const FTransform& BodyFrame);
 	struct FAedirClutchWatch

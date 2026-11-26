@@ -1044,20 +1044,76 @@ void UAedirBalanceComponent::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	DOREPLIFETIME(UAedirBalanceComponent, bReadyToGetUp);
 }
 
-EAedirGetUpStyle UAedirBalanceComponent::ReadLyingStyle() const
+FVector UAedirBalanceComponent::ReadBellyWay() const
 {
 	const USkeletalMesh* Model = BodyMesh ? BodyMesh->GetSkeletalMeshAsset() : nullptr;
 	const int32 ChestIndex = Model ? Model->GetRefSkeleton().FindBoneIndex(ChestBoneName) : INDEX_NONE;
 	if (ChestIndex == INDEX_NONE)
 	{
-		return EAedirGetUpStyle::FromBack;
+		return FVector::UpVector;
 	}
 	// Which way the chest faces, from how the chest bone is turned now against how it is turned in a body standing upright.
 	const FTransform RefChest = FAnimationRuntime::GetComponentSpaceTransformRefPose(Model->GetRefSkeleton(), ChestIndex);
 	const FQuat StandingChest = MeshRestRelative.GetRotation() * RefChest.GetRotation();
 	const FVector BellyInChest = StandingChest.UnrotateVector(FVector::ForwardVector);
-	const FVector Belly = BodyMesh->GetBoneQuaternion(ChestBoneName, EBoneSpaces::WorldSpace).RotateVector(BellyInChest);
-	return Belly.Z < 0.0 ? EAedirGetUpStyle::FromFront : EAedirGetUpStyle::FromBack;
+	return BodyMesh->GetBoneQuaternion(ChestBoneName, EBoneSpaces::WorldSpace).RotateVector(BellyInChest);
+}
+
+EAedirGetUpStyle UAedirBalanceComponent::ReadLyingStyle() const
+{
+	return ReadBellyWay().Z < 0.0 ? EAedirGetUpStyle::FromFront : EAedirGetUpStyle::FromBack;
+}
+
+bool UAedirBalanceComponent::UpdateSurrenderRoll(float DeltaTime)
+{
+	const AAedirCreature* Self = Cast<AAedirCreature>(CharacterOwner);
+	const UAedirStatsComponent* Stats = Self ? Self->Stats.Get() : nullptr;
+	const bool bGivesUp = Self && Self->Gesture && Self->Gesture->IsSurrendering() && BodyMesh && !bHoisting && !bHoistFinished && !IsGettingUp()
+		&& !(Stats && (Stats->IsDead() || Stats->IsDying() || Stats->IsKnockedOut())) && GetWorld() && GetWorld()->GetTimeSeconds() >= HeldUpUntil;
+	if (!bGivesUp)
+	{
+		SurrenderRollSeconds = 0.f;
+		return false;
+	}
+	const FVector Belly = ReadBellyWay();
+	if (Belly.Z >= SurrenderRollBellyUp || SurrenderRollSeconds >= SurrenderRollMostSeconds)
+	{
+		UE_CLOG(SurrenderRollSeconds > 0.f, LogAedir, Log, TEXT("[Gesture] %s %s in %.1f s, belly %.2f up."), *GetNameSafe(GetOwner()),
+			Belly.Z >= SurrenderRollBellyUp ? TEXT("has rolled onto its back") : TEXT("stops rolling, not over"), SurrenderRollSeconds, Belly.Z);
+		SurrenderRollSeconds = Belly.Z >= SurrenderRollBellyUp ? 0.f : SurrenderRollSeconds;
+		return false;
+	}
+	UE_CLOG(SurrenderRollSeconds <= 0.f, LogAedir, Log, TEXT("[Gesture] %s giving up rolls over onto its back, belly %.2f up."), *GetNameSafe(GetOwner()), Belly.Z);
+	SurrenderRollSeconds += DeltaTime;
+	// Turned about the length of the body, the way that brings the belly up soonest.
+	const FVector Long = (BodyMesh->GetBoneLocation(HeadBoneName) - BodyMesh->GetBoneLocation(PelvisBoneName)).GetSafeNormal();
+	if (Long.IsNearlyZero())
+	{
+		return true;
+	}
+	const double Way = FVector::DotProduct(FVector::CrossProduct(Belly, FVector::UpVector), Long);
+	const FVector Spin = Long * (Way < 0.0 ? -1.0 : 1.0) * FMath::DegreesToRadians(SurrenderRollDegrees);
+	const float Grip = FMath::Clamp(SurrenderRollGrip * DeltaTime, 0.f, 1.f);
+	// The whole body turns over together like a log, about the line of its trunk: each part is brought towards going round
+	// that line and turning with it; what it does along the line, or falling, is left as it is.
+	const FVector Axis = BodyMesh->GetBoneLocation(TEXT("spine_03"));
+	for (FBodyInstance* Piece : BodyMesh->Bodies)
+	{
+		if (!Piece || !Piece->IsInstanceSimulatingPhysics())
+		{
+			continue;
+		}
+		const FVector Turning = Piece->GetUnrealWorldAngularVelocityInRadians();
+		Piece->SetAngularVelocityInRadians(Turning + Long * ((FVector::DotProduct(Spin, Long) - FVector::DotProduct(Turning, Long)) * Grip), false);
+		const FVector Off = Piece->GetCOMPosition() - Axis;
+		const FVector Round = FVector::CrossProduct(Spin, Off - Long * FVector::DotProduct(Off, Long));
+		const FVector Going = Piece->GetUnrealWorldVelocity();
+		const FVector Across = Going - Long * FVector::DotProduct(Going, Long);
+		const FVector Change = (Round - Across) * Grip;
+		// Not pressed down into the ground by it: only the round way, and upward, is helped.
+		Piece->SetLinearVelocity(Going + FVector(Change.X, Change.Y, FMath::Max(Change.Z, 0.0)), false);
+	}
+	return true;
 }
 
 FVector UAedirBalanceComponent::GetGetUpLeanLocal() const
@@ -2151,7 +2207,9 @@ void UAedirBalanceComponent::UpdateServerState(float DeltaTime)
 	{
 		LyingStyle = ReadLyingStyle();
 		const bool bWasReady = bReadyToGetUp;
-		bReadyToGetUp = !bDead && !bSenseless && WakeShare >= WakeGetUpShare && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds;
+		// Giving up face down, it rolls over onto its back before it gets up.
+		const bool bRollingOver = UpdateSurrenderRoll(DeltaTime);
+		bReadyToGetUp = !bRollingOver && !bDead && !bSenseless && WakeShare >= WakeGetUpShare && Balance >= GetUpBalanceThreshold && Now - RagdollStartTime >= CurrentRagdollMinSeconds;
 		if (bReadyToGetUp && !bWasReady && BodyMesh)
 		{
 			UE_LOG(LogAedir, Verbose, TEXT("[GetUp] %s can get up, lies %s, head %s from the pelvis."), *GetNameSafe(GetOwner()),
@@ -4606,12 +4664,13 @@ float UAedirBalanceComponent::KnockFoot(FName Bone, float Speed, const FHitResul
 	return KnockPart(Bone, Shin, Speed, KickWorldBounceShare, KickWorldBounceMaxSpeed, Hit);
 }
 
-float UAedirBalanceComponent::KnockHead(float Speed, const FHitResult& Hit, float SoundTake)
+float UAedirBalanceComponent::KnockHead(float Speed, const FHitResult& Hit, float SoundTake, const FVector& MarkAt)
 {
-	return KnockPart(HeadBoneName, TEXT("neck_01"), Speed, KickWorldBounceShare, KickWorldBounceMaxSpeed, Hit, EAedirSfx::PunchBody, SoundTake);
+	return KnockPart(HeadBoneName, TEXT("neck_01"), Speed, KickWorldBounceShare, KickWorldBounceMaxSpeed, Hit, EAedirSfx::PunchBody, SoundTake, &MarkAt, HeadKnockDamageShare, HeadKnockWoundShare);
 }
 
-float UAedirBalanceComponent::KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit, EAedirSfx Sound, float SoundTake)
+float UAedirBalanceComponent::KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit, EAedirSfx Sound, float SoundTake,
+	const FVector* MarkAt, float DamageShare, float WoundShare)
 {
 	const float SpeedShare = FMath::Clamp(FMath::GetRangePct(FistWorldSoundMinSpeed, FistWorldSoundMaxSpeed, Speed), 0.f, 1.f);
 	UAedirSfxSubsystem::Play(this, Sound, Hit.ImpactPoint, FMath::Lerp(0.7f, 1.f, SpeedShare), SoundTake >= 0.f ? SoundTake : FMath::Lerp(0.3f, 0.6f, SpeedShare));
@@ -4633,16 +4692,16 @@ float UAedirBalanceComponent::KnockPart(FName Bone, FName BehindBone, float Spee
 	{
 		// The weight behind the blow comes to a stop in the hand or the foot, all of it on something that does not give. It is marked on the knuckles or the toes, at the
 		// side of them that struck: what it struck lies off the skin, and a mark there was drawn on nothing.
-		const float Joules = 0.5f * FistWorldWoundKg * FMath::Square(Speed / 100.f) * FistWorldWoundShare;
+		const float Joules = 0.5f * FistWorldWoundKg * FMath::Square(Speed / 100.f) * FistWorldWoundShare * WoundShare;
 		const AAedirCreature* Own = Cast<AAedirCreature>(GetOwner());
 		if (Own && Own->Wounds && BodyMesh)
 		{
 			const FString Name = Bone.ToString();
 			const FName Front(*Name.Replace(TEXT("hand"), TEXT("middle_01")).Replace(TEXT("foot"), TEXT("ball")));
-			const FVector At = BodyMesh->GetBoneIndex(Front) != INDEX_NONE ? BodyMesh->GetBoneLocation(Front) : BodyMesh->GetBoneLocation(Bone);
+			const FVector At = MarkAt ? *MarkAt : BodyMesh->GetBoneIndex(Front) != INDEX_NONE ? BodyMesh->GetBoneLocation(Front) : BodyMesh->GetBoneLocation(Bone);
 			Own->Wounds->AddWound(Bone, At - Away * FistWorldMarkOutCm, -Away, EAedirDamageType::Blunt, Joules, 0.f, Away);
 		}
-		Damage = (Speed - FistWorldHarmlessSpeed) * FistWorldDamagePerSpeed;
+		Damage = (Speed - FistWorldHarmlessSpeed) * FistWorldDamagePerSpeed * DamageShare;
 		if (UAedirStatsComponent* StatsComponent = FindStats())
 		{
 			StatsComponent->ApplyDamage(Damage, EAedirHarm::Knock);

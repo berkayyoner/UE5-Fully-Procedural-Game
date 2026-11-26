@@ -4846,6 +4846,10 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		ReleaseAIGrab();
 		SetGuardInternal(EAedirHand::Left, false);
 		SetGuardInternal(EAedirHand::Right, false);
+		if (!(Still && Still->GetInt() != 0))
+		{
+			KeepAwayGivenUp(DeltaTime);
+		}
 		return;
 	}
 	AIRetargetTimer -= DeltaTime;
@@ -5825,7 +5829,9 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 		}
 
 		const bool bGrudge = Candidate == AIGrudge && Now < AIGrudgeUntil;
-		if ((Groups->GetRelation(Creature->GroupId, Candidate->GroupId) != EAedirRelation::Enemy && !bGrudge) || (!CanSeeTarget(Candidate) && !CanHearTarget(Candidate)))
+		// The foe it fights, lying awake on the ground, is not lost sight of for having been turned from: it knows where it lies.
+		const bool bKeptDown = Candidate == AITarget && IsDownAwake(Candidate) && FVector::Dist(OwnerLocation, GetBodyLocation(Candidate)) <= AIKeepDownFoeCm;
+		if ((Groups->GetRelation(Creature->GroupId, Candidate->GroupId) != EAedirRelation::Enemy && !bGrudge) || (!bKeptDown && !CanSeeTarget(Candidate) && !CanHearTarget(Candidate)))
 		{
 			continue;
 		}
@@ -5855,11 +5861,84 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 		return;
 	}
 
+	// Lying down, the foe's capsule is not looked for among those standing about; it is still there, where its body lies.
+	if (AITarget && IsDownAwake(AITarget) && FVector::Dist(OwnerLocation, GetBodyLocation(AITarget)) <= AIKeepDownFoeCm)
+	{
+		AILastSeenTime = Now;
+		return;
+	}
 	const double Memory = AITarget == AIGrudge && Now < AIGrudgeUntil ? static_cast<double>(AedirAIGrudgeSeconds) : static_cast<double>(AedirAIMemorySeconds);
 	if (AITarget && (!IsValid(AITarget) || (AITarget->Stats && AITarget->Stats->IsDead()) || Now - AILastSeenTime > Memory))
 	{
 		AITarget = nullptr;
 	}
+}
+
+void UAedirCombatComponent::KeepAwayGivenUp(float DeltaTime)
+{
+	UWorld* World = GetWorld();
+	UAedirGroupSubsystem* Groups = World ? World->GetSubsystem<UAedirGroupSubsystem>() : nullptr;
+	if (!Groups || (Creature->Balance && (Creature->Balance->IsRagdoll() || Creature->Balance->IsGettingUp() || Creature->Balance->IsSettling())))
+	{
+		if (Creature->Gesture)
+		{
+			Creature->Gesture->SetKeepingAway(false);
+		}
+		return;
+	}
+	// Hands up, it keeps its distance: a foe on its feet coming too near, it backs away from, facing it.
+	const FVector Here = Creature->GetActorLocation();
+	const AAedirCreature* Nearest = nullptr;
+	double NearestCm = AISurrenderKeepAwayCm * Creature->GetActorScale3D().X;
+	for (TActorIterator<AAedirCreature> It(World); It; ++It)
+	{
+		const AAedirCreature* Other = *It;
+		if (Other == Creature || (Other->Stats && (Other->Stats->IsDead() || Other->Stats->IsDying() || Other->Stats->IsKnockedOut()))
+			|| (Other->Balance && (Other->Balance->IsRagdoll() || Other->Balance->IsGettingUp())) || (Other->Gesture && Other->Gesture->AreHandsUp())
+			|| Groups->GetRelation(Creature->GroupId, Other->GroupId) != EAedirRelation::Enemy)
+		{
+			continue;
+		}
+		const double Cm = FVector::Dist2D(Here, Other->GetActorLocation());
+		if (Cm < NearestCm)
+		{
+			Nearest = Other;
+			NearestCm = Cm;
+		}
+	}
+	if (Creature->Gesture)
+	{
+		Creature->Gesture->SetKeepingAway(Nearest != nullptr);
+	}
+	if (!Nearest)
+	{
+		AIKeepingAway = nullptr;
+		return;
+	}
+	if (AIKeepingAway != Nearest)
+	{
+		AIKeepingAway = Nearest;
+		UE_LOG(LogAedir, Log, TEXT("[Gesture] %s, given up, backs away from %s, %.0f cm off"), *Creature->GetName(), *Nearest->GetName(), NearestCm);
+	}
+	UE_CLOG(CVarAedirHitLog.GetValueOnGameThread() != 0 && GFrameCounter % 30 == 0, LogAedir, Log, TEXT("[Gesture] %s keeps away from %s: %.0f cm"), *Creature->GetName(), *Nearest->GetName(), NearestCm);
+	const FVector Toward = (Nearest->GetActorLocation() - Here).GetSafeNormal2D();
+	Creature->SetWantsToRun(false);
+	Creature->TurnBodyTo(static_cast<float>(Toward.Rotation().Yaw), DeltaTime, AedirAITurnSpeed);
+	const float Near = static_cast<float>(1.0 - NearestCm / FMath::Max(AISurrenderKeepAwayCm * Creature->GetActorScale3D().X, 1.0));
+	Creature->AddMovementInput(-Toward, FMath::Clamp(AISurrenderBackInput * (0.6f + Near), 0.f, 1.f));
+}
+
+bool UAedirCombatComponent::IsDownAwake(const AAedirCreature* Target)
+{
+	return Target && IsValid(Target) && Target->Balance && (Target->Balance->IsRagdoll() || Target->Balance->IsGettingUp())
+		&& !(Target->Stats && (Target->Stats->IsDead() || Target->Stats->IsDying() || Target->Stats->IsKnockedOut()))
+		&& !(Target->Gesture && Target->Gesture->HasGivenUp());
+}
+
+FVector UAedirCombatComponent::GetBodyLocation(const AAedirCreature* Target)
+{
+	const USkeletalMeshComponent* Body = Target ? Target->GetMesh() : nullptr;
+	return Body && Body->GetBoneIndex(TEXT("pelvis")) != INDEX_NONE ? Body->GetBoneLocation(TEXT("pelvis")) : (Target ? Target->GetActorLocation() : FVector::ZeroVector);
 }
 
 bool UAedirCombatComponent::CanSeeTarget(const AAedirCreature* Target) const

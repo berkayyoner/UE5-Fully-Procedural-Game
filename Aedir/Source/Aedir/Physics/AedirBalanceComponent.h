@@ -278,6 +278,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="0", ClampMax="1"))
 	float HoistSurrenderUpright = 0.55f;
 
+	// Giving up lying on the ground, a body rolls slowly over onto its back first, at this speed (degrees/s), until its belly
+	// faces this far up (-1 to 1); not getting up meanwhile for longer than SurrenderRollMostSeconds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Surrender", meta=(ClampMin="0", Units="deg"))
+	float SurrenderRollDegrees = 110.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Surrender", meta=(ClampMin="-1", ClampMax="1"))
+	float SurrenderRollBellyUp = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Surrender", meta=(ClampMin="0", Units="s"))
+	float SurrenderRollMostSeconds = 5.f;
+
+	// How much of the way to that speed the trunk is brought each second.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Surrender", meta=(ClampMin="0"))
+	float SurrenderRollGrip = 15.f;
+
 	// How far an awake body's elbows give while it is down, sideways and along their bend either way of its middle (degrees).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance", meta=(ClampMin="5", ClampMax="150"))
 	float DownElbowSideDegrees = 30.f;
@@ -333,8 +348,16 @@ public:
 
 	float KnockFoot(FName Bone, float Speed, const FHitResult& Hit);
 
-	// The head driven into something fixed, heard as that take of a fist on the body.
-	float KnockHead(float Speed, const FHitResult& Hit, float SoundTake);
+	// The head driven into something fixed, heard as that take of a fist on the body, and marked where it struck (MarkAt, on
+	// the skin of the forehead).
+	float KnockHead(float Speed, const FHitResult& Hit, float SoundTake, const FVector& MarkAt);
+
+	// The head knocked on something fixed takes this many times a fist's harm, and as many times its wear towards a mark.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0"))
+	float HeadKnockDamageShare = 1.4f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Fist", meta=(ClampMin="0"))
+	float HeadKnockWoundShare = 1.2f;
 
 	// A body already lying on the ground takes this share of the push of a blow or a kick a standing one would: it has
 	// the ground under it and nothing to be thrown off, so it is shoved, not sent flying.
@@ -1541,7 +1564,8 @@ private:
 	float BodyThroughLeft = 0.f;
 	void SetBodyThrough(bool bThrough);
 	// The sound, the spring back and the harm of a part driven into something fixed, and the part behind it.
-	float KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit, EAedirSfx Sound = EAedirSfx::PunchForearm, float SoundTake = -1.f);
+	float KnockPart(FName Bone, FName BehindBone, float Speed, float BounceShare, float BounceMax, const FHitResult& Hit, EAedirSfx Sound = EAedirSfx::PunchForearm, float SoundTake = -1.f,
+		const FVector* MarkAt = nullptr, float DamageShare = 1.f, float WoundShare = 1.f);
 	void WatchKnock(float DeltaTime);
 	FName KnockWatchBone;
 	FVector KnockWatchFrom = FVector::ZeroVector;
@@ -1616,6 +1640,11 @@ private:
 	// Where the hips lay when getting up started.
 	FTransform GetUpStartPelvis = FTransform::Identity;
 	EAedirGetUpStyle ReadLyingStyle() const;
+	// The way the belly faces in the world.
+	FVector ReadBellyWay() const;
+	// Rolls a body giving up on the ground over onto its back; true while it still rolls.
+	bool UpdateSurrenderRoll(float DeltaTime);
+	float SurrenderRollSeconds = 0.f;
 	UFUNCTION(Server, Unreliable)
 	void ServerRequestGetUp(FVector KeyWay);
 

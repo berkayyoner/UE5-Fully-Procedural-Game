@@ -116,7 +116,7 @@ void UAedirCombatComponent::OnRep_HeadbuttCount()
 	}
 }
 
-FVector UAedirCombatComponent::GetForeheadWorld() const
+FVector UAedirCombatComponent::GetForeheadWorld(float ExtraUpCm) const
 {
 	const USkeletalMeshComponent* Mesh = Creature ? Creature->GetMesh() : nullptr;
 	if (!Mesh || Mesh->GetBoneIndex(AedirHeadbuttHeadBone) == INDEX_NONE)
@@ -131,7 +131,7 @@ FVector UAedirCombatComponent::GetForeheadWorld() const
 	const FVector FaceWorld = Turned.RotateVector(FVector(0.f, 1.f, 0.f));
 	const FVector UpWorld = Turned.RotateVector(FVector(0.f, 0.f, 1.f));
 	const float Scale = static_cast<float>(Mesh->GetComponentScale().Z);
-	return Mesh->GetBoneLocation(AedirHeadbuttHeadBone) + (FaceWorld.GetSafeNormal() * HeadbuttForeheadAheadCm + UpWorld.GetSafeNormal() * HeadbuttForeheadUpCm) * Scale;
+	return Mesh->GetBoneLocation(AedirHeadbuttHeadBone) + (FaceWorld.GetSafeNormal() * HeadbuttForeheadAheadCm + UpWorld.GetSafeNormal() * (HeadbuttForeheadUpCm + ExtraUpCm)) * Scale;
 }
 
 float UAedirCombatComponent::GetHeadbuttShare() const
@@ -274,7 +274,8 @@ void UAedirCombatComponent::ResolveHeadbuttSweep(const FVector& From, const FVec
 		Knock.ImpactPoint = Hit.bStartPenetrating ? To : FVector(Hit.ImpactPoint);
 		if (Creature->Balance)
 		{
-			Creature->Balance->KnockHead(Came, Knock, HeadbuttSoundTake);
+			// Marked on the forehead's skin, which met the thing, not where the sweep ahead of it touched.
+			Creature->Balance->KnockHead(Came, Knock, HeadbuttSoundTake, GetForeheadWorld(HeadbuttMarkUpCm));
 			Creature->Balance->ApplyBalanceImpact(-Into, HeadbuttFixedRecoilBalance);
 		}
 		if (Creature->Stats)

@@ -10,6 +10,7 @@
 #include "CanvasTypes.h"
 #include "EngineUtils.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Combat/AedirCombatComponent.h"
 #include "Creature/AedirCreature.h"
 #include "Creature/AedirStatsComponent.h"
@@ -516,7 +517,10 @@ void AAedirHUD::DrawCompass(const APawn* Pawn)
 			{
 				continue;
 			}
-			const FVector Delta = Foe->GetActorLocation() - PawnLocation;
+			// Where the body is: lying or flung, the capsule stays where it fell while the body itself goes on moving.
+			const USkeletalMeshComponent* FoeBody = Foe->GetMesh();
+			const FVector FoeAt = FoeBody && FoeBody->GetBoneIndex(TEXT("pelvis")) != INDEX_NONE ? FoeBody->GetBoneLocation(TEXT("pelvis")) : Foe->GetActorLocation();
+			const FVector Delta = FoeAt - PawnLocation;
 			const float Relative = HudSignedDegrees(HudNormalizeDegrees(static_cast<float>(FMath::RadiansToDegrees(FMath::Atan2(Delta.Y, Delta.X)))) - Heading);
 			const bool bSeen = FMath::Abs(Relative) <= HalfFov * 0.92f;
 			const float Position = bSeen ? Relative / HalfFov : (Relative > 0.f ? 0.92f : -0.92f);

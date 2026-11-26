@@ -361,6 +361,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float AITargetDownExtraCm = 600.f;
 
+	// The foe it fights lying awake and not given up is kept as long as its body lies this near, seen or not; only another
+	// foe nearer and standing turns it away (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|AI", meta=(ClampMin="0", Units="cm"))
+	float AIKeepDownFoeCm = 2500.f;
+
+	// Given up, it backs away from a foe on its feet that comes nearer than this (cm), at this much of a walk at most.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|AI", meta=(ClampMin="0", Units="cm"))
+	float AISurrenderKeepAwayCm = 260.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|AI", meta=(ClampMin="0", ClampMax="1"))
+	float AISurrenderBackInput = 1.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat")
 	float AITargetNearSlackCm = 200.f;
 
@@ -632,6 +644,10 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt")
 	float HeadbuttForeheadUpCm = 7.f;
+
+	// A knock on something fixed is marked this much higher up the forehead than where it strikes from (cm).
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt")
+	float HeadbuttMarkUpCm = 4.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Headbutt", meta=(ClampMin="1"))
 	float HeadbuttRadiusCm = 10.f;
@@ -1063,7 +1079,8 @@ private:
 	void BeginHeadbutt();
 	void UpdateHeadbutt(float DeltaTime);
 	void ResolveHeadbuttSweep(const FVector& From, const FVector& To, float DeltaTime);
-	FVector GetForeheadWorld() const;
+	// The middle of the forehead, the further up by ExtraUpCm.
+	FVector GetForeheadWorld(float ExtraUpCm = 0.f) const;
 	UFUNCTION()
 	void OnRep_HeadbuttCount();
 	// A blow of some part of the body (a foot, the head) landing on another, as a fist does: by how fast it came in where it
@@ -1173,6 +1190,13 @@ private:
 	void UpdateAI(float DeltaTime);
 	void UpdateAITarget(double Now);
 	bool CanSeeTarget(const AAedirCreature* Target) const;
+	// Lying or getting up, awake and not given up.
+	static bool IsDownAwake(const AAedirCreature* Target);
+	// Hands up, backs away from a foe on its feet that comes too near.
+	void KeepAwayGivenUp(float DeltaTime);
+	TWeakObjectPtr<const AAedirCreature> AIKeepingAway;
+	// Where the body is, not where its capsule was left when it fell.
+	static FVector GetBodyLocation(const AAedirCreature* Target);
 	// Whether the noise the target makes reaches this creature's ears.
 	bool CanHearTarget(const AAedirCreature* Target) const;
 

@@ -775,3 +775,10 @@ Swing keeps the point on the enemy to half the mouse travel then opens round beh
 - A body carried or lifted is pushed out of the holder's trunk, head and legs instead of passing through them
 - G headbutts instead of shoving: a fist's harm, the punch-on-body-40 sound, the head hurt and the senses shaken against something fixed; NPCs headbutt at close quarters now and then
 - Kicks are heard on every body and loose thing they meet, also when they do no harm
+- The compass dot of a foe follows its body, not the capsule it left where it fell
+- Somebody standing lifted by the hands is drawn up whole once the held arm goes no higher, and loses its balance only with its feet off the ground
+- An NPC that has given up backs away, standing, from a foe on its feet that comes within reach
+- A headbutt on something fixed marks the forehead where it struck and hurts the head a little more
+- A hand held to the neck or the face leads its elbow down under it instead of out and up
+- NPCs keep fighting a foe lying awake on the ground instead of forgetting it once it drops out of the standing ones they look for
+- NPCs give up while getting up and finding their feet as well as lying, and one giving up face down rolls slowly onto its back first

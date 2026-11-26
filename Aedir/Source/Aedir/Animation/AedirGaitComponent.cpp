@@ -245,7 +245,6 @@ void UAedirGaitComponent::UpdateDownAwakePose(float DeltaTime, bool bHoisted)
 	}
 	// A hand held to a hurt place, in the chest's own frame, which the pose carries onto its own chest.
 	const FTransform ChestBone = BodyMesh->GetBoneTransform(TEXT("spine_05"));
-	const FVector HintIn[2] = { ClutchElbowHint.GetSafeNormal(), FVector(ClutchElbowHint.X, -ClutchElbowHint.Y, ClutchElbowHint.Z).GetSafeNormal() };
 	for (int32 Slot = 0; Slot < 2; ++Slot)
 	{
 		GaitState.ClutchDownAlpha[Slot] = ClutchAlpha[Slot];
@@ -253,11 +252,26 @@ void UAedirGaitComponent::UpdateDownAwakePose(float DeltaTime, bool bHoisted)
 		GaitState.ClutchPalmChest[Slot] = ChestBone.InverseTransformVectorNoScale(GaitState.ClutchPalmWorld[Slot]);
 		GaitState.ClutchFingersChest[Slot] = ChestBone.InverseTransformVectorNoScale(GaitState.ClutchFingersWorld[Slot]);
 		const float Below = static_cast<float>(FVector::DotProduct(BodyMesh->GetBoneLocation(Slot == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r")) - ClutchPlace[Slot], ClutchUp));
-		const float Hold = ClutchAlpha[Slot] * ClutchElbowHintShare * FMath::Clamp((Below + ClutchElbowHintAboveCm) / FMath::Max(ClutchElbowHintFullBelowCm, 1.f), 0.f, 1.f);
-		(Slot == 0 ? GaitState.LeftElbowHint : GaitState.RightElbowHint) = HintIn[Slot];
+		FVector HintIn = FVector::ZeroVector;
+		const float Hold = ClutchAlpha[Slot] * ReadClutchElbowHint(Slot, Below, HintIn);
+		(Slot == 0 ? GaitState.LeftElbowHint : GaitState.RightElbowHint) = HintIn;
 		(Slot == 0 ? GaitState.LeftElbowHintAlpha : GaitState.RightElbowHintAlpha) = Hold;
 	}
 	ApplyGestureToState();
+}
+
+float UAedirGaitComponent::ReadClutchElbowHint(int32 Slot, float Below, FVector& OutHint) const
+{
+	const float Mirror = Slot == 0 ? 1.f : -1.f;
+	const auto Side = [Mirror](const FVector& Left) { return FVector(Left.X, Left.Y * Mirror, Left.Z).GetSafeNormal(); };
+	// Below the shoulder the elbow goes out to its own side; from about the shoulder up, down under the hand.
+	const float Out = FMath::Clamp((Below + ClutchElbowHintAboveCm) / FMath::Max(ClutchElbowHintFullBelowCm, 1.f), 0.f, 1.f);
+	const float High = FMath::Clamp((ClutchElbowHighFromCm - Below) / ClutchElbowHighFullCm, 0.f, 1.f);
+	// Across the body (for the left hand, a place to the right of the middle) the elbow comes in before the chest.
+	const float Across = FMath::Clamp(static_cast<float>(ClutchPlaceIn[Slot].Y) * Mirror / ClutchElbowAcrossCm, 0.f, 1.f);
+	const FVector Down = FMath::Lerp(Side(ClutchElbowHighHint), Side(ClutchElbowAcrossHint), Across).GetSafeNormal();
+	OutHint = FMath::Lerp(Side(ClutchElbowHint), Down, High).GetSafeNormal();
+	return ClutchElbowHintShare * FMath::Max(Out * (1.f - High), High);
 }
 
 bool UAedirGaitComponent::DownLookAngles(float& OutYaw, float& OutPitch) const
@@ -1030,21 +1044,21 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	};
 	ReadArmShape(EAedirHand::Left, GaitState.LeftWristMinDegrees, GaitState.LeftElbowHint, GaitState.LeftElbowHintAlpha);
 	ReadArmShape(EAedirHand::Right, GaitState.RightWristMinDegrees, GaitState.RightElbowHint, GaitState.RightElbowHintAlpha);
-	// A hand held to a hurt place has its elbow out to its own side, the forearm across the body.
+	// A hand held to a hurt place has its elbow out to its own side, the forearm across the body; up at the neck or the face
+	// it hangs under the hand.
 	for (int32 Slot = 0; Slot < 2; ++Slot)
 	{
-		// Only for a place below the shoulder: up at the face or the neck the elbow is left to hang.
 		const USkeletalMeshComponent* HintBody = CreatureOwner ? CreatureOwner->GetMesh() : nullptr;
-		const float Below = HintBody ? static_cast<float>(FVector::DotProduct(HintBody->GetBoneLocation(Slot == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r")) - ClutchPlace[Slot], ClutchUp)) : 0.f;
-		const float Hold = FMath::Clamp(ClutchAlpha[Slot], 0.f, 1.f) * ClutchElbowHintShare
-			* FMath::Clamp((Below + ClutchElbowHintAboveCm) / FMath::Max(ClutchElbowHintFullBelowCm * static_cast<float>(ActorTransform.GetScale3D().X), 1.f), 0.f, 1.f);
+		const float Below = HintBody ? static_cast<float>(FVector::DotProduct(HintBody->GetBoneLocation(Slot == 0 ? TEXT("upperarm_l") : TEXT("upperarm_r")) - ClutchPlace[Slot], ClutchUp))
+			/ FMath::Max(static_cast<float>(ActorTransform.GetScale3D().X), 0.1f) : 0.f;
+		FVector Want = FVector::ZeroVector;
+		const float Hold = FMath::Clamp(ClutchAlpha[Slot], 0.f, 1.f) * ReadClutchElbowHint(Slot, Below, Want);
 		if (Hold <= KINDA_SMALL_NUMBER)
 		{
 			continue;
 		}
 		FVector& Hint = Slot == 0 ? GaitState.LeftElbowHint : GaitState.RightElbowHint;
 		float& HintAlpha = Slot == 0 ? GaitState.LeftElbowHintAlpha : GaitState.RightElbowHintAlpha;
-		const FVector Want = FVector(ClutchElbowHint.X, Slot == 0 ? ClutchElbowHint.Y : -ClutchElbowHint.Y, ClutchElbowHint.Z).GetSafeNormal();
 		Hint = (HintAlpha > KINDA_SMALL_NUMBER ? FMath::Lerp(Hint.GetSafeNormal(), Want, Hold) : Want).GetSafeNormal();
 		HintAlpha = FMath::Max(HintAlpha, Hold);
 	}
@@ -3053,9 +3067,9 @@ void UAedirGaitComponent::WatchClutch(float DeltaTime, const FTransform& BodyFra
 				}
 			}
 			UE_LOG(LogAedir, Log, TEXT("[ElbowJoint]%s"), *Joints);
-			UE_LOG(LogAedir, Log, TEXT("[ElbowWatch] %s %s alpha %.2f at %s: bent %.0f deg towards %.0f in the upper arm (posed %.0f towards %.0f), elbow pole %.2f %.2f %.2f, hand %s"), *CreatureOwner->GetName(), Slot == 0 ? TEXT("left") : TEXT("right"), ClutchAlpha[Slot], *HandFlinch[Slot].Bone.ToString(),
+			UE_LOG(LogAedir, Log, TEXT("[ElbowWatch] %s %s alpha %.2f at %s: bent %.0f deg towards %.0f in the upper arm (posed %.0f towards %.0f), elbow pole %.2f %.2f %.2f, %.0f cm over the shoulder, hand %s"), *CreatureOwner->GetName(), Slot == 0 ? TEXT("left") : TEXT("right"), ClutchAlpha[Slot], *HandFlinch[Slot].Bone.ToString(),
 				FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(static_cast<float>(FVector::DotProduct(Along, Fore)), -1.f, 1.f))), FMath::RadiansToDegrees(FMath::Atan2(static_cast<float>(Off.Z), static_cast<float>(Off.Y))), PoseBent, PoseTowards,
-				PoleBody.X, PoleBody.Y, PoleBody.Z, *BodyFrame.InverseTransformPositionNoScale(HandAt).ToCompactString());
+				PoleBody.X, PoleBody.Y, PoleBody.Z, ElbowAt.Z - Upper.GetLocation().Z, *BodyFrame.InverseTransformPositionNoScale(HandAt).ToCompactString());
 		}
 	}
 	const FReferenceSkeleton& Ref = Body->GetSkeletalMeshAsset()->GetRefSkeleton();
