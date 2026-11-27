@@ -356,18 +356,19 @@ namespace
 		SetModelFix(TEXT("RidgeSword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector::ZeroVector);
 		SetModelFix(TEXT("SlenderSword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector::ZeroVector);
 		SetModelFix(TEXT("Cleaver"), FVector(0.991f, -0.134f, 0.005f), FVector(-0.005f, 0.001f, 1.f), FVector(-0.134f, -0.991f, 0.f), FVector(0.f, -2.553f, 0.408f));
-		SetModelFix(TEXT("Axe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, -6.446f, 0.f));
+		// The head turned round the haft from where it was first set: measured held up, its edge stood back from the hand.
+		SetModelFix(TEXT("Axe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 6.446f, 0.f));
 		SetModelFix(TEXT("ElvenBattleaxe"), FVector(0.885f, -0.466f, -0.006f), FVector(-0.005f, 0.003f, -1.f), FVector(0.466f, 0.885f, 0.f), FVector(0.f, -1.131f, 0.f));
 		SetModelFix(TEXT("WoodsmanAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 3.009f, 0.f));
 		SetModelFix(TEXT("BeardedGreataxe"), FVector(0.992f, 0.017f, -0.125f), FVector(0.125f, 0.002f, 0.992f), FVector(0.017f, -1.f, 0.f), FVector(0.f, 1.102f, -6.531f));
 		SetModelFix(TEXT("HandAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 3.768f, 0.f));
-		SetModelFix(TEXT("RaiderAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, -0.418f, 0.f));
+		SetModelFix(TEXT("RaiderAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 0.418f, 0.f));
 		SetModelFix(TEXT("CrescentAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 9.294f, 0.f));
 		SetModelFix(TEXT("WarAxe"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 1.166f, 0.f));
 		SetModelFix(TEXT("Longsword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector(0.f, -0.739f, 0.f));
 		SetModelFix(TEXT("Sword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector(0.f, 3.62f, 0.f));
 		SetModelFix(TEXT("ShortSword"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector::ZeroVector);
-		SetModelFix(TEXT("BattleAxe"), FVector(0.994f, 0.111f, -0.003f), FVector(-0.003f, 0.f, -1.f), FVector(-0.111f, 0.994f, 0.f), FVector(0.f, -5.307f, 0.f));
+		SetModelFix(TEXT("BattleAxe"), FVector(0.994f, -0.111f, 0.003f), FVector(-0.003f, 0.f, 1.f), FVector(-0.111f, -0.994f, 0.f), FVector(0.f, 5.307f, 0.f));
 		SetModelFix(TEXT("Dagger"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, -1.f, 0.f), FVector::ZeroVector);
 		SetModelFix(TEXT("Mace"), FVector(1.f, 0.f, 0.f), FVector(0.f, 1.f, 0.f), FVector(0.f, 0.f, 1.f), FVector(0.f, 0.f, 0.666f));
 		SetModelFix(TEXT("Warhammer"), FVector(1.f, 0.f, 0.f), FVector(0.f, 0.f, -1.f), FVector(0.f, 1.f, 0.f), FVector::ZeroVector);

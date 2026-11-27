@@ -26,6 +26,7 @@
 #include "UI/AedirMenuSubsystem.h"
 
 #include "Engine/StaticMesh.h"
+#include "StaticMeshResources.h"
 #include "Engine/StaticMeshActor.h"
 
 #include "Settings/AedirSettingsSubsystem.h"
@@ -2947,6 +2948,64 @@ void AAedirPlayerCharacter::HandSpeedWatch(float Seconds, float WindowSeconds)
 	}), 0.001f, Params);
 }
 
+void AAedirPlayerCharacter::HeadSide(const FString& Label)
+{
+	const AAedirItemActor* Item = Interaction ? Interaction->GetHeldItem(EAedirHand::Right) : nullptr;
+	if (!Item || !GetMesh())
+	{
+		return;
+	}
+	FBox Bounds(ForceInit);
+	TInlineComponentArray<UStaticMeshComponent*> Parts(Item);
+	for (const UStaticMeshComponent* Part : Parts)
+	{
+		if (Part && Part->GetStaticMesh() && Part->IsVisible())
+		{
+			Bounds += Part->Bounds.GetBox();
+		}
+	}
+	const FVector Axis = Item->GetActorForwardVector();
+	const FVector Grip = Item->GetGripWorld();
+	// The far half of the model only: the head, not the grip and the pommel.
+	FBox Far(ForceInit);
+	// The point of the far end furthest off the haft: the edge of an axe, which stands out further than its back.
+	FVector Outmost = FVector::ZeroVector;
+	for (const UStaticMeshComponent* Part : Parts)
+	{
+		const UStaticMesh* Model = Part ? Part->GetStaticMesh() : nullptr;
+		const FStaticMeshLODResources* Lod = Model && Model->GetRenderData() && Model->GetRenderData()->LODResources.Num() ? &Model->GetRenderData()->LODResources[0] : nullptr;
+		if (!Lod || !Part->IsVisible())
+		{
+			continue;
+		}
+		const FPositionVertexBuffer& Points = Lod->VertexBuffers.PositionVertexBuffer;
+		double FarthestAlong = -1.0e9;
+		for (uint32 Index = 0; Index < Points.GetNumVertices(); ++Index)
+		{
+			FarthestAlong = FMath::Max(FarthestAlong, FVector::DotProduct(Part->GetComponentTransform().TransformPosition(FVector(Points.VertexPosition(Index))) - Grip, Axis));
+		}
+		for (uint32 Index = 0; Index < Points.GetNumVertices(); ++Index)
+		{
+			const FVector P = Part->GetComponentTransform().TransformPosition(FVector(Points.VertexPosition(Index)));
+			if (FVector::DotProduct(P - Grip, Axis) > FarthestAlong - 20.0)
+			{
+				Far += P;
+				const FVector Off = FVector::VectorPlaneProject(P - Grip, Axis);
+				Outmost = Off.SizeSquared() > Outmost.SizeSquared() ? Off : Outmost;
+			}
+		}
+	}
+	if (!Far.IsValid)
+	{
+		return;
+	}
+	const FVector FromHaft = FVector::VectorPlaneProject(Far.GetCenter() - Grip, Axis);
+	const FVector Local = GetActorTransform().InverseTransformVectorNoScale(FromHaft.GetSafeNormal());
+	const FVector Knuckles = FVector::VectorPlaneProject(GetMesh()->GetBoneTransform(TEXT("hand_r")).GetRotation().GetAxisX(), Axis).GetSafeNormal();
+	UE_LOG(LogAedir, Display, TEXT("[HeadSide] %s %s: the head stands %.1f cm off the haft, towards %s in the body's frame; against the hand's forward axis %.2f; its outmost point %.1f cm off towards %s"), *Label, *Item->ItemName.ToString(),
+		FromHaft.Size(), *Local.ToCompactString(), FVector::DotProduct(FromHaft.GetSafeNormal(), Knuckles), Outmost.Size(), *GetActorTransform().InverseTransformVectorNoScale(Outmost.GetSafeNormal()).ToCompactString());
+}
+
 void AAedirPlayerCharacter::LodInfo()
 {
 	for (TActorIterator<AAedirCreature> It(GetWorld()); It; ++It)
@@ -3929,6 +3988,23 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 			Alpha[0], *Body.InverseTransformPositionNoScale(Fist[0]).ToCompactString(), Alpha[1], *Body.InverseTransformPositionNoScale(Fist[1]).ToCompactString());
 		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s wrist up L %.1f R %.1f, turn L %.1f R %.1f, two hands %.2f (%d), held L %d R %d"), *Label, FistArms->GetBladeWristUp(EAedirHand::Left), FistArms->GetBladeWristUp(EAedirHand::Right),
 			FistArms->GetFistTurn(EAedirHand::Left), FistArms->GetFistTurn(EAedirHand::Right), FistArms->GetGripAlpha(), FistArms->IsTwoHand() ? 1 : 0, FistArms->IsHeld(EAedirHand::Left) ? 1 : 0, FistArms->IsHeld(EAedirHand::Right) ? 1 : 0);
+		if (const USkeletalMeshComponent* HandBody = GetMesh())
+		{
+			// How each hand and forearm is turned in the body's frame, to see one going round from one moment to the next.
+			const FQuat Frame = GetActorQuat();
+			const auto Turned = [&](const TCHAR* Bone) { return (Frame.Inverse() * HandBody->GetBoneQuaternion(FName(Bone))).Rotator().ToCompactString(); };
+			// And how far each turned since the last call, as one angle (degrees), which Euler angles do not show.
+			static FQuat LastTurn[3] = { FQuat::Identity, FQuat::Identity, FQuat::Identity };
+			const TCHAR* Watched[3] = { TEXT("hand_l"), TEXT("lowerarm_l"), TEXT("hand_r") };
+			float Moved[3];
+			for (int32 Index = 0; Index < 3; ++Index)
+			{
+				const FQuat Now = Frame.Inverse() * HandBody->GetBoneQuaternion(FName(Watched[Index]));
+				Moved[Index] = FMath::RadiansToDegrees(static_cast<float>(Now.AngularDistance(LastTurn[Index])));
+				LastTurn[Index] = Now;
+			}
+			UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s bones turned hand_l %.0f lowerarm_l %.0f hand_r %.0f since last; hand_l %s"), *Label, Moved[0], Moved[1], Moved[2], *Turned(TEXT("hand_l")));
+		}
 		if (const USkeletalMeshComponent* ArmBody = GetMesh())
 		{
 			// The left arm against the body: how high the elbow and the wrist are over the shoulder, how far out at its side.

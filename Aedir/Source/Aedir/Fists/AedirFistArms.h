@@ -352,20 +352,33 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeSweepWristDownDegrees = 24.f;
 
-	// A blade in one hand alone, moved slowly (not cut in one turn): raised from the middle, the wrist bends down this far
-	// by the top instead of up (BladeRaiseWristUpDegrees), so a cut across up there passes over the own head and does not
-	// strike it.
+	// A one-handed blade moved slowly (not cut in one turn), in one hand or both: raised from the middle, the wrist bends
+	// down this far by the top instead of up (BladeRaiseWristUpDegrees), so a cut across up there passes over the own head
+	// and does not strike it.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(Units="deg"))
-	float BladeAloneRaiseWristDownDegrees = 12.f;
+	float BladeRaiseSlowWristDownDegrees = 12.f;
 
-	// A blade in one hand alone, drawn slowly across to the other side: the wrist bends up, most (this far) at
-	// BladeAloneCrossWristUpPeak of the way and back to none at the end, so the point stays on the foe ahead; it is not
-	// bent down going by the head there (BladeSweepWristDownDegrees).
+	// A one-handed blade drawn slowly across to the other side: the wrist bends up (negative: down), most (this far, in one
+	// hand alone and in both) at BladeCrossWristUpPeak of the way and back to none at the end, so the point stays on the foe
+	// ahead; it is not bent down going by the head there (BladeSweepWristDownDegrees).
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(Units="deg"))
-	float BladeAloneCrossWristUpDegrees = 15.f;
+	float BladeAloneCrossWristUpDegrees = -5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(Units="deg"))
+	float BladeTwoHandCrossWristUpDegrees = 15.f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(ClampMin="0.01", ClampMax="0.99"))
-	float BladeAloneCrossWristUpPeak = 0.6f;
+	float BladeCrossWristUpPeak = 0.6f;
+
+	// In both hands, drawn round to its own side, the wrist bends up only this far by the end (BladeSideWristUpDegrees in
+	// one): further, the blade came to lie back along the second hand's forearm, and that hand turned right over on the grip.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(Units="deg"))
+	float BladeTwoHandSideWristUpDegrees = 20.f;
+
+	// In both hands, drawn round to its own side, the wrist's second turn ends turned out only this far (BladeSideOutDegrees
+	// in one): further, the second hand had to twist round its forearm by most of a half turn to stay on the grip.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(Units="deg"))
+	float BladeTwoHandSideOutDegrees = 0.f;
 
 	// Brought across to the other side a blade's wrist turns out this far by BladeSideTurnSplit of the way, the point kept
 	// on the other, then back in to BladeCrossTurnDegrees at the end, the blade reaching from the other side round back.
@@ -453,6 +466,25 @@ public:
 	// past it the hand would turn into the blade.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float TwoHandWristMaxDegrees = 60.f;
+
+	// The second hand on the grip turns about its own forearm to take hold at most the first this far one way (as the blade
+	// goes round to the carrying hand's side) and the second the other, and goes on from the turn it had: past half a turn
+	// the shortest way round flipped to the other side and the hand went right round.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(ClampMin="0", ClampMax="179", Units="deg"))
+	float TwoHandPalmMaxTurnDegrees = 100.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(ClampMin="0", ClampMax="179", Units="deg"))
+	float TwoHandPalmMaxTurnBackDegrees = 179.f;
+
+	// The further the second hand is off its hold on the grip, the less its wrist reaches for it, not at all from this far off
+	// (starting 50 degrees before).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(ClampMin="60", ClampMax="180", Units="deg"))
+	float TwoHandWristLetGoDegrees = 165.f;
+
+	// The second hand turns its palm round its forearm to its hold on the grip only as far as that way is clear: not at all
+	// with the hold's palm this little off along the forearm (share of it across), wholly from 0.4 more.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(ClampMin="0", ClampMax="0.6"))
+	float TwoHandPalmUnclearShare = 0.f;
 
 	// Held in both hands and drawn round to its own side, the blade comes in this close to the chest (in one hand
 	// SideRadiusCm), so the second arm still reaches it bent.

@@ -438,11 +438,12 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			const float OneHandOut = bOwnSide ? 1.f - FMath::Pow(1.f - FMath::Clamp(Past, 0.f, 1.f), FMath::Max(BladeSideOutEase, 1.f)) : Past;
 			// In both hands it leaves the first turn slowly and comes slowly into the second.
 			const float OutShare = FMath::Lerp(OneHandOut, FMath::SmoothStep(0.f, 1.f, FMath::Clamp(Past, 0.f, 1.f)), bBladeTwoHandEasedTurn ? GripAlpha : 0.f);
+			const float SideOut = FMath::Lerp(BladeSideOutDegrees, BladeTwoHandSideOutDegrees, GripAlpha);
 			const float TwoTurns = Share <= Split
 				? FMath::Lerp(0.f, bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, Share / Split)
-				: FMath::Lerp(bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, bOwnSide ? -BladeSideOutDegrees : BladeCrossTurnDegrees, OutShare);
+				: FMath::Lerp(bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, bOwnSide ? -SideOut : BladeCrossTurnDegrees, OutShare);
 			// Fast, the wrist goes the one way all along, the edge leading.
-			const float OneWay = FMath::Lerp(0.f, bOwnSide ? -BladeSideOutDegrees : BladeCrossTurnDegrees, Share);
+			const float OneWay = FMath::Lerp(0.f, bOwnSide ? -SideOut : BladeCrossTurnDegrees, Share);
 			FistTurn[Slot] = FMath::Lerp(TwoTurns, OneWay, OneTurn) * Side;
 		}
 		// Either way it keeps looking ahead while the wrist turns in, and lets go of that from there on. Raised or lowered the
@@ -462,19 +463,20 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 		const float SideShare = FMath::Lerp(SideLinear, FMath::SmoothStep(0.f, 1.f, SideLinear), bBlade && bBladeTwoHandEasedTurn ? GripAlpha : 0.f);
 		// Drawn round and raised at once, the larger of the two, not both on top of each other.
 		// Raised, the side's bend gives way to the raise's, so over the head the point is not thrown back.
-		// One hand alone on a blade moved slowly bends its wrist down as it is raised, and up as it is drawn across.
-		const float AloneSlow = bBlade ? (1.f - GripAlpha) * (1.f - OneTurn) : 0.f;
-		const float SideBend = SideShare * (1.f - Raise) * BladeSideWristUpDegrees;
-		const float RaisedBend = FMath::Lerp(FMath::Max(SideBend, Raise * BladeRaiseWristUpDegrees), SideBend - Raise * BladeAloneRaiseWristDownDegrees, AloneSlow);
+		// A blade moved slowly bends its wrist down as it is raised, and up (in both hands) or a little down (in one) as it is
+		// drawn across.
+		const float Slow = bBlade ? 1.f - OneTurn : 0.f;
+		const float SideBend = SideShare * (1.f - Raise) * FMath::Lerp(BladeSideWristUpDegrees, BladeTwoHandSideWristUpDegrees, bBlade ? GripAlpha : 0.f);
+		const float RaisedBend = FMath::Lerp(FMath::Max(SideBend, Raise * BladeRaiseWristUpDegrees), SideBend - Raise * BladeRaiseSlowWristDownDegrees, Slow);
 		BladeWristUp[Slot] = bBlade ? RaisedBend - Lower * BladeLowerWristDownDegrees : 0.f;
 		// Going by the head on the way across, the blade is bent down out of the way and comes up again at the side.
 		if (bBlade)
 		{
-			const float CrossAlone = bFollows && !bOwnSide && AimSide != 0.f ? AloneSlow : 0.f;
-			BladeWristUp[Slot] -= FMath::Sin(UE_PI * FMath::Clamp(FMath::Abs(static_cast<float>(Aim.X)), 0.f, 1.f)) * (1.f - Raise) * BladeSweepWristDownDegrees * (1.f - CrossAlone);
-			const float Peak = FMath::Clamp(BladeAloneCrossWristUpPeak, 0.01f, 0.99f);
+			const float CrossSlow = bFollows && !bOwnSide && AimSide != 0.f ? Slow : 0.f;
+			BladeWristUp[Slot] -= FMath::Sin(UE_PI * FMath::Clamp(FMath::Abs(static_cast<float>(Aim.X)), 0.f, 1.f)) * (1.f - Raise) * BladeSweepWristDownDegrees * (1.f - CrossSlow);
+			const float Peak = FMath::Clamp(BladeCrossWristUpPeak, 0.01f, 0.99f);
 			const float Bump = Share <= Peak ? FMath::SmoothStep(0.f, 1.f, Share / Peak) : 1.f - FMath::SmoothStep(0.f, 1.f, (Share - Peak) / (1.f - Peak));
-			BladeWristUp[Slot] += CrossAlone * (1.f - Raise) * Bump * BladeAloneCrossWristUpDegrees;
+			BladeWristUp[Slot] += CrossSlow * (1.f - Raise) * Bump * FMath::Lerp(BladeAloneCrossWristUpDegrees, BladeTwoHandCrossWristUpDegrees, GripAlpha);
 		}
 		BladeAimWay[Slot] = Look((Forward + Up * BladeGuardUpShare).GetSafeNormal());
 		ElbowWorld[Slot] = (Shoulder + FistWorld[Slot]) * 0.5 + Pole * (40.f * BodyScale);

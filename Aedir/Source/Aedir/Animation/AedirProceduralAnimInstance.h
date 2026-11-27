@@ -85,6 +85,10 @@ private:
 	void LimitArmJointSpeed(FCompactPose& Pose, const FBoneContainer& Bones) const;
 	// Whether the second hand holds its grip the other way round, left hand first.
 	mutable bool bGripReversed[2] = { false, false };
+	// The second hand's turn about its forearm onto a one-handed blade's grip last frame, so it goes on from there instead of
+	// wrapping round past half a turn, and whether there was one.
+	mutable double LastGripPalmTurn = 0.0;
+	mutable bool bGripPalmTurnKnown = false;
 	void ApplyForearmTwist(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FName& RadiusName, const FName& HandName, const TCHAR* Suffix) const;
 	void ApplyObjectHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, bool bLeft, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;
 	void ApplyGripHand(FCSPose<FCompactPose>& CSPose, FCSPose<FCompactPose>& RefCSPose, const FBoneContainer& Bones, const FVector& OutwardMesh, const FVector& DownMesh, const FVector& ForwardMesh) const;

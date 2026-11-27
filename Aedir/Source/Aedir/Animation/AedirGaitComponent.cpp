@@ -187,6 +187,10 @@ void UAedirGaitComponent::FillFistArms(const UAedirInteractionComponent* Interac
 		GaitState.FistArmGripElbowRiseCm = Fists->TwoHandElbowRiseCm;
 		GaitState.FistArmGripRestElbowBelowCm = Fists->TwoHandRestElbowBelowShoulderCm;
 		GaitState.FistArmGripWristMaxDegrees = Fists->TwoHandWristMaxDegrees;
+		GaitState.FistArmGripPalmMaxTurnDegrees = Fists->TwoHandPalmMaxTurnDegrees;
+		GaitState.FistArmGripPalmMaxTurnBackDegrees = Fists->TwoHandPalmMaxTurnBackDegrees;
+		GaitState.FistArmGripWristLetGoDegrees = Fists->TwoHandWristLetGoDegrees;
+		GaitState.FistArmGripPalmUnclearShare = Fists->TwoHandPalmUnclearShare;
 		GaitState.FistArmGripGapCm = Fists->GetGripGapCm(RightBlade);
 		GaitState.FistArmBladeUpShare = Fists->BladeGuardUpShare;
 		GaitState.FistArmBladeBendDegrees = Fists->BladeWristBendDegrees;

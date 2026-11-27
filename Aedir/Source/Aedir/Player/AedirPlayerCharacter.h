@@ -602,6 +602,11 @@ public:
 	UFUNCTION(Exec)
 	void LodInfo();
 
+	// Dev: for what the right hand holds, which way the head of it (the middle of its model, off the haft) stands out from
+	// the haft, in the body's frame (forward, right, up), and the same against the way the knuckles face.
+	UFUNCTION(Exec)
+	void HeadSide(const FString& Label);
+
 	// Dev: for this many seconds, every quarter of a second, how fast each hand went at most about the chest (cm/s), and
 	// the state of the body then.
 	UFUNCTION(Exec)

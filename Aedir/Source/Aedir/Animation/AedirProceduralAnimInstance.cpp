@@ -1,4 +1,5 @@
 #include "Animation/AedirProceduralAnimInstance.h"
+#include "Aedir.h"
 
 #include "Items/AedirItemActor.h"
 
@@ -1068,6 +1069,7 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 	const FCompactPoseBoneIndex Little = ResolveCompactBone(Bones, TEXT("pinky_01_r"));
 	if (Alpha <= 0.f || !RightHand.IsValid() || !LeftHand.IsValid() || !LeftHumerus.IsValid() || !Middle.IsValid() || !First.IsValid() || !Little.IsValid())
 	{
+		bGripPalmTurnKnown = false;
 		return;
 	}
 	// The blade as the right hand has it now: its grip, and the way it runs.
@@ -1181,15 +1183,59 @@ void FAedirProceduralAnimProxy::ApplyGripOnBlade(FCSPose<FCompactPose>& CSPose, 
 			const FVector PalmWanted = FVector::VectorPlaneProject(LeftRotation.RotateVector(PalmInHand), Forearm).GetSafeNormal();
 			if (!PalmNow.IsNearlyZero() && !PalmWanted.IsNearlyZero() && !Forearm.IsNearlyZero())
 			{
-				const double Turn = FMath::Atan2(FVector::DotProduct(FVector::CrossProduct(PalmNow, PalmWanted), Forearm), FVector::DotProduct(PalmNow, PalmWanted));
+				double Turn = FMath::Atan2(FVector::DotProduct(FVector::CrossProduct(PalmNow, PalmWanted), Forearm), FVector::DotProduct(PalmNow, PalmWanted));
+				// Going on from the turn it had: past half a turn the shortest way flips to the other side, and the hand went right
+				// round the other way in a frame. A forearm twists no further than TwoHandPalmMaxTurnDegrees either way.
+				if (bGripPalmTurnKnown)
+				{
+					Turn += UE_DOUBLE_TWO_PI * FMath::RoundToDouble((LastGripPalmTurn - Turn) / UE_DOUBLE_TWO_PI);
+				}
+				LastGripPalmTurn = Turn;
+				bGripPalmTurnKnown = Alpha > 0.f;
+				Turn = FMath::Clamp(Turn, -FMath::DegreesToRadians(static_cast<double>(GaitData.FistArmGripPalmMaxTurnBackDegrees)), FMath::DegreesToRadians(static_cast<double>(GaitData.FistArmGripPalmMaxTurnDegrees)));
+				// With the hold's palm all but along the forearm, the way it faces round the forearm is all but undecided and swings
+				// round fast as the blade moves: the hand turns to it only as far as it is clear, and keeps the knuckles' way there.
+				const double Clear = FVector::VectorPlaneProject(LeftRotation.RotateVector(PalmInHand), Forearm).Size();
+				const double Unclear = static_cast<double>(GaitData.FistArmGripPalmUnclearShare);
+				if (Unclear > 0.0)
+				{
+					Turn *= FMath::SmoothStep(Unclear, FMath::Min(Unclear + 0.4, 1.0), Clear);
+				}
+				static IConsoleVariable* PalmLogVar = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.GripLog"));
+				if (PalmLogVar && PalmLogVar->GetInt() != 0 && (PalmLogVar->GetInt() > 1 || GFrameCounter % 6 == 0))
+				{
+					static FQuat LastBase = FQuat::Identity;
+					static FQuat LastWanted = FQuat::Identity;
+					UE_LOG(LogAedir, Display, TEXT("[GripLog] the palm turned %.0f deg about the forearm to its hold, wanted off the forearm %.2f; since last the hand from the arm turned %.0f, its hold %.0f"), FMath::RadiansToDegrees(Turn),
+						FVector::VectorPlaneProject(LeftRotation.RotateVector(PalmInHand), Forearm).Size(), FMath::RadiansToDegrees(Left.GetRotation().AngularDistance(LastBase)), FMath::RadiansToDegrees(LeftRotation.AngularDistance(LastWanted)));
+					LastBase = Left.GetRotation();
+					LastWanted = LeftRotation;
+				}
 				Left.SetRotation((FQuat(Forearm, Turn * FMath::Clamp(Alpha, 0.f, 1.f)) * Left.GetRotation()).GetNormalized());
 			}
 		}
 	}
-	// The hand turns at the wrist towards its hold on the grip only so far: past that it would turn into the blade.
-	const float Off = FMath::RadiansToDegrees(static_cast<float>(Left.GetRotation().AngularDistance(LeftRotation)));
+	// The hand turns at the wrist towards its hold on the grip only so far: past that it would turn into the blade. The further
+	// off its hold it is, the less it reaches for it (none from TwoHandWristLetGoDegrees on): about half a turn off, the
+	// shortest way to it flips over from one frame to the next, and the hand went right round with it.
+	FQuat Towards = (LeftRotation * Left.GetRotation().Inverse()).GetNormalized();
+	if (Towards.W < 0.0)
+	{
+		Towards = -Towards;
+	}
+	FVector WristAxis;
+	float OffRadians = 0.f;
+	Towards.ToAxisAndAngle(WristAxis, OffRadians);
+	const float Off = FMath::RadiansToDegrees(OffRadians);
 	const float Turned = Off > GaitData.FistArmGripWristMaxDegrees ? GaitData.FistArmGripWristMaxDegrees / Off : 1.f;
-	Left.SetRotation(FQuat::Slerp(Left.GetRotation(), LeftRotation, FMath::Clamp(Alpha, 0.f, 1.f) * Turned).GetNormalized());
+	const float LetGo = FMath::Max(GaitData.FistArmGripWristLetGoDegrees, 1.f);
+	const float Reach = 1.f - FMath::SmoothStep(LetGo - 50.f, LetGo, Off);
+	static IConsoleVariable* OffLogVar = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.GripLog"));
+	if (OffLogVar && OffLogVar->GetInt() != 0 && (OffLogVar->GetInt() > 1 || GFrameCounter % 6 == 0))
+	{
+		UE_LOG(LogAedir, Display, TEXT("[GripLog] then %.0f deg off its hold, turned %.2f of that"), Off, Turned * Reach);
+	}
+	Left.SetRotation((FQuat(WristAxis, OffRadians * FMath::Clamp(Alpha, 0.f, 1.f) * Turned * Reach) * Left.GetRotation()).GetNormalized());
 	CSPose.SetComponentSpaceTransform(LeftHand, Left);
 }
 
@@ -1267,6 +1313,11 @@ void FAedirProceduralAnimProxy::ApplyFistArm(FCSPose<FCompactPose>& CSPose, cons
 			Lean = RowMesh.GetSafeNormal();
 		}
 		FVector RowWanted = FVector::VectorPlaneProject(Lean, Forearm);
+		static IConsoleVariable* GripLogVar = IConsoleManager::Get().RegisterConsoleVariable(TEXT("aedir.GripLog"), 0, TEXT("Dev: log how a hand closing on a grip finds the way its knuckles lie."));
+		if (GripLogVar->GetInt() != 0 && !RowMesh.IsNearlyZero() && GFrameCounter % 6 == 0)
+		{
+			UE_LOG(LogAedir, Display, TEXT("[GripLog] %s: the blade off the forearm %.2f, knuckles %s"), *HandName.ToString(), RowWanted.Size(), *RowWanted.GetSafeNormal().ToCompactString());
+		}
 		if (RowWanted.IsNearlyZero(0.01))
 		{
 			RowWanted = FVector::VectorPlaneProject(ActorToMesh.RotateVector(FVector::UpVector), Forearm);

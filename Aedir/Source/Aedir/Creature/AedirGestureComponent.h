@@ -93,7 +93,7 @@ public:
 	float SurrenderBloodCalm = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", ClampMax="1"))
-	float SurrenderBloodFierce = 0.95f;
+	float SurrenderBloodFierce = 0.05f;
 
 	// Back in the fight after giving up, it bleeds this much more before its blood makes it give up again.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", ClampMax="1"))
