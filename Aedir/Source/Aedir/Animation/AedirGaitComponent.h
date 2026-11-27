@@ -1595,6 +1595,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Down", meta=(ClampMin="0.1"))
 	float DownLookInterpSpeed = 2.5f;
 
+	// Starting to get up, the look goes over from the chest as it lies to the body's own frame over this long, eased in and
+	// out: at once, the neck, the head and the waist turned in a frame and took the arms with them.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gait|Down", meta=(ClampMin="0", Units="s"))
+	float DownLookHandoverSeconds = 0.8f;
+
 private:
 	// Lying on the ground: where the eyes go, as a yaw and a pitch about the chest as it lies.
 	bool DownLookAngles(float& OutYaw, float& OutPitch) const;
@@ -1626,6 +1631,8 @@ private:
 	void FillFistArms(const UAedirInteractionComponent* Interaction);
 	// Lying, the look eased in, yaw and pitch.
 	FVector2D DownLook = FVector2D::ZeroVector;
+	// How much of the look is still taken about the lying chest, 1 lying and down to 0 getting up.
+	float DownLookHandover = 0.f;
 	// Down last frame; and just up, how far below standing the hips still are and how fast they rise out of it.
 	bool bWasDown = false;
 	float GestureRising = 0.f;

@@ -314,6 +314,15 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeSideTurnSplit = 0.5f;
 
+	// In both hands the wrist's second step starts this share of the way out instead (BladeSideTurnSplit in one hand), and
+	// goes from the one turn to the other eased in and out rather than quickly at first, so the second hand on the grip is
+	// not flung round with it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(ClampMin="0.01", ClampMax="0.99"))
+	float BladeTwoHandTurnSplit = 0.6f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
+	bool bBladeTwoHandEasedTurn = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeSideInDegrees = 50.f;
 
@@ -342,6 +351,21 @@ public:
 	// so the blade is carried out clear of the head as it goes by it; less of it the more the blade is raised.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")
 	float BladeSweepWristDownDegrees = 24.f;
+
+	// A blade in one hand alone, moved slowly (not cut in one turn): raised from the middle, the wrist bends down this far
+	// by the top instead of up (BladeRaiseWristUpDegrees), so a cut across up there passes over the own head and does not
+	// strike it.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(Units="deg"))
+	float BladeAloneRaiseWristDownDegrees = 12.f;
+
+	// A blade in one hand alone, drawn slowly across to the other side: the wrist bends up, most (this far) at
+	// BladeAloneCrossWristUpPeak of the way and back to none at the end, so the point stays on the foe ahead; it is not
+	// bent down going by the head there (BladeSweepWristDownDegrees).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(Units="deg"))
+	float BladeAloneCrossWristUpDegrees = 15.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(ClampMin="0.01", ClampMax="0.99"))
+	float BladeAloneCrossWristUpPeak = 0.6f;
 
 	// Brought across to the other side a blade's wrist turns out this far by BladeSideTurnSplit of the way, the point kept
 	// on the other, then back in to BladeCrossTurnDegrees at the end, the blade reaching from the other side round back.

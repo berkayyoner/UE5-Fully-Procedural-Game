@@ -895,8 +895,10 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	const float LimpArm[2] = { LimpArmOf(0), LimpArmOf(1) };
 	const float LeftArmHz = ArmHz * (bLimp ? LimpArm[0] : bBroken[0] ? LimpShare : FMath::Lerp(0.3f, 1.f, LeftArmShare) * LeftLoadShare) * (bArmBoost[0] ? ArmFreeBoost : 1.f);
 	const float RightArmHz = ArmHz * (bLimp ? LimpArm[1] : bBroken[1] ? LimpShare : FMath::Lerp(0.3f, 1.f, RightArmShare) * RightLoadShare) * (bArmBoost[1] ? ArmFreeBoost : 1.f);
-	Apply(LeftArmControls, LeftArmHz * Soft, 0.f);
-	Apply(RightArmControls, RightArmHz * Soft, 0.f);
+	// The arms keep most of their muscle through a blow.
+	const float ArmSoft = (bRising && !bLimp ? RisingMuscleShare : 1.f) * (bLimp ? 1.f : 1.f - BlowSoftness * FMath::Clamp(BlowArmSlackShare, 0.f, 1.f));
+	Apply(LeftArmControls, LeftArmHz * ArmSoft, 0.f);
+	Apply(RightArmControls, RightArmHz * ArmSoft, 0.f);
 	// A broken arm's shoulder still holds it hanging.
 	for (int32 Side = 0; Side < 2; ++Side)
 	{
@@ -916,12 +918,12 @@ void UAedirBodyControlComponent::ApplyMultipliers()
 	{
 		if (bLimp || bBroken[Side])
 		{
-			Apply(ForearmControls[Side], (Side == 0 ? LeftArmHz : RightArmHz) * Soft * Slack[Side], 0.f);
+			Apply(ForearmControls[Side], (Side == 0 ? LeftArmHz : RightArmHz) * ArmSoft * Slack[Side], 0.f);
 		}
 		// Broken further out, what hangs from the break is as slack as a limp forearm; the rest of the arm keeps its strength.
 		else if (BreakLevel[Side] > 0)
 		{
-			Apply(BrokenControls[Side], ArmHz * LimpShare * LimpForearmShare * Soft, 0.f);
+			Apply(BrokenControls[Side], ArmHz * LimpShare * LimpForearmShare * ArmSoft, 0.f);
 		}
 	}
 	// Down, the hips are free; carried, the pose places them and the control rests.

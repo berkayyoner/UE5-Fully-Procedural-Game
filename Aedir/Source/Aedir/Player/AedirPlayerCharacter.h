@@ -605,7 +605,7 @@ public:
 	// Dev: for this many seconds, every quarter of a second, how fast each hand went at most about the chest (cm/s), and
 	// the state of the body then.
 	UFUNCTION(Exec)
-	void HandSpeedWatch(float Seconds);
+	void HandSpeedWatch(float Seconds, float WindowSeconds = 0.25f);
 
 	// Washes the blood off the body and out of the clothes worn, as a wash at a lavoir will.
 	UFUNCTION(Exec)

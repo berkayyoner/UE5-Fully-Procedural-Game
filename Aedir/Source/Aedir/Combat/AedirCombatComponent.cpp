@@ -830,6 +830,8 @@ void UAedirCombatComponent::TickComponent(float DeltaTime, ELevelTick TickType, 
 	}
 
 	KickCooldownRemaining = FMath::Max(0.f, KickCooldownRemaining - DeltaTime);
+	const bool bRising = Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsSettling()) && !Creature->Balance->IsHoisting();
+	RisingStrikeCalmLeft = bRising ? StrikeAfterRisingSeconds : FMath::Max(RisingStrikeCalmLeft - DeltaTime, 0.f);
 
 	UpdateSwings(DeltaTime);
 
@@ -4149,10 +4151,14 @@ void UAedirCombatComponent::UpdateImpacts(EAedirHand Hand, FAedirArmDynamics& Ar
 	const bool bHolderDown = (Creature->Stats && (Creature->Stats->IsDead() || Creature->Stats->IsDying() || Creature->Stats->IsKnockedOut()))
 		|| (Creature->Balance && Creature->Balance->IsRagdoll() && !Creature->Balance->IsGettingUp() && !bFistUp)
 		|| (Creature->Balance && Creature->Balance->IsHoisting() && Creature->Balance->GetHoistFreeHand() != HandIndex(Hand))
-		// Just up from the ground, finding its feet, the arms going over to the standing pose are no blow either.
-		|| (Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsSettling()) && !Creature->Balance->IsHoisting() && !bFistUp);
+		// Just up from the ground, finding its feet and a moment after, the arms going over to the standing pose are no blow
+		// either, its button held or not.
+		|| RisingStrikeCalmLeft > 0.f;
 	if (bHolderDown)
 	{
+		// What the arm did meanwhile is not the speed of a blow that comes after.
+		StrikeTrail[Index].Reset();
+		RecentStrikeVelocity[Index].Reset();
 		return;
 	}
 
@@ -4920,7 +4926,7 @@ void UAedirCombatComponent::UpdateAI(float DeltaTime)
 		return;
 	}
 	// Getting up nobody strikes; walking after its fall it does not turn to the foe or go after it until it stands again.
-	if (Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsRagdoll() || Creature->Balance->IsStumbling()))
+	if (Creature->Balance && (Creature->Balance->IsGettingUp() || Creature->Balance->IsRagdoll() || Creature->Balance->IsStumbling() || Creature->Balance->IsSettling() || RisingStrikeCalmLeft > 0.f))
 	{
 		if (CVarAedirHitLog.GetValueOnGameThread() != 0 && GFrameCounter % 20 == 0)
 		{
@@ -5854,7 +5860,7 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 
 		const bool bGrudge = Candidate == AIGrudge && Now < AIGrudgeUntil;
 		// The foe it fights, lying awake on the ground, is not lost sight of for having been turned from: it knows where it lies.
-		const bool bKeptDown = Candidate == AITarget && IsDownAwake(Candidate) && FVector::Dist(OwnerLocation, GetBodyLocation(Candidate)) <= AIKeepDownFoeCm;
+		const bool bKeptDown = Candidate == AITarget && IsKeptDown(Candidate) && FVector::Dist(OwnerLocation, GetBodyLocation(Candidate)) <= AIKeepDownFoeCm;
 		if ((Groups->GetRelation(Creature->GroupId, Candidate->GroupId) != EAedirRelation::Enemy && !bGrudge) || (!bKeptDown && !CanSeeTarget(Candidate) && !CanHearTarget(Candidate)))
 		{
 			continue;
@@ -5886,7 +5892,7 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 	}
 
 	// Lying down, the foe's capsule is not looked for among those standing about; it is still there, where its body lies.
-	if (AITarget && IsDownAwake(AITarget) && FVector::Dist(OwnerLocation, GetBodyLocation(AITarget)) <= AIKeepDownFoeCm)
+	if (AITarget && IsKeptDown(AITarget) && FVector::Dist(OwnerLocation, GetBodyLocation(AITarget)) <= AIKeepDownFoeCm)
 	{
 		AILastSeenTime = Now;
 		return;
@@ -5894,6 +5900,7 @@ void UAedirCombatComponent::UpdateAITarget(double Now)
 	const double Memory = AITarget == AIGrudge && Now < AIGrudgeUntil ? static_cast<double>(AedirAIGrudgeSeconds) : static_cast<double>(AedirAIMemorySeconds);
 	if (AITarget && (!IsValid(AITarget) || (AITarget->Stats && AITarget->Stats->IsDead()) || Now - AILastSeenTime > Memory))
 	{
+		UE_LOG(LogAedir, Log, TEXT("[Npc] %s loses %s: %s"), *Creature->GetName(), *GetNameSafe(AITarget), !IsValid(AITarget) ? TEXT("gone") : AITarget->Stats && AITarget->Stats->IsDead() ? TEXT("dead") : TEXT("out of sight too long"));
 		AITarget = nullptr;
 	}
 }
@@ -5958,6 +5965,17 @@ bool UAedirCombatComponent::IsDownAwake(const AAedirCreature* Target)
 {
 	return Target && IsValid(Target) && Target->Balance && (Target->Balance->IsRagdoll() || Target->Balance->IsGettingUp())
 		&& !(Target->Stats && (Target->Stats->IsDead() || Target->Stats->IsDying() || Target->Stats->IsKnockedOut()))
+		&& !(Target->Gesture && Target->Gesture->HasGivenUp());
+}
+
+bool UAedirCombatComponent::IsKeptDown(const AAedirCreature* Target) const
+{
+	if (IsDownAwake(Target))
+	{
+		return true;
+	}
+	return bAIKeepsSenselessFoe && Target && IsValid(Target) && Target->Balance && (Target->Balance->IsRagdoll() || Target->Balance->IsGettingUp())
+		&& Target->Stats && !Target->Stats->IsDead() && (Target->Stats->IsKnockedOut() || Target->Stats->IsDying())
 		&& !(Target->Gesture && Target->Gesture->HasGivenUp());
 }
 

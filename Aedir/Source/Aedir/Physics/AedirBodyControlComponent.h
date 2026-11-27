@@ -65,6 +65,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body")
 	float RisingMuscleShare = 0.4f;
 
+	// A blow slackens the arms only this share as much as the trunk and the head (0 not at all, 1 alike): slack, they were
+	// flung about by the jolt of the trunk, most after a blow to the head or the neck, which pushes the chest hardest.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))
+	float BlowArmSlackShare = 0.2f;
+
 	// Standing, the feet carry part of the body's weight (StandingGravity); getting up, this share of what they take off is
 	// given back to it, so the muscles lift a body that weighs what it does.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Body", meta=(ClampMin="0", ClampMax="1"))

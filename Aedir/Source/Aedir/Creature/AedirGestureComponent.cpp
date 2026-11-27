@@ -167,7 +167,7 @@ void UAedirGestureComponent::UpdateNpc(float DeltaTime)
 	const float GiveUpBlood = GetSurrenderBlood();
 	const float Blood = Npc->Stats ? Npc->Stats->GetBloodFraction() : 1.f;
 	if (GiveUpBlood >= 0.f && Npc->Stats && !Npc->Stats->IsDead() && !Npc->Stats->IsDying() && !Npc->Stats->IsKnockedOut()
-		&& World->GetTimeSeconds() - LastThreat <= SurrenderThreatSeconds && Blood <= GiveUpBlood && Blood < RearmBlood)
+		&& World->GetTimeSeconds() - LastThreat <= SurrenderThreatSeconds && Blood <= GiveUpBlood && Blood < RearmBlood && HasFoeFighting())
 	{
 		UE_LOG(LogAedir, Log, TEXT("[Gesture] %s gives up bleeding, blood %.2f at or under %.2f (aggression %.0f)"), *Npc->GetName(), Blood, GiveUpBlood, GetAggression());
 		SetSurrendering(true);
@@ -187,7 +187,7 @@ void UAedirGestureComponent::UpdateNpc(float DeltaTime)
 	}
 	DownSeconds += DeltaTime;
 	const float Needed = GetSurrenderSeconds();
-	if (Needed >= 0.f && DownSeconds >= Needed)
+	if (Needed >= 0.f && DownSeconds >= Needed && HasFoeFighting())
 	{
 		UE_LOG(LogAedir, Log, TEXT("[Gesture] %s gives up after %.1f s down, %s (aggression %.0f, blood %.2f)"), *Npc->GetName(), DownSeconds,
 			Npc->Balance->IsHoisting() || Npc->Balance->IsGettingUp() ? TEXT("getting up") : Npc->Balance->IsSettling() ? TEXT("finding its feet") : TEXT("lying"), Npc->Aggression * 100.f, Npc->Stats->GetBloodFraction());
@@ -206,7 +206,32 @@ void UAedirGestureComponent::StruckWhileGivenUp(const AAedirCreature* Attacker)
 	}
 }
 
-void UAedirGestureComponent::TakeBack(const TCHAR* Why)
+bool UAedirGestureComponent::HasFoeFighting() const
+{
+	const AAedirNpc* Npc = Cast<AAedirNpc>(GetOwner());
+	const UWorld* World = GetWorld();
+	if (!Npc || !World || !bEndWhenNoFoes)
+	{
+		return true;
+	}
+	const double Reach = SurrenderLookCm * Npc->GetActorScale3D().X;
+	for (TActorIterator<AAedirCreature> It(World); It; ++It)
+	{
+		const AAedirCreature* Other = *It;
+		if (Other == Npc || Npc->GetRelationTo(Other) != EAedirRelation::Enemy || FVector::Dist2D(Npc->GetActorLocation(), Other->GetActorLocation()) > Reach)
+		{
+			continue;
+		}
+		const bool bOut = Other->Stats && (Other->Stats->IsDead() || Other->Stats->IsDying() || Other->Stats->IsKnockedOut());
+		if (!bOut && !(Other->Gesture && Other->Gesture->AreHandsUp()))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void UAedirGestureComponent::TakeBack(const TCHAR* Why, bool bRearmBlood)
 {
 	const AAedirNpc* Npc = Cast<AAedirNpc>(GetOwner());
 	UE_LOG(LogAedir, Log, TEXT("[Gesture] %s takes back giving up: %s (aggression %.0f)"), *GetNameSafe(GetOwner()), Why, GetAggression());
@@ -214,7 +239,7 @@ void UAedirGestureComponent::TakeBack(const TCHAR* Why)
 	FoesStanding.Reset();
 	DownSeconds = 0.f;
 	// Its blood has to fall some more before it gives up for it again.
-	RearmBlood = Npc && Npc->Stats ? Npc->Stats->GetBloodFraction() - SurrenderBloodRearmDrop : RearmBlood;
+	RearmBlood = bRearmBlood && Npc && Npc->Stats ? Npc->Stats->GetBloodFraction() - SurrenderBloodRearmDrop : RearmBlood;
 	SetSurrendering(false);
 }
 
@@ -231,7 +256,7 @@ void UAedirGestureComponent::UpdateGivenUp(float DeltaTime)
 	const float Aggression = GetAggression();
 	const bool bAwake = Npc->Stats && !Npc->Stats->IsDead() && !Npc->Stats->IsDying() && !Npc->Stats->IsKnockedOut();
 	const bool bUp = !(Npc->Balance && (Npc->Balance->IsRagdoll() || Npc->Balance->IsGettingUp() || Npc->Balance->IsSettling()));
-	if (!bAwake || (Aggression <= SurrenderFleeAggression && Aggression <= SurrenderWatchAggression))
+	if (!bAwake)
 	{
 		bFleeing = false;
 		return;
@@ -304,6 +329,18 @@ void UAedirGestureComponent::UpdateGivenUp(float DeltaTime)
 	}
 	FoesStanding = Standing;
 	const int32 Side = Friends + 1;
+
+	// Every foe about it dead, out cold or given up too: there is nobody left to give up to, however meek it is.
+	if (Foes == 0 && bEndWhenNoFoes)
+	{
+		TakeBack(TEXT("no foe is left fighting about it"), false);
+		return;
+	}
+	if (Aggression <= SurrenderFleeAggression && Aggression <= SurrenderWatchAggression)
+	{
+		bFleeing = false;
+		return;
+	}
 
 	if (!bUp)
 	{

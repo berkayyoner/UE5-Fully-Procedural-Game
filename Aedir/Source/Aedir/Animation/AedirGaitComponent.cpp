@@ -926,9 +926,22 @@ void UAedirGaitComponent::TickComponent(float DeltaTime, ELevelTick TickType, FA
 	}
 	// Lying awake on the ground, the look is taken about the chest as it lies, not about the capsule: the neck, the head and
 	// the waist turn to where the eyes go as they would standing, and the muscles hold the body to that.
+	// Starting to get up it goes over from that look to the body's own over DownLookHandoverSeconds.
 	if (BalanceComponent && BalanceComponent->IsRagdoll() && !BalanceComponent->IsHoisting() && !BalanceComponent->IsGettingUp())
 	{
-		DownLookAngles(LookYaw, LookPitch);
+		DownLookHandover = 1.f;
+	}
+	else
+	{
+		DownLookHandover = FMath::Max(DownLookHandover - DeltaTime / FMath::Max(DownLookHandoverSeconds, 0.01f), 0.f);
+	}
+	float DownYaw = LookYaw;
+	float DownPitch = LookPitch;
+	if (DownLookHandover > 0.f && DownLookAngles(DownYaw, DownPitch))
+	{
+		const float Kept = FMath::SmoothStep(0.f, 1.f, DownLookHandover);
+		LookYaw += FMath::FindDeltaAngleDegrees(LookYaw, DownYaw) * Kept;
+		LookPitch = FMath::Lerp(LookPitch, DownPitch, Kept);
 	}
 
 	// The trunk leans the way the body runs, forward going forward and back going backwards, and rocks with the strides.

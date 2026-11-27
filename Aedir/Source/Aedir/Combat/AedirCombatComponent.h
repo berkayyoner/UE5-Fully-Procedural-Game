@@ -366,6 +366,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|AI", meta=(ClampMin="0", Units="cm"))
 	float AIKeepDownFoeCm = 2500.f;
 
+	// So is one lying senseless or dying but not dead: it is not left lying there and walked away from.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|AI")
+	bool bAIKeepsSenselessFoe = true;
+
 	// Given up, it backs away from a foe on its feet that comes nearer than this (cm), at this much of a walk at most.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|AI", meta=(ClampMin="0", Units="cm"))
 	float AISurrenderKeepAwayCm = 260.f;
@@ -777,6 +781,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Aedir|Combat|Impact")
 	float StrikeSpeedSpanSeconds = 0.025f;
 
+	// Getting up from the ground, finding its feet and this long after, nothing a body's arms or weapon do is a blow, a
+	// button held or not: the arms going over from the ground to the standing pose fly through whoever stands by.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Combat|Impact", meta=(ClampMin="0", Units="s"))
+	float StrikeAfterRisingSeconds = 0.5f;
+
 	// The wind-up of a kick: the foot is drawn this far back of the hip and up to this far below it, the knee bent, before the
 	// leg swings up through the front to where the camera looks.
 	// The rear foot towards where the kick goes kicks; feet nearer level than this the far one from the kick does.
@@ -1186,6 +1195,8 @@ private:
 	FVector StrikePrevTo[2];
 	TWeakObjectPtr<const AActor> StrikePrevItem[2];
 	bool bStrikePrevValid[2] = { false, false };
+	// Time left after getting up before the arms strike again.
+	float RisingStrikeCalmLeft = 0.f;
 	void ApplyCreatureImpact(EAedirHand Hand, FAedirArmDynamics& Arm, AAedirCreature* Victim, const FHitResult& Hit, const FVector& TipVelocity, float RelativeSpeed, float MassEff, float AxialAlignment);
 	void ApplyPhysicsImpact(FAedirArmDynamics& Arm, const FHitResult& Hit, UPrimitiveComponent* HitComponent, float RelativeSpeed, float MassEff);
 	void ApplyLimbInjury(EAedirLimb Limb, float Amount);
@@ -1196,6 +1207,8 @@ private:
 	bool CanSeeTarget(const AAedirCreature* Target) const;
 	// Lying or getting up, awake and not given up.
 	static bool IsDownAwake(const AAedirCreature* Target);
+	// Down, awake or senseless, alive and not given up: the foe it fights is kept while it lies near.
+	bool IsKeptDown(const AAedirCreature* Target) const;
 	// Hands up, backs away from a foe on its feet that comes too near.
 	void KeepAwayGivenUp(float DeltaTime);
 	TWeakObjectPtr<const AAedirCreature> AIKeepingAway;

@@ -2861,7 +2861,7 @@ void AAedirPlayerCharacter::ClothInfo()
 	}
 }
 
-void AAedirPlayerCharacter::HandSpeedWatch(float Seconds)
+void AAedirPlayerCharacter::HandSpeedWatch(float Seconds, float WindowSeconds)
 {
 	struct FHandWatch
 	{
@@ -2871,6 +2871,12 @@ void AAedirPlayerCharacter::HandSpeedWatch(float Seconds)
 		double Start = 0.0;
 		double WindowStart = 0.0;
 		float Peak[2] = { 0.f, 0.f };
+		// The head, the hips and the knees, each against where the hips were: how fast the body's own shape changes.
+		FVector LastPart[4];
+		float PartPeak[4] = { 0.f, 0.f, 0.f, 0.f };
+		// The most the trunk and the head were swayed by a blow (degrees) in the window.
+		FVector SwayPeak = FVector::ZeroVector;
+		FVector HeadSwayPeak = FVector::ZeroVector;
 		uint64 LastFrame = 0;
 	};
 	TSharedRef<FHandWatch> Watch = MakeShared<FHandWatch>();
@@ -2880,7 +2886,8 @@ void AAedirPlayerCharacter::HandSpeedWatch(float Seconds)
 	Params.bLoop = true;
 	Params.bMaxOncePerFrame = true;
 	const float Total = FMath::Clamp(Seconds, 0.2f, 60.f);
-	GetWorldTimerManager().SetTimer(Watch->Timer, FTimerDelegate::CreateWeakLambda(this, [this, Watch, Total]()
+	const float Window = FMath::Clamp(WindowSeconds, 0.f, 5.f);
+	GetWorldTimerManager().SetTimer(Watch->Timer, FTimerDelegate::CreateWeakLambda(this, [this, Watch, Total, Window]()
 	{
 		const USkeletalMeshComponent* Body = GetMesh();
 		const double Now = GetWorld()->GetTimeSeconds();
@@ -2892,6 +2899,23 @@ void AAedirPlayerCharacter::HandSpeedWatch(float Seconds)
 		Watch->LastFrame = GFrameCounter;
 		const FVector Chest = (Body->GetBoneLocation(TEXT("upperarm_l")) + Body->GetBoneLocation(TEXT("upperarm_r"))) * 0.5;
 		const FVector Hands[2] = { Body->GetBoneLocation(TEXT("hand_l")) - Chest, Body->GetBoneLocation(TEXT("hand_r")) - Chest };
+		const FVector Hips = Body->GetBoneLocation(TEXT("pelvis"));
+		const FVector Parts[4] = { Body->GetBoneLocation(TEXT("head")) - Hips, Hips, Body->GetBoneLocation(TEXT("calf_l")) - Hips, Body->GetBoneLocation(TEXT("calf_r")) - Hips };
+		for (int32 Part = 0; Part < 4; ++Part)
+		{
+			if (Watch->bStarted)
+			{
+				Watch->PartPeak[Part] = FMath::Max(Watch->PartPeak[Part], static_cast<float>(FVector::Dist(Parts[Part], Watch->LastPart[Part])) / Delta);
+			}
+			Watch->LastPart[Part] = Parts[Part];
+		}
+		if (Balance)
+		{
+			const FRotator Sway = Balance->GetHitSway();
+			const FRotator HeadSway = Balance->GetHeadSway();
+			Watch->SwayPeak = Watch->SwayPeak.ComponentMax(FVector(FMath::Abs(Sway.Pitch), FMath::Abs(Sway.Roll), FMath::Abs(Sway.Yaw)));
+			Watch->HeadSwayPeak = Watch->HeadSwayPeak.ComponentMax(FVector(FMath::Abs(HeadSway.Pitch), FMath::Abs(HeadSway.Roll), FMath::Abs(HeadSway.Yaw)));
+		}
 		for (int32 Slot = 0; Slot < 2; ++Slot)
 		{
 			if (Watch->bStarted)
@@ -2901,13 +2925,20 @@ void AAedirPlayerCharacter::HandSpeedWatch(float Seconds)
 			Watch->Last[Slot] = Hands[Slot];
 		}
 		Watch->bStarted = true;
-		if (Now - Watch->WindowStart >= 0.25)
+		if (Now - Watch->WindowStart >= Window)
 		{
-			UE_LOG(LogAedir, Display, TEXT("[HandSpeed] t=%.2f fastest left %.0f right %.0f cm/s | lying %d hoisting %d getting up %d settling %d"), Now - Watch->Start, Watch->Peak[0], Watch->Peak[1],
-				Balance && Balance->IsRagdoll() ? 1 : 0, Balance && Balance->IsHoisting() ? 1 : 0, Balance && Balance->IsGettingUp() ? 1 : 0, Balance && Balance->IsSettling() ? 1 : 0);
+			UE_LOG(LogAedir, Display, TEXT("[HandSpeed] t=%.2f fastest left %.0f right %.0f cm/s | lying %d hoisting %d getting up %d settling %d | head %.0f hips %.0f knees %.0f %.0f | sway p%.0f r%.0f y%.0f head p%.0f r%.0f y%.0f"), Now - Watch->Start, Watch->Peak[0], Watch->Peak[1],
+				Balance && Balance->IsRagdoll() ? 1 : 0, Balance && Balance->IsHoisting() ? 1 : 0, Balance && Balance->IsGettingUp() ? 1 : 0, Balance && Balance->IsSettling() ? 1 : 0,
+				Watch->PartPeak[0], Watch->PartPeak[1], Watch->PartPeak[2], Watch->PartPeak[3], Watch->SwayPeak.X, Watch->SwayPeak.Y, Watch->SwayPeak.Z, Watch->HeadSwayPeak.X, Watch->HeadSwayPeak.Y, Watch->HeadSwayPeak.Z);
+			Watch->SwayPeak = FVector::ZeroVector;
+			Watch->HeadSwayPeak = FVector::ZeroVector;
 			Watch->WindowStart = Now;
 			Watch->Peak[0] = 0.f;
 			Watch->Peak[1] = 0.f;
+			for (float& PartPeak : Watch->PartPeak)
+			{
+				PartPeak = 0.f;
+			}
 		}
 		if (Now - Watch->Start > Total)
 		{
@@ -3896,6 +3927,8 @@ void AAedirPlayerCharacter::FistInfo(const FString& Label)
 		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s straightest since last: left %.3f right %.3f; furthest ahead of the chest: left %.0f cm right %.0f cm"), *Label, StraightLeft, StraightRight, AheadLeft, AheadRight);
 		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s aim %.2f %.2f punch %.2f peak %.2f at %.2f one turn %.2f | L %.2f fist %s | R %.2f fist %s"), *Label, FistArms->GetAim().X, FistArms->GetAim().Y, FistArms->GetPunch(), Peak, PeakAim.X, FistArms->GetOneTurn(),
 			Alpha[0], *Body.InverseTransformPositionNoScale(Fist[0]).ToCompactString(), Alpha[1], *Body.InverseTransformPositionNoScale(Fist[1]).ToCompactString());
+		UE_LOG(LogAedir, Display, TEXT("[FistInfo] %s wrist up L %.1f R %.1f, turn L %.1f R %.1f, two hands %.2f (%d), held L %d R %d"), *Label, FistArms->GetBladeWristUp(EAedirHand::Left), FistArms->GetBladeWristUp(EAedirHand::Right),
+			FistArms->GetFistTurn(EAedirHand::Left), FistArms->GetFistTurn(EAedirHand::Right), FistArms->GetGripAlpha(), FistArms->IsTwoHand() ? 1 : 0, FistArms->IsHeld(EAedirHand::Left) ? 1 : 0, FistArms->IsHeld(EAedirHand::Right) ? 1 : 0);
 		if (const USkeletalMeshComponent* ArmBody = GetMesh())
 		{
 			// The left arm against the body: how high the elbow and the wrist are over the shoulder, how far out at its side.

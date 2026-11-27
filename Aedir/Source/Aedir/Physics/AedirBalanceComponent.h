@@ -893,7 +893,12 @@ public:
 	// HoistHandSpringPerSecondSq) for as long as the steps have the hands down; the steps start once both are down. The pull
 	// comes in over HoistRampSeconds, and let go it fades over that.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
-	float HoistHeadSeconds = 0.5f;
+	float HoistHeadSeconds = 0.8f;
+
+	// The head's take-up, the muscles' hold and the pull all come in eased in and out rather than evenly from the first
+	// frame, so the body goes over from lying to getting up without a jolt.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
+	bool bHoistEasedStart = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|GetUp")
 	float HoistHeadHz = 3.5f;
@@ -1123,7 +1128,7 @@ public:
 	void BumpedGettingUp(const class AAedirCreature* By, const FVector& Point, FName Part = NAME_None);
 
 	// While the hips are being hauled up: how far the pull has come in, 0 to 1.
-	float GetHoistShare() const { return bHoisting ? HoistDrive : 0.f; }
+	float GetHoistShare() const { return bHoisting ? (bHoistEasedStart ? FMath::SmoothStep(0.f, 1.f, HoistDrive) : HoistDrive) : 0.f; }
 	// The leg put forward getting up: 0 the left, 1 the right.
 	int32 GetHoistLeadSide() const { return HoistLeadSide; }
 	bool IsHoisting() const { return bHoisting; }
@@ -1393,6 +1398,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|Hit")
 	float HitSwayMaxDegrees = 28.f;
 
+	// A blow to the head or the neck, and the pushes on the chest sent with it, sway the trunk in the pose only this share as
+	// much as the same push on the trunk would: the head is light and snaps on its neck (HeadSway); the whole trunk swayed
+	// by all of it as well flung the arms about.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Balance|HitReaction", meta=(ClampMin="0", ClampMax="1"))
+	float HeadBlowTrunkSwayShare = 0.3f;
+
 	// A blow does not push all at once: HitPushNowShare of it lands at once and the rest keeps pushing over
 	// HitPushSpreadSeconds after it, falling off, so the body is seen carried on by it. The whole push is HitPushScale of
 	// what the blow's weight and speed give.
@@ -1538,11 +1549,13 @@ private:
 		FVector Impulse;
 		FVector Location;
 		float Left = 0.f;
+		float SwayShare = 1.f;
 	};
 	TArray<FPendingPush> PendingPushes;
 	TArray<FAedirBlowLanded, TInlineAllocator<4>> RecentBlows;
 	// One part of a blow's push landing: on the physical body, the trunk's and head's sway and the hips.
-	void LandPush(FName Bone, const FVector& Impulse, const FVector& Location);
+	// SwayShare: how much of the push sways the trunk in the pose (a blow to the head sways it less than its push).
+	void LandPush(FName Bone, const FVector& Impulse, const FVector& Location, float SwayShare = 1.f);
 	void UpdatePendingPushes(float DeltaTime);
 	void DrivePelvis();
 	void SetRagdollPresentation(bool bRagdoll);

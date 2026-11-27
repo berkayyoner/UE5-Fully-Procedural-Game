@@ -2477,8 +2477,14 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 			UE_LOG(LogAedir, Log, TEXT("[Slack] %s, worn %.2f, push %.0f: muscles %.0f%% softer for %.2f s"), *GetNameSafe(GetOwner()), Worn, Push.Size(), BlowSoftness * 100.f, BlowSoftUntil - Now);
 		}
 	}
+	// A blow to the head, and the pushes on the chest that go with it, sway the trunk less.
+	const FString Name = Bone.ToString();
+	const auto IsHeadBone = [](const FString& Part) { return Part.StartsWith(TEXT("head")) || Part.StartsWith(TEXT("neck")); };
+	const FAedirBlowLanded* Landed = RecentBlows.Num() && GetWorld() && GetWorld()->GetTimeSeconds() - RecentBlows.Last().Time <= 0.05 && FVector::Dist(Location, RecentBlows.Last().World) < 1.f ? &RecentBlows.Last() : nullptr;
+	const bool bFromHead = IsHeadBone(Name) || (Landed && IsHeadBone(Landed->Bone.ToString()));
+	const float SwayShare = bFromHead ? FMath::Clamp(HeadBlowTrunkSwayShare, 0.f, 1.f) : 1.f;
 	const float Now = HitPushSpreadSeconds > KINDA_SMALL_NUMBER ? FMath::Clamp(HitPushNowShare, 0.f, 1.f) : 1.f;
-	LandPush(Bone, Push * Now, Location);
+	LandPush(Bone, Push * Now, Location, SwayShare);
 	if (Now < 1.f)
 	{
 		FPendingPush& Pending = PendingPushes.AddDefaulted_GetRef();
@@ -2486,9 +2492,9 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 		Pending.Impulse = Push * (1.f - Now);
 		Pending.Location = Location;
 		Pending.Left = HitPushSpreadSeconds;
+		Pending.SwayShare = SwayShare;
 	}
 	// The head is light and held by little: struck, it is knocked back on its neck the way the blow went, all of the push.
-	const FString Name = Bone.ToString();
 	if (CharacterOwner && !bIsRagdoll && BodyMesh && (Name.StartsWith(TEXT("head")) || Name.StartsWith(TEXT("neck"))))
 	{
 		const FTransform& Frame = CharacterOwner->GetActorTransform();
@@ -2502,7 +2508,7 @@ void UAedirBalanceComponent::MulticastBoneImpulse_Implementation(FName Bone, FVe
 	MotorUpdateTimer = 0.f;
 }
 
-void UAedirBalanceComponent::LandPush(FName Bone, const FVector& Impulse, const FVector& Location)
+void UAedirBalanceComponent::LandPush(FName Bone, const FVector& Impulse, const FVector& Location, float SwayShare)
 {
 	// A part held by its pose, a foot planted on the ground, takes no push of its own.
 	if (FBodyInstance* Part = BodyMesh ? BodyMesh->GetBodyInstance(Bone) : nullptr; Part && Part->IsInstanceSimulatingPhysics())
@@ -2515,9 +2521,9 @@ void UAedirBalanceComponent::LandPush(FName Bone, const FVector& Impulse, const 
 		const FTransform& Frame = CharacterOwner->GetActorTransform();
 		const FVector Push = Frame.InverseTransformVectorNoScale(Impulse);
 		const FVector Off = Frame.InverseTransformPositionNoScale(Location);
-		HitSwayVelocity.X -= static_cast<float>(Push.X) * HitSwayDegreesPerSecondPerPush;
-		HitSwayVelocity.Y += static_cast<float>(Push.Y) * HitSwayDegreesPerSecondPerPush;
-		HitSwayVelocity.Z += static_cast<float>(Off.X * Push.Y - Off.Y * Push.X) * HitSwayTwistPerPushCm;
+		HitSwayVelocity.X -= static_cast<float>(Push.X) * HitSwayDegreesPerSecondPerPush * SwayShare;
+		HitSwayVelocity.Y += static_cast<float>(Push.Y) * HitSwayDegreesPerSecondPerPush * SwayShare;
+		HitSwayVelocity.Z += static_cast<float>(Off.X * Push.Y - Off.Y * Push.X) * HitSwayTwistPerPushCm * SwayShare;
 	}
 	PushHips(Impulse);
 }
@@ -2534,7 +2540,7 @@ void UAedirBalanceComponent::UpdatePendingPushes(float DeltaTime)
 		const float After = Pending.Left / Total;
 		// Falling off: the share given so far is 1 - (left share) squared.
 		const float Share = Before * Before - After * After;
-		LandPush(Pending.Bone, Pending.Impulse * Share, Pending.Location);
+		LandPush(Pending.Bone, Pending.Impulse * Share, Pending.Location, Pending.SwayShare);
 		if (Pending.Left <= 0.f)
 		{
 			PendingPushes.RemoveAtSwap(Index);
@@ -3631,14 +3637,15 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 			HoistHeldSeconds = FMath::Max(HoistHeldSeconds - DeltaTime, 0.f);
 		}
 	}
+	const auto Ease = [this](float Share) { return bHoistEasedStart ? FMath::SmoothStep(0.f, 1.f, Share) : Share; };
 	if (BodyControl)
 	{
-		BodyControl->SetHoist(HoistDrive);
+		BodyControl->SetHoist(Ease(HoistDrive));
 	}
 	const FAedirGetUpStage Stage = SampleHoistStage(HoistProgress);
 	const FVector HipsWanted = HipsAt(Stage);
 	// Until the hands are down the hips are left where they lie and only the head and the hands move.
-	const float Lift = FMath::Clamp((HoistHeldSeconds - HandsDownAt) / FMath::Max(HoistRampSeconds, 0.01f), 0.f, 1.f);
+	const float Lift = Ease(FMath::Clamp((HoistHeldSeconds - HandsDownAt) / FMath::Max(HoistRampSeconds, 0.01f), 0.f, 1.f));
 
 	// The whole weight of the body is hauled at the hips.
 	float Mass = 0.f;
@@ -3754,7 +3761,7 @@ void UAedirBalanceComponent::UpdateHoist(float FrameSeconds)
 	// The head is taken up first, the face turned the way the body will stand (face down where the head lay, on the back
 	// the feet's way), the neck the harder the longer the keys are held.
 	const FVector StandFacing = HoistStyle == EAedirGetUpStyle::FromFront ? Headward : -Headward;
-	const float HeadShare = FMath::Max(FMath::Clamp(HoistHeldSeconds * HoistPace / FMath::Max(HoistHeadSeconds, 0.01f), 0.f, 1.f), HoistDrive * Lift);
+	const float HeadShare = FMath::Max(Ease(FMath::Clamp(HoistHeldSeconds * HoistPace / FMath::Max(HoistHeadSeconds, 0.01f), 0.f, 1.f)), HoistDrive * Lift);
 	if (FBodyInstance* HeadBody = BodyMesh->GetBodyInstance(HeadBoneName); HeadBody && HeadBody->IsInstanceSimulatingPhysics() && HeadShare > 0.f)
 	{
 		const FVector Wanted = StandFacing * (1.f - HoistHeadLiftShare) + Up * HoistHeadLiftShare;
@@ -4707,8 +4714,18 @@ void UAedirBalanceComponent::OnCapsuleHit(UPrimitiveComponent* HitComponent, AAc
 
 void UAedirBalanceComponent::OnMeshHit(UPrimitiveComponent* HitComponent, AActor* OtherActor, UPrimitiveComponent* OtherComponent, FVector NormalImpulse, const FHitResult& Hit)
 {
-	// A part of the body striking the ground or something fixed hard is hurt by it.
-	if (OtherActor != GetOwner() && !Cast<AAedirCreature>(OtherActor) && !(OtherComponent && OtherComponent->IsSimulatingPhysics()))
+	// A part of the body striking the ground or something fixed hard is hurt by it. What the body itself carries, in a hand,
+	// on its belt or on its way between the two as it is drawn or put away, is not something it strikes.
+	const AAedirItemActor* Carried = Cast<AAedirItemActor>(OtherActor);
+	const bool bOwnThing = Carried && (Carried->Holder == GetOwner() || Carried->GetAttachParentActor() == GetOwner() || Carried->WasJustReleasedBy(GetOwner()));
+	static const IConsoleVariable* OwnHitLog = IConsoleManager::Get().FindConsoleVariable(TEXT("aedir.HitLog"));
+	if (bOwnThing && OwnHitLog && OwnHitLog->GetInt() != 0)
+	{
+		const FBodyInstance* Part = BodyMesh ? BodyMesh->GetBodyInstance(Hit.MyBoneName) : nullptr;
+		UE_LOG(LogAedir, Log, TEXT("[Impact] %s %s meets its own %s at %.0f cm/s: no harm"), *GetNameSafe(GetOwner()), *Hit.MyBoneName.ToString(), *GetNameSafe(OtherActor),
+			Part ? NormalImpulse.Size() / FMath::Max(Part->GetBodyMass(), 0.5f) : 0.f);
+	}
+	if (OtherActor != GetOwner() && !bOwnThing && !Cast<AAedirCreature>(OtherActor) && !(OtherComponent && OtherComponent->IsSimulatingPhysics()))
 	{
 		HurtPartOnImpact(Hit.MyBoneName, NormalImpulse, Hit);
 	}

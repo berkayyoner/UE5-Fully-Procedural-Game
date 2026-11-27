@@ -137,6 +137,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0", Units="cm"))
 	float SurrenderFriendCm = 1500.f;
 
+	// Given up, it stops once every foe within SurrenderLookCm is dead, out cold or has given up as well, whatever its
+	// aggression.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc")
+	bool bEndWhenNoFoes = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Gesture|Surrender|Npc", meta=(ClampMin="0.05", Units="s"))
 	float SurrenderLookSeconds = 0.5f;
 
@@ -217,7 +222,10 @@ private:
 	void UpdateCrouch(float DeltaTime);
 	// Given up, it weighs running off or going back into the fight.
 	void UpdateGivenUp(float DeltaTime);
-	void TakeBack(const TCHAR* Why);
+	// bRearmBlood: its blood has to fall some more before it gives up for that again.
+	void TakeBack(const TCHAR* Why, bool bRearmBlood = true);
+	// A foe within SurrenderLookCm still fighting: alive, awake and not given up itself. Nobody gives up to no one.
+	bool HasFoeFighting() const;
 	float GetAggression() const;
 
 	UPROPERTY(Replicated)
