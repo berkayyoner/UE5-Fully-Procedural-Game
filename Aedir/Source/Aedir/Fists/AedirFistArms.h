@@ -380,6 +380,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(Units="deg"))
 	float BladeTwoHandSideOutDegrees = 0.f;
 
+	// In both hands, brought across to the other side, the wrist's second turn ends turned this far (BladeCrossTurnDegrees in
+	// one): from all the way in it went round 120 degrees there, and the second hand, the blade near along its forearm,
+	// was turned round twice as fast as the first.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade", meta=(Units="deg"))
+	float BladeTwoHandCrossTurnDegrees = -60.f;
+
 	// Brought across to the other side a blade's wrist turns out this far by BladeSideTurnSplit of the way, the point kept
 	// on the other, then back in to BladeCrossTurnDegrees at the end, the blade reaching from the other side round back.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Aedir|Fists|Blade")

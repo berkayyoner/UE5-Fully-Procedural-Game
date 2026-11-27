@@ -439,11 +439,12 @@ void UAedirFistArms::TickComponent(float DeltaTime, ELevelTick TickType, FActorC
 			// In both hands it leaves the first turn slowly and comes slowly into the second.
 			const float OutShare = FMath::Lerp(OneHandOut, FMath::SmoothStep(0.f, 1.f, FMath::Clamp(Past, 0.f, 1.f)), bBladeTwoHandEasedTurn ? GripAlpha : 0.f);
 			const float SideOut = FMath::Lerp(BladeSideOutDegrees, BladeTwoHandSideOutDegrees, GripAlpha);
+			const float CrossEnd = FMath::Lerp(BladeCrossTurnDegrees, BladeTwoHandCrossTurnDegrees, GripAlpha);
 			const float TwoTurns = Share <= Split
 				? FMath::Lerp(0.f, bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, Share / Split)
-				: FMath::Lerp(bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, bOwnSide ? -SideOut : BladeCrossTurnDegrees, OutShare);
+				: FMath::Lerp(bOwnSide ? BladeSideInDegrees : BladeCrossInDegrees, bOwnSide ? -SideOut : CrossEnd, OutShare);
 			// Fast, the wrist goes the one way all along, the edge leading.
-			const float OneWay = FMath::Lerp(0.f, bOwnSide ? -SideOut : BladeCrossTurnDegrees, Share);
+			const float OneWay = FMath::Lerp(0.f, bOwnSide ? -SideOut : CrossEnd, Share);
 			FistTurn[Slot] = FMath::Lerp(TwoTurns, OneWay, OneTurn) * Side;
 		}
 		// Either way it keeps looking ahead while the wrist turns in, and lets go of that from there on. Raised or lowered the
